@@ -134,3 +134,13 @@ winshell
 pywin32
 vdf
 nbtlib
+```
+
+And then run:
+```txt
+pip install -r requirements.txt
+```
+
+## License
+
+Distributed under the **GNU General Public License v3.0.** See the [`LICENSE`](https://www.gnu.org/licenses/gpl-3.0)file for more information.
