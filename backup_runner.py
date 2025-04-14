@@ -72,7 +72,7 @@ logging.info("Logging configurato per Console.") # Nuovo messaggio
 logging.info(f"Argomenti ricevuti: {' '.join(sys.argv)}")
 # --- FINE Logging ---
 
-# --- Funzione Placeholder per Notifica ---
+# --- Funzione per Notifica ---
 def show_notification(success, message):
     """
     Mostra una notifica popup personalizzata usando Qt.
@@ -89,16 +89,17 @@ def show_notification(success, message):
     try:
         logging.debug("Controllo/Creo QApplication...")
         app = QApplication.instance()
-        needs_exec = False
+        needs_exec = False # Rinominato da needs_exec a needs_quit_timer
+        created_app = False # Flag per sapere se abbiamo creato noi l'app
         if app is None:
             logging.debug("Nessuna QApplication esistente, ne creo una nuova.")
-            # Passa sys.argv se esiste e non è vuoto, altrimenti una lista dummy
             app_args = sys.argv if hasattr(sys, 'argv') and sys.argv else ['backup_runner']
             app = QApplication(app_args)
-            needs_exec = True
+            created_app = True # Abbiamo creato l'app
         else:
              logging.debug("QApplication già esistente trovata.")
 
+        # ... (codice per caricare tema e creare popup, rimane uguale) ...
         logging.debug("Carico impostazioni per tema...")
         try:
             settings, _ = settings_manager.load_settings()
@@ -115,21 +116,19 @@ def show_notification(success, message):
 
         try:
             popup = NotificationPopup(title, clean_message, success)
-        except Exception as e_popup_create:
-             logging.error(f"Errore durante la creazione di NotificationPopup: {e_popup_create}", exc_info=True)
-             return # Esce se non possiamo creare il popup
+            # Impostiamo il QSS *prima* di adjustSize e show per coerenza
+            logging.debug("Applico QSS...")
+            try:
+                 popup.setStyleSheet(qss)
+            except Exception as e_qss:
+                 logging.error(f"Errore applicazione QSS alla notifica: {e_qss}", exc_info=True)
 
-        logging.debug("Applico QSS...")
-        try:
-             popup.setStyleSheet(qss)
-        except Exception as e_qss:
-             logging.error(f"Errore applicazione QSS alla notifica: {e_qss}", exc_info=True)
+            popup.adjustSize() # Calcola dimensione dopo QSS
+            logging.debug(f"Dimensione popup calcolata: {popup.size()}")
 
-        popup.adjustSize()
-        logging.debug(f"Dimensione popup calcolata: {popup.size()}")
-
-        logging.debug("Calcolo posizione...")
-        try:
+            # Calcolo posizione (rimane uguale)
+            logging.debug("Calcolo posizione...")
+            # ... (codice per calcolare popup_x, popup_y) ...
             primary_screen = QApplication.primaryScreen()
             if primary_screen:
                  screen_geometry = primary_screen.availableGeometry()
@@ -140,26 +139,41 @@ def show_notification(success, message):
                  logging.debug(f"Posiziono notifica a: ({popup_x}, {popup_y})")
             else:
                  logging.warning("Schermo primario non trovato, impossibile posizionare notifica.")
-        except Exception as e_screen:
-             logging.error(f"Errore nel posizionare la notifica: {e_screen}", exc_info=True)
 
+        except Exception as e_popup_create:
+             logging.error(f"Errore durante la creazione di NotificationPopup: {e_popup_create}", exc_info=True)
+             # Se non possiamo creare il popup, forse è meglio uscire?
+             # Oltre a loggare, potremmo provare a chiudere l'app se l'abbiamo creata noi.
+             if created_app and app:
+                 app.quit()
+             return # Esce se non possiamo creare il popup
+
+        # Mostra il popup
         logging.debug("Mostro popup...")
         popup.show()
 
-        if needs_exec:
-             logging.debug("Avvio app.exec() per notifica...")
-             app.exec() # Avvia event loop (terminerà quando popup si chiude)
-             logging.debug("Uscito da app.exec().")
+        # Se abbiamo creato noi l'applicazione Qt, impostiamo un timer per chiuderla
+        # poco dopo che il popup dovrebbe essersi chiuso da solo.
+        if created_app and app:
+            popup_duration_ms = 6000 # Durata del popup (deve corrispondere a quella in NotificationPopup)
+            quit_delay_ms = popup_duration_ms + 500 # Aggiungi mezzo secondo di margine
+            logging.debug(f"Imposto QTimer per chiamare app.quit() tra {quit_delay_ms} ms.")
+            QTimer.singleShot(quit_delay_ms, app.quit)
+            # Avvia l'event loop, ma ora uscirà automaticamente grazie al timer
+            logging.debug("Avvio app.exec() per notifica (con timer di uscita)...")
+            app.exec()
+            logging.debug("Uscito da app.exec() dopo timer o chiusura manuale popup.")
         else:
-             # Se l'app esisteva già, forse basta processare eventi per un po'?
-             # O forse non serve fare nulla se il timer funziona comunque?
-             # Per ora non facciamo nulla se needs_exec è False.
-             logging.debug("QApplication preesistente, non avvio app.exec() qui.")
+            logging.debug("QApplication preesistente, non avvio exec/timer qui. Mostro solo popup.")
 
     except Exception as e_main_show:
         logging.critical(f"Errore critico in show_notification: {e_main_show}", exc_info=True)
+        # Prova a chiudere l'app se l'abbiamo creata noi e c'è stato un errore grave
+        if created_app and app:
+            app.quit()
 
     logging.debug("<<< Uscito da show_notification >>>")
+
 
 # --- Funzione Principale Esecuzione Silenziosa ---
 def run_silent_backup(profile_name):
