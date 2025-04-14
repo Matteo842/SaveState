@@ -248,7 +248,7 @@ def perform_restore(profile_name, save_folder_path):
 
         print("\nATTENZIONE!!!")
         print(f"Stai per ripristinare il backup '{selected_backup_file}'.")
-        print(f"Questo SOVRASCRIVERÀ qualsiasi file esistente nella cartella:")
+        print("Questo SOVRASCRIVERÀ qualsiasi file esistente nella cartella:")
         print(f"'{save_folder_path}'")
         # Aggiungi un consiglio extra
         print("\nConsiglio: Se non sei sicuro, fai prima un backup manuale dei file correnti!")

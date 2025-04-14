@@ -1,19 +1,14 @@
 # -*- coding: utf-8 -*-
-from PySide6.QtCore import QThread, Signal, QObject, Qt, QTimer, QPoint # Aggiungi Qt, QTimer, QPoint
+from PySide6.QtCore import QThread, Signal, QObject, Qt, QTimer # Aggiungi Qt, QTimer, QPoint
 from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout, QApplication, QStyle # Aggiungi QWidget, QLabel, QHBoxLayout, QApplication, QStyle
-from PySide6.QtGui import QIcon, QScreen # Aggiungi QIcon, QScreen
 
 # Importa core_logic e logging SOLO per la gestione delle eccezioni nel blocco 'except'
 # Se non esistessero quel blocco 'except' specifico, questi import non servirebbero qui.
 import core_logic
 import logging          # Per loggare eventuali errori interni al thread
-import config
 import os               # Per os.walk, os.path, ecc.
 import configparser     # Per leggere i file .ini
-import winshell         # Per leggere i collegamenti .lnk (se non dà errore su import)
-import string           # Necessario per il controllo root drive
 import sys
-from datetime import datetime # Non strettamente necessario per il thread, ma lo era nella logica originale
 
 def resource_path(relative_path):
     """ Trova il percorso assoluto della risorsa, funziona sia in sviluppo che con PyInstaller """
@@ -140,7 +135,7 @@ class DetectionWorkerThread(QThread):
                                         #print(f"THREAD DEBUG: Letto {ini_path} con encoding '{used_encoding}'")
                                         break # Trovato encoding
                                     except UnicodeDecodeError: continue
-                                    except configparser.Error as e_inner_parse:
+                                    except configparser.Error:
                                         #print(f"THREAD WARN: Errore parsing INI (con '{enc}') {ini_path}: {e_inner_parse}")
                                         parsed_successfully = False
                                         break # Inutile provare altri encoding se il formato è errato
@@ -230,7 +225,7 @@ class DetectionWorkerThread(QThread):
                                     if path_found_flag: break # Esci loop righe
                         except FileNotFoundError:
                             logging.warning(f"File INI scomparso durante ricerca fallback? Path: {ini_path_to_check}")
-                        except Exception as e_fallback_read:
+                        except Exception:
                             logging.warning(f"Errore lettura file {ini_path_to_check} per fallback.", exc_info=True) # Aggiunto exc_info per dettagli errore lettura
                         if path_found_flag: break # Esci loop file INI
                     logging.debug(f"Fine ricerca fallback. Trovato path: {detected_save_path is not None}")

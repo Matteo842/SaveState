@@ -72,7 +72,7 @@ steam_id3 = None
 def check_winrar():
     """Verifica se il percorso di WinRAR è valido."""
     if not os.path.exists(WINRAR_PATH):
-        print(f"\nERRORE: Impossibile trovare WinRAR.exe nel percorso specificato:")
+        print("\nERRORE: Impossibile trovare WinRAR.exe nel percorso specificato:")
         print(f"'{WINRAR_PATH}'")
         print("Per favore, modifica la variabile 'WINRAR_PATH' nello script.")
         input("Premi Invio per uscire.")
@@ -128,7 +128,7 @@ def create_profile(profiles, profile_name=None, save_folder_path=None, skip_save
 
     if save_folder_path is None or not os.path.isdir(save_folder_path):
         if save_folder_path and not os.path.isdir(save_folder_path): # Se era fornito ma non valido
-             print(f"\nATTENZIONE: Il percorso suggerito non è valido o non trovato:")
+             print("\nATTENZIONE: Il percorso suggerito non è valido o non trovato:")
              print(f"'{save_folder_path}'")
         prompt_message = f"Inserisci il percorso COMPLETO della cartella dei salvataggi per '{profile_name}':\n> "
         while True:
@@ -139,7 +139,7 @@ def create_profile(profiles, profile_name=None, save_folder_path=None, skip_save
             # Normalizza il percorso per consistenza
             save_folder_path_input = os.path.normpath(save_folder_path_input)
             if not os.path.isdir(save_folder_path_input):
-                print(f"ERRORE: Il percorso inserito non è una cartella valida o accessibile.")
+                print("ERRORE: Il percorso inserito non è una cartella valida o accessibile.")
                 print(f"'{save_folder_path_input}'")
             else:
                 save_folder_path = save_folder_path_input
@@ -244,7 +244,7 @@ def perform_backup(profile_name, save_folder_path):
     # Verifica preliminare se la cartella sorgente esiste ed è accessibile
     save_folder_path = os.path.normpath(save_folder_path) # Assicura percorso normalizzato
     if not os.path.isdir(save_folder_path):
-        print(f"ERRORE CRITICO: La cartella dei salvataggi specificata non esiste o non è accessibile:")
+        print("ERRORE CRITICO: La cartella dei salvataggi specificata non esiste o non è accessibile:")
         print(f"'{save_folder_path}'")
         print("Impossibile procedere con il backup.")
         input("Premi Invio per continuare...")
@@ -254,7 +254,7 @@ def perform_backup(profile_name, save_folder_path):
     try:
         os.makedirs(profile_backup_dir, exist_ok=True) # Crea cartella backup profilo
     except Exception as e:
-         print(f"ERRORE: Impossibile creare la cartella di destinazione del backup:")
+         print("ERRORE: Impossibile creare la cartella di destinazione del backup:")
          print(f"'{profile_backup_dir}'")
          print(f"Dettagli: {e}")
          print("Backup annullato.")
@@ -288,7 +288,7 @@ def perform_backup(profile_name, save_folder_path):
     ]
 
     try:
-        print(f"\nEsecuzione comando WinRAR:")
+        print("\nEsecuzione comando WinRAR:")
     # Stampa il comando in modo leggibile per debug
 
     # !!! VECCHIA RIGA PROBLEMATICA !!!
@@ -372,11 +372,11 @@ def perform_restore(profile_name, save_folder_path):
 
     try:
         # Trova e ordina i backup disponibili (dal più recente)
-        backup_files = [f for f in os.listdir(profile_backup_dir) if f.startswith(f"Backup_") and f.endswith(".rar")] # Meno restrittivo sul nome profilo nel file
+        backup_files = [f for f in os.listdir(profile_backup_dir) if f.startswith("Backup_") and f.endswith(".rar")] # Meno restrittivo sul nome profilo nel file
         backup_files.sort(key=lambda f: os.path.getmtime(os.path.join(profile_backup_dir, f)), reverse=True)
 
         if not backup_files:
-            print(f"Nessun file di backup (.rar) trovato per questo profilo.")
+            print("Nessun file di backup (.rar) trovato per questo profilo.")
             input("Premi Invio per continuare...")
             return
 
@@ -412,9 +412,9 @@ def perform_restore(profile_name, save_folder_path):
 
         # Conferma finale prima di sovrascrivere
         print("\n!!! ATTENZIONE !!!")
-        print(f"Stai per ripristinare il backup:")
+        print("Stai per ripristinare il backup:")
         print(f"  '{selected_backup_file}'")
-        print(f"Nella cartella:")
+        print("Nella cartella:")
         print(f"  '{save_folder_path}'")
         print("\nQuesto processo SOVRASCRIVERÀ qualsiasi file con lo stesso nome")
         print("presente attualmente nella cartella di destinazione.")
@@ -427,7 +427,7 @@ def perform_restore(profile_name, save_folder_path):
             try:
                  os.makedirs(save_folder_path, exist_ok=True)
             except Exception as e:
-                 print(f"\nERRORE: Impossibile creare/accedere alla cartella di destinazione:")
+                 print("\nERRORE: Impossibile creare/accedere alla cartella di destinazione:")
                  print(f"'{save_folder_path}'")
                  print(f"Dettagli: {e}")
                  print("Ripristino annullato.")

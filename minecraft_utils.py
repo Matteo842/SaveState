@@ -105,9 +105,9 @@ def list_minecraft_worlds(saves_folder_path):
                                 world_name = str(name_from_nbt).strip()
                                 logging.debug(f"    -> Nome da level.dat: '{world_name}'")
                             else:
-                                 logging.debug(f"    -> Tag 'LevelName' non trovato in 'Data'. Uso nome cartella.")
+                                 logging.debug("    -> Tag 'LevelName' non trovato in 'Data'. Uso nome cartella.")
                         else:
-                             logging.debug(f"    -> Tag 'Data' non trovato in level.dat. Uso nome cartella.")
+                             logging.debug("    -> Tag 'Data' non trovato in level.dat. Uso nome cartella.")
 
                     except nbtlib.MalformedFileError:
                         logging.warning(f"    -> File level.dat corrotto o malformato: {level_dat_path}. Uso nome cartella.")

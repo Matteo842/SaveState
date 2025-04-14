@@ -8,7 +8,6 @@ from PySide6.QtCore import Slot, Qt
 
 # Importa la logica necessaria
 import core_logic
-import logging
 
 
 class ManageBackupsDialog(QDialog):

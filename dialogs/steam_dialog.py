@@ -75,7 +75,7 @@ class SteamDialog(QDialog):
      
      @Slot()
      def configure_selected_game(self):
-        current_item = self.game_list_widget.currentItem();
+        current_item = self.game_list_widget.currentItem()
         if not current_item:
             logging.debug("Tentativo di configurare gioco Steam senza selezione nella lista.")
             return # Esci se non c'è selezione
@@ -182,9 +182,9 @@ class SteamDialog(QDialog):
             else: confirmed_path = None
         else:
              path_choices = []; current_path_index = -1
-             for i, p in enumerate(guesses): is_current = "[ATTUALE]" if p == existing_path else ""; path_choices.append(f"{p} {is_current}");
+             for i, p in enumerate(guesses): is_current = "[ATTUALE]" if p == existing_path else ""; path_choices.append(f"{p} {is_current}")
              if p == existing_path: current_path_index = i
-             dialog_text = "Seleziona il percorso corretto per i salvataggi:";
+             dialog_text = "Seleziona il percorso corretto per i salvataggi:"
              if existing_path: dialog_text += f"\n(Attuale: {existing_path})"
              chosen_path_str, ok = QInputDialog.getItem(self, "Conferma Percorso Salvataggi", dialog_text, path_choices, current_path_index if current_path_index != -1 else 0, False)
              if ok and chosen_path_str: confirmed_path = chosen_path_str.split(" [ATTUALE]")[0].strip()

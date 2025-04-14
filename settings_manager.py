@@ -79,7 +79,7 @@ def load_settings():
             settings["theme"] = defaults["theme"]
         # --- FINE NUOVA ---
         return settings, False
-    except Exception as e:
+    except Exception:
         # ...
         return defaults.copy(), True
         
@@ -120,10 +120,10 @@ def load_settings():
              settings["max_backups"] = defaults["max_backups"]
 
         return settings, False # Restituisce impostazioni caricate/unite e False per non primo avvio
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
+    except (json.JSONDecodeError, KeyError, TypeError):
         logging.error(f"Lettura o validazione di '{SETTINGS_FILE_PATH}' fallita...", exc_info=True)
         return defaults.copy(), True # Tratta come primo avvio se file corrotto
-    except Exception as e:
+    except Exception:
         logging.error(f"Errore imprevisto durante la lettura delle impostazioni da '{SETTINGS_FILE_PATH}'. ...", exc_info=True)
         return defaults.copy(), True
         
@@ -142,6 +142,6 @@ def save_settings(settings_dict):
             json.dump(settings_dict, f, indent=4)
         logging.info(f"Impostazioni salvate correttamente in '{SETTINGS_FILE_PATH}'.") # <-- Usa la nuova variabile
         return True
-    except Exception as e:
+    except Exception:
         logging.error(f"Errore durante il salvataggio delle impostazioni in '{SETTINGS_FILE_PATH}'.", exc_info=True)
         return False

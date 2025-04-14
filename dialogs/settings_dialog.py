@@ -2,12 +2,11 @@ import os
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QGroupBox,
     QComboBox, QSpinBox, QDialogButtonBox, QFileDialog, QStyle, QApplication,
-    QMessageBox, QCheckBox
+    QCheckBox
 )
-from PySide6.QtCore import Slot, Qt, QCoreApplication, QTranslator, QEvent
+from PySide6.QtCore import Slot, QEvent
 
 # Importa il modulo per salvare/caricare impostazioni
-import settings_manager
 import logging
 
 

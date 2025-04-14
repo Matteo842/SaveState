@@ -3,11 +3,9 @@
 from datetime import datetime
 import logging
 import os
-import subprocess
 import json
 import zipfile
 import config
-import string 
 import re
 
 try:
@@ -777,7 +775,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
 
                 # Check Acronimo Diretto
                 if valid_acronym and actual_subfolder_lower == valid_acronym.lower():
-                     logging.debug(f"    -> Trovata corrispondenza Acronimo Diretto!")
+                     logging.debug("    -> Trovata corrispondenza Acronimo Diretto!")
                      add_guess(actual_subfolder_path, f"{loc_name}/AcronymDirect")
 
                 # Check Nome Simile
@@ -796,7 +794,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                                     deeper_path_found = None
                                     if os.path.isdir(intermediate_path):
                                         try: # Try per listdir su intermediate_path
-                                            logging.debug(f"          Controllo DENTRO SaveSubdir intermedio...")
+                                            logging.debug("          Controllo DENTRO SaveSubdir intermedio...")
                                             for deeper_item in os.listdir(intermediate_path):
                                                 deeper_path = os.path.join(intermediate_path, deeper_item)
                                                 if os.path.isdir(deeper_path) and deeper_item.lower() in common_save_subdirs_lower:
@@ -828,7 +826,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
 
                             # Check Acronimo Dentro Publisher
                             if valid_acronym and inner_folder_lower == valid_acronym.lower():
-                                 logging.debug(f"      -> Trovata corrispondenza Acronimo in Publisher!")
+                                 logging.debug("      -> Trovata corrispondenza Acronimo in Publisher!")
                                  add_guess(inner_folder_path, f"{loc_name}/{actual_subfolder}/AcronymInPublisher")
 
                             # Check Nome Simile Dentro Publisher
@@ -847,7 +845,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                                                 deeper_path_found = None
                                                 if os.path.isdir(intermediate_path):
                                                     try: # Try per listdir su intermediate_path
-                                                        logging.debug(f"            Controllo DENTRO SaveSubdir intermedio...")
+                                                        logging.debug("            Controllo DENTRO SaveSubdir intermedio...")
                                                         for deeper_item in os.listdir(intermediate_path):
                                                             deeper_path = os.path.join(intermediate_path, deeper_item)
                                                             if os.path.isdir(deeper_path) and deeper_item.lower() in common_save_subdirs_lower:

@@ -7,7 +7,6 @@ from PySide6.QtCore import Qt
 
 # Importa la logica necessaria
 import core_logic
-import logging
 
 
 class RestoreDialog(QDialog):

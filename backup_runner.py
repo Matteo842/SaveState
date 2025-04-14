@@ -66,9 +66,9 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(log_formatter)
 root_logger.addHandler(console_handler)
 
-logging.info(f"--- Avvio Backup Runner (Solo Log Console) ---")
+logging.info("--- Avvio Backup Runner (Solo Log Console) ---")
 # logging.info(f"Logging configurato per File ('{log_file}') e Console.") # Commentato/Rimosso
-logging.info(f"Logging configurato per Console.") # Nuovo messaggio
+logging.info("Logging configurato per Console.") # Nuovo messaggio
 logging.info(f"Argomenti ricevuti: {' '.join(sys.argv)}")
 # --- FINE Logging ---
 

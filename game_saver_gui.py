@@ -6,11 +6,10 @@ import shutil
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QStatusBar, QMessageBox, QDialog,
-    QProgressBar, QDialogButtonBox, QGroupBox, QInputDialog,
-    QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit, QSpinBox, QFileDialog,
-    QListWidget, QListWidgetItem, QComboBox, QStyle, QDockWidget, QPlainTextEdit
+    QProgressBar, QGroupBox, QInputDialog,
+    QTableWidget, QTableWidgetItem, QHeaderView, QStyle, QDockWidget, QPlainTextEdit
 )
-from PySide6.QtCore import Slot, QThread, Signal, Qt, QTimer, QUrl, QSize, QTranslator, QCoreApplication, QEvent
+from PySide6.QtCore import Slot, Qt, QUrl, QSize, QTranslator, QCoreApplication, QEvent
 from PySide6.QtGui import QIcon, QDesktopServices, QPalette, QColor
 
 from dialogs.settings_dialog import SettingsDialog
@@ -25,14 +24,11 @@ import core_logic
 import settings_manager 
 import config           
 import minecraft_utils
-import configparser     # Per leggere i file .ini
 import winshell         # Per leggere i collegamenti .lnk
 import string           # Necessario per il controllo root drive
 import logging
-import sys # Per sys.executable / sys.argv[0]
 import shortcut_utils # Il nostro nuovo modulo
 
-from datetime import datetime # Necessario
 ENGLISH_TRANSLATOR = QTranslator() # Crea l'istanza QUI
 CURRENT_TRANSLATOR = None # Questa traccia solo quale è ATTIVO (o None)
 
@@ -658,8 +654,8 @@ class MainWindow(QMainWindow):
                                      f"Non è possibile usare una radice del drive ('{norm_path}') come cartella dei salvataggi per '{context_profile_name}'.\n"
                                      "Per favore, scegli o crea una sottocartella specifica.")
                  return None # Percorso radice non valido
-        except Exception as e_root_check:
-             logging.warning(f"Controllo percorso radice fallito durante validazione.", exc_info=True)
+        except Exception:
+             logging.warning("Controllo percorso radice fallito durante validazione.", exc_info=True)
              # Non blocchiamo per questo errore raro, continuiamo con isdir
              pass
 
@@ -702,7 +698,7 @@ class MainWindow(QMainWindow):
                          try:
                              month_name = ITALIAN_MONTHS.get(last_backup_dt.month, "?")
                              date_str = f"{month_name} {last_backup_dt.day}"
-                         except Exception as e:
+                         except Exception:
                              logging.error(f"Errore formattazione data ultimo backup per {profile_name}", exc_info=True)
                     backup_label = "Backup" if count == 1 else "Backups"
                     info_str = f"{backup_label}: {count} | Ultimo: {date_str}"
@@ -1031,7 +1027,7 @@ class MainWindow(QMainWindow):
                 if self.sun_icon: self.theme_button.setIcon(self.sun_icon); self.theme_button.setIconSize(icon_size)
                 else: self.theme_button.setText("L"); self.theme_button.setIcon(QIcon()) # Fallback testo
                 self.theme_button.setToolTip("Passa al tema chiaro")
-        except Exception as e: logging.error(f"Errore durante l'applicazione del tema '{theme_name}'", exc_info=True)
+        except Exception: logging.error(f"Errore durante l'applicazione del tema '{theme_name}'", exc_info=True)
 
     @Slot()
     def handle_theme_toggle(self):
@@ -1355,7 +1351,7 @@ if __name__ == "__main__":
         if settings_dialog.exec() == QDialog.Accepted:
             current_settings = settings_dialog.get_settings()
             if not settings_manager.save_settings(current_settings):
-                 QMessageBox.critical(None, "Errore Salvataggio Impostazioni", f"Impossibile salvare le impostazioni...")
+                 QMessageBox.critical(None, "Errore Salvataggio Impostazioni", "Impossibile salvare le impostazioni...")
             logging.info("Impostazioni iniziali configurate dopo il primo avvio.")
         else:
             reply = QMessageBox.question(None, "Impostazioni Predefinite", "Nessuna impostazione salvata...", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Yes)
