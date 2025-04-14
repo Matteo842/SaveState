@@ -39,6 +39,8 @@ SaveState helps you manage and safeguard your precious game progress. Losing sav
     * Settings dialog to configure paths, limits, theme, language, and more.
     * Dockable Log Console displaying detailed operation status and errors.
     * Basic internationalization support (Italian/English currently included).
+* **No Administrator Privileges Required** for core functionality.
+* **Portable:** Runs directly from the `.exe` file without installation.
 
 ## Visuals
 
