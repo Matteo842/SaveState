@@ -338,8 +338,8 @@ class MainWindow(QMainWindow):
         else:
             self.theme_button.setToolTip(self.tr("Passa al tema chiaro"))
             
-        logging.debug("Aggiornamento tabella profili a seguito di retranslateUi")
-        self.update_profile_table() # Così la tabella usa le nuove traduzioni subito
+            logging.debug("Aggiornamento tabella profili a seguito di retranslateUi")
+            self.update_profile_table() # Così la tabella usa le nuove traduzioni subito
 
     def changeEvent(self, event):
         """Chiamato quando avvengono eventi nella finestra, inclusi cambi lingua."""
@@ -786,33 +786,49 @@ class MainWindow(QMainWindow):
 
         # 2. Installa quello nuovo SE è Inglese
         if lang_code == "en":
-            qm_file_path = f"game_saver_{lang_code}.qm"
+            qm_filename = f"game_saver_{lang_code}.qm"
+            # Usa resource_path per trovare il percorso corretto
+            qm_file_path = resource_path(qm_filename)
+            logging.info(f"Tentativo caricamento traduttore Inglese da: {qm_file_path}")
+
+            # Controllo esplicito se il file esiste nel percorso trovato
+            if not os.path.exists(qm_file_path):
+                logging.error(f"File traduzione .qm NON TROVATO in: {qm_file_path} (Verifica .spec e build). La traduzione non funzionerà.")
+                # Mostra errore all'utente
+                QMessageBox.warning(self, self.tr("Errore Traduzione"),
+                                    self.tr("Impossibile caricare il file di traduzione per l'inglese ({0}).\n"
+                                            "L'interfaccia rimarrà in italiano.").format(qm_filename))
+                CURRENT_TRANSLATOR = None # Assicurati sia None
+                return # Esci se il file non esiste  <--- QUESTA ERA LA RIGA DELL'ERRORE, ORA INDENTATA CORRETTAMENTE
+
             # Prova a caricare/ricaricare il file QM nell'istanza globale
-            loaded_ok = ENGLISH_TRANSLATOR.load(qm_file_path)
+            # Ho rimosso il controllo duplicato di ENGLISH_TRANSLATOR.load() che avevi nel codice che hai incollato prima
+            loaded_ok = ENGLISH_TRANSLATOR.load(qm_file_path) # Usa percorso completo
             if loaded_ok:
-                logging.debug(f"Caricato/Ricaricato {qm_file_path} in ENGLISH_TRANSLATOR")
+                logging.debug(f"File QM '{qm_file_path}' caricato in ENGLISH_TRANSLATOR.")
                 # Ora prova ad installare l'istanza globale
                 installed = QCoreApplication.installTranslator(ENGLISH_TRANSLATOR)
                 if installed:
                     CURRENT_TRANSLATOR = ENGLISH_TRANSLATOR # Aggiorna il tracker globale
                     logging.info("Nuovo traduttore 'en' installato correttamente.")
-                    # Qui NON è necessario chiamare retranslateUi, perché LanguageChange
-                    # dovrebbe essere emesso automaticamente da Qt quando si installa/rimuove
-                    # un traduttore, e l'evento viene già gestito da changeEvent.
+                    # Qt dovrebbe gestire retranslateUi tramite LanguageChange
                 else:
                     logging.error("Installazione traduttore 'en' fallita dopo il caricamento!")
                     QCoreApplication.removeTranslator(ENGLISH_TRANSLATOR) # Tentativo di pulizia
                     CURRENT_TRANSLATOR = None
             else:
                 # Load fallito
-                logging.warning(f"Impossibile caricare il file QM '{qm_file_path}' per la nuova lingua.")
+                logging.warning(f"Caricamento file QM fallito: {qm_file_path}. La funzione 'load' ha restituito False.")
                 CURRENT_TRANSLATOR = None # Assicurati sia None
-                QMessageBox.warning(self, self.tr("Errore Traduzione"),
-                                    self.tr("Impossibile caricare il file di traduzione per l'inglese (game_saver_en.qm).\n"
-                                            "L'interfaccia rimarrà in italiano."))
+                # Non mostriamo un altro QMessageBox qui perché l'errore è già stato loggato e
+                # un avviso è stato mostrato se il file non esisteva.
         else: # Se la nuova lingua è 'it' (o qualsiasi altra cosa non 'en')
             logging.info("Passaggio a italiano (o lingua non gestita), nessun traduttore attivo.")
-            CURRENT_TRANSLATOR = None # Assicurati sia None
+            # Rimuovi un eventuale traduttore precedente se per caso era rimasto attivo
+            if CURRENT_TRANSLATOR is not None:
+                QCoreApplication.removeTranslator(CURRENT_TRANSLATOR)
+                logging.debug("Rimosso traduttore precedente non più necessario.")
+            CURRENT_TRANSLATOR = None # Imposta a None per sicurezzar
 
         # Forzare un aggiornamento dell'UI dopo il cambio? Qt dovrebbe farlo con LanguageChange.
         # Se non lo fa, potresti forzarlo qui con self.retranslateUi(), ma di solito non serve.
