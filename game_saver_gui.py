@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QProgressBar, QGroupBox, QInputDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QStyle, QDockWidget, QPlainTextEdit
 )
-from PySide6.QtCore import Slot, Qt, QUrl, QSize, QTranslator, QCoreApplication, QEvent
+from PySide6.QtCore import Slot, Qt, QUrl, QSize, QTranslator, QCoreApplication, QEvent, QLocale, QDateTime
 from PySide6.QtGui import QIcon, QDesktopServices, QPalette, QColor
 
 from dialogs.settings_dialog import SettingsDialog
@@ -33,13 +33,7 @@ ENGLISH_TRANSLATOR = QTranslator() # Crea l'istanza QUI
 CURRENT_TRANSLATOR = None # Questa traccia solo quale è ATTIVO (o None)
 
 
-CURRENT_TRANSLATOR = None
-
-# mesi in italiano
-ITALIAN_MONTHS = {
-    1: "Gennaio", 2: "Febbraio", 3: "Marzo", 4: "Aprile", 5: "Maggio", 6: "Giugno",
-    7: "Luglio", 8: "Agosto", 9: "Settembre", 10: "Ottobre", 11: "Novembre", 12: "Dicembre"
-}
+CURRENT_TRANSLATOR = None 
 
 # --- Dialogo Gestione Steam ---
 
@@ -312,9 +306,9 @@ class MainWindow(QMainWindow):
         # Stato Iniziale e Tema
         self.update_action_button_states()
         self.worker_thread = None
-        self.worker_thread = None
         self.update_theme()
         self.retranslateUi()
+        self.setWindowIcon(QIcon(resource_path("icon.png"))) # Icona finestra principale
     
     def retranslateUi(self):
         """Aggiorna il testo di tutti i widget traducibili."""
@@ -343,6 +337,9 @@ class MainWindow(QMainWindow):
             self.theme_button.setToolTip(self.tr("Passa al tema scuro"))
         else:
             self.theme_button.setToolTip(self.tr("Passa al tema chiaro"))
+            
+        logging.debug("Aggiornamento tabella profili a seguito di retranslateUi")
+        self.update_profile_table() # Così la tabella usa le nuove traduzioni subito
 
     def changeEvent(self, event):
         """Chiamato quando avvengono eventi nella finestra, inclusi cambi lingua."""
@@ -691,17 +688,43 @@ class MainWindow(QMainWindow):
             row_to_select = -1
             for row_index, profile_name in enumerate(sorted_profiles):
                 count, last_backup_dt = core_logic.get_profile_backup_summary(profile_name)
-                info_str = ""
+                info_str = "" # Inizializza stringa vuota
+
                 if count > 0:
-                    date_str = "N/D"
+                    date_str = "N/D" # Valore predefinito se non c'è data
                     if last_backup_dt:
-                         try:
-                             month_name = ITALIAN_MONTHS.get(last_backup_dt.month, "?")
-                             date_str = f"{month_name} {last_backup_dt.day}"
-                         except Exception:
-                             logging.error(f"Errore formattazione data ultimo backup per {profile_name}", exc_info=True)
-                    backup_label = "Backup" if count == 1 else "Backups"
-                    info_str = f"{backup_label}: {count} | Ultimo: {date_str}"
+                        try:
+                            # --- NUOVA LOGICA FORMATTAZIONE DATA ---
+                            lang_code = self.current_settings.get("language", "en") # Prendi lingua corrente
+                            # Crea oggetto QLocale per la lingua giusta
+                            if lang_code == "en":
+                                locale = QLocale(QLocale.Language.English)
+                            else:
+                                locale = QLocale(QLocale.Language.Italian)
+
+                            # Formatta la data usando QLocale (mese abbreviato + giorno)
+                            # Esempio: "Apr 11" o "Giu 10"
+                            date_str = locale.toString(last_backup_dt, "MMM d")
+                            # Se preferisci il mese completo (es. "April 11"), usa:
+                            # date_str = locale.toString(last_backup_dt, "MMMM d")
+                            # --- FINE NUOVA LOGICA ---
+                        except Exception as e:
+                            logging.error(f"Errore formattazione data ultimo backup per {profile_name}", exc_info=True)
+                            date_str = "???" # Metti un placeholder diverso in caso di errore
+
+                    # --- NUOVA LOGICA TRADUZIONE ETICHETTE ---
+                    # Traduci le etichette che servono
+                    backup_label_singular = ("Backup")
+                    backup_label_plural = ("Backups")
+                    last_label = self.tr("Ultimo")
+
+                    # Scegli singolare o plurale
+                    backup_label = backup_label_singular if count == 1 else backup_label_plural
+
+                    # Componi la stringa finale usando le etichette tradotte
+                    info_str = f"{backup_label}: {count} | {last_label}: {date_str}"
+                    # --- FINE NUOVA LOGICA ---
+
 
                 name_item = QTableWidgetItem(profile_name)
                 name_item.setData(Qt.ItemDataRole.UserRole, profile_name)
@@ -1265,45 +1288,73 @@ class MainWindow(QMainWindow):
 
 
 # --- Avvio Applicazione GUI ---
-if __name__ == "__main__":
+if __name__ == "__main__": 
+    # --- Configurazione Logging (DEVE ESSERE FATTA SUBITO) ---
+    log_level = logging.INFO # O DEBUG se preferisci ancora i log dettagliati
+    log_format = '%(asctime)s - %(levelname)s - %(message)s'
+    log_datefmt = '%H:%M:%S'
+    log_formatter = logging.Formatter(log_format, log_datefmt)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+        handler.close()
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(log_formatter)
+    root_logger.addHandler(console_handler)
+    # Crea qt_log_handler qui se serve anche per il backup runner (per le notifiche)
+    # Altrimenti puoi crearlo dopo il check degli argomenti, prima di avviare la GUI
+    qt_log_handler = QtLogHandler()
+    qt_log_handler.setFormatter(log_formatter)
+    root_logger.addHandler(qt_log_handler) # Aggiungilo comunque per loggare errori del runner
+    logging.info("Logging configurato.")
+
+    # --- NUOVO: Import necessari per argparse e runner ---
+    import argparse
+    import backup_runner # Importa lo script del runner per chiamare la sua funzione
+
+    # --- NUOVO: Parsing Argomenti Command Line ---
+    parser = argparse.ArgumentParser(description='SaveState GUI or Backup Runner.')
+    parser.add_argument("--backup", help="Nome del profilo per cui eseguire un backup silenzioso.")
+    # Aggiungi qui altri argomenti se serviranno in futuro
+
+    try:
+        # Usiamo parse_args() qui, va bene per script semplici
+        args = parser.parse_args()
+    except SystemExit:
+         # argparse esce con SystemExit se l'argomento è sbagliato (es. --backu invece di --backup)
+         # Possiamo uscire silenziosamente o loggare
+         logging.warning("Uscita a causa di argomento non valido o richiesta help (-h).")
+         sys.exit(1) # Usciamo con errore
+    except Exception as e_args:
+         logging.error(f"Errore parsing argomenti: {e_args}")
+         sys.exit(1) # Usciamo con errore
+
+    # --- NUOVO: Controllo se eseguire backup o GUI ---
+    if args.backup:
+        # Modalità Backup Silenzioso
+        profile_to_backup = args.backup
+        logging.info(f"Rilevato argomento --backup '{profile_to_backup}'. Avvio backup silenzioso...")
+
+        # Esegui la logica di backup definita in backup_runner.py
+        # Non serve più QApplication qui se la notifica la crea backup_runner
+        backup_success = backup_runner.run_silent_backup(profile_to_backup)
+
+        logging.info(f"Backup silenzioso terminato con successo: {backup_success}")
+        sys.exit(0 if backup_success else 1) # Esci con codice 0 (successo) o 1 (fallimento)
+
+    else:
+        # Modalità GUI Normale (Nessun argomento --backup)
+        logging.info("Nessun argomento --backup rilevato, avvio interfaccia grafica...")
+
+    
     try: app = QApplication(sys.argv)
     except ImportError: logging.critical("Libreria 'PySide6' non trovata! Impossibile avviare l'applicazione."); sys.exit(1)
     except Exception as e: logging.critical(f"Errore inizializzazione QApplication: {e}", exc_info=True); sys.exit(1)
 
-    # --- CONFIGURAZIONE LOGGING (Senza basicConfig) ---
-    log_level = logging.INFO # MANTENIAMO DEBUG
-    log_format = '%(asctime)s - %(levelname)s - %(message)s'
-    log_datefmt = '%H:%M:%S'
-    log_formatter = logging.Formatter(log_format, log_datefmt)
-
-    # Ottieni il logger principale (root)
-    root_logger = logging.getLogger()
-    root_logger.setLevel(log_level) # Imposta il livello direttamente sul root logger
-
-    # Rimuovi eventuali gestori preesistenti per evitare duplicati
-    # (Utile se lo script viene rieseguito in modi strani o se altri moduli configurano logging)
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-        handler.close()
-
-    # Crea e aggiungi il gestore per la console
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(log_formatter)
-    # console_handler.setLevel(log_level) # Non strettamente necessario se root è già DEBUG
-    root_logger.addHandler(console_handler)
-
-    # Crea e aggiungi il gestore personalizzato per la GUI
-    qt_log_handler = QtLogHandler()
-    qt_log_handler.setFormatter(log_formatter)
-    # qt_log_handler.setLevel(log_level) # Non strettamente necessario se root è già DEBUG
-    root_logger.addHandler(qt_log_handler)
-
-    logging.info("Logging configurato per console e GUI (Metodo Manuale).")
-    # --- FINE CONFIGURAZIONE LOGGING (Senza basicConfig) ---
-    
+    # --- CARICAMENTO TRADUTTORE ALL'AVVIO ---
+    logging.info("Avvio caricamento traduttore...")
     current_settings, is_first_launch = settings_manager.load_settings()
-    
-    # --- CARICAMENTO TRADUTTORE ALL'AVVIO (Corretto con resource_path) ---
     selected_language = current_settings.get("language", "en") # Default è 'en'
 
     if selected_language == "en":
@@ -1343,6 +1394,39 @@ if __name__ == "__main__":
              logging.debug("Rimosso traduttore precedente non più necessario.")
         CURRENT_TRANSLATOR = None # Imposta a None per sicurezza
     # --- FINE CARICAMENTO TRADUTTORE ---
+   
+    # --- CONFIGURAZIONE LOGGING (Senza basicConfig) ---
+    log_level = logging.INFO # MANTENIAMO DEBUG
+    log_format = '%(asctime)s - %(levelname)s - %(message)s'
+    log_datefmt = '%H:%M:%S'
+    log_formatter = logging.Formatter(log_format, log_datefmt)
+
+    # Ottieni il logger principale (root)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level) # Imposta il livello direttamente sul root logger
+
+    # Rimuovi eventuali gestori preesistenti per evitare duplicati
+    # (Utile se lo script viene rieseguito in modi strani o se altri moduli configurano logging)
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+        handler.close()
+
+    # Crea e aggiungi il gestore per la console
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(log_formatter)
+    # console_handler.setLevel(log_level) # Non strettamente necessario se root è già DEBUG
+    root_logger.addHandler(console_handler)
+
+    # Crea e aggiungi il gestore personalizzato per la GUI
+    qt_log_handler = QtLogHandler()
+    qt_log_handler.setFormatter(log_formatter)
+    # qt_log_handler.setLevel(log_level) # Non strettamente necessario se root è già DEBUG
+    root_logger.addHandler(qt_log_handler)
+
+    logging.info("Logging configurato per console e GUI (Metodo Manuale).")
+    # --- FINE CONFIGURAZIONE LOGGING (Senza basicConfig) ---
+    
+    current_settings, is_first_launch = settings_manager.load_settings()
 
     # Gestione primo avvio (mostra dialogo impostazioni se necessario)
     if is_first_launch:
