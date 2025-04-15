@@ -25,9 +25,9 @@ if APP_DATA_FOLDER: # Controlla se valido
     PROFILES_FILE_PATH = os.path.join(APP_DATA_FOLDER, PROFILES_FILENAME)
 else:
     # Fallback
-    logging.error("Impossibile determinare APP_DATA_FOLDER, uso percorso relativo per game_save_profiles.json.")
+    logging.error("Unable to determine APP_DATA_FOLDER, use relative path for game_save_profiles.json.")
     PROFILES_FILE_PATH = os.path.abspath(PROFILES_FILENAME)
-logging.info(f"Percorso file profili in uso: {PROFILES_FILE_PATH}")
+logging.info(f"Profile file path in use: {PROFILES_FILE_PATH}")
 # --- Fine definizione ---
 
 # Setup logging base (opzionale, ma utile per debug)
@@ -68,10 +68,10 @@ def get_profile_backup_summary(profile_name):
             # Converti il timestamp in un oggetto datetime
             last_backup_dt = datetime.fromtimestamp(mtime_timestamp)
         except FileNotFoundError:
-            logging.error(f"File ultimo backup non trovato ({most_recent_backup_path}) durante getmtime per {profile_name}.")
+            logging.error(f"Last backup file not found ({most_recent_backup_path}) during getmtime for {profile_name}.")
             # Potrebbe succedere se il file viene eliminato tra list e getmtime (raro)
         except Exception as e:
-            logging.error(f"Impossibile ottenere data ultimo backup per {profile_name} da '{most_recent_backup_path}': {e}")
+            logging.error(f"Unable to get last backup date for {profile_name} by '{most_recent_backup_path}': {e}")
             # Lascia last_backup_dt a None se c'è un errore
 
     # Restituisce il conteggio e l'oggetto datetime (o None se nessun backup o errore data)
@@ -85,13 +85,13 @@ def load_profiles():
         try:
             with open(PROFILES_FILE_PATH, 'r', encoding='utf-8') as f: # <-- Usa PATH
                 profiles = json.load(f)
-            logging.info(f"Caricati {len(profiles)} profili da '{PROFILES_FILE_PATH}'.") # <-- Usa PATH
+            logging.info(f"Loaded {len(profiles)} profiles from '{PROFILES_FILE_PATH}'.") # <-- Usa PATH
         except json.JSONDecodeError:
-            logging.warning(f"File profili '{PROFILES_FILE_PATH}' corrotto o vuoto...") # <-- Usa PATH
+            logging.warning(f"Profile files '{PROFILES_FILE_PATH}' corrupt or empty...") # <-- Usa PATH
         except Exception as e:
-            logging.error(f"Errore caricamento profili da '{PROFILES_FILE_PATH}': {e}") # <-- Usa PATH
+            logging.error(f"Error loading profiles from '{PROFILES_FILE_PATH}': {e}") # <-- Usa PATH
     else:
-        logging.info(f"File profili '{PROFILES_FILE_PATH}' non trovato...") # <-- Usa PATH
+        logging.info(f"Profile files '{PROFILES_FILE_PATH}' not found...") # <-- Usa PATH
     return profiles
 
 def save_profiles(profiles):
@@ -103,17 +103,17 @@ def save_profiles(profiles):
         logging.info(f"Salvati {len(profiles)} profili in '{PROFILES_FILE_PATH}'.") # <-- Usa PATH
         return True
     except Exception as e:
-        logging.error(f"Errore salvataggio profili in '{PROFILES_FILE_PATH}': {e}") # <-- Usa PATH
+        logging.error(f"Error saving profiles in '{PROFILES_FILE_PATH}': {e}") # <-- Usa PATH
         return False
 
 def delete_profile(profiles, profile_name):
     """Elimina un profilo dal dizionario. Restituisce True se eliminato, False altrimenti."""
     if profile_name in profiles:
         del profiles[profile_name]
-        logging.info(f"Profilo '{profile_name}' rimosso dalla memoria.")
+        logging.info(f"profile '{profile_name}' removed from memory.")
         return True
     else:
-        logging.warning(f"Tentativo di eliminare profilo non esistente: '{profile_name}'.")
+        logging.warning(f"Attempt to delete non-existing profile: '{profile_name}'.")
         return False
 
 # --- Operazioni Backup/Restore ---
@@ -129,14 +129,14 @@ def manage_backups(profile_name, backup_base_dir, max_backups): # Parametro 'max
     try:
         if not os.path.isdir(profile_backup_dir): return deleted_files # Cerca dir sanificata
 
-        logging.info(f"Controllo backup (.zip) obsoleti in: {profile_backup_dir}")
+        logging.info(f"Checking outdated (.zip) backups in: {profile_backup_dir}")
     
         backup_files = [f for f in os.listdir(profile_backup_dir) if f.startswith("Backup_") and f.endswith(".zip")]
 
         # --- CORREZIONE 1: Usa il parametro 'max_backups' (minuscolo) ---
         if len(backup_files) <= max_backups:
             # Usa 'max_backups' anche nel messaggio di log
-            logging.info(f"Trovati {len(backup_files)} backup (.zip) (<= limite {max_backups}).")
+            logging.info(f"Found {len(backup_files)} backup (.zip) (<= limit {max_backups}).")
             return deleted_files
 
         # Calcola num_to_delete una sola volta, usando il parametro minuscolo
@@ -148,7 +148,7 @@ def manage_backups(profile_name, backup_base_dir, max_backups): # Parametro 'max
         # --- CORREZIONE 2: Rimuovi la riga duplicata qui sotto ---
         # num_to_delete = len(backup_files) - max_backups # RIGA RIMOSSA
 
-        logging.info(f"Eliminazione dei {num_to_delete} backup (.zip) più vecchi...")
+        logging.info(f"Elimination of {num_to_delete} older (.zip) backup...")
 
         deleted_count = 0
         # Itera per eliminare i file più vecchi (i primi nella lista ordinata)
