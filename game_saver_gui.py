@@ -854,6 +854,12 @@ class MainWindow(QMainWindow):
         old_language = self.current_settings.get("language", "it")
 
         dialog = SettingsDialog(self.current_settings.copy(), self) # Passa una COPIA per permettere l'annullamento
+        try:
+            logging.debug("Forcing dialog retranslate before exec()...")
+            dialog.retranslateUi() # Forza l'aggiornamento dei testi
+        except Exception as e_retrans:
+            logging.error(f"Error forcing retranslate: {e_retrans}", exc_info=True)
+       
         if dialog.exec() == QDialog.Accepted:
             new_settings = dialog.get_settings()
             logging.debug(f"Nuove impostazioni ricevute dal dialogo: {new_settings}")
