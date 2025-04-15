@@ -790,12 +790,12 @@ class MainWindow(QMainWindow):
         """Rimuove il traduttore corrente e installa quello nuovo se necessario."""
         global CURRENT_TRANSLATOR, ENGLISH_TRANSLATOR # Accediamo/Modifichiamo le globali qui
 
-        logging.debug(f"MainWindow.apply_translator chiamato con lang_code='{lang_code}'")
+        logging.debug(f"MainWindow.apply_translator called with lang_code='{lang_code}'")
 
         # 1. Rimuovi SEMPRE il traduttore CORRENTEMENTE installato
         if CURRENT_TRANSLATOR is not None:
             removed = QCoreApplication.removeTranslator(CURRENT_TRANSLATOR)
-            logging.debug(f"Rimosso traduttore precedente attivo: {removed}")
+            logging.debug(f"Removed previously active translator: {removed}")
             CURRENT_TRANSLATOR = None # Ora nessun traduttore è ufficialmente attivo
 
         # 2. Installa quello nuovo SE è Inglese
@@ -803,7 +803,7 @@ class MainWindow(QMainWindow):
             qm_filename = f"game_saver_{lang_code}.qm"
             # Usa resource_path per trovare il percorso corretto
             qm_file_path = resource_path(qm_filename)
-            logging.info(f"Tentativo caricamento traduttore Inglese da: {qm_file_path}")
+            logging.info(f"Attempting to load English translator from: {qm_file_path}")
 
             # Controllo esplicito se il file esiste nel percorso trovato
             if not os.path.exists(qm_file_path):
@@ -819,12 +819,12 @@ class MainWindow(QMainWindow):
             # Ho rimosso il controllo duplicato di ENGLISH_TRANSLATOR.load() che avevi nel codice che hai incollato prima
             loaded_ok = ENGLISH_TRANSLATOR.load(qm_file_path) # Usa percorso completo
             if loaded_ok:
-                logging.debug(f"File QM '{qm_file_path}' caricato in ENGLISH_TRANSLATOR.")
+                logging.debug(f"QM file '{qm_file_path}' loaded into ENGLISH_TRANSLATOR.")
                 # Ora prova ad installare l'istanza globale
                 installed = QCoreApplication.installTranslator(ENGLISH_TRANSLATOR)
                 if installed:
                     CURRENT_TRANSLATOR = ENGLISH_TRANSLATOR # Aggiorna il tracker globale
-                    logging.info("Nuovo traduttore 'en' installato correttamente.")
+                    logging.info("New 'en' translator installed successfully.")
                     # Qt dovrebbe gestire retranslateUi tramite LanguageChange
                 else:
                     logging.error("'en' translator installation failed after loading!")
@@ -832,16 +832,16 @@ class MainWindow(QMainWindow):
                     CURRENT_TRANSLATOR = None
             else:
                 # Load fallito
-                logging.warning(f"Caricamento file QM fallito: {qm_file_path}. La funzione 'load' ha restituito False.")
+                logging.warning(f"Loading QM file failed: {qm_file_path}. The 'load' function returned False.")
                 CURRENT_TRANSLATOR = None # Assicurati sia None
                 # Non mostriamo un altro QMessageBox qui perché l'errore è già stato loggato e
                 # un avviso è stato mostrato se il file non esisteva.
         else: # Se la nuova lingua è 'it' (o qualsiasi altra cosa non 'en')
-            logging.info("Passaggio a italiano (o lingua non gestita), nessun traduttore attivo.")
+            logging.info("Switching to Italian (or unsupported language), no active translator.")
             # Rimuovi un eventuale traduttore precedente se per caso era rimasto attivo
             if CURRENT_TRANSLATOR is not None:
                 QCoreApplication.removeTranslator(CURRENT_TRANSLATOR)
-                logging.debug("Rimosso traduttore precedente non più necessario.")
+                logging.debug("Removed previous translator that was no longer needed.")
             CURRENT_TRANSLATOR = None # Imposta a None per sicurezzar
 
         # Forzare un aggiornamento dell'UI dopo il cambio? Qt dovrebbe farlo con LanguageChange.
@@ -862,17 +862,17 @@ class MainWindow(QMainWindow):
        
         if dialog.exec() == QDialog.Accepted:
             new_settings = dialog.get_settings()
-            logging.debug(f"Nuove impostazioni ricevute dal dialogo: {new_settings}")
+            logging.debug(f"New settings received from dialog: {new_settings}")
 
             # --- SALVA IMPOSTAZIONI ---
             if settings_manager.save_settings(new_settings):
                 self.current_settings = new_settings # Aggiorna le impostazioni attive
-                logging.info("Impostazioni salvate con successo.") # Info nel log/console
+                logging.info("Settings saved successfully.") # Info nel log/console
 
                 # --- GESTISCI CAMBIO LINGUA (QUI!) ---
                 new_language = new_settings.get("language", "it")
                 if new_language != old_language:
-                    logging.info(f"Lingua cambiata da '{old_language}' a '{new_language}'. Applicazione traduttore in corso.")
+                    logging.info(f"Language changed from '{old_language}' to '{new_language}'. Applying translator...")
                     self.apply_translator(new_language) # Chiama una nuova funzione helper per gestire il cambio
 
                 # Mostra messaggio successo all'utente (opzionale, il salvataggio è implicito)
@@ -881,24 +881,24 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Errore", "Impossibile salvare il file delle impostazioni.")
                 # Le impostazioni NON sono state aggiornate se il salvataggio fallisce
         else:
-            logging.debug("Dialogo impostazioni annullato dall'utente.") # L'utente ha annullato, non fare nulla  
+            logging.debug("Settings dialog cancelled by user.") # L'utente ha annullato, non fare nulla  
               
     @Slot()
     def handle_new_profile(self):
-        logging.debug("handle_new_profile - INIZIO")
+        logging.debug("handle_new_profile - START")
         profile_name, ok = QInputDialog.getText(self, "Nuovo Profilo", "Inserisci un nome per il nuovo profilo:")
-        logging.debug(f"handle_new_profile - Nome inserito: '{profile_name}', ok={ok}")
+        logging.debug(f"handle_new_profile - Name entered: '{profile_name}', ok={ok}")
 
         if ok and profile_name:
             if profile_name in self.profiles:
-                logging.debug(f"handle_new_profile - Profilo '{profile_name}' duplicato.")
+                logging.debug(f"handle_new_profile - Profile '{profile_name}' already exists.")
                 QMessageBox.warning(self, "Errore", f"Un profilo chiamato '{profile_name}' esiste già.")
                 return
 
-            logging.debug(f"handle_new_profile - Richiesta percorso per '{profile_name}'...")
+            logging.debug(f"handle_new_profile - Requesting path for '{profile_name}'...")
             path_prompt = f"Ora inserisci il percorso COMPLETO per i salvataggi del profilo:\n'{profile_name}'"
             input_path, ok2 = QInputDialog.getText(self, "Percorso Salvataggi", path_prompt)
-            logging.debug(f"handle_new_profile - Percorso inserito: '{input_path}', ok2={ok2}")
+            logging.debug(f"handle_new_profile - Path entered: '{input_path}', ok2={ok2}")
 
             if ok2:
                 # --- USA LA NUOVA FUNZIONE DI VALIDAZIONE ---
@@ -906,32 +906,32 @@ class MainWindow(QMainWindow):
                 # --- FINE VALIDAZIONE ---
 
                 if validated_path:
-                    logging.debug(f"handle_new_profile - Percorso valido: '{validated_path}'.")
+                    logging.debug(f"handle_new_profile - Valid path: '{validated_path}'.")
                     self.profiles[profile_name] = validated_path
-                    logging.debug("handle_new_profile - Tentativo salvataggio profili su file...")
+                    logging.debug("handle_new_profile - Attempting to save profiles to file...")
                     save_success = core_logic.save_profiles(self.profiles)
-                    logging.debug(f"handle_new_profile - Risultato core_logic.save_profiles: {save_success}")
+                    logging.debug(f"handle_new_profile - Result of core_logic.save_profiles: {save_success}")
 
                     if save_success:
-                        logging.debug("handle_new_profile - Salvataggio profili OK. Chiamata a update_profile_table().")
+                        logging.debug("handle_new_profile - Profile save OK. Calling update_profile_table().")
                         try:
                             self.update_profile_table()
-                            logging.debug("handle_new_profile - Chiamata a update_profile_table() completata.")
+                            logging.debug("handle_new_profile - Call to update_profile_table() completed.")
                             QMessageBox.information(self, "Successo", f"Profilo '{profile_name}' creato e salvato.")
                         except Exception as e_update:
-                             logging.critical("Errore critico durante update_profile_table()", exc_info=True)
+                             logging.critical("Critical error during update_profile_table()", exc_info=True)
                              QMessageBox.critical(self, "Errore UI", f"Profilo salvato ma errore aggiornamento lista:\n{e_update}")
                     else:
-                        logging.debug("handle_new_profile - core_logic.save_profiles ha restituito False.")
+                        logging.debug("handle_new_profile - core_logic.save_profiles returned False.")
                         QMessageBox.critical(self, "Errore", "Impossibile salvare il file dei profili.")
                         if profile_name in self.profiles:
-                             logging.debug("handle_new_profile - Rimozione profilo non salvato dalla memoria.")
+                             logging.debug("handle_new_profile - Removing unsaved profile from memory.")
                              del self.profiles[profile_name]
             else:
-                 logging.debug("handle_new_profile - Inserimento percorso annullato (ok2=False).")
+                 logging.debug("handle_new_profile - Path input cancelled (ok2=False).")
         else:
-            logging.debug("handle_new_profile - Inserimento nome annullato (ok=False o nome vuoto).")
-        logging.debug("handle_new_profile - FINE")
+            logging.debug("handle_new_profile - Name input cancelled (ok=False or empty name).")
+        logging.debug("handle_new_profile - END")
 
     @Slot()
     def handle_delete_profile(self):
@@ -959,7 +959,7 @@ class MainWindow(QMainWindow):
 
     @Slot(str, str)
     def on_steam_profile_configured(self, profile_name, save_path):
-        logging.debug(f"Ricevuto segnale profile_configured: profilo '{profile_name}'")
+        logging.debug(f"Received profile_configured signal: profile '{profile_name}'")
         self.profiles = core_logic.load_profiles()
         self.update_profile_table()
         # Seleziona il profilo appena configurato nella tabella
@@ -997,7 +997,7 @@ class MainWindow(QMainWindow):
 
         # --- NUOVO: Controllo Spazio Libero Disco (se abilitato) ---
         if check_space:
-            logging.debug(f"Controllo spazio libero abilitato. Soglia: {min_gb_required} GB.")
+            logging.debug(f"Free space check enabled. Threshold: {min_gb_required} GB.")
             min_bytes_required = min_gb_required * 1024 * 1024 * 1024
             try:
                 # Assicurati che la cartella base esista o prova a crearla PRIMA del check
@@ -1008,7 +1008,7 @@ class MainWindow(QMainWindow):
                 disk_usage = shutil.disk_usage(backup_dir)
                 free_bytes = disk_usage.free
                 free_gb = free_bytes / (1024 * 1024 * 1024)
-                logging.debug(f"Spazio libero rilevato su disco per '{backup_dir}': {free_gb:.2f} GB")
+                logging.debug(f"Free space detected on disk for '{backup_dir}': {free_gb:.2f} GB")
 
                 if free_bytes < min_bytes_required:
                     msg = self.tr("Spazio su disco insufficiente per il backup!\n\n"
@@ -1031,7 +1031,7 @@ class MainWindow(QMainWindow):
                  # Decidiamo se bloccare o continuare con un avviso? Blocchiamo per sicurezza.
                  return
         else:
-             logging.debug("Controllo spazio libero disco disabilitato.")
+             logging.debug("Free space check disabled.")
         # --- FINE NUOVO CONTROLLO ---
 
 
@@ -1057,7 +1057,7 @@ class MainWindow(QMainWindow):
         self.worker_thread.finished.connect(self.on_operation_finished)
         self.worker_thread.progress.connect(self.status_label.setText)
         self.worker_thread.start()
-        logging.debug(f"Avviato thread di backup per il profilo '{profile_name}'.")
+        logging.debug(f"Started backup thread for profile '{profile_name}'.")
         
     def load_theme_icons(self):
         """Carica le icone sole/luna."""
@@ -1065,8 +1065,8 @@ class MainWindow(QMainWindow):
         moon_icon_path = resource_path("icons/moon.png")
         self.sun_icon = QIcon(sun_icon_path) if os.path.exists(sun_icon_path) else None
         self.moon_icon = QIcon(moon_icon_path) if os.path.exists(moon_icon_path) else None
-        if not self.sun_icon: logging.warning(f"Icona sole non trovata: {sun_icon_path}")
-        if not self.moon_icon: logging.warning(f"Icona luna non trovata: {moon_icon_path}")
+        if not self.sun_icon: logging.warning(f"Sun icon not found: {sun_icon_path}")
+        if not self.moon_icon: logging.warning(f"Moon icon not found: {moon_icon_path}")
 
     def update_theme(self):
         """Applica il tema corrente e aggiorna l'icona del pulsante."""
@@ -1076,7 +1076,7 @@ class MainWindow(QMainWindow):
             app_instance = QApplication.instance()
             if app_instance: app_instance.setStyleSheet(qss_to_apply)
             else: logging.error("Unable to apply theme: QApplication instance not found."); return
-            logging.info(f"Tema '{theme_name}' applicato.")
+            logging.info(f"Theme '{theme_name}' applied.")
             icon_size = QSize(16, 16) # Usa la stessa dimensione definita in init
             if theme_name == 'light':
                 if self.moon_icon: self.theme_button.setIcon(self.moon_icon); self.theme_button.setIconSize(icon_size)
@@ -1093,7 +1093,7 @@ class MainWindow(QMainWindow):
         """Inverte il tema, lo salva e lo applica."""
         current_theme = self.current_settings.get('theme', 'dark')
         new_theme = 'light' if current_theme == 'dark' else 'dark'
-        logging.debug(f"Cambio tema richiesto da '{current_theme}' a '{new_theme}'")
+        logging.debug(f"Theme change requested from '{current_theme}' to '{new_theme}'")
         self.current_settings['theme'] = new_theme
         if not settings_manager.save_settings(self.current_settings):
             QMessageBox.warning(self, "Errore", "Impossibile salvare l'impostazione del tema.")
@@ -1183,7 +1183,7 @@ class MainWindow(QMainWindow):
         status = results.get('status', 'error') # Dovrebbe essere 'found' o 'not_found' se success è True
 
         if status == 'found':
-            logging.debug(f"Percorsi trovati dal thread di rilevamento: {paths_found}")
+            logging.debug(f"Paths found by detection thread: {paths_found}")
             if len(paths_found) == 1:
                 # Trovato un solo percorso, chiedi conferma semplice
                 
@@ -1195,7 +1195,7 @@ class MainWindow(QMainWindow):
                 if reply == QMessageBox.StandardButton.Yes:
                     final_path_to_use = paths_found[0]
                 elif reply == QMessageBox.StandardButton.No:
-                     logging.info("Utente ha rifiutato il percorso automatico singolo. Richiesta inserimento manuale.")
+                     logging.info("User rejected single automatic path. Requesting manual input.")
                      final_path_to_use = None # Forza richiesta manuale sotto
                 else: # Cancel
                     self.status_label.setText(self.tr("Creazione profilo annullata."))
@@ -1203,7 +1203,7 @@ class MainWindow(QMainWindow):
             
             # --- MODIFICA PER MULTIPLI PERCORSI ---
             elif len(paths_found) > 1: # Trovati multipli percorsi
-                logging.debug(f"Trovati {len(paths_found)} percorsi, applicazione ordinamento prioritario.")
+                logging.debug(f"Found {len(paths_found)} paths, applying priority sorting.")
 
                 # 1. Definisci i nomi di cartella prioritari (in minuscolo)
                 #    (Potremmo spostare questa lista in config.py o ottenerla da core_logic in futuro)
@@ -1221,7 +1221,7 @@ class MainWindow(QMainWindow):
 
                 # 3. Ordina la lista paths_found usando la chiave
                 sorted_paths = sorted(paths_found, key=sort_key)
-                logging.debug(f"Percorsi ordinati per la selezione: {sorted_paths}")
+                logging.debug(f"Paths sorted for selection: {sorted_paths}")
 
                 # 4. Crea le scelte per il dialogo usando la lista ORDINATA
                 #    Aggiungi sempre l'opzione manuale alla fine.
@@ -1238,7 +1238,7 @@ class MainWindow(QMainWindow):
                 
                 if ok and chosen_path_str:
                     if chosen_path_str == self.tr("[Inserisci Manualmente...]"):
-                        logging.info("Utente ha scelto l'inserimento manuale dalla lista di percorsi multipli.")
+                        logging.info("User chose manual input from multiple paths list.")
                         final_path_to_use = None # Forza richiesta manuale sotto
                     else:
                         # L'utente ha scelto un percorso dalla lista
@@ -1281,7 +1281,7 @@ class MainWindow(QMainWindow):
 
             if validated_path:
                 # Il percorso è stato validato con successo
-                logging.debug(f"Percorso finale validato: {validated_path}. Salvataggio profilo '{profile_name}'")
+                logging.debug(f"Final path validated: {validated_path}. Saving profile '{profile_name}'")
                 self.profiles[profile_name] = validated_path # Aggiorna dizionario in memoria
 
                 # Salva su file
@@ -1306,10 +1306,10 @@ class MainWindow(QMainWindow):
         profile_name = self.get_selected_profile_name() # <-- AGGIUNTO: leggi dalla tabella
         if not profile_name: # <-- AGGIUNTO: controllo se qualcosa è selezionato
              # Non dovrebbe succedere se il pulsante è disabilitato, ma per sicurezza
-             logging.warning("handle_create_shortcut chiamato senza profilo selezionato.")
+             logging.warning("handle_create_shortcut called without selected profile.")
              return
         
-        logging.info(f"Richiesta creazione shortcut per profilo: '{profile_name}'")     
+        logging.info(f"Request to create shortcut for profile: '{profile_name}'")     
 
         # Chiama la funzione in shortcut_utils passando SOLO il nome del profilo
         success, message = shortcut_utils.create_backup_shortcut(
@@ -1325,7 +1325,7 @@ class MainWindow(QMainWindow):
     # --- NUOVO SLOT PER ATTIVARE FINESTRA DA SECONDA ISTANZA ---
     @Slot()
     def activateExistingInstance(self):
-        logging.info("Ricevuto segnale per attivare istanza esistente.")
+        logging.info("Received signal to activate existing instance.")
         # Assicurati che la finestra sia visibile e portata in primo piano
         self.showNormal() # Mostra se era minimizzata
         self.raise_()     # Porta sopra le altre finestre dell'app (se ci fossero dialoghi)
@@ -1384,22 +1384,22 @@ if __name__ == "__main__":
         # Tenta di creare memoria condivisa. Se fallisce perché esiste già...
         if not shared_memory.create(1, QSharedMemory.AccessMode.ReadOnly):
             if shared_memory.error() == QSharedMemory.SharedMemoryError.AlreadyExists:
-                logging.warning("Un'altra istanza di SaveState è già in esecuzione. Tento di attivarla.")
+                logging.warning("Another instance of SaveState is already running. Attempting to activate it.")
                 app_should_run = False # Non avviare questa istanza GUI
 
                 # Connettiti all'altra istanza
                 local_socket = QLocalSocket()
                 local_socket.connectToServer(LOCAL_SERVER_NAME)
                 if local_socket.waitForConnected(500):
-                    logging.info("Connesso all'istanza esistente. Invio segnale 'show'.")
+                    logging.info("Connected to existing instance. Sending 'show' signal.")
                     local_socket.write(b'show\n')
                     local_socket.waitForBytesWritten(500)
                     local_socket.disconnectFromServer()
                     local_socket.close()
-                    logging.info("Segnale inviato. Uscita nuova istanza.")
+                    logging.info("Signal sent. Exiting new instance.")
                     sys.exit(0) # Esci con successo (l'altra è stata attivata)
                 else:
-                    logging.error(f"Impossibile connettersi all'istanza esistente: {local_socket.errorString()}")
+                    logging.error(f"Unable to connect to existing instance: {local_socket.errorString()}")
                     # Qui potremmo decidere di uscire o provare ad avviarsi comunque
                     # se non riusciamo a comunicare, ma uscire è più sicuro.
                     # Rilascia la memoria condivisa che abbiamo solo "attaccato" implicitamente col check
@@ -1408,25 +1408,25 @@ if __name__ == "__main__":
                     sys.exit(1) # Esci con errore
             else:
                 # Altro errore con shared memory
-                logging.error(f"Errore QSharedMemory (create): {shared_memory.errorString()}")
+                logging.error(f"QSharedMemory error (create): {shared_memory.errorString()}")
                 app_should_run = False # Non avviare la GUI
                 sys.exit(1) # Esci con errore
 
         # Se app_should_run è ancora True, siamo la prima istanza GUI
         if app_should_run:
-            logging.info("Prima istanza GUI. Creazione server locale e avvio applicazione...")
+            logging.info("First GUI instance. Creating local server and starting application...")
 
             # Crea server locale
             local_server = QLocalServer()
             if QLocalServer.removeServer(LOCAL_SERVER_NAME):
-                logging.warning(f"Rimosso server locale orfano '{LOCAL_SERVER_NAME}'")
+                logging.warning(f"Removed orphaned local server '{LOCAL_SERVER_NAME}'")
 
             if not local_server.listen(LOCAL_SERVER_NAME):
-                logging.error(f"Impossibile avviare server locale '{LOCAL_SERVER_NAME}': {local_server.errorString()}")
+                logging.error(f"Unable to start local server '{LOCAL_SERVER_NAME}': {local_server.errorString()}")
                 if shared_memory.isAttached(): shared_memory.detach() # Cleanup
                 sys.exit(1) # Esci se il server non parte
             else:
-                logging.info(f"Server locale in ascolto su: {local_server.fullServerName()}")
+                logging.info(f"Local server listening on: {local_server.fullServerName()}")
 
                 # ---->> SOLO ORA CREIAMO QApplication <<----
                 try:
@@ -1434,15 +1434,15 @@ if __name__ == "__main__":
 
                     # Funzione di cleanup all'uscita
                     def cleanup_instance_lock():
-                        logging.debug("Eseguo cleanup istanza (detach shared memory, close server)...")
-                        if local_server: local_server.close(); logging.debug("Server locale chiuso.")
-                        if shared_memory.isAttached(): shared_memory.detach(); logging.debug("Memoria condivisa staccata.")
+                        logging.debug("Executing instance cleanup (detach shared memory, close server)...")
+                        if local_server: local_server.close(); logging.debug("Local server closed.")
+                        if shared_memory.isAttached(): shared_memory.detach(); logging.debug("Shared memory detached.")
                     app.aboutToQuit.connect(cleanup_instance_lock)
 
                 except ImportError:
-                     logging.critical("Libreria 'PySide6' non trovata!"); cleanup_instance_lock(); sys.exit(1)
+                     logging.critical("Library 'PySide6' not found!"); cleanup_instance_lock(); sys.exit(1)
                 except Exception as e:
-                     logging.critical(f"Errore QApplication: {e}", exc_info=True); cleanup_instance_lock(); sys.exit(1)
+                     logging.critical(f"QApplication error: {e}", exc_info=True); cleanup_instance_lock(); sys.exit(1)
 
                 # --- Procedi con il resto dell'inizializzazione GUI ---
                 try:
@@ -1496,7 +1496,7 @@ if __name__ == "__main__":
                                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
                                                         QMessageBox.StandardButton.Yes)
                             if reply != QMessageBox.StandardButton.Yes:
-                                logging.info("Uscita richiesta dall'utente al primo avvio."); sys.exit(0)
+                                logging.info("Exit requested by user on first launch."); sys.exit(0)
                             else: # Salva i default se l'utente accetta
                                 if not settings_manager.save_settings(current_settings):
                                      QMessageBox.critical(window, "Errore Salvataggio", "Impossibile salvare le impostazioni predefinite.")
@@ -1511,7 +1511,7 @@ if __name__ == "__main__":
 
                     window.show()
                     exit_code = app.exec() # Avvia loop eventi GUI
-                    logging.info(f"Applicazione GUI terminata con codice: {exit_code}")
+                    logging.info(f"GUI application terminated with code: {exit_code}")
                     sys.exit(exit_code) # Esci con il codice dell'applicazione Qt
 
                 except Exception as e_gui_init: # Cattura errori durante l'init della GUI
