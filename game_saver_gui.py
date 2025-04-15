@@ -9,8 +9,11 @@ from PySide6.QtWidgets import (
     QProgressBar, QGroupBox, QInputDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QStyle, QDockWidget, QPlainTextEdit
 )
-from PySide6.QtCore import Slot, Qt, QUrl, QSize, QTranslator, QCoreApplication, QEvent, QLocale, QDateTime
+from PySide6.QtCore import ( Slot, Qt, QUrl, QSize, QTranslator, QCoreApplication, 
+     QEvent, QLocale, QSharedMemory, QSystemSemaphore, QLockFile
+)
 from PySide6.QtGui import QIcon, QDesktopServices, QPalette, QColor
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 from dialogs.settings_dialog import SettingsDialog
 from dialogs.restore_dialog import RestoreDialog
@@ -28,6 +31,13 @@ import winshell         # Per leggere i collegamenti .lnk
 import string           # Necessario per il controllo root drive
 import logging
 import shortcut_utils # Il nostro nuovo modulo
+
+# --- NUOVE COSTANTI GLOBALI PER IDENTIFICARE L'ISTANZA ---
+# Usa stringhe univoche per la tua applicazione
+APP_GUID = "SaveState_App_Unique_GUID_6f459a83-4f6a-4e3e-8c1e-7a4d5e3d2b1a" 
+SHARED_MEM_KEY = f"{APP_GUID}_SharedMem"
+LOCAL_SERVER_NAME = f"{APP_GUID}_LocalServer"
+# --- FINE COSTANTI ---
 
 ENGLISH_TRANSLATOR = QTranslator() # Crea l'istanza QUI
 CURRENT_TRANSLATOR = None # Questa traccia solo quale è ATTIVO (o None)
@@ -1301,12 +1311,20 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(self, self.tr("Errore Creazione Collegamento"), message)
 
-
+    # --- NUOVO SLOT PER ATTIVARE FINESTRA DA SECONDA ISTANZA ---
+    @Slot()
+    def activateExistingInstance(self):
+        logging.info("Ricevuto segnale per attivare istanza esistente.")
+        # Assicurati che la finestra sia visibile e portata in primo piano
+        self.showNormal() # Mostra se era minimizzata
+        self.raise_()     # Porta sopra le altre finestre dell'app (se ci fossero dialoghi)
+        self.activateWindow() # Attiva la finestra nel sistema operativo
+    # --- FINE NUOVO SLOT ---
 
 # --- Avvio Applicazione GUI ---
-if __name__ == "__main__": 
-    # --- Configurazione Logging (DEVE ESSERE FATTA SUBITO) ---
-    log_level = logging.INFO # O DEBUG se preferisci ancora i log dettagliati
+if __name__ == "__main__":
+    # --- Configurazione Logging ---
+    log_level = logging.INFO
     log_format = '%(asctime)s - %(levelname)s - %(message)s'
     log_datefmt = '%H:%M:%S'
     log_formatter = logging.Formatter(log_format, log_datefmt)
@@ -1318,148 +1336,178 @@ if __name__ == "__main__":
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(log_formatter)
     root_logger.addHandler(console_handler)
-    # Crea qt_log_handler qui se serve anche per il backup runner (per le notifiche)
-    # Altrimenti puoi crearlo dopo il check degli argomenti, prima di avviare la GUI
     qt_log_handler = QtLogHandler()
     qt_log_handler.setFormatter(log_formatter)
-    root_logger.addHandler(qt_log_handler) # Aggiungilo comunque per loggare errori del runner
+    root_logger.addHandler(qt_log_handler)
     logging.info("Logging configurato.")
 
-    # --- NUOVO: Import necessari per argparse e runner ---
+    # --- Import necessari per argparse e runner ---
     import argparse
-    import backup_runner # Importa lo script del runner per chiamare la sua funzione
+    import backup_runner # Importa per la modalità backup
 
-    # --- NUOVO: Parsing Argomenti Command Line ---
+    # --- Parsing Argomenti ---
     parser = argparse.ArgumentParser(description='SaveState GUI or Backup Runner.')
     parser.add_argument("--backup", help="Nome del profilo per cui eseguire un backup silenzioso.")
-    # Aggiungi qui altri argomenti se serviranno in futuro
+    args = parser.parse_args() # Gestisci eccezioni se necessario
 
-    try:
-        # Usiamo parse_args() qui, va bene per script semplici
-        args = parser.parse_args()
-    except SystemExit:
-         # argparse esce con SystemExit se l'argomento è sbagliato (es. --backu invece di --backup)
-         # Possiamo uscire silenziosamente o loggare
-         logging.warning("Uscita a causa di argomento non valido o richiesta help (-h).")
-         sys.exit(1) # Usciamo con errore
-    except Exception as e_args:
-         logging.error(f"Error parsing arguments: {e_args}")
-         sys.exit(1) # Usciamo con errore
-
-    # --- NUOVO: Controllo se eseguire backup o GUI ---
+    # --- Controllo Modalità Esecuzione ---
     if args.backup:
-        # Modalità Backup Silenzioso
+        # === Modalità Backup Silenzioso ===
         profile_to_backup = args.backup
         logging.info(f"Rilevato argomento --backup '{profile_to_backup}'. Avvio backup silenzioso...")
-
-        # Esegui la logica di backup definita in backup_runner.py
-        # Non serve più QApplication qui se la notifica la crea backup_runner
+        # Esegui direttamente la logica di backup (che ora include la notifica)
         backup_success = backup_runner.run_silent_backup(profile_to_backup)
-
         logging.info(f"Backup silenzioso terminato con successo: {backup_success}")
-        sys.exit(0 if backup_success else 1) # Esci con codice 0 (successo) o 1 (fallimento)
+        sys.exit(0 if backup_success else 1) # Esci subito dopo il backup
 
     else:
-        # Modalità GUI Normale (Nessun argomento --backup)
-        logging.info("Nessun argomento --backup rilevato, avvio interfaccia grafica...")
+        # === Modalità GUI Normale ===
+        logging.info("Nessun argomento --backup, avvio modalità GUI. Controllo istanza singola...")
 
-    
-    try: app = QApplication(sys.argv)
-    except ImportError: logging.critical("Libreria 'PySide6' non trovata! Impossibile avviare l'applicazione."); sys.exit(1)
-    except Exception as e: logging.critical(f"Errore inizializzazione QApplication: {e}", exc_info=True); sys.exit(1)
+        # --- Logica Single Instance ---
+        shared_memory = QSharedMemory(SHARED_MEM_KEY)
+        local_socket = None
+        local_server = None
+        app_should_run = True # Flag per decidere se avviare la GUI
 
-    # --- CARICAMENTO TRADUTTORE ALL'AVVIO ---
-    logging.info("Avvio caricamento traduttore...")
-    current_settings, is_first_launch = settings_manager.load_settings()
-    selected_language = current_settings.get("language", "en") # Default è 'en'
+        # Tenta di creare memoria condivisa. Se fallisce perché esiste già...
+        if not shared_memory.create(1, QSharedMemory.AccessMode.ReadOnly):
+            if shared_memory.error() == QSharedMemory.SharedMemoryError.AlreadyExists:
+                logging.warning("Un'altra istanza di SaveState è già in esecuzione. Tento di attivarla.")
+                app_should_run = False # Non avviare questa istanza GUI
 
-    if selected_language == "en":
-        try:
-            # Usa resource_path per trovare il file .qm nel bundle/script dir
-            # Assicurati che resource_path sia importato all'inizio del file!
-            qm_file_path = resource_path("game_saver_en.qm") # <-- USA resource_path
-            logging.info(f"Tentativo caricamento traduttore Inglese da: {qm_file_path}")
-
-            # Aggiungiamo un controllo esplicito se il file esiste nel percorso trovato
-            if not os.path.exists(qm_file_path):
-                 logging.error(f".qm translation file NOT FOUND in: {qm_file_path} (Check .spec and build). Translation will not work.")
-                 # Se il file non c'è, è inutile provare a caricarlo/installarlo
-            elif ENGLISH_TRANSLATOR.load(qm_file_path): # Passa il percorso completo a .load()
-                logging.debug(f"File QM '{qm_file_path}' caricato in ENGLISH_TRANSLATOR.")
-                # Installa il traduttore caricato
-                if QCoreApplication.installTranslator(ENGLISH_TRANSLATOR):
-                    CURRENT_TRANSLATOR = ENGLISH_TRANSLATOR # Aggiorna il tracker globale
-                    logging.info("Traduttore Inglese installato correttamente all'avvio.")
+                # Connettiti all'altra istanza
+                local_socket = QLocalSocket()
+                local_socket.connectToServer(LOCAL_SERVER_NAME)
+                if local_socket.waitForConnected(500):
+                    logging.info("Connesso all'istanza esistente. Invio segnale 'show'.")
+                    local_socket.write(b'show\n')
+                    local_socket.waitForBytesWritten(500)
+                    local_socket.disconnectFromServer()
+                    local_socket.close()
+                    logging.info("Segnale inviato. Uscita nuova istanza.")
+                    sys.exit(0) # Esci con successo (l'altra è stata attivata)
                 else:
-                    # Errore durante l'installazione
-                    logging.error("English translator installation failed (after loading).")
-                    CURRENT_TRANSLATOR = None # Assicurati non rimanga impostato
+                    logging.error(f"Impossibile connettersi all'istanza esistente: {local_socket.errorString()}")
+                    # Qui potremmo decidere di uscire o provare ad avviarsi comunque
+                    # se non riusciamo a comunicare, ma uscire è più sicuro.
+                    # Rilascia la memoria condivisa che abbiamo solo "attaccato" implicitamente col check
+                    if shared_memory.isAttached():
+                        shared_memory.detach()
+                    sys.exit(1) # Esci con errore
             else:
-                # Errore durante il caricamento del file .qm
-                logging.warning(f"Caricamento file QM fallito: {qm_file_path}. La funzione 'load' ha restituito False.")
-                CURRENT_TRANSLATOR = None # Assicurati non rimanga impostato
-        except Exception as e_load:
-             # Errore generico durante tutto il processo
-             logging.error(f"Unexpected error during translator loading/installation: {e_load}", exc_info=True)
-             CURRENT_TRANSLATOR = None # Assicurati non rimanga impostato
-    else: # Lingua non è 'en' (es. Italiano)
-        logging.info("Lingua non Inglese selezionata all'avvio (nessun traduttore attivo).")
-        # Rimuovi un eventuale traduttore precedente se per caso era rimasto attivo
-        if CURRENT_TRANSLATOR is not None:
-             QCoreApplication.removeTranslator(CURRENT_TRANSLATOR)
-             logging.debug("Rimosso traduttore precedente non più necessario.")
-        CURRENT_TRANSLATOR = None # Imposta a None per sicurezza
-    # --- FINE CARICAMENTO TRADUTTORE ---
-   
-    # --- CONFIGURAZIONE LOGGING (Senza basicConfig) ---
-    log_level = logging.INFO # MANTENIAMO DEBUG
-    log_format = '%(asctime)s - %(levelname)s - %(message)s'
-    log_datefmt = '%H:%M:%S'
-    log_formatter = logging.Formatter(log_format, log_datefmt)
+                # Altro errore con shared memory
+                logging.error(f"Errore QSharedMemory (create): {shared_memory.errorString()}")
+                app_should_run = False # Non avviare la GUI
+                sys.exit(1) # Esci con errore
 
-    # Ottieni il logger principale (root)
-    root_logger = logging.getLogger()
-    root_logger.setLevel(log_level) # Imposta il livello direttamente sul root logger
+        # Se app_should_run è ancora True, siamo la prima istanza GUI
+        if app_should_run:
+            logging.info("Prima istanza GUI. Creazione server locale e avvio applicazione...")
 
-    # Rimuovi eventuali gestori preesistenti per evitare duplicati
-    # (Utile se lo script viene rieseguito in modi strani o se altri moduli configurano logging)
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-        handler.close()
+            # Crea server locale
+            local_server = QLocalServer()
+            if QLocalServer.removeServer(LOCAL_SERVER_NAME):
+                logging.warning(f"Rimosso server locale orfano '{LOCAL_SERVER_NAME}'")
 
-    # Crea e aggiungi il gestore per la console
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(log_formatter)
-    # console_handler.setLevel(log_level) # Non strettamente necessario se root è già DEBUG
-    root_logger.addHandler(console_handler)
+            if not local_server.listen(LOCAL_SERVER_NAME):
+                logging.error(f"Impossibile avviare server locale '{LOCAL_SERVER_NAME}': {local_server.errorString()}")
+                if shared_memory.isAttached(): shared_memory.detach() # Cleanup
+                sys.exit(1) # Esci se il server non parte
+            else:
+                logging.info(f"Server locale in ascolto su: {local_server.fullServerName()}")
 
-    # Crea e aggiungi il gestore personalizzato per la GUI
-    qt_log_handler = QtLogHandler()
-    qt_log_handler.setFormatter(log_formatter)
-    # qt_log_handler.setLevel(log_level) # Non strettamente necessario se root è già DEBUG
-    root_logger.addHandler(qt_log_handler)
+                # ---->> SOLO ORA CREIAMO QApplication <<----
+                try:
+                    app = QApplication(sys.argv)
 
-    logging.info("Logging configurato per console e GUI (Metodo Manuale).")
-    # --- FINE CONFIGURAZIONE LOGGING (Senza basicConfig) ---
-    
-    current_settings, is_first_launch = settings_manager.load_settings()
+                    # Funzione di cleanup all'uscita
+                    def cleanup_instance_lock():
+                        logging.debug("Eseguo cleanup istanza (detach shared memory, close server)...")
+                        if local_server: local_server.close(); logging.debug("Server locale chiuso.")
+                        if shared_memory.isAttached(): shared_memory.detach(); logging.debug("Memoria condivisa staccata.")
+                    app.aboutToQuit.connect(cleanup_instance_lock)
 
-    # Gestione primo avvio (mostra dialogo impostazioni se necessario)
-    if is_first_launch:
-        logging.info("Primo avvio rilevato, mostro dialogo impostazioni.")
-        settings_dialog = SettingsDialog(current_settings)
-        if settings_dialog.exec() == QDialog.Accepted:
-            current_settings = settings_dialog.get_settings()
-            if not settings_manager.save_settings(current_settings):
-                 QMessageBox.critical(None, "Errore Salvataggio Impostazioni", "Impossibile salvare le impostazioni...")
-            logging.info("Impostazioni iniziali configurate dopo il primo avvio.")
-        else:
-            reply = QMessageBox.question(None, "Impostazioni Predefinite", "Nessuna impostazione salvata...", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Yes)
-            if reply != QMessageBox.StandardButton.Yes: logging.info("Uscita richiesta dall'utente al primo avvio."); sys.exit(0)
- 
+                except ImportError:
+                     logging.critical("Libreria 'PySide6' non trovata!"); cleanup_instance_lock(); sys.exit(1)
+                except Exception as e:
+                     logging.critical(f"Errore QApplication: {e}", exc_info=True); cleanup_instance_lock(); sys.exit(1)
 
+                # --- Procedi con il resto dell'inizializzazione GUI ---
+                try:
+                    # Caricamento traduttore
+                    logging.info("Avvio caricamento traduttore...")
+                    current_settings, is_first_launch = settings_manager.load_settings()
+                    selected_language = current_settings.get("language", "en")
+                    if selected_language == "en":
+                        # --- Logica caricamento/installazione per 'en' ---
+                        qm_filename = f"game_saver_{selected_language}.qm"
+                        qm_file_path = resource_path(qm_filename)
+                        logging.info(f"Tentativo caricamento traduttore Inglese da: {qm_file_path}")
+                        if os.path.exists(qm_file_path):
+                            if ENGLISH_TRANSLATOR.load(qm_file_path):
+                                if QCoreApplication.installTranslator(ENGLISH_TRANSLATOR):
+                                    CURRENT_TRANSLATOR = ENGLISH_TRANSLATOR
+                                    logging.info("Traduttore Inglese installato.")
+                                else: logging.error("Installazione traduttore 'en' fallita.")
+                            else: logging.warning(f"Caricamento file QM '{qm_file_path}' fallito.")
+                        else: logging.error(f"File traduttore '{qm_file_path}' NON TROVATO.")
+                        # --- Fine logica 'en' ---
+                    else:
+                        logging.info("Lingua non Inglese, nessun traduttore attivo.")
+                        if CURRENT_TRANSLATOR: QCoreApplication.removeTranslator(CURRENT_TRANSLATOR)
+                        CURRENT_TRANSLATOR = None
 
-    # Ora crea la finestra principale
-    window = MainWindow(current_settings, qt_log_handler)
-    window.show()
-    sys.exit(app.exec())
+                    # Gestione primo avvio
+                    if is_first_launch:
+                        logging.info("Primo avvio rilevato, mostro dialogo impostazioni.")
+                        # Passa None come parent se app non è ancora completamente inizializzata?
+                        # Meglio creare window prima e passargli window come parent
+                        # Spostiamo la creazione della finestra qui:
+                        window = MainWindow(current_settings, qt_log_handler) # Crea PRIMA del dialogo
+                        settings_dialog = SettingsDialog(current_settings, window) # Passa window come parent
+                        if settings_dialog.exec() == QDialog.Accepted:
+                            current_settings = settings_dialog.get_settings()
+                            if not settings_manager.save_settings(current_settings):
+                                QMessageBox.critical(window, "Errore Salvataggio Impostazioni", "Impossibile salvare le impostazioni...")
+                            else:
+                                # Se le impostazioni sono state cambiate (es. lingua), riapplicale
+                                window.current_settings = current_settings # Aggiorna le impostazioni della finestra
+                                window.apply_translator(current_settings.get("language", "en")) # Applica traduttore
+                                window.update_theme() # Applica tema
+                                window.retranslateUi() # Forza ri-traduzione
+                                window.update_profile_table() # Aggiorna tabella
+
+                            logging.info("Impostazioni iniziali configurate.")
+                        else:
+                            reply = QMessageBox.question(window, "Impostazioni Predefinite",
+                                                        "Nessuna impostazione salvata, usare quelle predefinite?",
+                                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                                                        QMessageBox.StandardButton.Yes)
+                            if reply != QMessageBox.StandardButton.Yes:
+                                logging.info("Uscita richiesta dall'utente al primo avvio."); sys.exit(0)
+                            else: # Salva i default se l'utente accetta
+                                if not settings_manager.save_settings(current_settings):
+                                     QMessageBox.critical(window, "Errore Salvataggio", "Impossibile salvare le impostazioni predefinite.")
+                                # Continua comunque con i default caricati
+
+                    else: # Non è il primo avvio, crea la finestra normalmente
+                        window = MainWindow(current_settings, qt_log_handler)
+
+                    # Connetti server allo slot della finestra
+                    if local_server:
+                        local_server.newConnection.connect(window.activateExistingInstance)
+
+                    window.show()
+                    exit_code = app.exec() # Avvia loop eventi GUI
+                    logging.info(f"Applicazione GUI terminata con codice: {exit_code}")
+                    sys.exit(exit_code) # Esci con il codice dell'applicazione Qt
+
+                except Exception as e_gui_init: # Cattura errori durante l'init della GUI
+                    logging.critical(f"Errore fatale durante inizializzazione GUI: {e_gui_init}", exc_info=True)
+                    # Prova a mostrare un messaggio di errore base se possibile
+                    try:
+                         QMessageBox.critical(None, "Errore Avvio", f"Errore fatale durante l'avvio:\n{e_gui_init}")
+                    except: pass # Ignora errori nel mostrare l'errore stesso
+                    cleanup_instance_lock() # Prova a pulire
+                    sys.exit(1)
