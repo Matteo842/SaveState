@@ -36,7 +36,7 @@ def resource_path(relative_path):
         #write_debug_log(f"--- base_path determined as: {base_path}")    
     except Exception as e:
         #write_debug_log(f"--- EXCEPTION determining base_path: {e}")
-        logging.error(f"Errore nel calcolare base_path per resource_path: {e}", exc_info=True)
+        logging.error(f"Error calculating base_path for resource_path: {e}", exc_info=True)
         base_path = os.path.abspath(".")
         #write_debug_log(f"--- base_path fallback (CWD): {base_path}")
 
@@ -291,25 +291,25 @@ class DetectionWorkerThread(QThread):
                         status = "not_found" # Rimane 'not_found' se anche euristica fallisce
 
                 except Exception as e_heuristic:
-                    error_message = f"Errore durante ricerca euristica: {e_heuristic}"
-                    logging.error(f"Errore durante ricerca euristica: {e_heuristic}", exc_info=True) # Usa direttamente l'eccezione e aggiungi traceback
+                    error_message = f"Error during heuristic search: {e_heuristic}"
+                    logging.error(f"Error during heuristic search: {e_heuristic}", exc_info=True) # Usa direttamente l'eccezione e aggiungi traceback
                     # Non impostare status="error" qui a meno che non sia fatale?
                     # Se l'euristica fallisce ma INI aveva trovato qualcosa, status dovrebbe rimanere 'found'.
                     # Se INI non aveva trovato nulla, status rimane 'not_found'.
                     # Aggiungiamo l'errore al messaggio finale.
-                    error_message = f"Errore euristica: {e_heuristic}" # Sovrascrive eventuali errori precedenti? Meglio accumulare?
+                    error_message = f"Error heuristics: {e_heuristic}" # Sovrascrive eventuali errori precedenti? Meglio accumulare?
 
             elif not self.game_install_dir:
                  # Questo caso dovrebbe essere gestito prima di avviare il thread, ma per sicurezza...
-                 logging.warning("Impossibile eseguire ricerca automatica: cartella di installazione del gioco non specificata.")
+                 logging.warning("Unable to perform automatic search: game installation folder not specified.")
                  status = "not_found"
 
             # --- FINE LOGICA ESTRATTA E ADATTATA ---
 
         except Exception as e:
-            error_message = f"Errore imprevisto durante la ricerca: {e}"
-            logging.critical(f"Errore critico imprevisto nel thread di rilevamento: {e}") # Il logging.exception successivo cattura già il traceback
-            logging.exception("Errore nel thread di rilevamento:") # Logga traceback
+            error_message = f"Unexpected error during search: {e}"
+            logging.critical(f"Unexpected critical error in detection thread: {e}") # Il logging.exception successivo cattura già il traceback
+            logging.exception("Error in detection thread:") # Logga traceback
             status = "error" # Errore generale impedisce di continuare
 
         finally:

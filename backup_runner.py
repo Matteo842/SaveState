@@ -17,7 +17,7 @@ try:
     QT_AVAILABLE = True
 except ImportError as e_qt:
      QT_AVAILABLE = False
-     logging.error(f"PySide6 non trovato, impossibile mostrare notifiche GUI: {e_qt}")
+     logging.error(f"PySide6 not found, unable to show GUI notifications: {e_qt}")
 
 # Importa i nostri moduli
 try:
@@ -26,7 +26,7 @@ try:
     import config # Serve per caricare il QSS giusto
     from gui_utils import NotificationPopup # <-- Importa la nuova classe
 except ImportError as e_mod:
-    logging.error(f"Errore import moduli ({e_mod}).")
+    logging.error(f"Error importing modules ({e_mod}).")
     sys.exit(1)
 
 # --- Configurazione Logging (Runner con File) ---
@@ -81,8 +81,8 @@ def show_notification(success, message):
     # Se PySide6 non è disponibile, logga soltanto
     if not QT_AVAILABLE:
          log_level = logging.INFO if success else logging.ERROR
-         logging.log(log_level, f"RISULTATO BACKUP (Notifica GUI non disponibile): {message}")
-         logging.debug("QT non disponibile, uscita da show_notification.")
+         logging.log(log_level, f"BACKUP RESULT (GUI Notification Unavailable): {message}")
+         logging.debug("QT not available, exit from show_notification.")
          return
 
     app = None # Inizializza app a None
@@ -107,7 +107,7 @@ def show_notification(success, message):
             qss = config.DARK_THEME_QSS if theme == 'dark' else config.LIGHT_THEME_QSS
             logging.debug(f"Tema caricato: {theme}")
         except Exception as e_set:
-             logging.error(f"Impossibile caricare impostazioni/tema per la notifica: {e_set}", exc_info=True)
+             logging.error(f"Unable to load settings/theme for notification: {e_set}", exc_info=True)
              qss = "" # Fallback a stile vuoto
 
         logging.debug("Creo NotificationPopup...")
@@ -121,7 +121,7 @@ def show_notification(success, message):
             try:
                  popup.setStyleSheet(qss)
             except Exception as e_qss:
-                 logging.error(f"Errore applicazione QSS alla notifica: {e_qss}", exc_info=True)
+                 logging.error(f"QSS application error at notification: {e_qss}", exc_info=True)
 
             popup.adjustSize() # Calcola dimensione dopo QSS
             logging.debug(f"Dimensione popup calcolata: {popup.size()}")
@@ -141,7 +141,7 @@ def show_notification(success, message):
                  logging.warning("Schermo primario non trovato, impossibile posizionare notifica.")
 
         except Exception as e_popup_create:
-             logging.error(f"Errore durante la creazione di NotificationPopup: {e_popup_create}", exc_info=True)
+             logging.error(f"Error while creating NotificationPopup: {e_popup_create}", exc_info=True)
              # Se non possiamo creare il popup, forse è meglio uscire?
              # Oltre a loggare, potremmo provare a chiudere l'app se l'abbiamo creata noi.
              if created_app and app:
@@ -187,26 +187,26 @@ def run_silent_backup(profile_name):
     try:
         settings, _ = settings_manager.load_settings()
         if not settings: # Gestisce caso raro in cui load_settings restituisca None
-             logging.error("Impossibile caricare le impostazioni.")
-             show_notification(False, "Errore caricamento impostazioni.")
+             logging.error("Unable to load settings.")
+             show_notification(False, "Error loading settings.")
              return False
     except Exception as e:
-        logging.error(f"Errore critico durante caricamento impostazioni: {e}", exc_info=True)
-        show_notification(False, f"Errore critico impostazioni: {e}")
+        logging.error(f"Critical error during loading settings: {e}", exc_info=True)
+        show_notification(False, f"Critical settings error: {e}")
         return False
 
     # 2. Carica Profili
     try:
         profiles = core_logic.load_profiles()
     except Exception as e:
-        logging.error(f"Errore critico durante caricamento profili: {e}", exc_info=True)
+        logging.error(f"Critical error during profile loading: {e}", exc_info=True)
         show_notification(False, f"Errore critico profili: {e}")
         return False
 
     # 3. Verifica Esistenza Profilo
     if profile_name not in profiles:
-        logging.error(f"Profilo '{profile_name}' non trovato in '{config.PROFILE_FILE}'. Backup annullato.")
-        show_notification(False, f"Profilo non trovato: {profile_name}")
+        logging.error(f"Profile '{profile_name}' not found in '{config.PROFILE_FILE}'. Backup cancelled.")
+        show_notification(False, f"Profile not found: {profile_name}")
         return False
 
     # 4. Recupera Dati Necessari
@@ -221,17 +221,17 @@ def run_silent_backup(profile_name):
 
     # Validazione dati recuperati
     if not backup_base_dir or max_bk is None or max_src_size is None:
-         logging.error("Impostazioni necessarie (percorso base, max backup, max dimensione sorgente) non valide.")
-         show_notification(False, "Errore: Impostazioni backup non valide.")
+         logging.error("Required settings (base path, max backup, max source size) invalid.")
+         show_notification(False, "Error: Invalid backup settings.")
          return False
     if not save_path or not os.path.isdir(save_path):
-         logging.error(f"Percorso salvataggi per '{profile_name}' non valido: '{save_path}'")
-         show_notification(False, f"Errore: Percorso salvataggi non valido per {profile_name}.")
+         logging.error(f"Savings path for '{profile_name}' invalid: '{save_path}'")
+         show_notification(False, f"Error: Invalid save path for {profile_name}.")
          return False
 
     # 5. (Opzionale ma Consigliato) Controllo Spazio Libero
     if check_space:
-        logging.info(f"Controllo spazio libero su disco (Min: {min_gb_required} GB)...")
+        logging.info(f"Checking free disk space (Min: {min_gb_required} GB)...")
         min_bytes_required = min_gb_required * 1024 * 1024 * 1024
         try:
             os.makedirs(backup_base_dir, exist_ok=True)
@@ -241,19 +241,19 @@ def run_silent_backup(profile_name):
             free_bytes = disk_usage.free
             if free_bytes < min_bytes_required:
                 free_gb = free_bytes / (1024*1024*1024)
-                msg = f"Spazio disco insufficiente! Libero: {free_gb:.2f} GB, Richiesto: {min_gb_required} GB."
+                msg = f"Insufficient disk space! Free: {free_gb:.2f} GB, Required: {min_gb_required} GB."
                 logging.error(msg)
                 show_notification(False, msg)
                 return False
-            logging.info("Controllo spazio superato.")
+            logging.info("Space control passed.")
         except Exception as e_space:
-            msg = f"Errore controllo spazio disco: {e_space}"
+            msg = f"Disk space check error: {e_space}"
             logging.error(msg, exc_info=True)
             show_notification(False, msg)
             return False
 
     # 6. Esegui Backup Effettivo
-    logging.info(f"Avvio core_logic.perform_backup per '{profile_name}'...")
+    logging.info(f"Start core_logic.perform_backup for '{profile_name}'...")
     try:
         success, message = core_logic.perform_backup(
             profile_name,
@@ -263,14 +263,14 @@ def run_silent_backup(profile_name):
             max_src_size,
             compression_mode
         )
-        logging.info(f"Risultato perform_backup: Success={success}, Message='{message}'")
+        logging.info(f"Result perform_backup: Success={success}, Message='{message}'")
         # 7. Mostra Notifica
         show_notification(success, message)
         return success
     except Exception as e_backup:
          # Errore imprevisto DENTRO perform_backup non gestito? Logghiamolo qui.
-         logging.error(f"Errore imprevisto durante esecuzione core_logic.perform_backup: {e_backup}", exc_info=True)
-         show_notification(False, f"Errore imprevisto backup: {e_backup}")
+         logging.error(f"Unexpected error during execution core_logic.perform_backup: {e_backup}", exc_info=True)
+         show_notification(False, f"Unexpected backup error: {e_backup}")
          return False
 
 
@@ -283,7 +283,7 @@ if __name__ == "__main__":
     try:
         args = parser.parse_args()
         profile_to_backup = args.backup
-        logging.info(f"Ricevuto argomento --backup '{profile_to_backup}'")
+        logging.info(f"Received argument --backup '{profile_to_backup}'")
 
         # Esegui la funzione principale
         backup_success = run_silent_backup(profile_to_backup)
@@ -295,11 +295,11 @@ if __name__ == "__main__":
          # argparse esce con SystemExit (codice 2) se gli argomenti sono sbagliati
          # Lascia che esca normalmente in quel caso, o logga se preferisci
          if e.code != 0:
-              logging.error(f"Errore negli argomenti o uscita richiesta. Codice: {e.code}")
+              logging.error(f"Error in arguments or required output. Code: {e.code}")
          sys.exit(e.code) # Propaga il codice di uscita
     except Exception as e_main:
          # Errore generico non catturato prima
-         logging.critical(f"Errore fatale in backup_runner: {e_main}", exc_info=True)
+         logging.critical(f"Fatal error in backup_runner: {e_main}", exc_info=True)
          # Prova a mostrare una notifica anche per errori fatali?
-         show_notification(False, f"Errore fatale: {e_main}")
+         show_notification(False, f"Fatal mistake: {e_main}")
          sys.exit(1)

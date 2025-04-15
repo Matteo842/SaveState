@@ -421,7 +421,7 @@ class MainWindow(QMainWindow):
              # Usiamo try-except qui nel caso minecraft_utils dia problemi
              saves_folder = minecraft_utils.find_minecraft_saves_folder()
         except Exception as e_find:
-             logging.error(f"Errore imprevisto durante find_minecraft_saves_folder: {e_find}", exc_info=True)
+             logging.error(f"Unexpected error during find_minecraft_saves_folder: {e_find}", exc_info=True)
              QMessageBox.critical(self, self.tr("Errore Minecraft"), self.tr("Errore imprevisto durante la ricerca della cartella Minecraft."))
              self.status_label.setText(self.tr("Errore ricerca Minecraft."))
              return
@@ -440,7 +440,7 @@ class MainWindow(QMainWindow):
         try:
             worlds_data = minecraft_utils.list_minecraft_worlds(saves_folder)
         except Exception as e_list:
-            logging.error(f"Errore imprevisto durante list_minecraft_worlds: {e_list}", exc_info=True)
+            logging.error(f"Unexpected error during list_minecraft_worlds: {e_list}", exc_info=True)
             QMessageBox.critical(self, self.tr("Errore Minecraft"), self.tr("Errore imprevisto durante la lettura dei mondi Minecraft."))
             self.status_label.setText(self.tr("Errore lettura mondi Minecraft."))
             return
@@ -457,7 +457,7 @@ class MainWindow(QMainWindow):
         try:
             dialog = MinecraftWorldsDialog(worlds_data, self)
         except Exception as e_dialog_create:
-             logging.error(f"Errore creazione MinecraftWorldsDialog: {e_dialog_create}", exc_info=True)
+             logging.error(f"Creation error MinecraftWorldsDialog: {e_dialog_create}", exc_info=True)
              QMessageBox.critical(self, self.tr("Errore Interfaccia"), self.tr("Impossibile creare la finestra di selezione dei mondi."))
              return
 
@@ -473,12 +473,12 @@ class MainWindow(QMainWindow):
 
                 # Controlla se il nome è valido (non vuoto)
                 if not profile_name:
-                     logging.error("Nome del mondo selezionato non valido o mancante.")
+                     logging.error("Name of selected world invalid or missing.")
                      QMessageBox.critical(self, self.tr("Errore Interno"), self.tr("Nome del mondo selezionato non valido."))
                      return
                 # Controlla se il percorso è valido
                 if not world_path or not os.path.isdir(world_path):
-                     logging.error(f"Percorso del mondo '{world_path}' non valido per il profilo '{profile_name}'.")
+                     logging.error(f"world path '{world_path}' invalid for profile '{profile_name}'.")
                      QMessageBox.critical(self, self.tr("Errore Percorso"), self.tr("Il percorso del mondo selezionato ('{0}') non è valido.").format(world_path))
                      return
 
@@ -562,11 +562,11 @@ class MainWindow(QMainWindow):
                         logging.debug(f"Cartella gioco rilevata (o presunta) dal collegamento: {game_install_dir}")
 
                     except ImportError:
-                         logging.error("La libreria 'winshell' non è installata. Impossibile leggere i file .lnk.")
+                         logging.error("The 'winshell' library is not installed. Unable to read .lnk files.")
                          QMessageBox.critical(self, "Errore Dipendenza", "La libreria 'winshell' necessaria per leggere i collegamenti non è installata.\nImpossibile creare profilo da .lnk.")
                          return
                     except Exception as e_lnk:
-                        logging.error(f"Errore durante la lettura del collegamento .lnk: {e_lnk}", exc_info=True)
+                        logging.error(f"Error while reading the .lnk link: {e_lnk}", exc_info=True)
                         QMessageBox.critical(self, self.tr("Errore Collegamento"), self.tr("Impossibile leggere il file .lnk:\n{0}").format(e_lnk))
                         return # Esce se non possiamo leggere il link
 
@@ -709,7 +709,7 @@ class MainWindow(QMainWindow):
                             # date_str = locale.toString(last_backup_dt, "MMMM d")
                             # --- FINE NUOVA LOGICA ---
                         except Exception as e:
-                            logging.error(f"Errore formattazione data ultimo backup per {profile_name}", exc_info=True)
+                            logging.error(f"Error formatting last backup date for {profile_name}", exc_info=True)
                             date_str = "???" # Metti un placeholder diverso in caso di errore
 
                     # --- NUOVA LOGICA TRADUZIONE ETICHETTE ---
@@ -793,7 +793,7 @@ class MainWindow(QMainWindow):
 
             # Controllo esplicito se il file esiste nel percorso trovato
             if not os.path.exists(qm_file_path):
-                logging.error(f"File traduzione .qm NON TROVATO in: {qm_file_path} (Verifica .spec e build). La traduzione non funzionerà.")
+                logging.error(f".qm translation file NOT FOUND in: {qm_file_path} (Check .spec and build). The translation will not work.")
                 # Mostra errore all'utente
                 QMessageBox.warning(self, self.tr("Errore Traduzione"),
                                     self.tr("Impossibile caricare il file di traduzione per l'inglese ({0}).\n"
@@ -813,7 +813,7 @@ class MainWindow(QMainWindow):
                     logging.info("Nuovo traduttore 'en' installato correttamente.")
                     # Qt dovrebbe gestire retranslateUi tramite LanguageChange
                 else:
-                    logging.error("Installazione traduttore 'en' fallita dopo il caricamento!")
+                    logging.error("'en' translator installation failed after loading!")
                     QCoreApplication.removeTranslator(ENGLISH_TRANSLATOR) # Tentativo di pulizia
                     CURRENT_TRANSLATOR = None
             else:
@@ -1007,7 +1007,7 @@ class MainWindow(QMainWindow):
                  # Errore generico durante il controllo dello spazio
                  msg = self.tr("Si è verificato un errore durante il controllo dello spazio libero sul disco:\n{0}").format(e_space)
                  QMessageBox.critical(self, self.tr("Errore Controllo Spazio"), msg)
-                 logging.error("Errore durante il controllo dello spazio libero su disco.", exc_info=True)
+                 logging.error("Error while checking free disk space.", exc_info=True)
                  # Decidiamo se bloccare o continuare con un avviso? Blocchiamo per sicurezza.
                  return
         else:
@@ -1055,7 +1055,7 @@ class MainWindow(QMainWindow):
         try:
             app_instance = QApplication.instance()
             if app_instance: app_instance.setStyleSheet(qss_to_apply)
-            else: logging.error("Impossibile applicare il tema: istanza QApplication non trovata."); return
+            else: logging.error("Unable to apply theme: QApplication instance not found."); return
             logging.info(f"Tema '{theme_name}' applicato.")
             icon_size = QSize(16, 16) # Usa la stessa dimensione definita in init
             if theme_name == 'light':
@@ -1066,7 +1066,7 @@ class MainWindow(QMainWindow):
                 if self.sun_icon: self.theme_button.setIcon(self.sun_icon); self.theme_button.setIconSize(icon_size)
                 else: self.theme_button.setText("L"); self.theme_button.setIcon(QIcon()) # Fallback testo
                 self.theme_button.setToolTip("Passa al tema chiaro")
-        except Exception: logging.error(f"Errore durante l'applicazione del tema '{theme_name}'", exc_info=True)
+        except Exception: logging.error(f"Error when applying the theme '{theme_name}'", exc_info=True)
 
     @Slot()
     def handle_theme_toggle(self):
@@ -1343,7 +1343,7 @@ if __name__ == "__main__":
          logging.warning("Uscita a causa di argomento non valido o richiesta help (-h).")
          sys.exit(1) # Usciamo con errore
     except Exception as e_args:
-         logging.error(f"Errore parsing argomenti: {e_args}")
+         logging.error(f"Error parsing arguments: {e_args}")
          sys.exit(1) # Usciamo con errore
 
     # --- NUOVO: Controllo se eseguire backup o GUI ---
@@ -1382,7 +1382,7 @@ if __name__ == "__main__":
 
             # Aggiungiamo un controllo esplicito se il file esiste nel percorso trovato
             if not os.path.exists(qm_file_path):
-                 logging.error(f"File traduzione .qm NON TROVATO in: {qm_file_path} (Verifica .spec e build). La traduzione non funzionerà.")
+                 logging.error(f".qm translation file NOT FOUND in: {qm_file_path} (Check .spec and build). Translation will not work.")
                  # Se il file non c'è, è inutile provare a caricarlo/installarlo
             elif ENGLISH_TRANSLATOR.load(qm_file_path): # Passa il percorso completo a .load()
                 logging.debug(f"File QM '{qm_file_path}' caricato in ENGLISH_TRANSLATOR.")
@@ -1392,7 +1392,7 @@ if __name__ == "__main__":
                     logging.info("Traduttore Inglese installato correttamente all'avvio.")
                 else:
                     # Errore durante l'installazione
-                    logging.error("Installazione traduttore Inglese fallita (dopo caricamento).")
+                    logging.error("English translator installation failed (after loading).")
                     CURRENT_TRANSLATOR = None # Assicurati non rimanga impostato
             else:
                 # Errore durante il caricamento del file .qm
@@ -1400,7 +1400,7 @@ if __name__ == "__main__":
                 CURRENT_TRANSLATOR = None # Assicurati non rimanga impostato
         except Exception as e_load:
              # Errore generico durante tutto il processo
-             logging.error(f"Errore imprevisto durante caricamento/installazione traduttore: {e_load}", exc_info=True)
+             logging.error(f"Unexpected error during translator loading/installation: {e_load}", exc_info=True)
              CURRENT_TRANSLATOR = None # Assicurati non rimanga impostato
     else: # Lingua non è 'en' (es. Italiano)
         logging.info("Lingua non Inglese selezionata all'avvio (nessun traduttore attivo).")
