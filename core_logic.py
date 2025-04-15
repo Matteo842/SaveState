@@ -100,7 +100,7 @@ def save_profiles(profiles):
     try:
         with open(PROFILES_FILE_PATH, 'w', encoding='utf-8') as f: # <-- Usa PATH
             json.dump(profiles, f, indent=4, ensure_ascii=False)
-        logging.info(f"Salvati {len(profiles)} profili in '{PROFILES_FILE_PATH}'.") # <-- Usa PATH
+        logging.info(f"Saved {len(profiles)} profiles in '{PROFILES_FILE_PATH}'.") # <-- Usa PATH
         return True
     except Exception as e:
         logging.error(f"Error saving profiles in '{PROFILES_FILE_PATH}': {e}") # <-- Usa PATH
@@ -110,7 +110,7 @@ def delete_profile(profiles, profile_name):
     """Elimina un profilo dal dizionario. Restituisce True se eliminato, False altrimenti."""
     if profile_name in profiles:
         del profiles[profile_name]
-        logging.info(f"profile '{profile_name}' removed from memory.")
+        logging.info(f"Profile '{profile_name}' removed from memory.")
         return True
     else:
         logging.warning(f"Attempt to delete non-existing profile: '{profile_name}'.")
@@ -124,7 +124,7 @@ def manage_backups(profile_name, backup_base_dir, max_backups): # Parametro 'max
     # --- NUOVO: Sanifica nome cartella ---
     sanitized_folder_name = sanitize_foldername(profile_name)
     profile_backup_dir = os.path.join(backup_base_dir, sanitized_folder_name) # <-- Usa nome sanificato
-    logging.debug(f"ManageBackups - Nome originale: '{profile_name}', Cartella cercata: '{profile_backup_dir}'")
+    logging.debug(f"ManageBackups - Original name: '{profile_name}', Folder searched: '{profile_backup_dir}'")
 
     try:
         if not os.path.isdir(profile_backup_dir): return deleted_files # Cerca dir sanificata
@@ -148,77 +148,77 @@ def manage_backups(profile_name, backup_base_dir, max_backups): # Parametro 'max
         # --- CORREZIONE 2: Rimuovi la riga duplicata qui sotto ---
         # num_to_delete = len(backup_files) - max_backups # RIGA RIMOSSA
 
-        logging.info(f"Elimination of {num_to_delete} older (.zip) backup...")
+        logging.info(f"Deleting {num_to_delete} older (.zip) backup...")
 
         deleted_count = 0
         # Itera per eliminare i file più vecchi (i primi nella lista ordinata)
         for i in range(num_to_delete):
             file_to_delete = os.path.join(profile_backup_dir, backup_files[i])
             try:
-                logging.info(f"  Elimino: {backup_files[i]}")
+                logging.info(f"  Deleting: {backup_files[i]}")
                 os.remove(file_to_delete)
                 deleted_files.append(backup_files[i])
                 deleted_count += 1
             except Exception as e:
-                logging.error(f"  Errore eliminazione {backup_files[i]}: {e}")
-        logging.info(f"Eliminati {deleted_count} backup (.zip) obsoleti.")
+                logging.error(f"  Error deleting {backup_files[i]}: {e}")
+        logging.info(f"Deleted {deleted_count} outdated (.zip) backups.")
 
     except Exception as e:
         # Ora questo loggherà l'eccezione originale se ce ne sono altre, non il NameError
-        logging.error(f"Errore gestione backup obsoleti (.zip) per '{profile_name}': {e}")
+        logging.error(f"Error managing outdated (.zip) backups for '{profile_name}': {e}")
     return deleted_files
 
 
 def perform_backup(profile_name, save_folder_path, backup_base_dir, max_backups, max_source_size_mb, compression_mode="standard"):
     """Esegue il backup usando zipfile. Restituisce (bool successo, str messaggio)."""
-    logging.info(f"Avvio perform_backup per: '{profile_name}'") # Log inizio funzione
+    logging.info(f"Starting perform_backup for: '{profile_name}'")
 
     # --- Sanifica nome cartella ---
     sanitized_folder_name = sanitize_foldername(profile_name)
-    logging.info(f"===> Nome Originale: '{profile_name}', Nome Sanificato Risultante: '{sanitized_folder_name}'") # Log verifica sanitizzazione
+    logging.info(f"===> Original Name: '{profile_name}', Sanitized Name Result: '{sanitized_folder_name}'")
 
     # --- Crea percorso backup USANDO nome sanificato ---
     profile_backup_dir = os.path.join(backup_base_dir, sanitized_folder_name) # <-- Riga CRUCIALE!
-    logging.debug(f"Percorso backup costruito: '{profile_backup_dir}'") # Log debug percorso
+    logging.debug(f"Backup path built: '{profile_backup_dir}'")
 
     save_folder_path = os.path.normpath(save_folder_path)
     if not os.path.isdir(save_folder_path):
-        msg = f"ERRORE: La cartella sorgente dei salvataggi specificata non è valida: '{save_folder_path}'"
+        msg = f"ERROR: Source save folder specified is not valid: '{save_folder_path}'"
         logging.error(msg)
         return False, msg
 
     # --- Controllo Dimensione Sorgente ---
     # (Nota: sembrano esserci due blocchi uguali per il controllo dimensione, ne basta uno)
-    logging.info(f"Controllo dimensione sorgente '{save_folder_path}' (Limite: {'Nessuno' if max_source_size_mb == -1 else str(max_source_size_mb) + ' MB'})...")
+    logging.info(f"Checking source size '{save_folder_path}' (Limit: {'None' if max_source_size_mb == -1 else str(max_source_size_mb) + ' MB'})...")
     if max_source_size_mb != -1:
         max_source_size_bytes = max_source_size_mb * 1024 * 1024
         current_size_bytes = get_directory_size(save_folder_path)
         if current_size_bytes == -1:
-            msg = f"ERRORE: Impossibile calcolare dimensione sorgente '{save_folder_path}'."
+            msg = f"ERROR: Unable to calculate source size '{save_folder_path}'."
             logging.error(msg)
             return False, msg
 
         current_size_mb = current_size_bytes / (1024*1024)
-        logging.info(f"Dimensione attuale sorgente: {current_size_mb:.2f} MB")
+        logging.info(f"Current source size: {current_size_mb:.2f} MB")
 
         if current_size_bytes > max_source_size_bytes:
-            msg = (f"ERRORE: Backup annullato!\n"
-                   f"Dimensione sorgente ({current_size_mb:.2f} MB) supera limite ({max_source_size_mb} MB).")
+            msg = (f"ERROR: Backup cancelled!\n"
+                   f"Source size ({current_size_mb:.2f} MB) exceeds limit ({max_source_size_mb} MB).")
             logging.error(msg)
             return False, msg
     else:
-        logging.info("Controllo dimensione sorgente saltato (Nessun Limite impostato).")
+        logging.info("Source size check skipped (No Limit set).")
     # --- FINE Controllo Dimensione ---
 
     # --- Creazione Cartella Backup ---
     try:
-        logging.info(f"Tentativo di creare/verificare la cartella: '{profile_backup_dir}'") # Log percorso usato
+        logging.info(f"Attempting to create/verify folder: '{profile_backup_dir}'")
         os.makedirs(profile_backup_dir, exist_ok=True) # <-- Usa percorso (che dovrebbe essere) sanificato
-        logging.info(f"Cartella backup verificata/creata: '{profile_backup_dir}'")
+        logging.info(f"Backup folder verified/created: '{profile_backup_dir}'")
     except Exception as e:
-        msg = f"ERRORE creazione cartella backup '{profile_backup_dir}': {e}"
+        msg = f"ERROR creating backup folder '{profile_backup_dir}': {e}"
         logging.error(msg)
-        logging.error(f"(Nome profilo originale problematico: '{profile_name}')")
+        logging.error(f"(Original problematic profile name: '{profile_name}')")
         return False, msg
     # --- FINE Creazione Cartella ---
 
@@ -230,7 +230,7 @@ def perform_backup(profile_name, save_folder_path, backup_base_dir, max_backups,
     archive_name = f"Backup_{safe_profile_name_for_zip}_{timestamp}.zip"
     archive_path = os.path.join(profile_backup_dir, archive_name) # Usa dir sanificata
 
-    logging.info(f"Inizio backup (ZIP) per '{profile_name}': Da '{save_folder_path}' a '{archive_path}'")
+    logging.info(f"Starting backup (ZIP) for '{profile_name}': From '{save_folder_path}' to '{archive_path}'")
 
     # Opzioni Compressione
     zip_compression = zipfile.ZIP_DEFLATED
@@ -238,12 +238,12 @@ def perform_backup(profile_name, save_folder_path, backup_base_dir, max_backups,
     if compression_mode == "stored":
         zip_compression = zipfile.ZIP_STORED
         zip_compresslevel = None
-        logging.info("Modalità Compressione: Nessuna (Stored)")
+        logging.info("Compression Mode: None (Stored)")
     elif compression_mode == "maximum":
         zip_compresslevel = 9
-        logging.info("Modalità Compressione: Massima (Deflate Livello 9)")
+        logging.info("Compression Mode: Maximum (Deflate Level 9)")
     else:
-         logging.info("Modalità Compressione: Standard (Deflate Livello 6)")
+         logging.info("Compression Mode: Standard (Deflate Level 6)")
 
     try:
         with zipfile.ZipFile(archive_path, 'w', compression=zip_compression, compresslevel=zip_compresslevel) as zipf:
@@ -251,7 +251,7 @@ def perform_backup(profile_name, save_folder_path, backup_base_dir, max_backups,
                 for file in files:
                     file_path_absolute = os.path.join(root, file)
                     arcname = os.path.relpath(file_path_absolute, save_folder_path)
-                    logging.debug(f"  Aggiungo: '{file_path_absolute}' come '{arcname}'")
+                    logging.debug(f"  Adding: '{file_path_absolute}' as '{arcname}'")
                     zipf.write(file_path_absolute, arcname=arcname)
 
         # Gestione backup vecchi (passa nome originale, manage_backups sanifica internamente)
@@ -262,18 +262,18 @@ def perform_backup(profile_name, save_folder_path, backup_base_dir, max_backups,
         return True, msg
 
     except (IOError, OSError, zipfile.BadZipFile) as e:
-        msg = f"ERRORE durante la creazione del backup ZIP '{archive_name}': {e}"
+        msg = f"ERROR during ZIP backup creation '{archive_name}': {e}"
         logging.exception(msg)
         if os.path.exists(archive_path):
-            try: os.remove(archive_path); logging.warning(f"Archivio ZIP fallito rimosso: {archive_name}")
-            except Exception as rem_e: logging.error(f"Impossibile rimuovere archivio ZIP fallito: {rem_e}")
+            try: os.remove(archive_path); logging.warning(f"Failed ZIP archive removed: {archive_name}")
+            except Exception as rem_e: logging.error(f"Unable to remove failed ZIP archive: {rem_e}")
         return False, msg
     except Exception as e:
-        msg = f"ERRORE imprevisto durante backup ZIP '{profile_name}': {e}"
+        msg = f"ERROR unexpected during ZIP backup '{profile_name}': {e}"
         logging.exception(msg)
         if os.path.exists(archive_path):
-            try: os.remove(archive_path); logging.warning(f"Archivio ZIP fallito rimosso: {archive_name}")
-            except Exception as rem_e: logging.error(f"Impossibile rimuovere archivio ZIP fallito: {rem_e}")
+            try: os.remove(archive_path); logging.warning(f"Failed ZIP archive removed: {archive_name}")
+            except Exception as rem_e: logging.error(f"Unable to remove failed ZIP archive: {rem_e}")
         return False, msg
 
 
@@ -285,7 +285,7 @@ def list_available_backups(profile_name):
     # NOTA: Qui usa ancora config.BACKUP_BASE_DIR, andrebbe uniformato leggendo dalle impostazioni
     # ma per ora sistemiamo solo la sanificazione.
     profile_backup_dir = os.path.join(config.BACKUP_BASE_DIR, sanitized_folder_name) # <-- Usa nome sanificato
-    logging.debug(f"ListBackups - Nome originale: '{profile_name}', Cartella cercata: '{profile_backup_dir}'")
+    logging.debug(f"ListBackups - Original name: '{profile_name}', Folder searched: '{profile_backup_dir}'")
 
     if not os.path.isdir(profile_backup_dir):
         return backups # Nessuna cartella = nessun backup
@@ -304,7 +304,7 @@ def list_available_backups(profile_name):
                 date_str = "Data sconosciuta"
             backups.append((fname, fpath, date_str))
     except Exception as e:
-        logging.error(f"Errore nel listare i backup per '{profile_name}': {e}")
+        logging.error(f"Error listing backups for '{profile_name}': {e}")
 
     return backups
 
@@ -313,7 +313,7 @@ def perform_restore(profile_name, save_folder_path, archive_to_restore_path):
     """Esegue il ripristino da un archivio ZIP. Restituisce (bool successo, str messaggio)."""
     save_folder_path = os.path.normpath(save_folder_path)
     if not os.path.exists(archive_to_restore_path) or not zipfile.is_zipfile(archive_to_restore_path):
-        msg = f"ERRORE: File ZIP di backup non valido o non trovato: '{archive_to_restore_path}'"
+        msg = f"ERROR: Archive to restore not found: '{archive_to_restore_path}'"
         logging.error(msg)
         return False, msg
 
@@ -321,11 +321,13 @@ def perform_restore(profile_name, save_folder_path, archive_to_restore_path):
     try:
         os.makedirs(save_folder_path, exist_ok=True)
     except Exception as e:
-        msg = f"ERRORE creazione cartella destinazione '{save_folder_path}': {e}"
+        msg = f"ERROR: Target save folder specified is not valid: '{save_folder_path}': {e}"
         logging.error(msg)
         return False, msg
 
-    logging.info(f"Inizio ripristino (ZIP) per '{profile_name}': Da '{os.path.basename(archive_to_restore_path)}' a '{save_folder_path}'")
+    logging.info(f"Starting restore for: '{profile_name}'")
+    logging.info(f"Restoring from: '{archive_to_restore_path}' to: '{save_folder_path}'")
+    logging.info(f"Backup folder verified/created: '{save_folder_path}'")
 
     try:
         # Apri l'archivio ZIP in lettura ('r')
@@ -334,7 +336,7 @@ def perform_restore(profile_name, save_folder_path, archive_to_restore_path):
             # I percorsi relativi (senza la cartella base) memorizzati durante il backup
             # verranno ricreati a partire da 'save_folder_path'.
             # extractall sovrascrive i file esistenti per default.
-            logging.info(f"Estrazione di '{archive_to_restore_path}' in '{save_folder_path}'...")
+            logging.info(f"Extracting '{archive_to_restore_path}' to '{save_folder_path}'...")
             zipf.extractall(path=save_folder_path)
 
         msg = f"Ripristino (ZIP) per '{profile_name}' completato con successo."
@@ -342,11 +344,11 @@ def perform_restore(profile_name, save_folder_path, archive_to_restore_path):
         return True, msg
 
     except (zipfile.BadZipFile, IOError, OSError) as e:
-        msg = f"ERRORE durante l'estrazione del backup ZIP '{os.path.basename(archive_to_restore_path)}': {e}"
+        msg = f"ERROR during ZIP extraction '{os.path.basename(archive_to_restore_path)}': {e}"
         logging.exception(msg)
         return False, msg
     except Exception as e:
-        msg = f"ERRORE imprevisto durante ripristino ZIP '{profile_name}': {e}"
+        msg = f"ERROR unexpected during ZIP restore '{profile_name}': {e}"
         logging.exception(msg)
         return False, msg
 
@@ -378,15 +380,15 @@ def get_steam_install_path():
                 winreg.CloseKey(hkey)
                 if path_value and os.path.isdir(path_value.replace('/', '\\')):
                      _steam_install_path = os.path.normpath(path_value.replace('/', '\\'))
-                     logging.info(f"Trovata installazione Steam ({hive_name}): {_steam_install_path}")
+                     logging.info(f"Found Steam installation ({hive_name}): {_steam_install_path}")
                      return _steam_install_path
             except (FileNotFoundError, OSError): continue # Ignora se chiave non trovata o accesso negato
             except Exception as e: logging.warning(f"Errore lettura registro ({hive_name}): {e}")
 
-        logging.error("Installazione Steam non trovata nel registro.")
+        logging.error("Steam installation not found in registry.")
         return None
     except Exception as e:
-        logging.error(f"Errore imprevisto ricerca Steam: {e}")
+        logging.error(f"Unexpected error searching for Steam: {e}")
         return None
 
 def _parse_vdf(file_path):
@@ -401,7 +403,7 @@ def _parse_vdf(file_path):
     except Exception as e:
         # Logga solo errori su file importanti
         if any(f in file_path for f in ['libraryfolders.vdf', 'loginusers.vdf']):
-             logging.error(f"Errore parsing VDF '{os.path.basename(file_path)}': {e}")
+             logging.error(f"ERROR parsing VDF '{os.path.basename(file_path)}': {e}")
         return None
 
 def find_steam_libraries():
@@ -419,7 +421,7 @@ def find_steam_libraries():
     if main_lib_path not in libs: libs.append(main_lib_path)
 
     vdf_path = os.path.join(steam_path, 'steamapps', 'libraryfolders.vdf')
-    logging.info(f"Lettura librerie da: {vdf_path}")
+    logging.info(f"Reading libraries from: {vdf_path}")
     data = _parse_vdf(vdf_path)
     added_libs_count = 0
 
@@ -436,7 +438,7 @@ def find_steam_libraries():
                              added_libs_count += 1
                          # else: logging.warning(f"Percorso libreria VDF non valido: '{lib_path}'")
 
-    logging.info(f"Trovate {len(libs)} librerie Steam totali ({added_libs_count} da VDF).")
+    logging.info(f"Found {len(libs)} total Steam libraries ({added_libs_count} from VDF).")
     _steam_libraries = libs
     return libs
 
@@ -451,7 +453,7 @@ def find_installed_steam_games():
         _installed_steam_games = {}
         return games
 
-    logging.info("Scansione librerie per giochi Steam installati...")
+    logging.info("Scanning libraries for installed Steam games...")
     total_games_found = 0
     for lib_path in library_paths:
         steamapps_path = os.path.join(lib_path, 'steamapps')
@@ -475,9 +477,9 @@ def find_installed_steam_games():
                                 games[appid] = {'name': name, 'installdir': installdir_absolute}
                                 total_games_found += 1
         except Exception as e:
-            logging.error(f"Errore scansione giochi in '{steamapps_path}': {e}")
+            logging.error(f"Error scanning games in '{steamapps_path}': {e}")
 
-    logging.info(f"Trovati {total_games_found} giochi Steam installati.")
+    logging.info(f"Found {total_games_found} installed Steam games.")
     _installed_steam_games = games
     return games
 
@@ -504,15 +506,15 @@ def find_steam_userdata_info():
     _steam_userdata_path = None; _steam_id3 = None
     _cached_possible_ids = None; _cached_id_details = None
 
-    logging.info("Avvio nuova scansione userdata Steam (incluso nomi profili)...")
+    logging.info("Starting new Steam userdata scan (including profile names)...")
     steam_path = get_steam_install_path()
     if not steam_path:
-        logging.error("Installazione Steam non trovata durante ricerca userdata.")
+        logging.error("ERROR: Unable to find Steam installation path.")
         return None, None, [], {}
 
     userdata_base = os.path.join(steam_path, 'userdata')
     if not os.path.isdir(userdata_base):
-        logging.warning(f"Cartella 'userdata' non trovata in '{steam_path}'.")
+        logging.warning(f"Steam 'userdata' folder not found in '{steam_path}'.")
         return None, None, [], {}
 
     # --- NUOVO: Leggi loginusers.vdf ---
@@ -520,17 +522,17 @@ def find_steam_userdata_info():
     loginusers_data = None
     user_persona_names = {} # Dizionario per mappare SteamID64 -> PersonaName
     if vdf: # Solo se libreria vdf è disponibile
-        logging.info(f"Lettura nomi profilo da: {loginusers_path}")
+        logging.info(f"Reading profile names from: {loginusers_path}")
         loginusers_data = _parse_vdf(loginusers_path) # Usa helper esistente
         if loginusers_data and 'users' in loginusers_data:
             for steam_id64_str, user_data in loginusers_data['users'].items():
                 if isinstance(user_data, dict) and 'PersonaName' in user_data:
                     user_persona_names[steam_id64_str] = user_data['PersonaName']
-            logging.info(f"Trovati {len(user_persona_names)} nomi profilo in loginusers.vdf.")
+            logging.info(f"Found {len(user_persona_names)} profile names in loginusers.vdf.")
         else:
-            logging.warning("Formato 'loginusers.vdf' non riconosciuto o file vuoto/corrotto.")
+            logging.warning("Format 'loginusers.vdf' not recognized or file empty/corrupted.")
     else:
-        logging.warning("Libreria 'vdf' non disponibile, impossibile leggere i nomi profilo Steam.")
+        logging.warning("Library 'vdf' not available, unable to read Steam profile names.")
     # --- FINE LETTURA loginusers.vdf ---
 
     possible_ids = []
@@ -538,7 +540,7 @@ def find_steam_userdata_info():
     likely_id = None
     id_details = {} # Ricreiamo questo dizionario
 
-    logging.info(f"Ricerca ID utente Steam in: {userdata_base}")
+    logging.info(f"Searching Steam user ID in: {userdata_base}")
     try:
         for entry in os.listdir(userdata_base): # entry è lo SteamID3 come stringa
             user_path = os.path.join(userdata_base, entry)
@@ -556,9 +558,9 @@ def find_steam_userdata_info():
                     if steam_id64_str in user_persona_names:
                         display_name = user_persona_names[steam_id64_str] # Usa PersonaName trovato
                 except ValueError:
-                    logging.warning(f"ID utente non numerico trovato in userdata: {entry}")
+                    logging.warning(f"User ID found in userdata is not numeric: {entry}")
                 except Exception as e_name:
-                     logging.error(f"Errore recupero nome per ID {entry}: {e_name}")
+                     logging.error(f"ERROR retrieving name for ID {entry}: {e_name}")
                 # --- FINE Trova PersonaName ---
 
                 # Cerca data più recente (logica esistente)
@@ -587,7 +589,7 @@ def find_steam_userdata_info():
                     likely_id = entry
 
     except Exception as e:
-        logging.error(f"Errore scansione 'userdata': {e}")
+        logging.error(f"ERROR scanning 'userdata': {e}")
         # In caso di errore, resetta tutto per sicurezza
         userdata_base, likely_id, possible_ids, id_details = None, None, [], {}
 
@@ -598,9 +600,9 @@ def find_steam_userdata_info():
     _cached_possible_ids = possible_ids
     _cached_id_details = id_details # Ora contiene anche display_name
 
-    logging.info(f"Trovati {len(possible_ids)} ID in userdata. ID più probabile: {likely_id}")
+    logging.info(f"Found {len(possible_ids)} IDs in userdata. Most likely ID: {likely_id}")
     for uid, details in id_details.items():
-         logging.info(f"  - ID: {uid}, Nome: {details.get('display_name', '?')}, Ultima Mod: {details.get('last_mod_str', '?')}")
+         logging.info(f"  - ID: {uid}, Name: {details.get('display_name', '?')}, Last Mod: {details.get('last_mod_str', '?')}")
 
     return userdata_base, likely_id, possible_ids, id_details
 
@@ -648,7 +650,7 @@ def are_names_similar(name1, name2, min_match_words=2):
         # logging.debug(f"Similarity Check: '{name1}' vs '{name2}' -> W1={words1}, W2={words2}, Common={common_words}, StartsWith={starts_with_match} -> Similar={is_similar}")
         return is_similar
     except Exception as e_sim:
-        logging.error(f"Error in are_names_similar('{name1}', '{name2}'): {e_sim}")
+        logging.error(f"ERROR in are_names_similar('{name1}', '{name2}'): {e_sim}")
         return False # Default a non simile in caso di errore
 
 def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path=None, steam_id3_to_use=None, is_steam_game=True):
@@ -679,10 +681,10 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                     if len(items) == 1:
                         single_item_path = os.path.join(norm_path, items[0])
                         if os.path.isfile(single_item_path) and items[0].lower() == "remotecache.vdf":
-                            logging.info(f"Percorso ignorato ('{norm_path}') perché contiene solo remotecache.vdf. Fonte: {source_description}")
+                            logging.info(f"Path ignored ('{norm_path}') because it contains only remotecache.vdf. Source: {source_description}")
                             return False
                 except OSError as e_list:
-                    logging.warning(f"Impossibile leggere il contenuto di '{norm_path}' durante il check remotecache: {e_list}")
+                    logging.warning(f"Unable to read contents of '{norm_path}' during remotecache check: {e_list}")
 
                 # Check non-radice
                 drive, tail = os.path.splitdrive(norm_path)
@@ -694,16 +696,16 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                 else:
                     logging.debug(f"Percorso ignorato perché è una radice: '{norm_path}'")
         except Exception as e:
-            logging.warning(f"Errore durante la verifica del percorso '{path}': {e}")
+            logging.warning(f"ERROR durante la verifica del percorso '{path}': {e}")
         return False # Se uno qualsiasi dei controlli fallisce o c'è errore
     # --- FINE Funzione Helper add_guess ---
 
 
     # --- 1. Pulisci il Nome del Gioco ---
-    logging.info(f"Ricerca euristica salvataggi per '{game_name}' (AppID: {appid})")
+    logging.info(f"Heuristic save search for '{game_name}' (AppID: {appid})")
     sanitized_name = re.sub(r'^(Play |Launch )', '', game_name, flags=re.IGNORECASE)
     sanitized_name = re.sub(r'[™®©:]', '', sanitized_name).strip()
-    logging.info(f"Nome gioco pulito per ricerca: '{sanitized_name}'")
+    logging.info(f"Cleaned game name for search: '{sanitized_name}'")
 
     # --- 2. Genera Acronimo Semplice ---
     acronym = "".join(c for c in sanitized_name if c.isupper())
@@ -715,7 +717,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
 
     # --- 3. Steam Userdata ---
     if is_steam_game and appid and steam_userdata_path and steam_id3_to_use:
-        logging.info(f"Controllo Steam Userdata per AppID {appid} (Utente: {steam_id3_to_use})...")
+        logging.info(f"Checking Steam Userdata for AppID {appid} (User: {steam_id3_to_use})...")
         base_userdata = os.path.join(steam_userdata_path, steam_id3_to_use, appid)
         remote_path = os.path.join(base_userdata, 'remote')
         # Aggiungi remote_path se valido
@@ -730,16 +732,16 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                         are_names_similar(sanitized_name, entry) or \
                         (valid_acronym and sub_lower == valid_acronym.lower())):
                          add_guess(sub, f"Steam Userdata/remote/{entry}")
-            except Exception as e_remote_sub: logging.warning(f"Errore scansione sottocartelle in remote: {e_remote_sub}")
+            except Exception as e_remote_sub: logging.warning(f"ERROR scanning subfolders in remote: {e_remote_sub}")
         # Aggiungi la cartella base dell'AppID se valida
         add_guess(base_userdata, "Steam Userdata/AppID Base")
     # --- FINE Sezione 3 ---
 
 
     # --- 4. Ricerca Euristica Generica (Cartelle Comuni Utente) ---
-    logging.info("Inizio ricerca euristica generica (incl. acronimo)...")
+    logging.info("Starting generic heuristic search (including acronym)...")
     user_profile = os.path.expanduser('~')
-    logging.debug(f"  Profilo utente ('~'): {user_profile}")
+    logging.debug(f"  User profile ('~'): {user_profile}")
     common_locations = {
         "Documents": os.path.join(user_profile, 'Documents'),
         "My Games": os.path.join(user_profile, 'Documents', 'My Games'),
@@ -749,9 +751,9 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
         "AppData/LocalLow": os.path.join(os.getenv('LOCALAPPDATA', ''), '..', 'LocalLow') if os.getenv('LOCALAPPDATA') else None,
         "Public Documents": os.path.join(os.getenv('PUBLIC', 'C:\\Users\\Public'), 'Documents')
     }
-    logging.debug(f"  Percorsi comuni candidati: {common_locations}")
+    logging.debug(f"  Common path candidates: {common_locations}")
     valid_locations = {name: os.path.normpath(path) for name, path in common_locations.items() if path and os.path.isdir(path)}
-    logging.debug(f"  Percorsi comuni VALIDI trovati: {valid_locations}")
+    logging.debug(f"  Found VALID common paths: {valid_locations}")
 
     common_publishers = [
          'My Games', 'Saved Games', 'Ubisoft', 'EA', 'Electronic Arts', 'Rockstar Games',
@@ -802,7 +804,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                                                     logging.debug(f"            -> Trovato percorso save annidato: {deeper_path_found}")
                                                     break
                                         except OSError as e_deeper:
-                                            logging.warning(f"          Impossibile leggere dentro '{intermediate_path}': {e_deeper}")
+                                            logging.warning(f"          ERROR leggendo dentro '{intermediate_path}': {e_deeper}")
                                     # --- Fine Check Annidato ---
                                     if deeper_path_found:
                                         logging.debug(f"        -> Aggiungo percorso annidato: {deeper_path_found}")
@@ -853,7 +855,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                                                                 logging.debug(f"              -> Trovato percorso save annidato (in pub/sim): {deeper_path_found}")
                                                                 break
                                                     except OSError as e_deeper:
-                                                        logging.warning(f"            Impossibile leggere dentro '{intermediate_path}': {e_deeper}")
+                                                        logging.warning(f"            ERROR leggendo dentro '{intermediate_path}': {e_deeper}")
                                                 # --- Fine Check Annidato ---
                                                 if deeper_path_found:
                                                     logging.debug(f"          -> Aggiungo percorso annidato: {deeper_path_found}")
@@ -863,10 +865,10 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                                                     add_guess(intermediate_path, f"{loc_name}/{actual_subfolder}/SimilarNameLvl2/SaveSubdir")
                                     except OSError: pass # Ignora errori lettura dentro inner_folder_path
                     except OSError as e_pub_inner:
-                         logging.warning(f"Errore accesso sottocartelle in publisher '{actual_subfolder_path}': {e_pub_inner}")
+                         logging.warning(f"ERROR accesso sottocartelle in publisher '{actual_subfolder_path}': {e_pub_inner}")
 
         except OSError as e_base:
-            logging.warning(f"Errore accesso sottocartelle in '{base_folder}': {e_base}")
+            logging.warning(f"ERROR accesso sottocartelle in '{base_folder}': {e_base}")
     # --- FINE Sezione 4 ---
 
 
@@ -891,7 +893,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                             relative_log_path = os.path.relpath(potential_path, game_install_dir)
                             add_guess(potential_path, f"InstallDirWalk/{relative_log_path}")
         except Exception as e_walk:
-             logging.error(f"Errore durante os.walk in '{game_install_dir}': {e_walk}")
+             logging.error(f"ERROR durante os.walk in '{game_install_dir}': {e_walk}")
     # --- FINE Sezione 5 ---
 
 
@@ -910,11 +912,11 @@ def delete_single_backup_file(file_path):
     """
     # Verifica preliminare se il percorso è valido e il file esiste
     if not file_path:
-        msg = "Errore: Nessun percorso file specificato per l'eliminazione."
+        msg = "ERROR: Nessun percorso file specificato per l'eliminazione."
         logging.error(msg)
         return False, msg
     if not os.path.isfile(file_path): # Controlla se è un file esistente
-        msg = f"Errore: File da eliminare non trovato o non è un file valido: '{file_path}'"
+        msg = f"ERROR: File da eliminare non trovato o non è un file valido: '{file_path}'"
         logging.error(msg)
         # Restituisci successo 'True' se il file non esiste già? O False?
         # Decidiamo che è un errore se si prova a cancellare qualcosa che non c'è.
@@ -932,12 +934,12 @@ def delete_single_backup_file(file_path):
         return True, msg
     except OSError as e:
         # Errore specifico del sistema operativo (es. permessi negati, file in uso)
-        msg = f"Errore del Sistema Operativo durante l'eliminazione di '{backup_name}': {e}"
+        msg = f"ERROR del Sistema Operativo durante l'eliminazione di '{backup_name}': {e}"
         logging.error(msg)
         return False, msg
     except Exception as e:
         # Qualsiasi altro errore imprevisto
-        msg = f"Errore imprevisto durante l'eliminazione di '{backup_name}': {e}"
+        msg = f"ERROR imprevisto durante l'eliminazione di '{backup_name}': {e}"
         logging.exception(msg) # Usiamo exception per loggare anche il traceback
         return False, msg
         
@@ -954,9 +956,9 @@ def get_directory_size(directory_path):
                         total_size += os.path.getsize(fp)
                     except OSError as e:
                         # Logga errore per file specifico ma continua
-                        logging.error(f"Impossibile ottenere dimensione per {fp}: {e}")
+                        logging.error(f"ERROR ottenere dimensione per {fp}: {e}")
     except Exception as e:
-         logging.error(f"Errore durante calcolo dimensione per {directory_path}: {e}")
+         logging.error(f"ERROR durante calcolo dimensione per {directory_path}: {e}")
          return -1 # Restituisce -1 per indicare errore nel calcolo
     return total_size
 

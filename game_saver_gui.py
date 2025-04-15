@@ -289,9 +289,13 @@ class MainWindow(QMainWindow):
         # --- FINE CREAZIONE DOCK WIDGET ---
 
         # --- Connessione Segnale Log ---
-        # Connetti il segnale dal gestore log allo slot appendPlainText del widget
+        # Connetti il segnale dal gestore log allo slot appendHtml del widget
         if log_handler:
             log_handler.log_signal.connect(self.log_output.appendHtml)
+            # Aggiungi il gestore al root logger se non è già presente
+            root_logger = logging.getLogger()
+            if log_handler not in root_logger.handlers:
+                root_logger.addHandler(log_handler)
         # --- FINE Connessione Segnale ---
         
         central_widget = QWidget()
@@ -354,7 +358,7 @@ class MainWindow(QMainWindow):
     def changeEvent(self, event):
         """Chiamato quando avvengono eventi nella finestra, inclusi cambi lingua."""
         if event.type() == QEvent.Type.LanguageChange:
-            logging.debug("MainWindow.changeEvent(LanguageChange) rilevato")
+            logging.debug("MainWindow.changeEvent(LanguageChange) detected")
             self.retranslateUi() # Richiama la funzione per ri-tradurre tutto
         super().changeEvent(event) # Chiama l'implementazione base
         
@@ -1132,7 +1136,8 @@ class MainWindow(QMainWindow):
         self.set_controls_enabled(True)
         self.worker_thread = None
         if not success: QMessageBox.critical(self, "Errore Operazione", message)
-        else: logging.debug("Operazione thread worker riuscita, chiamata a update_profile_table() per aggiornare la vista."); self.update_profile_table()
+        else: logging.debug("Operation thread worker successful, calling update_profile_table() to update view.")
+        self.update_profile_table()
 
     @Slot(str)
     def on_detection_progress(self, message):
@@ -1241,7 +1246,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, self.tr("Percorso Non Rilevato"), self.tr("Impossibile rilevare automaticamente il percorso dei salvataggi per '{0}'.\nPer favore, inseriscilo manualmente.").format(profile_name))
             final_path_to_use = None # Forza richiesta manuale sotto
         else: # Altro stato inatteso se success era True? Logghiamo e usciamo
-             logging.warning(f"Stato inatteso '{status}' ricevuto dal thread di rilevamento nonostante success=True")
+             logging.warning(f"Unexpected status '{status}' received from detection thread despite success=True")
              self.status_label.setText(self.tr("Errore interno durante la gestione dei risultati."))
              return
 
@@ -1339,7 +1344,7 @@ if __name__ == "__main__":
     qt_log_handler = QtLogHandler()
     qt_log_handler.setFormatter(log_formatter)
     root_logger.addHandler(qt_log_handler)
-    logging.info("Logging configurato.")
+    logging.info("Logging configured.")
 
     # --- Import necessari per argparse e runner ---
     import argparse
@@ -1354,15 +1359,15 @@ if __name__ == "__main__":
     if args.backup:
         # === Modalità Backup Silenzioso ===
         profile_to_backup = args.backup
-        logging.info(f"Rilevato argomento --backup '{profile_to_backup}'. Avvio backup silenzioso...")
+        logging.info(f"Detected argument --backup '{profile_to_backup}'. Starting silent backup...")
         # Esegui direttamente la logica di backup (che ora include la notifica)
         backup_success = backup_runner.run_silent_backup(profile_to_backup)
-        logging.info(f"Backup silenzioso terminato con successo: {backup_success}")
+        logging.info(f"Silent backup completed successfully: {backup_success}")
         sys.exit(0 if backup_success else 1) # Esci subito dopo il backup
 
     else:
         # === Modalità GUI Normale ===
-        logging.info("Nessun argomento --backup, avvio modalità GUI. Controllo istanza singola...")
+        logging.info("No --backup argument, starting GUI mode. Checking single instance...")
 
         # --- Logica Single Instance ---
         shared_memory = QSharedMemory(SHARED_MEM_KEY)
@@ -1436,31 +1441,31 @@ if __name__ == "__main__":
                 # --- Procedi con il resto dell'inizializzazione GUI ---
                 try:
                     # Caricamento traduttore
-                    logging.info("Avvio caricamento traduttore...")
+                    logging.info("Starting translator loading...")
                     current_settings, is_first_launch = settings_manager.load_settings()
                     selected_language = current_settings.get("language", "en")
                     if selected_language == "en":
                         # --- Logica caricamento/installazione per 'en' ---
                         qm_filename = f"game_saver_{selected_language}.qm"
                         qm_file_path = resource_path(qm_filename)
-                        logging.info(f"Tentativo caricamento traduttore Inglese da: {qm_file_path}")
+                        logging.info(f"Attempting to load English translator from: {qm_file_path}")
                         if os.path.exists(qm_file_path):
                             if ENGLISH_TRANSLATOR.load(qm_file_path):
                                 if QCoreApplication.installTranslator(ENGLISH_TRANSLATOR):
                                     CURRENT_TRANSLATOR = ENGLISH_TRANSLATOR
-                                    logging.info("Traduttore Inglese installato.")
-                                else: logging.error("Installazione traduttore 'en' fallita.")
-                            else: logging.warning(f"Caricamento file QM '{qm_file_path}' fallito.")
-                        else: logging.error(f"File traduttore '{qm_file_path}' NON TROVATO.")
+                                    logging.info("English translator installed.")
+                                else: logging.error("Installation of 'en' translator failed.")
+                            else: logging.warning(f"Loading QM file '{qm_file_path}' failed.")
+                        else: logging.error(f"Translator file '{qm_file_path}' NOT FOUND.")
                         # --- Fine logica 'en' ---
                     else:
-                        logging.info("Lingua non Inglese, nessun traduttore attivo.")
+                        logging.info("Non-English language, no active translator.")
                         if CURRENT_TRANSLATOR: QCoreApplication.removeTranslator(CURRENT_TRANSLATOR)
                         CURRENT_TRANSLATOR = None
 
                     # Gestione primo avvio
                     if is_first_launch:
-                        logging.info("Primo avvio rilevato, mostro dialogo impostazioni.")
+                        logging.info("First launch detected, showing settings dialog.")
                         # Passa None come parent se app non è ancora completamente inizializzata?
                         # Meglio creare window prima e passargli window come parent
                         # Spostiamo la creazione della finestra qui:
@@ -1478,7 +1483,7 @@ if __name__ == "__main__":
                                 window.retranslateUi() # Forza ri-traduzione
                                 window.update_profile_table() # Aggiorna tabella
 
-                            logging.info("Impostazioni iniziali configurate.")
+                            logging.info("Initial settings configured.")
                         else:
                             reply = QMessageBox.question(window, "Impostazioni Predefinite",
                                                         "Nessuna impostazione salvata, usare quelle predefinite?",
@@ -1504,7 +1509,7 @@ if __name__ == "__main__":
                     sys.exit(exit_code) # Esci con il codice dell'applicazione Qt
 
                 except Exception as e_gui_init: # Cattura errori durante l'init della GUI
-                    logging.critical(f"Errore fatale durante inizializzazione GUI: {e_gui_init}", exc_info=True)
+                    logging.critical(f"Fatal error during GUI initialization: {e_gui_init}", exc_info=True)
                     # Prova a mostrare un messaggio di errore base se possibile
                     try:
                          QMessageBox.critical(None, "Errore Avvio", f"Errore fatale durante l'avvio:\n{e_gui_init}")

@@ -66,10 +66,10 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(log_formatter)
 root_logger.addHandler(console_handler)
 
-logging.info("--- Avvio Backup Runner (Solo Log Console) ---")
+logging.info("--- Starting Backup Runner (Console Log Only) ---")
 # logging.info(f"Logging configurato per File ('{log_file}') e Console.") # Commentato/Rimosso
-logging.info("Logging configurato per Console.") # Nuovo messaggio
-logging.info(f"Argomenti ricevuti: {' '.join(sys.argv)}")
+logging.info("Logging configured for Console.") # Nuovo messaggio
+logging.info(f"Received arguments: {' '.join(sys.argv)}")
 # --- FINE Logging ---
 
 # --- Funzione per Notifica ---
@@ -77,7 +77,7 @@ def show_notification(success, message):
     """
     Mostra una notifica popup personalizzata usando Qt.
     """
-    logging.debug(">>> Entrato in show_notification <<<")
+    logging.debug(">>> Entered show_notification <<<")
     # Se PySide6 non è disponibile, logga soltanto
     if not QT_AVAILABLE:
          log_level = logging.INFO if success else logging.ERROR
@@ -87,30 +87,30 @@ def show_notification(success, message):
 
     app = None # Inizializza app a None
     try:
-        logging.debug("Controllo/Creo QApplication...")
+        logging.debug("Checking/Creating QApplication...")
         app = QApplication.instance()
         needs_exec = False # Rinominato da needs_exec a needs_quit_timer
         created_app = False # Flag per sapere se abbiamo creato noi l'app
         if app is None:
-            logging.debug("Nessuna QApplication esistente, ne creo una nuova.")
+            logging.debug("No existing QApplication found, creating a new one.")
             app_args = sys.argv if hasattr(sys, 'argv') and sys.argv else ['backup_runner']
             app = QApplication(app_args)
             created_app = True # Abbiamo creato l'app
         else:
-             logging.debug("QApplication già esistente trovata.")
+             logging.debug("Existing QApplication found.")
 
         # ... (codice per caricare tema e creare popup, rimane uguale) ...
-        logging.debug("Carico impostazioni per tema...")
+        logging.debug("Loading theme settings...")
         try:
             settings, _ = settings_manager.load_settings()
             theme = settings.get('theme', 'dark')
             qss = config.DARK_THEME_QSS if theme == 'dark' else config.LIGHT_THEME_QSS
-            logging.debug(f"Tema caricato: {theme}")
+            logging.debug(f"Theme loaded: {theme}")
         except Exception as e_set:
              logging.error(f"Unable to load settings/theme for notification: {e_set}", exc_info=True)
              qss = "" # Fallback a stile vuoto
 
-        logging.debug("Creo NotificationPopup...")
+        logging.debug("Creating NotificationPopup...")
         title = "Backup Completato" if success else "Errore Backup"
         clean_message = re.sub(r'\n+', '\n', message).strip()
 

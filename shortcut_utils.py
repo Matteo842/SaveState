@@ -14,7 +14,7 @@ try:
     WINSHELL_AVAILABLE = True
 except ImportError:
     WINSHELL_AVAILABLE = False
-    logging.warning("Libreria 'winshell' o 'pywin32' non trovata. Creazione shortcut disabilitata su Windows.")
+    logging.warning("Library 'winshell' or 'pywin32' not found. Shortcut creation disabled on Windows.")
 
 
 # Funzione helper per pulire il nome file del collegamento
@@ -50,30 +50,30 @@ def create_backup_shortcut(profile_name):
 
     try:
         # --- 1. Prepara i percorsi e i nomi ---
-        logging.debug("Fase 1: Preparazione percorsi...")
+        logging.debug("Phase 1: Preparing paths...")
         desktop_path = winshell.desktop()
         if not desktop_path or not os.path.isdir(desktop_path):
              logging.error("Unable to find Desktop folder.")
              return False, "Unable to find Desktop folder."
         safe_link_name = sanitize_shortcut_filename(profile_name)
         link_filepath = os.path.join(desktop_path, f"Backup - {safe_link_name}.lnk")
-        logging.info(f"Creazione collegamento in: '{link_filepath}'")
+        logging.info(f"Creating shortcut in: '{link_filepath}'")
 
         # --- 2. Trova lo script runner (serve sempre) ---
-        logging.debug("Fase 2: Ricerca script runner...")
+        logging.debug("Phase 2: Searching for runner script...")
         runner_script_path = "" # Inizializza
         try:
             runner_script_path = resource_path("backup_runner.py")
             if not os.path.exists(runner_script_path):
                  raise FileNotFoundError(f"backup_runner.py not found at {runner_script_path}")
-            logging.info(f"Percorso script runner trovato: {runner_script_path}")
+            logging.info(f"Runner script path found: {runner_script_path}")
         except Exception as e_path:
             logging.error(f"Error in determining runner script path 'backup_runner.py': {e_path}", exc_info=True)
             msg = f"Unable to determine/find the script ('backup_runner.py') needed for the shortcut.\nVerify that it is included in the build.\n({e_path})"
             return False, msg
 
         # --- 3. Determina Target, Argomenti e Working Dir in base alla modalità ---
-        logging.debug("Fase 3: Determinazione Target/Argomenti/WorkingDir...")
+        logging.debug("Phase 3: Determining Target/Arguments/WorkingDir...")
         target_exe = ""
         arguments = ""
         working_dir = os.path.dirname(runner_script_path) # Directory comune sicura
@@ -103,17 +103,17 @@ def create_backup_shortcut(profile_name):
         logging.debug(f"  Directory Lavoro: {working_dir}")
 
         # --- 4. Crea e configura l'oggetto shortcut ---
-        logging.debug("Fase 4: Creazione oggetto WScript.Shell...")
+        logging.debug("Phase 4: Creating WScript.Shell object...")
         shell = Dispatch('WScript.Shell')
         shortcut = shell.CreateShortCut(link_filepath)
-        logging.debug("Fase 4: Impostazione proprietà shortcut...")
+        logging.debug("Phase 4: Setting shortcut properties...")
         shortcut.Targetpath = target_exe
         shortcut.Arguments = arguments
         shortcut.WorkingDirectory = working_dir
         shortcut.Description = f"Esegue il backup Game Saver per il profilo '{profile_name}'"
 
         # --- 5. Trova e imposta l'icona specifica (o fallback) ---
-        logging.debug("Fase 5: Ricerca e impostazione icona...")
+        logging.debug("Phase 5: Searching and setting icon...")
         # (Il blocco per trovare icon_location_string e impostare shortcut.IconLocation rimane identico a prima)
         icon_location_string = None
         try:
@@ -138,9 +138,9 @@ def create_backup_shortcut(profile_name):
                  logging.warning(f"  Unable to set icon ({icon_location_string}): {e_icon_set}")
 
         # --- 6. Salva lo shortcut ---
-        logging.debug("Fase 6: Tentativo salvataggio shortcut...")
+        logging.debug("Phase 6: Attempting to save shortcut...")
         shortcut.save()
-        logging.debug("Fase 6: Salvataggio shortcut completato.")
+        logging.debug("Phase 6: Shortcut save completed.")
 
         msg = f"Collegamento per '{profile_name}' creato con successo sul desktop."
         logging.info(msg)

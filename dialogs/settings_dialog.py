@@ -171,7 +171,7 @@ class SettingsDialog(QDialog):
     
     def retranslateUi(self):
         """Aggiorna il testo dei widget traducibili nel dialogo."""
-        logging.debug("SettingsDialog.retranslateUi() chiamato")
+        logging.debug("SettingsDialog.retranslateUi() called")
         self.setWindowTitle(self.tr("Impostazioni Applicazione"))
         # Assumiamo di aver salvato i riferimenti ai groupbox in __init__
         if hasattr(self, 'path_group'):
@@ -224,7 +224,7 @@ class SettingsDialog(QDialog):
         def changeEvent(self, event):
             """Gestisce eventi, incluso cambio lingua."""
             if event.type() == QEvent.Type.LanguageChange:
-                logging.debug("SettingsDialog.changeEvent(LanguageChange) rilevato")
+                logging.debug("SettingsDialog.changeEvent(LanguageChange) detected")
                 self.retranslateUi()
             super().changeEvent(event)
       
@@ -232,7 +232,7 @@ class SettingsDialog(QDialog):
     def browse_backup_dir(self):
         """Apre dialogo per selezionare cartella backup."""
         directory = QFileDialog.getExistingDirectory(
-            self, "Seleziona Cartella Base per i Backup", self.path_edit.text()
+            self, "Select Base Folder for Backups", self.path_edit.text()
         )
         if directory: self.path_edit.setText(os.path.normpath(directory))
 

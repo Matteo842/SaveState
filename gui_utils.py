@@ -15,9 +15,9 @@ from datetime import datetime
 DEBUG_LOG_FILE = os.path.join(tempfile.gettempdir(), "savestate_resource_path_debug.log")
 try: # Pulisci log vecchio
     if os.path.exists(DEBUG_LOG_FILE): os.remove(DEBUG_LOG_FILE)
-    print(f"Pulito vecchio file log debug: {DEBUG_LOG_FILE}")
+    print(f"Cleaned old debug log file: {DEBUG_LOG_FILE}")
 except Exception as e_del:
-    print(f"WARN: Impossibile pulire vecchio file log debug: {e_del}")
+    print(f"WARN: Unable to clean old debug log file: {e_del}")
 
 #def write_debug_log(message):
     #try:
@@ -45,7 +45,7 @@ def resource_path(relative_path):
 
     # Controllo opzionale se il percorso generato esiste
     if not os.path.exists(path):
-        logging.warning(f"resource_path: Il percorso calcolato NON ESISTE: {path}")
+        logging.warning(f"resource_path: Calculated path DOES NOT EXIST: {path}")
         #write_debug_log(f"--- WARNING! Path does NOT exist: {path}")
 
     return path
@@ -62,15 +62,15 @@ class WorkerThread(QThread):
         self.setObjectName("WorkerThread")
     def run(self):
         try:
-            self.progress.emit("Operazione in corso...") # CORRETTO
+            self.progress.emit("Operation in progress...") # CORRETTO
             success, message = self.function(*self.args, **self.kwargs)
-            self.progress.emit("Operazione terminata.") # CORRETTO
+            self.progress.emit("Operation completed.") # CORRETTO
             self.finished.emit(success, message)
         except Exception as e:
-            error_msg = f"Errore critico nel thread worker: {e}" # CORRETTO
+            error_msg = f"Critical error in worker thread: {e}" # CORRETTO
             if hasattr(core_logic, 'logging'): core_logic.logging.exception(error_msg)
             else: logging.critical(error_msg, exc_info=True) # Usa critical e aggiunge traceback se possibile
-            self.progress.emit("Errore.") # CORRETTO
+            self.progress.emit("Error.") # CORRETTO
             self.finished.emit(False, error_msg)
             
 # --- Thread per Rilevamento Percorsi in Background ---
@@ -99,12 +99,12 @@ class DetectionWorkerThread(QThread):
         profile_name = self.profile_name_suggestion # Usa il nome passato
 
         try:
-            self.progress.emit(f"Avvio ricerca per '{profile_name}'...")
+            self.progress.emit(f"Starting search for '{profile_name}'...")
 
             # --- INIZIO LOGICA ESTRATTA E ADATTATA ---
 
             if self.game_install_dir:
-                self.progress.emit("Scansione file INI...") # Messaggio più generico
+                self.progress.emit("Scanning INI files...") # Messaggio più generico
                 # Usa self.current_settings passato nell'init
                 ini_whitelist = self.current_settings.get("ini_whitelist", [])
                 ini_blacklist = self.current_settings.get("ini_blacklist", [])
@@ -122,7 +122,7 @@ class DetectionWorkerThread(QThread):
 
                 # Scansione INI (Whitelist)
                 #print(f"THREAD DEBUG: Inizio scansione INI in {self.game_install_dir}...")
-                logging.debug(f"Inizio scansione INI in {self.game_install_dir}...")
+                logging.debug(f"Starting INI scan in {self.game_install_dir}...")
 
                 for root, dirs, files in os.walk(self.game_install_dir):
                     if not self.is_running: break

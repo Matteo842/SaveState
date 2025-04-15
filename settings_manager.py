@@ -60,6 +60,7 @@ def load_settings():
     }
 
     if first_launch:
+        logging.info("Loading settings from file...")
         logging.info(f"File impostazioni '{SETTINGS_FILE_PATH}' non trovato...") # <-- Usa la nuova variabile
         # Potremmo salvare i default qui, ma aspettiamo la conferma dall'utente nel dialogo
         return defaults.copy(), True # Restituisce COPIA dei default e True per primo avvio
@@ -67,6 +68,7 @@ def load_settings():
     try:
         with open(SETTINGS_FILE_PATH, 'r', encoding='utf-8') as f: # <-- Usa la nuova variabile
             user_settings = json.load(f)
+        logging.info("Settings loaded successfully")
         logging.info(f"Impostazioni caricate correttamente da '{SETTINGS_FILE_PATH}'.") # <-- Usa la nuova variabile
         # Unisci i default con le impostazioni utente per gestire chiavi mancanti
         # Le impostazioni utente sovrascrivono i default
@@ -140,6 +142,7 @@ def save_settings(settings_dict):
     try:
         with open(SETTINGS_FILE_PATH, 'w', encoding='utf-8') as f: # <-- Usa la nuova variabile
             json.dump(settings_dict, f, indent=4)
+        logging.info("Saving settings to file...")
         logging.info(f"Impostazioni salvate correttamente in '{SETTINGS_FILE_PATH}'.") # <-- Usa la nuova variabile
         return True
     except Exception:

@@ -15,14 +15,14 @@ class SteamDialog(QDialog):
      profile_configured = Signal(str, str)
      def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Gestione Giochi Steam")
+        self.setWindowTitle("Steam Games Management")
         self.setMinimumWidth(600)
         self.setMinimumHeight(400)
         self.game_list_widget = QListWidget()
-        self.status_label = QLabel("Avvio scansione Steam...")
-        self.configure_button = QPushButton("Configura Profilo Selezionato")
-        self.refresh_button = QPushButton("Aggiorna Lista Giochi")
-        self.close_button = QPushButton("Chiudi")
+        self.status_label = QLabel("Starting Steam scan...")
+        self.configure_button = QPushButton("Configure Selected Profile")
+        self.refresh_button = QPushButton("Refresh Games List")
+        self.close_button = QPushButton("Close")
         self.configure_button.setEnabled(False)
         self.configure_button.clicked.connect(self.configure_selected_game)
         self.refresh_button.clicked.connect(self.start_steam_scan)
@@ -45,26 +45,26 @@ class SteamDialog(QDialog):
      
      @Slot()
      def start_steam_scan(self):
-        self.status_label.setText("Ricerca installazione Steam...")
+        self.status_label.setText("Searching for Steam installation...")
         QApplication.processEvents()
         steam_path = core_logic.get_steam_install_path()
-        if not steam_path: self.status_label.setText("Errore: Installazione Steam non trovata."); return
-        self.status_label.setText("Ricerca librerie Steam...")
+        if not steam_path: self.status_label.setText("Error: Steam installation not found."); return
+        self.status_label.setText("Searching for Steam libraries...")
         QApplication.processEvents()
         libs = core_logic.find_steam_libraries()
-        if not libs: self.status_label.setText("Errore: Nessuna libreria Steam trovata."); return
-        self.status_label.setText("Scansione giochi installati...")
+        if not libs: self.status_label.setText("Error: No Steam libraries found."); return
+        self.status_label.setText("Scanning installed games...")
         QApplication.processEvents()
         self.steam_games_data = core_logic.find_installed_steam_games()
-        self.status_label.setText("Ricerca dati utente Steam...")
+        self.status_label.setText("Searching for Steam user data...")
         QApplication.processEvents()
         userdata_path, likely_id, possible_ids, id_details = core_logic.find_steam_userdata_info()
         self.steam_userdata_info = { 'path': userdata_path, 'likely_id': likely_id, 'possible_ids': possible_ids, 'details': id_details }
         self.populate_game_list()
-        self.status_label.setText(f"Trovati {len(self.steam_games_data)} giochi. Pronto.")
+        self.status_label.setText(f"Found {len(self.steam_games_data)} games. Ready.")
      def populate_game_list(self):
         self.game_list_widget.clear()
-        if not self.steam_games_data: self.game_list_widget.addItem("Nessun gioco trovato."); return
+        if not self.steam_games_data: self.game_list_widget.addItem("No games found."); return
         sorted_games = sorted(self.steam_games_data.items(), key=lambda item: item[1]['name'])
         for appid, game_data in sorted_games:
              profile_exists = "[PROFILO ESISTENTE]" if game_data['name'] in self.profiles else ""
@@ -77,23 +77,23 @@ class SteamDialog(QDialog):
      def configure_selected_game(self):
         current_item = self.game_list_widget.currentItem()
         if not current_item:
-            logging.debug("Tentativo di configurare gioco Steam senza selezione nella lista.")
+            logging.debug("Attempting to configure Steam game without selection in the list.")
             return # Esci se non c'è selezione
         
         appid = current_item.data(Qt.ItemDataRole.UserRole)
-        logging.debug(f"AppID selezionato per la configurazione: {appid}") # AppID ottenuto    
+        logging.debug(f"Selected AppID for configuration: {appid}") # AppID ottenuto    
 
         game_data = self.steam_games_data.get(appid)        
 
         # Controllo subito dopo se .get() ha trovato qualcosa
         if not game_data:
-            logging.error(f"Dati del gioco non trovati per AppID {appid} nel dizionario interno self.steam_games_data.")
+            logging.error(f"Game data not found for AppID {appid} in internal dictionary self.steam_games_data.")
             QMessageBox.warning(self, "Errore Interno", f"Impossibile trovare i dettagli per l'AppID {appid}.")
             return # Esci se non abbiamo trovato i dati      
         
         profile_name = game_data['name']  # Nome corretto del gioco
         install_dir = game_data['installdir']
-        logging.debug(f"Dati recuperati per AppID {appid} - Nome: {profile_name}, Cartella: {install_dir}")
+        logging.debug(f"Retrieved data for AppID {appid} - Name: {profile_name}, Folder: {install_dir}")
         
         steam_id_to_use = self.steam_userdata_info.get('likely_id')
         possible_ids = self.steam_userdata_info.get('possible_ids', [])
@@ -148,18 +148,18 @@ class SteamDialog(QDialog):
                     print(f"DEBUG: Utente ha selezionato: '{chosen_display_str}' -> SteamID3: {steam_id_to_use}")
                 else:
                     # Non dovrebbe succedere se la mappa è costruita correttamente
-                    logging.error(f"Errore: Impossibile mappare la scelta '{chosen_display_str}' all'ID3 originale.")
+                    logging.error(f"Error: Unable to map choice '{chosen_display_str}' to original ID3.")
                     QMessageBox.warning(self, "Errore Interno", "Errore nel recuperare l'ID del profilo selezionato.")
-                    self.status_label.setText(self.tr("Errore selezione profilo."))
+                    self.status_label.setText(self.tr("Error selecting profile."))
                     return # Interrompi
             elif not ok: # Utente ha annullato
-                self.status_label.setText(self.tr("Configurazione annullata (nessun profilo selezionato)."))
+                self.status_label.setText(self.tr("Configuration cancelled (no profile selected)."))
                 return # Interrompi
             # Gestisci caso (improbabile) di scelta vuota
             elif ok and not chosen_display_str:
-                 self.status_label.setText(self.tr("Configurazione annullata (selezione profilo vuota?)."))
+                 self.status_label.setText(self.tr("Configuration cancelled (empty profile selection?)."))
                  return
-        self.status_label.setText(f"Ricerca percorso per '{profile_name}'..."); QApplication.processEvents()
+        self.status_label.setText(f"Searching path for '{profile_name}'...")
         
         guesses = core_logic.guess_save_path(
             game_name=profile_name,          # Passa il NOME GIOCO qui
@@ -170,49 +170,51 @@ class SteamDialog(QDialog):
             is_steam_game=True               # Indica ricerca Steam
         )
 
-        self.status_label.setText(f"Trovati {len(guesses)} percorsi possibili.")
+        self.status_label.setText(f"Found {len(guesses)} possible paths.")
         confirmed_path = None; existing_path = self.profiles.get(profile_name)
         
         # Logica per scegliere/confermare il percorso
         if not guesses and not existing_path:
-             QMessageBox.information(self, "Percorso Non Trovato", "Impossibile trovare automaticamente un percorso. Inseriscilo manually."); confirmed_path = None
+             QMessageBox.information(self, "Path Not Found", "Unable to automatically find a path. Please enter it manually.")
+             confirmed_path = None
         elif not guesses and existing_path:
-            reply = QMessageBox.question(self, "Nessun Percorso Trovato", f"Nessun nuovo percorso trovato automaticamente.\nVuoi mantenere quello attuale?\n'{existing_path}'", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
+            reply = QMessageBox.question(self, "No Path Found", f"No new path found automatically.\nDo you want to keep the current one?\n'{existing_path}'", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
             if reply == QMessageBox.StandardButton.Yes: confirmed_path = existing_path
             else: confirmed_path = None
         else:
              path_choices = []; current_path_index = -1
              for i, p in enumerate(guesses): is_current = "[ATTUALE]" if p == existing_path else ""; path_choices.append(f"{p} {is_current}")
              if p == existing_path: current_path_index = i
-             dialog_text = "Seleziona il percorso corretto per i salvataggi:"
+             dialog_text = "Select the correct path for saves:"
              if existing_path: dialog_text += f"\n(Attuale: {existing_path})"
-             chosen_path_str, ok = QInputDialog.getItem(self, "Conferma Percorso Salvataggi", dialog_text, path_choices, current_path_index if current_path_index != -1 else 0, False)
+             chosen_path_str, ok = QInputDialog.getItem(self, "Confirm Save Path", dialog_text, path_choices, current_path_index if current_path_index != -1 else 0, False)
              if ok and chosen_path_str: confirmed_path = chosen_path_str.split(" [ATTUALE]")[0].strip()
              elif ok and not chosen_path_str: ok = False
              if not ok:
-                 manual_reply = QMessageBox.question(self, "Inserimento Manuale?", "Vuoi inserire il percorso manualmente?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+                 manual_reply = QMessageBox.question(self, "Manual Entry?", "Do you want to enter the path manually?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
                  if manual_reply == QMessageBox.StandardButton.Yes: confirmed_path = None
-                 else: self.status_label.setText("Configurazione annullata."); return
+                 else: self.status_label.setText("Configuration cancelled.")
+                 return
         
         # Logica per inserimento/validazione manuale
         if confirmed_path is None:
-             manual_path, ok = QInputDialog.getText(self, "Percorso Manuale", f"Inserisci il percorso completo per '{profile_name}':", text=existing_path if existing_path else "")
+             manual_path, ok = QInputDialog.getText(self, "Manual Path", f"Enter the full path for '{profile_name}':", text=existing_path if existing_path else "")
              if ok:
                  confirmed_path = self.parent().validate_save_path(manual_path, profile_name) # Usa il validatore della MainWindow
                  if confirmed_path is None: # Se la validazione fallisce (mostra già errore)
-                       self.status_label.setText("Configurazione annullata (percorso manuale non valido).")
+                       self.status_label.setText("Configuration cancelled (invalid manual path).")
                        return # Esci
              else: # Utente ha annullato QInputDialog
-                 self.status_label.setText("Configurazione annullata.")
+                 self.status_label.setText("Configuration cancelled.")
                  return
 
         # Aggiorna/Salva solo se abbiamo un confirmed_path valido alla fine
         self.profiles[profile_name] = confirmed_path
         if core_logic.save_profiles(self.profiles):
-            self.status_label.setText(f"Profilo '{profile_name}' configurato con percorso: {confirmed_path}")
-            QMessageBox.information(self, "Profilo Configurato", f"Profilo '{profile_name}' salvato.")
+            self.status_label.setText(f"Profile '{profile_name}' configured with path: {confirmed_path}")
+            QMessageBox.information(self, "Profile Configured", f"Profile '{profile_name}' saved.")
             self.profile_configured.emit(profile_name, confirmed_path)
             self.accept()
         else:
-            QMessageBox.critical(self, "Errore Salvataggio", "Impossibile salvare il file dei profili.")
-            self.status_label.setText("Errore nel salvataggio dei profili.")
+            QMessageBox.critical(self, "Save Error", "Unable to save profiles file.")
+            self.status_label.setText("Error saving profiles.")
