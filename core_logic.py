@@ -253,8 +253,8 @@ def perform_backup(profile_name, save_folder_path, backup_base_dir, max_backups,
 
         # Gestione backup vecchi (passa nome originale, manage_backups sanifica internamente)
         deleted = manage_backups(profile_name, backup_base_dir, max_backups)
-        deleted_msg = f" Eliminati {len(deleted)} backup obsoleti." if deleted else ""
-        msg = f"Backup (ZIP) per '{profile_name}' completato con successo.{deleted_msg}"
+        deleted_msg = " Eliminati {0} backup obsoleti.".format(len(deleted)) if deleted else ""
+        msg = "Backup (ZIP) per '{0}' completato con successo.".format(profile_name) + deleted_msg
         logging.info(msg)
         return True, msg
 
@@ -336,7 +336,7 @@ def perform_restore(profile_name, save_folder_path, archive_to_restore_path):
             logging.info(f"Extracting '{archive_to_restore_path}' to '{save_folder_path}'...")
             zipf.extractall(path=save_folder_path)
 
-        msg = f"Ripristino (ZIP) per '{profile_name}' completato con successo."
+        msg = "Ripristino (ZIP) per '{0}' completato con successo.".format(profile_name)
         logging.info(msg)
         return True, msg
 
@@ -470,7 +470,7 @@ def find_installed_steam_games():
                             # Verifica installazione
                             is_installed = (app_state.get('StateFlags') == '4') or (os.path.isdir(installdir_absolute))
                             if is_installed and appid not in games:
-                                name = app_state.get('name', f"Gioco {appid}").replace('™', '').replace('®', '').strip()
+                                name = app_state.get('name', "Gioco {0}".format(appid)).replace('™', '').replace('®', '').strip()
                                 games[appid] = {'name': name, 'installdir': installdir_absolute}
                                 total_games_found += 1
         except Exception as e:

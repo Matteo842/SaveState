@@ -22,7 +22,7 @@ from dialogs.steam_dialog import SteamDialog
 from dialogs.minecraft_dialog import MinecraftWorldsDialog
 from gui_utils import WorkerThread, DetectionWorkerThread, QtLogHandler, resource_path
 
-# Importa logica e configurazione
+# Importa logica e configurazionez
 import core_logic 
 import settings_manager 
 import config           
@@ -945,7 +945,7 @@ class MainWindow(QMainWindow):
             if core_logic.delete_profile(self.profiles, profile_name):
                 if core_logic.save_profiles(self.profiles):
                     self.update_profile_table()
-                    self.status_label.setText(f"Profilo '{profile_name}' eliminato.")
+                    self.status_label.setText(self.tr("Profilo '{0}' eliminato.").format(profile_name))
                 else:
                     QMessageBox.critical(self, "Errore", "Profilo eliminato dalla memoria ma impossibile salvare le modifiche.")
                     self.profiles = core_logic.load_profiles()
@@ -1117,15 +1117,15 @@ class MainWindow(QMainWindow):
                                               QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                               QMessageBox.StandardButton.No)
                 if confirm == QMessageBox.StandardButton.Yes:
-                    self.status_label.setText(f"Avvio ripristino per '{profile_name}'...")
+                    self.status_label.setText(self.tr("Avvio ripristino per '{0}'...").format(profile_name))
                     self.set_controls_enabled(False)
                     self.worker_thread = WorkerThread(core_logic.perform_restore, profile_name, save_path, archive_to_restore)
                     self.worker_thread.finished.connect(self.on_operation_finished)
                     self.worker_thread.progress.connect(self.status_label.setText)
                     self.worker_thread.start()
-                else: self.status_label.setText("Ripristino annullato.")
-            else: self.status_label.setText("Nessun backup selezionato per il ripristino.")
-        else: self.status_label.setText("Selezione backup annullata.")
+                else: self.status_label.setText(self.tr("Ripristino annullato."))
+            else: self.status_label.setText(self.tr("Nessun backup selezionato per il ripristino."))
+        else: self.status_label.setText(self.tr("Selezione backup annullata."))
 
     @Slot()
     def handle_manage_backups(self):
@@ -1137,11 +1137,12 @@ class MainWindow(QMainWindow):
 
     @Slot(bool, str)
     def on_operation_finished(self, success, message):
-        main_message = message.splitlines()[0] if message else "Operazione terminata senza messaggio."
-        self.status_label.setText(f"{'Completato' if success else 'ERRORE'}: {main_message}")
+        main_message = message.splitlines()[0] if message else self.tr("Operazione terminata senza messaggio.")
+        status_text = self.tr("Completato: {0}") if success else self.tr("ERRORE: {0}")
+        self.status_label.setText(status_text.format(main_message))
         self.set_controls_enabled(True)
         self.worker_thread = None
-        if not success: QMessageBox.critical(self, "Errore Operazione", message)
+        if not success: QMessageBox.critical(self, self.tr("Errore Operazione"), message)
         else: logging.debug("Operation thread worker successful, calling update_profile_table() to update view.")
         self.update_profile_table()
 
