@@ -7,9 +7,13 @@ A user-friendly GUI application for Windows to easily back up and restore video 
 
 ![Main GUI](images/gui.png)
 
-## About The Project
+## About this Project
 
-SaveState helps you manage and safeguard your precious game progress. Losing save files due to corruption, accidental deletion, or system changes can be frustrating. This tool provides a simple interface to create compressed backups of your game save folders, manage multiple game profiles, and restore them when needed. It includes features to automatically detect Steam games and even create profiles directly from Minecraft worlds or game shortcuts.
+**SaveState** aims to prevent the frustration of losing your precious game progress due to corruption, accidental deletion, or system changes.
+
+This tool offers a simple graphical user interface for creating compressed backups of your game save files and folders, managing multiple game profiles, and restoring them whenever needed.
+
+Furthermore, SaveState features automatic detection of Steam games and even lets you generate profiles directly from Minecraft worlds or game shortcuts.
 
 ## Features
 
