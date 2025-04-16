@@ -426,7 +426,7 @@ class MainWindow(QMainWindow):
         Trova i mondi Minecraft, mostra un dialogo per la selezione
         e crea un nuovo profilo per il mondo scelto.
         """
-        logging.info("Avvio ricerca mondi Minecraft...")
+        logging.info("Starting Minecraft world search...")
         self.status_label.setText(self.tr("Ricerca cartella salvataggi Minecraft..."))
         QApplication.processEvents() # Aggiorna GUI per mostrare messaggio
 
@@ -441,7 +441,7 @@ class MainWindow(QMainWindow):
              return
 
         if not saves_folder:
-            logging.warning("Cartella salvataggi Minecraft non trovata.")
+            logging.warning("Minecraft saves folder not found.")
             QMessageBox.warning(self,
                                 self.tr("Cartella Non Trovata"),
                                 self.tr("Impossibile trovare la cartella dei salvataggi standard di Minecraft (.minecraft/saves).\nAssicurati che Minecraft Java Edition sia installato."))
@@ -460,7 +460,7 @@ class MainWindow(QMainWindow):
             return
 
         if not worlds_data:
-            logging.warning("Nessun mondo trovato in: %s", saves_folder)
+            logging.warning("No worlds found in: %s", saves_folder)
             QMessageBox.information(self,
                                    self.tr("Nessun Mondo Trovato"),
                                    self.tr("Nessun mondo trovato nella cartella:\n{0}").format(saves_folder))
@@ -492,11 +492,11 @@ class MainWindow(QMainWindow):
                      return
                 # Controlla se il percorso è valido
                 if not world_path or not os.path.isdir(world_path):
-                     logging.error(f"world path '{world_path}' invalid for profile '{profile_name}'.")
+                     logging.error(f"World path '{world_path}' invalid for profile '{profile_name}'.")
                      QMessageBox.critical(self, self.tr("Errore Percorso"), self.tr("Il percorso del mondo selezionato ('{0}') non è valido.").format(world_path))
                      return
 
-                logging.info(f"Mondo Minecraft selezionato: '{profile_name}' - Percorso: {world_path}")
+                logging.info(f"Minecraft world selected: '{profile_name}' - Path: {world_path}")
 
                 # 4. Controlla se profilo esiste già
                 if profile_name in self.profiles:
@@ -508,7 +508,7 @@ class MainWindow(QMainWindow):
                 # 5. Crea e Salva Nuovo Profilo
                 self.profiles[profile_name] = world_path # Usa percorso completo mondo
                 if core_logic.save_profiles(self.profiles):
-                    logging.info(f"Profilo Minecraft '{profile_name}' creato.")
+                    logging.info(f"Minecraft profile '{profile_name}' created.")
                     self.update_profile_table()
                     self.select_profile_in_table(profile_name) # Seleziona il nuovo profilo
                     QMessageBox.information(self,
@@ -522,11 +522,11 @@ class MainWindow(QMainWindow):
 
             else:
                 # Dialogo accettato ma nessun mondo restituito?
-                logging.warning("Dialogo Minecraft accettato ma nessun dato mondo selezionato restituito.")
+                logging.warning("Minecraft dialog accepted but no selected world data returned.")
                 self.status_label.setText(self.tr("Selezione mondo annullata o fallita."))
         else:
             # Dialogo annullato dall'utente
-            logging.info("Selezione mondo Minecraft annullata dall'utente.")
+            logging.info("Minecraft world selection cancelled by user.")
             self.status_label.setText(self.tr("Selezione mondo annullata."))
     # --- FINE SLOT ---
     
@@ -552,7 +552,7 @@ class MainWindow(QMainWindow):
                 file_path = urls[0].toLocalFile()
 
                 if file_path.lower().endswith('.lnk'):
-                    logging.debug(f"Rilasciato collegamento: {file_path}")
+                    logging.debug(f"Shortcut dropped: {file_path}")
 
                     # --- Lettura .lnk (Veloce, rimane qui) ---
                     shortcut = None
@@ -571,9 +571,9 @@ class MainWindow(QMainWindow):
                              game_install_dir = os.path.normpath(os.path.dirname(target_path))
                         # Altrimenti non abbiamo una cartella valida
                         else:
-                            logging.warning(f"Impossibile determinare la cartella del gioco dal collegamento: {file_path}")
+                            logging.warning(f"Unable to determine game folder from shortcut: {file_path}")
                             # game_install_dir rimane None
-                        logging.debug(f"Cartella gioco rilevata (o presunta) dal collegamento: {game_install_dir}")
+                        logging.debug(f"Game folder detected (or assumed) from shortcut: {game_install_dir}")
 
                     except ImportError:
                          logging.error("The 'winshell' library is not installed. Unable to read .lnk files.")
@@ -588,7 +588,7 @@ class MainWindow(QMainWindow):
                     profile_name, _ = os.path.splitext(base_name)
                     # Pulisci il nome da caratteri comuni TM, R
                     profile_name = profile_name.replace('™', '').replace('®', '').strip()
-                    logging.debug(f"Nome profilo proposto dal nome del collegamento: {profile_name}")
+                    logging.debug(f"Profile name suggested from shortcut name: {profile_name}")
 
                     # --- Controllo Esistenza Profilo (Veloce, rimane qui) ---
                     # Assumendo che self.profiles sia il dizionario caricato
@@ -623,7 +623,7 @@ class MainWindow(QMainWindow):
 
                     # Avvia il thread
                     self.detection_thread.start()
-                    logging.debug("Avviato il thread di rilevamento percorso.")
+                    logging.debug("Path detection thread started.")
                     # --- FINE AVVIO THREAD ---
 
                     # !!! NOTA BENE: Tutto il codice che prima era qui sotto
@@ -659,14 +659,14 @@ class MainWindow(QMainWindow):
                 known_roots.append(os.path.normpath(d + os.sep))
             known_roots = list(set(known_roots))
 
-            logging.debug(f"Validazione percorso: Path='{norm_path}', KnownRoots='{known_roots}', IsRoot={norm_path in known_roots}")
+            logging.debug(f"Path validation: Path='{norm_path}', KnownRoots='{known_roots}', IsRoot={norm_path in known_roots}")
             if norm_path in known_roots:
                  QMessageBox.warning(self, "Errore Percorso",
                                      f"Non è possibile usare una radice del drive ('{norm_path}') come cartella dei salvataggi per '{context_profile_name}'.\n"
                                      "Per favore, scegli o crea una sottocartella specifica.")
                  return None # Percorso radice non valido
         except Exception:
-             logging.warning("Controllo percorso radice fallito durante validazione.", exc_info=True)
+             logging.warning("Root path check failed during validation.", exc_info=True)
              # Non blocchiamo per questo errore raro, continuiamo con isdir
              pass
 
@@ -677,7 +677,7 @@ class MainWindow(QMainWindow):
             return None # Non è una directory valida
 
         # Se tutti i controlli passano, restituisce il percorso normalizzato
-        logging.debug(f"Validazione percorso: '{norm_path}' considerato valido.")
+        logging.debug(f"Path validation: '{norm_path}' considered valid.")
         return norm_path
     # --- FINE NUOVO METODO HELPER ---
 
@@ -1335,7 +1335,7 @@ class MainWindow(QMainWindow):
 # --- Avvio Applicazione GUI ---
 if __name__ == "__main__":
     # --- Configurazione Logging ---
-    log_level = logging.INFO
+    log_level = logging.DEBUG
     log_format = '%(asctime)s - %(levelname)s - %(message)s'
     log_datefmt = '%H:%M:%S'
     log_formatter = logging.Formatter(log_format, log_datefmt)
@@ -1346,9 +1346,11 @@ if __name__ == "__main__":
         handler.close()
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(log_formatter)
+    console_handler.setLevel(logging.DEBUG)
     root_logger.addHandler(console_handler)
     qt_log_handler = QtLogHandler()
     qt_log_handler.setFormatter(log_formatter)
+    qt_log_handler.setLevel(logging.DEBUG)
     root_logger.addHandler(qt_log_handler)
     logging.info("Logging configured.")
 
