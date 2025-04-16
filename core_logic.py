@@ -604,8 +604,9 @@ def find_steam_userdata_info():
     return userdata_base, likely_id, possible_ids, id_details
 
 def are_names_similar(name1, name2, min_match_words=2):
-    # ... (versione corretta da risposta precedente) ...
+    # ... (versione corretta che risolveva l'errore 'starts_with_match') ...
     try:
+        # (Codice invariato)
         clean_name1 = re.sub(r'[™®©:,.-]', '', name1).lower()
         clean_name2 = re.sub(r'[™®©:,.-]', '', name2).lower()
         ignore_words = {'a', 'an', 'the', 'of', 'and', 'remake', 'intergrade', 'edition', 'goty', 'demo', 'trial', 'play', 'launch'}
@@ -628,11 +629,12 @@ def are_names_similar(name1, name2, min_match_words=2):
         logging.error(f"Error in are_names_similar('{name1}', '{name2}'): {e_sim}", exc_info=True)
         return False
 
-# --- FUNZIONE GUESS_SAVE_PATH AGGIORNATA (CON LOGGING EXTRA) ---
+# --- FUNZIONE GUESS_SAVE_PATH (Direct Checks + Exploratory Semplificato) ---
 def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path=None, steam_id3_to_use=None, is_steam_game=True):
     guesses = []
     checked_paths = set()
 
+    # --- Variabili comuni definite presto ---
     sanitized_name = re.sub(r'^(Play |Launch )', '', game_name, flags=re.IGNORECASE)
     sanitized_name = re.sub(r'[™®©:]', '', sanitized_name).strip()
     sanitized_name_nospace = sanitized_name.replace(' ', '')
@@ -641,7 +643,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     name_variations = list(dict.fromkeys([sanitized_name, sanitized_name_nospace, valid_acronym] if valid_acronym else [sanitized_name, sanitized_name_nospace]))
 
     common_publishers = getattr(config, 'COMMON_PUBLISHERS', [])
-    common_save_subdirs = getattr(config, 'COMMON_SAVE_SUBDIRS', ['Saves', 'Save', 'SaveGame', 'Worlds', 'Players', 'Characters'])
+    common_save_subdirs = getattr(config, 'COMMON_SAVE_SUBDIRS', ['Saves', 'Save', 'SaveGame', 'Saved', 'SaveGames', 'storage', 'PlayerData', 'Profile', 'Profiles', 'User', 'Data', 'SaveData', 'Backup', 'Worlds', 'Players', 'Characters'])
     common_save_subdirs_lower = {s.lower() for s in common_save_subdirs}
 
     logging.info(f"Heuristic save search for '{game_name}' (AppID: {appid})")
@@ -650,79 +652,60 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     logging.debug(f"Name variations for checks: {name_variations}")
     logging.debug(f"Common save subdirs (lower): {common_save_subdirs_lower}")
 
-    # --- Funzione Helper add_guess (CON LOGGING EXTRA SU ISDIR) ---
+    # --- Funzione Helper add_guess (Versione semplice) ---
+    # Non cerca attivamente sottocartelle save al suo interno, lo fa la logica principale
     def add_guess(path, source_description):
         if not path: return False
-        norm_path = os.path.normpath(path) # Normalizza subito
-        if norm_path in checked_paths: return False
-        checked_paths.add(norm_path)
-        logging.debug(f"  add_guess checking: '{norm_path}' (Source: {source_description})") # Log tentativo
-
-        is_dir = False
         try:
-            # --- LOGGING SPECIFICO PER ISDIR ---
-            is_dir = os.path.isdir(norm_path)
-            logging.debug(f"    os.path.isdir('{norm_path}') returned: {is_dir}")
-            # --- FINE LOGGING SPECIFICO ---
-        except OSError as e_isdir:
-             # Logga esplicitamente errore da isdir
-             logging.warning(f"    os.path.isdir('{norm_path}') failed with OSError: {e_isdir}")
-             return False # Se isdir fallisce, non possiamo usarlo
-        except Exception as e_isdir_other:
-             logging.error(f"    os.path.isdir('{norm_path}') failed with unexpected error: {e_isdir_other}")
-             return False
+            norm_path = os.path.normpath(path)
+            if norm_path in checked_paths: return False
+            checked_paths.add(norm_path)
 
-        if is_dir:
-            try: # remotecache filter
-                items = os.listdir(norm_path)
-                if len(items) == 1 and os.path.isfile(os.path.join(norm_path, items[0])) and items[0].lower() == "remotecache.vdf":
-                    logging.info(f"    Path ignored ('{norm_path}') as it only contains remotecache.vdf.")
-                    return False
-            except OSError: pass
+            # Log tentativo prima di isdir
+            logging.debug(f"  add_guess checking: '{norm_path}' (Source: {source_description})")
+            if os.path.isdir(norm_path):
+                # logging.debug(f"    os.path.isdir is True") # Log opzionale
+                try: # remotecache filter
+                    items = os.listdir(norm_path)
+                    if len(items) == 1 and os.path.isfile(os.path.join(norm_path, items[0])) and items[0].lower() == "remotecache.vdf":
+                        logging.info(f"    Path ignored ('{norm_path}') as it only contains remotecache.vdf.")
+                        return False
+                except OSError: pass
 
-            drive, tail = os.path.splitdrive(norm_path)
-            if not (tail and tail != os.sep):
-                logging.debug(f"    Path ignored because it is a root drive: '{norm_path}'")
-                return False
-
-            # Check for common save subdirs within this path
-            subdir_found = False
-            try:
-                for item in os.listdir(norm_path):
-                    if item.lower() in common_save_subdirs_lower:
-                        sub_path = os.path.join(norm_path, item)
-                        if os.path.isdir(sub_path): # Verifica se anche la subdir è una cartella
-                            logging.info(f"    Found common save subdir '{item}' inside. Adding: '{sub_path}'")
-                            source_for_sub = f"{source_description}/{item}"
-                            norm_sub_path = os.path.normpath(sub_path)
-                            if norm_sub_path not in checked_paths:
-                                 checked_paths.add(norm_sub_path)
-                                 if norm_sub_path not in guesses:
-                                      guesses.append(norm_sub_path)
-                            subdir_found = True
-            except OSError as e_list_sub:
-                 logging.warning(f"    Could not list contents of '{norm_path}' to check for subdirs: {e_list_sub}")
-
-            if not subdir_found:
-                 logging.info(f"    Found valid path: '{norm_path}' (Source: {source_description})")
-                 if norm_path not in guesses:
-                     guesses.append(norm_path)
-                 return True
-            else:
-                 return True # Indicate success as subdirs were added
-        else:
-             logging.debug(f"    Path '{norm_path}' is not a directory.")
-             return False
+                drive, tail = os.path.splitdrive(norm_path)
+                if tail and tail != os.sep: # Non-root check
+                    logging.info(f"    Found valid path: '{norm_path}' (Source: {source_description})")
+                    if norm_path not in guesses:
+                        guesses.append(norm_path)
+                    return True
+                else: logging.debug(f"    Path ignored because it is a root drive: '{norm_path}'")
+            # else: logging.debug(f"    Path '{norm_path}' is not a directory.") # Meno verboso
+        except OSError as e_os:
+            if not isinstance(e_os, PermissionError) and getattr(e_os, 'winerror', 0) != 5:
+                logging.warning(f"    OS Error checking path '{norm_path}': {e_os}")
+        except Exception as e:
+            logging.warning(f"    Error while checking path '{norm_path}': {e}")
+        return False
     # --- END Helper Function add_guess ---
 
     # --- Steam Userdata Check ---
+    # ... (Invariato, chiama add_guess semplice) ...
     if is_steam_game and appid and steam_userdata_path and steam_id3_to_use:
-        # ... (come prima, chiama add_guess) ...
         logging.info(f"Checking Steam Userdata for AppID {appid} (User: {steam_id3_to_use})...")
         base_userdata = os.path.join(steam_userdata_path, steam_id3_to_use, appid)
         remote_path = os.path.join(base_userdata, 'remote')
-        add_guess(remote_path, "Steam Userdata/remote")
-        add_guess(base_userdata, "Steam Userdata/AppID Base")
+        if add_guess(remote_path, "Steam Userdata/remote"):
+            try:
+                for entry in os.listdir(remote_path):
+                    sub = os.path.join(remote_path, entry)
+                    sub_lower = entry.lower()
+                    if os.path.isdir(sub) and \
+                       (any(s in sub_lower for s in ['save', 'profile']) or \
+                        are_names_similar(sanitized_name, entry) or \
+                        (valid_acronym and sub_lower == valid_acronym.lower())):
+                         add_guess(sub, f"Steam Userdata/remote/{entry}") # Aggiunge subdir se corrisponde
+            except Exception as e_remote_sub: logging.warning(f"Error scanning subfolders in remote: {e_remote_sub}")
+        add_guess(base_userdata, "Steam Userdata/AppID Base") # Aggiunge base
 
     # --- Generic Heuristic Search ---
     logging.info("Starting generic heuristic search...")
@@ -740,55 +723,75 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     valid_locations = {name: os.path.normpath(path) for name, path in common_locations.items() if path and os.path.isdir(path)}
     logging.debug(f"Valid common locations found: {list(valid_locations.keys())}")
 
-    # --- Direct Path Checks (CON LOGGING EXTRA) ---
-    logging.info("Performing direct path checks...") # Log inizio check diretto
+    # --- >>> Direct Path Checks (MANTENUTI) <<< ---
+    logging.info("Performing direct path checks...")
     for loc_name, base_folder in valid_locations.items():
         for variation in name_variations:
             if not variation: continue
             # Check <Location>/<GameVariation>
             direct_path = os.path.join(base_folder, variation)
-            logging.debug(f"  Direct check: {direct_path}") # Log percorso costruito
+            logging.debug(f"  Direct check: {direct_path}")
             add_guess(direct_path, f"{loc_name}/Direct/{variation}")
             # Check <Location>/<Publisher>/<GameVariation>
             for publisher in common_publishers:
                 pub_path = os.path.join(base_folder, publisher, variation)
-                logging.debug(f"  Direct check (pub): {pub_path}") # Log percorso costruito
+                logging.debug(f"  Direct check (pub): {pub_path}")
                 add_guess(pub_path, f"{loc_name}/{publisher}/Direct/{variation}")
 
-    # --- Exploratory Search ---
-    logging.info("Performing exploratory search (iterating folders)...") # Log inizio esplorazione
+    # --- >>> Exploratory Search (Logica Semplificata - RIMOSSO Check 2b) <<<---
+    logging.info("Performing exploratory search (iterating folders)...")
     for loc_name, base_folder in valid_locations.items():
-        # ... (Logica esplorativa come prima, con i suoi log e try/except) ...
         logging.debug(f"Exploring in '{loc_name}' ({base_folder})...")
         try:
             for lvl1_folder_name in os.listdir(base_folder):
                 lvl1_path = os.path.join(base_folder, lvl1_folder_name)
                 if not os.path.isdir(lvl1_path): continue
                 lvl1_name_lower = lvl1_folder_name.lower()
-                # logging.debug(f"  Examining Lvl1: '{lvl1_folder_name}'") # Rimosso per meno verbosità
+
+                # Check 1: Lvl1 è simile al nome gioco o acronimo?
                 if are_names_similar(sanitized_name, lvl1_folder_name) or \
                    (valid_acronym and lvl1_name_lower == valid_acronym.lower()):
-                    add_guess(lvl1_path, f"{loc_name}/GameNameLvl1/{lvl1_folder_name}")
+                    logging.debug(f"  Match found at Lvl1: '{lvl1_folder_name}'")
+                    # Aggiungi Lvl1 path
+                    if add_guess(lvl1_path, f"{loc_name}/GameNameLvl1/{lvl1_folder_name}"):
+                        # E controlla subdir comuni DENTRO Lvl1
+                        try:
+                            for save_subdir in os.listdir(lvl1_path):
+                                if save_subdir.lower() in common_save_subdirs_lower:
+                                    add_guess(os.path.join(lvl1_path, save_subdir), f"{loc_name}/GameNameLvl1/{lvl1_folder_name}/{save_subdir}")
+                        except OSError: pass
+
+                # Check 2: Guarda dentro Lvl1 per trovare Lvl2
                 try:
                     for lvl2_folder_name in os.listdir(lvl1_path):
                         lvl2_path = os.path.join(lvl1_path, lvl2_folder_name)
                         if not os.path.isdir(lvl2_path): continue
                         lvl2_name_lower = lvl2_folder_name.lower()
-                        # logging.debug(f"    Examining Lvl2 (inside '{lvl1_folder_name}'): '{lvl2_folder_name}'") # Rimosso
+
+                        # Check 2a: Lvl2 è simile al nome gioco o acronimo?
                         if are_names_similar(sanitized_name, lvl2_folder_name) or \
                            (valid_acronym and lvl2_name_lower == valid_acronym.lower()):
-                            add_guess(lvl2_path, f"{loc_name}/{lvl1_folder_name}/GameNameLvl2/{lvl2_folder_name}")
+                             logging.debug(f"    Match found at Lvl2 (Game Name): '{lvl2_folder_name}' in '{lvl1_folder_name}'")
+                             # Aggiungi Lvl2 path
+                             if add_guess(lvl2_path, f"{loc_name}/{lvl1_folder_name}/GameNameLvl2/{lvl2_folder_name}"):
+                                 # E controlla subdir comuni DENTRO Lvl2
+                                 try:
+                                     for save_subdir in os.listdir(lvl2_path):
+                                         if save_subdir.lower() in common_save_subdirs_lower:
+                                             add_guess(os.path.join(lvl2_path, save_subdir), f"{loc_name}/{lvl1_folder_name}/GameNameLvl2/{lvl2_folder_name}/{save_subdir}")
+                                 except OSError: pass
+                        # Check 2b RIMOSSO: Non aggiungiamo più Lvl2 solo perché si chiama "Saved", "Data", etc.
                 except OSError as e_lvl1:
                     if not isinstance(e_lvl1, PermissionError) and getattr(e_lvl1, 'winerror', 0) != 5:
-                        logging.warning(f"  Could not read inside '{lvl1_path}': {e_lvl1}")
+                         logging.warning(f"  Could not read inside '{lvl1_path}': {e_lvl1}")
         except OSError as e_base:
              if not isinstance(e_base, PermissionError) and getattr(e_base, 'winerror', 0) != 5:
                 logging.warning(f"Error accessing subfolders in '{base_folder}': {e_base}")
-
+    # --- END Exploratory Search ---
 
     # --- Search Inside Install Dir ---
+    # ... (Invariato) ...
     if game_install_dir and os.path.isdir(game_install_dir):
-        # ... (Logica invariata, log già presenti) ...
         logging.info(f"Checking common subfolders INSIDE (max depth 3) '{game_install_dir}'...")
         max_depth = 3
         install_dir_depth = game_install_dir.rstrip(os.sep).count(os.sep)
@@ -801,14 +804,14 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                     potential_path = os.path.join(root, dir_name)
                     relative_log_path = os.path.relpath(potential_path, game_install_dir)
                     if dir_name.lower() in common_save_subdirs_lower:
-                        add_guess(potential_path, f"InstallDirWalk/SaveSubdir/{relative_log_path}")
+                         add_guess(potential_path, f"InstallDirWalk/SaveSubdir/{relative_log_path}")
                     elif are_names_similar(sanitized_name, dir_name) or (valid_acronym and dir_name.lower() == valid_acronym.lower()):
-                        add_guess(potential_path, f"InstallDirWalk/GameMatch/{relative_log_path}")
+                         add_guess(potential_path, f"InstallDirWalk/GameMatch/{relative_log_path}")
         except Exception as e_walk:
              logging.error(f"Error during os.walk in '{game_install_dir}': {e_walk}")
 
     # --- Deduplicate and Final Sort ---
-    # ... (Logica invariata, log già presenti) ...
+    # ... (Invariato) ...
     final_guesses = []
     for g in guesses:
         norm_g = os.path.normpath(g)
@@ -827,7 +830,6 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     logging.debug(f"Final sorted paths: {sorted_final_guesses}")
 
     return sorted_final_guesses
-
     
 def delete_single_backup_file(file_path):
     """Elimina un singolo file di backup specificato dal percorso completo.

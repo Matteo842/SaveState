@@ -6,6 +6,7 @@ import sys
 import logging
 import re
 from gui_utils import resource_path
+from core_logic import sanitize_foldername
 
 # Importa winshell SOLO se su Windows
 try:
@@ -16,6 +17,38 @@ except ImportError:
     WINSHELL_AVAILABLE = False
     logging.warning("Library 'winshell' or 'pywin32' not found. Shortcut creation disabled on Windows.")
 
+PROFILE_NAME_STRIP_LIST = [
+    '.exe',
+    'play',
+    'start',
+    'launch',
+    'launcher',
+    'game',
+    # Aggiungi qui altre parole se serve
+]
+
+_PROFILE_NAME_STRIP_REGEX = re.compile(
+    r'\s*\b(' + '|'.join(re.escape(word) for word in PROFILE_NAME_STRIP_LIST if word != '.exe') + r')\b\s*|' +
+    r'\s*' + re.escape('.exe') + r'\s*',
+    re.IGNORECASE
+)
+
+def sanitize_profile_name(name: str) -> str:
+    """Pulisce un nome profilo da parole comuni e caratteri non validi."""
+    if not name:
+        return ""
+
+    # 1. Rimuove le parole dalla lista PROFILE_NAME_STRIP_LIST
+    cleaned_name = _PROFILE_NAME_STRIP_REGEX.sub(' ', name)
+
+    # 2. Pulisce spazi extra
+    cleaned_name = re.sub(r'\s+', ' ', cleaned_name).strip()
+
+    # 3. Rimuove caratteri non validi usando la funzione esistente
+    #    (ora usa il nome corretto!)
+    sanitized_name = sanitize_foldername(cleaned_name)
+
+    return sanitized_name
 
 # Funzione helper per pulire il nome file del collegamento
 def sanitize_shortcut_filename(name):

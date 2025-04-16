@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QStyle, QDockWidget, QPlainTextEdit
 )
 from PySide6.QtCore import ( Slot, Qt, QUrl, QSize, QTranslator, QCoreApplication, 
-     QEvent, QLocale, QSharedMemory, QSystemSemaphore, QLockFile
+     QEvent, QLocale, QSharedMemory #QSystemSemaphore, QLockFile
 )
 from PySide6.QtGui import QIcon, QDesktopServices, QPalette, QColor
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
@@ -30,7 +30,8 @@ import minecraft_utils
 import winshell         # Per leggere i collegamenti .lnk
 import string           # Necessario per il controllo root drive
 import logging
-import shortcut_utils # Il nostro nuovo modulo
+from shortcut_utils import sanitize_profile_name
+import shortcut_utils
 
 # --- NUOVE COSTANTI GLOBALI PER IDENTIFICARE L'ISTANZA ---
 # Usa stringhe univoche per la tua applicazione
@@ -557,9 +558,10 @@ class MainWindow(QMainWindow):
                     # --- Lettura .lnk (Veloce, rimane qui) ---
                     shortcut = None
                     game_install_dir = None
+                    target_path = None
                     try:
                         # Importa winshell qui dentro se non è globale o per sicurezza
-                        # import winshell
+                        #import winshell
                         shortcut = winshell.shortcut(file_path)
                         target_path = shortcut.path
                         working_dir = shortcut.working_directory
@@ -583,22 +585,39 @@ class MainWindow(QMainWindow):
                         logging.error(f"Error while reading the .lnk link: {e_lnk}", exc_info=True)
                         QMessageBox.critical(self, self.tr("Errore Collegamento"), self.tr("Impossibile leggere il file .lnk:\n{0}").format(e_lnk))
                         return # Esce se non possiamo leggere il link
-
+    
+                   # --- Ottieni e Pulisci il Nome Profilo (CORRETTO) ---
                     base_name = os.path.basename(file_path)
-                    profile_name, _ = os.path.splitext(base_name)
-                    # Pulisci il nome da caratteri comuni TM, R
-                    profile_name = profile_name.replace('™', '').replace('®', '').strip()
-                    logging.debug(f"Profile name suggested from shortcut name: {profile_name}")
+                    # 1. Ottieni il nome senza estensione
+                    profile_name_temp, _ = os.path.splitext(base_name)
 
-                    # --- Controllo Esistenza Profilo (Veloce, rimane qui) ---
-                    # Assumendo che self.profiles sia il dizionario caricato
+                    # 2. Assegnalo a profile_name_original PRIMA di usarlo
+                    profile_name_original = profile_name_temp
+
+                    # 3. Pulisci profile_name_original da ™ e ® (se vuoi mantenere questa pulizia base)
+                    profile_name_original = profile_name_original.replace('™', '').replace('®', '').strip()
+                    logging.debug(f"Original name derived from LNK: '{profile_name_original}'")
+
+                    # 4. Applica la sanificazione COMPLETA a quello originale pulito
+                    profile_name = sanitize_profile_name(profile_name_original)
+                    logging.info(f"Original Name (after basic clean): '{profile_name_original}', Sanitized Name: '{profile_name}'")
+                    # --- FINE SEZIONE CORRETTA ---
+
+                    # --- CONTROLLO NOME VUOTO (USA VARIABILI CORRETTE) ---
+                    if not profile_name: # Controlla il nome finale pulito
+                        logging.error(f"Sanitized profile name for '{profile_name_original}' became empty!") # Usa l'originale (ora definito) nel log
+                        QMessageBox.warning(self, self.tr("Errore Nome Profilo"),
+                                              self.tr("Impossibile generare un nome profilo valido dal collegamento trascinato."))
+                        return # Esce se il nome pulito è vuoto
+                    # --- FINE CONTROLLO ---
+
+                    # --- Controllo Esistenza Profilo (USA NOME PULITO) ---
+                    # (Il resto della funzione da qui in poi dovrebbe usare 'profile_name', che è quello pulito)
                     if profile_name in self.profiles:
                         QMessageBox.warning(self, self.tr("Profilo Esistente"), self.tr("Profilo '{0}' esiste già.").format(profile_name))
                         return # Esce se profilo esiste
 
-                    # --- AVVIO THREAD DI RICERCA ---
-                    # Verifica se un altro thread di ricerca è già attivo
-                    # Assumiamo di salvare il riferimento al thread in self.detection_thread
+                    # --- AVVIO THREAD DI RICERCA (USA NOME PULITO) ---
                     if hasattr(self, 'detection_thread') and self.detection_thread and self.detection_thread.isRunning():
                         QMessageBox.information(self, self.tr("Operazione in Corso"), self.tr("Un'altra ricerca di percorso è già in corso. Attendi."))
                         return
