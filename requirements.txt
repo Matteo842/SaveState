@@ -3,3 +3,4 @@ winshell
 pywin32
 vdf
 nbtlib
+thefuzz
