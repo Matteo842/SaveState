@@ -15,6 +15,14 @@ This tool offers a simple graphical user interface for creating compressed backu
 
 Furthermore, SaveState features automatic detection of Steam games and even lets you generate profiles directly from Minecraft worlds or game shortcuts.
 
+——————————————————————————————————————————————————
+
+⚠️ Current Status (2025-04-16): This is a personal project currently **under active development.** 
+
+Please note: **English localisation is ongoing.**
+
+——————————————————————————————————————————————————
+
 ## Features
 
 * **Manual Profile Creation:** Easily add any game by specifying a profile name and the path to its save folder.
