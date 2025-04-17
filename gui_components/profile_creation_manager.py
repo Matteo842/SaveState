@@ -1,11 +1,10 @@
 # gui_components/profile_creation_manager.py
 # -*- coding: utf-8 -*-
 import os
-import sys
+#import sys
 import logging
 import string
-import winshell # Necessario per .lnk
-import shutil # Per shutil.disk_usage nel futuro? Non usato qui direttamente ora.
+#import shutil # Per shutil.disk_usage nel futuro? Non usato qui direttamente ora.
 
 from PySide6.QtWidgets import QMessageBox, QInputDialog, QApplication
 from PySide6.QtCore import Qt, QUrl, Slot
@@ -277,6 +276,7 @@ class ProfileCreationManager:
 
     def dropEvent(self, event):
         """Gestisce il rilascio di un oggetto .lnk e avvia la ricerca del percorso."""
+        import winshell # Necessario per .lnk
         mw = self.main_window
         if not event.mimeData().hasUrls():
             event.ignore()

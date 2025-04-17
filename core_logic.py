@@ -4,29 +4,20 @@ from datetime import datetime
 import logging
 import os
 import json
-import zipfile
 import config
 import re
 import platform
 import glob
 
 try:
-    import winreg
-except ImportError:
-    winreg = None
-try:
-    import vdf
-except ImportError:
-    vdf = None
-try:
-    # Importa thefuzz per fuzzy matching
     from thefuzz import fuzz
     THEFUZZ_AVAILABLE = True
+    logging.info("Libreria 'thefuzz' trovata e caricata.")
 except ImportError:
     THEFUZZ_AVAILABLE = False
-    logging.warning("Library 'thefuzz' not found. Fuzzy name matching will be disabled.")
-    logging.warning("Install it using: pip install thefuzz")
-
+    # Logga il warning una sola volta qui all'avvio se manca
+    logging.warning("Libreria 'thefuzz' non trovata. Il fuzzy matching sarà disabilitato.")
+    logging.warning("Installala con: pip install thefuzz[speedup]")
 
 # --- Definisci percorso file profili ---
 PROFILES_FILENAME = "game_save_profiles.json"
@@ -317,6 +308,7 @@ def manage_backups(profile_name, backup_base_dir, max_backups):
 
 def perform_backup(profile_name, save_folder_path, backup_base_dir, max_backups, max_source_size_mb, compression_mode="standard"):
     """Esegue il backup usando zipfile. Restituisce (bool successo, str messaggio)."""
+    import zipfile
     logging.info(f"Starting perform_backup for: '{profile_name}'")
     sanitized_folder_name = sanitize_foldername(profile_name)
     profile_backup_dir = os.path.join(backup_base_dir, sanitized_folder_name)
@@ -463,6 +455,7 @@ def list_available_backups(profile_name):
 
 def perform_restore(profile_name, save_folder_path, archive_to_restore_path):
     """Esegue il ripristino da un archivio ZIP. Restituisce (bool successo, str messaggio)."""
+    import zipfile
     save_folder_path = os.path.normpath(save_folder_path)
     if not os.path.exists(archive_to_restore_path) or not zipfile.is_zipfile(archive_to_restore_path):
         msg = f"ERROR: Archive to restore not found or is not a valid ZIP: '{archive_to_restore_path}'"
@@ -524,6 +517,12 @@ _cached_id_details = None
 
 def get_steam_install_path():
     """Trova il percorso di installazione di Steam. Restituisce str o None."""
+    try:
+        import winreg # <-- Import spostato qui
+    except ImportError:
+         logging.warning("Modulo winreg non disponibile su questa piattaforma.")
+         return None # O gestisci l'errore come preferisci
+    
     global _steam_install_path
     if _steam_install_path: return _steam_install_path
     if platform.system() != "Windows": # <<< MODIFICATO: Rileva OS
@@ -560,8 +559,17 @@ def get_steam_install_path():
 
 def _parse_vdf(file_path):
     """Helper interno per parsare VDF. Restituisce dict o None."""
-    if vdf is None: return None
-    if not os.path.isfile(file_path): return None # <<< NUOVO: Controlla esistenza file
+    try:
+        import vdf # <--- SPOSTATO QUI DENTRO
+    except ImportError:
+         vdf = None # Imposta a None se fallisce per gestirlo dopo
+
+    if vdf is None:
+        # Logga l'errore solo se si prova effettivamente a parsare
+        logging.error("Libreria 'vdf' non trovata. Impossibile parsare file VDF.")
+        return None
+    if not os.path.isfile(file_path): return None
+   
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -688,8 +696,11 @@ STEAM_ID64_BASE = 76561197960265728
 
 def find_steam_userdata_info():
     """Trova userdata path, SteamID3, lista ID possibili e dettagli ID (incluso display name)."""
+    try:
+        import vdf
+    except ImportError:
+        vdf = None
     global _steam_userdata_path, _steam_id3, _cached_possible_ids, _cached_id_details
-
     # Controlla cache (come prima)
     if (_steam_userdata_path and _steam_id3 and
             _cached_possible_ids is not None and _cached_id_details is not None and
@@ -811,7 +822,6 @@ def are_names_similar(name1, name2, min_match_words=2, fuzzy_threshold=88, game_
         game_title_words_for_seq (list[str], optional): List of significant game title words
                                                       used for the initial sequence check.
     """
-    # ... (inizio funzione invariato: pulizia, ignore words, tokenizzazione) ...
     try:
         # Pulizia base
         clean_name1 = re.sub(r'[™®©:,.\-\(\)]', '', name1).lower()

@@ -2,34 +2,36 @@
 # -*- coding: utf-8 -*-
 import sys
 import os
+
 import shutil
+# --- PySide6 Imports (misuriamo i moduli principali) ---
+# Importa il modulo base prima, poi gli elementi specifici
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QStatusBar, QMessageBox, QDialog,
     QProgressBar, QGroupBox,
-    QStyle, QDockWidget, QPlainTextEdit,QTableWidget
+    QStyle, QDockWidget, QPlainTextEdit, QTableWidget
 )
-from PySide6.QtCore import ( Slot, Qt, QUrl, QSize, QTranslator, QCoreApplication, 
+from PySide6.QtCore import ( Slot, Qt, QUrl, QSize, QTranslator, QCoreApplication,
      QEvent, QSharedMemory #QSystemSemaphore, QLockFile
 )
 from PySide6.QtGui import QIcon, QDesktopServices, QPalette, QColor
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-
 from dialogs.settings_dialog import SettingsDialog
 from dialogs.restore_dialog import RestoreDialog
 from dialogs.manage_backups_dialog import ManageBackupsDialog
 from dialogs.steam_dialog import SteamDialog
+# --- GUI Utils/Components Imports ---
+# Importa tutto il necessario da gui_utils in una volta
 from gui_utils import WorkerThread, QtLogHandler, resource_path
 from gui_components.profile_list_manager import ProfileListManager
 from gui_components.theme_manager import ThemeManager
 from gui_components.profile_creation_manager import ProfileCreationManager
+import core_logic
+import settings_manager
 
-# Importa logica e configurazione
-import core_logic 
-import settings_manager 
-import config                  # Per leggere i collegamenti .lnk 
-import logging
-from shortcut_utils import sanitize_profile_name
+import config
+import logging # Importa sia il modulo che la funzione specifica se serve ancora qui
 import shortcut_utils
 
 # --- NUOVE COSTANTI GLOBALI PER IDENTIFICARE L'ISTANZA ---
@@ -562,7 +564,7 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.StandardButton.Yes:
             if core_logic.delete_profile(self.profiles, profile_name):
                 if core_logic.save_profiles(self.profiles):
-                    self.update_profile_table()
+                    self.profile_table_manager.update_profile_table()
                     self.status_label.setText(self.tr("Profilo '{0}' eliminato.").format(profile_name))
                 else:
                     QMessageBox.critical(self, "Errore", "Profilo eliminato dalla memoria ma impossibile salvare le modifiche.")
