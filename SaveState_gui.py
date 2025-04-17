@@ -1,4 +1,4 @@
-# game_saver_gui.py
+# SaveState_gui.py
 # -*- coding: utf-8 -*-
 import sys
 import os
@@ -6,7 +6,7 @@ import shutil
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QStatusBar, QMessageBox, QDialog,
-    QProgressBar, QGroupBox, QInputDialog,
+    QProgressBar, QGroupBox,
     QStyle, QDockWidget, QPlainTextEdit,QTableWidget
 )
 from PySide6.QtCore import ( Slot, Qt, QUrl, QSize, QTranslator, QCoreApplication, 
@@ -19,18 +19,15 @@ from dialogs.settings_dialog import SettingsDialog
 from dialogs.restore_dialog import RestoreDialog
 from dialogs.manage_backups_dialog import ManageBackupsDialog
 from dialogs.steam_dialog import SteamDialog
-from dialogs.minecraft_dialog import MinecraftWorldsDialog
-from gui_utils import WorkerThread, DetectionWorkerThread, QtLogHandler, resource_path
+from gui_utils import WorkerThread, QtLogHandler, resource_path
 from gui_components.profile_list_manager import ProfileListManager
 from gui_components.theme_manager import ThemeManager
+from gui_components.profile_creation_manager import ProfileCreationManager
 
 # Importa logica e configurazione
 import core_logic 
 import settings_manager 
-import config           
-import minecraft_utils
-import winshell         # Per leggere i collegamenti .lnk
-import string           # Necessario per il controllo root drive
+import config                  # Per leggere i collegamenti .lnk 
 import logging
 from shortcut_utils import sanitize_profile_name
 import shortcut_utils
@@ -47,8 +44,6 @@ CURRENT_TRANSLATOR = None # Questa traccia solo quale è ATTIVO (o None)
 
 
 CURRENT_TRANSLATOR = None 
-
-# --- Dialogo Gestione Steam ---
 
 # --- Finestra Principale ---
 class MainWindow(QMainWindow):
@@ -294,19 +289,20 @@ class MainWindow(QMainWindow):
         self.profile_table_manager = ProfileListManager(self.profile_table_widget, self)
         self.profile_table_manager.update_profile_table()
         self.theme_manager = ThemeManager(self.theme_button, self)
+        self.profile_creation_manager = ProfileCreationManager(self)
         
         # Connessioni
         self.backup_button.clicked.connect(self.handle_backup)
         self.restore_button.clicked.connect(self.handle_restore)
         self.profile_table_widget.itemSelectionChanged.connect(self.update_action_button_states)
-        self.new_profile_button.clicked.connect(self.handle_new_profile)
+        self.new_profile_button.clicked.connect(self.profile_creation_manager.handle_new_profile)
         self.delete_profile_button.clicked.connect(self.handle_delete_profile)
         self.steam_button.clicked.connect(self.handle_steam)
         self.manage_backups_button.clicked.connect(self.handle_manage_backups)
         self.settings_button.clicked.connect(self.handle_settings)
         self.open_backup_dir_button.clicked.connect(self.handle_open_backup_folder)
         self.toggle_log_button.clicked.connect(self.handle_toggle_log)
-        self.minecraft_button.clicked.connect(self.handle_minecraft_button)
+        self.minecraft_button.clicked.connect(self.profile_creation_manager.handle_minecraft_button)
         self.create_shortcut_button.clicked.connect(self.handle_create_shortcut)
 
         # Stato Iniziale e Tema
@@ -314,6 +310,24 @@ class MainWindow(QMainWindow):
         self.worker_thread = None
         self.retranslateUi()
         self.setWindowIcon(QIcon(resource_path("icon.png"))) # Icona finestra principale
+    
+    def dragEnterEvent(self, event):
+        if hasattr(self, 'profile_creation_manager'):
+            self.profile_creation_manager.dragEnterEvent(event)
+        else:
+            super().dragEnterEvent(event) # Chiamata al metodo base
+
+    def dragMoveEvent(self, event):
+        if hasattr(self, 'profile_creation_manager'):
+            self.profile_creation_manager.dragMoveEvent(event)
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event):
+        if hasattr(self, 'profile_creation_manager'):
+            self.profile_creation_manager.dropEvent(event)
+        else:
+            super().dropEvent(event)
     
     def retranslateUi(self):
         """Aggiorna il testo di tutti i widget traducibili."""
@@ -360,7 +374,6 @@ class MainWindow(QMainWindow):
             else:
                 self.toggle_log_button.setToolTip(self.tr("Mostra Log"))
 
-
     @Slot()
     def handle_open_backup_folder(self):
         """Apre la cartella base dei backup in Esplora File."""
@@ -402,288 +415,6 @@ class MainWindow(QMainWindow):
                  os.startfile(backup_dir)
              except Exception as e_start:
                  QMessageBox.critical(self, "Errore Apertura", f"Impossibile aprire la cartella:\n{e_start}")
-
-
-    # --- NUOVO SLOT PER PULSANTE MINECRAFT ---
-    @Slot()
-    def handle_minecraft_button(self):
-        """
-        Trova i mondi Minecraft, mostra un dialogo per la selezione
-        e crea un nuovo profilo per il mondo scelto.
-        """
-        logging.info("Starting Minecraft world search...")
-        self.status_label.setText(self.tr("Ricerca cartella salvataggi Minecraft..."))
-        QApplication.processEvents() # Aggiorna GUI per mostrare messaggio
-
-        # 1. Trova cartella saves usando il modulo minecraft_utils
-        try:
-             # Usiamo try-except qui nel caso minecraft_utils dia problemi
-             saves_folder = minecraft_utils.find_minecraft_saves_folder()
-        except Exception as e_find:
-             logging.error(f"Unexpected error during find_minecraft_saves_folder: {e_find}", exc_info=True)
-             QMessageBox.critical(self, self.tr("Errore Minecraft"), self.tr("Errore imprevisto durante la ricerca della cartella Minecraft."))
-             self.status_label.setText(self.tr("Errore ricerca Minecraft."))
-             return
-
-        if not saves_folder:
-            logging.warning("Minecraft saves folder not found.")
-            QMessageBox.warning(self,
-                                self.tr("Cartella Non Trovata"),
-                                self.tr("Impossibile trovare la cartella dei salvataggi standard di Minecraft (.minecraft/saves).\nAssicurati che Minecraft Java Edition sia installato."))
-            self.status_label.setText(self.tr("Cartella Minecraft non trovata."))
-            return
-
-        # 2. Lista i mondi usando il modulo minecraft_utils
-        self.status_label.setText(self.tr("Lettura mondi Minecraft..."))
-        QApplication.processEvents()
-        try:
-            worlds_data = minecraft_utils.list_minecraft_worlds(saves_folder)
-        except Exception as e_list:
-            logging.error(f"Unexpected error during list_minecraft_worlds: {e_list}", exc_info=True)
-            QMessageBox.critical(self, self.tr("Errore Minecraft"), self.tr("Errore imprevisto durante la lettura dei mondi Minecraft."))
-            self.status_label.setText(self.tr("Errore lettura mondi Minecraft."))
-            return
-
-        if not worlds_data:
-            logging.warning("No worlds found in: %s", saves_folder)
-            QMessageBox.information(self,
-                                   self.tr("Nessun Mondo Trovato"),
-                                   self.tr("Nessun mondo trovato nella cartella:\n{0}").format(saves_folder))
-            self.status_label.setText(self.tr("Nessun mondo Minecraft trovato."))
-            return
-
-        # 3. Mostra Dialogo Selezione (dal modulo dialogs.minecraft_dialog)
-        try:
-            dialog = MinecraftWorldsDialog(worlds_data, self)
-        except Exception as e_dialog_create:
-             logging.error(f"Creation error MinecraftWorldsDialog: {e_dialog_create}", exc_info=True)
-             QMessageBox.critical(self, self.tr("Errore Interfaccia"), self.tr("Impossibile creare la finestra di selezione dei mondi."))
-             return
-
-        self.status_label.setText(self.tr("Pronto.")) # Resetta status mentre dialogo è aperto
-
-        if dialog.exec() == QDialog.Accepted:
-            selected_world = dialog.get_selected_world_info()
-            if selected_world:
-                # Recupera nome e percorso
-                # Usiamo 'world_name' (potrebbe venire da NBT) come nome profilo
-                profile_name = selected_world.get('world_name', selected_world.get('folder_name')) # Fallback a nome cartella
-                world_path = selected_world.get('full_path')
-
-                # Controlla se il nome è valido (non vuoto)
-                if not profile_name:
-                     logging.error("Name of selected world invalid or missing.")
-                     QMessageBox.critical(self, self.tr("Errore Interno"), self.tr("Nome del mondo selezionato non valido."))
-                     return
-                # Controlla se il percorso è valido
-                if not world_path or not os.path.isdir(world_path):
-                     logging.error(f"World path '{world_path}' invalid for profile '{profile_name}'.")
-                     QMessageBox.critical(self, self.tr("Errore Percorso"), self.tr("Il percorso del mondo selezionato ('{0}') non è valido.").format(world_path))
-                     return
-
-                logging.info(f"Minecraft world selected: '{profile_name}' - Path: {world_path}")
-
-                # 4. Controlla se profilo esiste già
-                if profile_name in self.profiles:
-                     QMessageBox.warning(self,
-                                         self.tr("Profilo Esistente"),
-                                         self.tr("Un profilo chiamato '{0}' esiste già.\nScegli un altro mondo o rinomina il profilo esistente.").format(profile_name))
-                     return
-
-                # 5. Crea e Salva Nuovo Profilo
-                self.profiles[profile_name] = world_path # Usa percorso completo mondo
-                if core_logic.save_profiles(self.profiles):
-                    logging.info(f"Minecraft profile '{profile_name}' created.")
-                    self.update_profile_table()
-                    self.select_profile_in_table(profile_name) # Seleziona il nuovo profilo
-                    QMessageBox.information(self,
-                                            self.tr("Profilo Creato"),
-                                            self.tr("Profilo '{0}' creato con successo per il mondo Minecraft.").format(profile_name))
-                    self.status_label.setText(self.tr("Profilo '{0}' creato.").format(profile_name))
-                else:
-                    # Errore salvataggio
-                    QMessageBox.critical(self, self.tr("Errore"), self.tr("Impossibile salvare il file dei profili dopo aver aggiunto '{0}'.").format(profile_name))
-                    if profile_name in self.profiles: del self.profiles[profile_name] # Rimuovi da memoria se salvataggio fallisce
-
-            else:
-                # Dialogo accettato ma nessun mondo restituito?
-                logging.warning("Minecraft dialog accepted but no selected world data returned.")
-                self.status_label.setText(self.tr("Selezione mondo annullata o fallita."))
-        else:
-            # Dialogo annullato dall'utente
-            logging.info("Minecraft world selection cancelled by user.")
-            self.status_label.setText(self.tr("Selezione mondo annullata."))
-    # --- FINE SLOT ---
-    
-    # --- Gestione Drag and Drop ---
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-             urls = event.mimeData().urls()
-             if urls and urls[0].toLocalFile().lower().endswith('.lnk'):
-                  event.acceptProposedAction()
-
-    def dragMoveEvent(self, event):
-        if event.mimeData().hasUrls():
-             urls = event.mimeData().urls()
-             if urls and urls[0].toLocalFile().lower().endswith('.lnk'):
-                  event.acceptProposedAction()
-
-    def dropEvent(self, event):
-        """Chiamato quando l'utente rilascia l'oggetto (.lnk). Avvia la ricerca in background."""
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-            urls = event.mimeData().urls()
-            if urls:
-                file_path = urls[0].toLocalFile()
-
-                if file_path.lower().endswith('.lnk'):
-                    logging.debug(f"Shortcut dropped: {file_path}")
-
-                    # --- Lettura .lnk (Veloce, rimane qui) ---
-                    shortcut = None
-                    game_install_dir = None
-                    target_path = None
-                    try:
-                        # Importa winshell qui dentro se non è globale o per sicurezza
-                        #import winshell
-                        shortcut = winshell.shortcut(file_path)
-                        target_path = shortcut.path
-                        working_dir = shortcut.working_directory
-                        # Usa working_dir se esiste E è una cartella valida
-                        if working_dir and os.path.isdir(working_dir):
-                            game_install_dir = os.path.normpath(working_dir)
-                        # Altrimenti, usa la cartella del target se target esiste ED è un file
-                        elif target_path and os.path.isfile(target_path):
-                             game_install_dir = os.path.normpath(os.path.dirname(target_path))
-                        # Altrimenti non abbiamo una cartella valida
-                        else:
-                            logging.warning(f"Unable to determine game folder from shortcut: {file_path}")
-                            # game_install_dir rimane None
-                        logging.debug(f"Game folder detected (or assumed) from shortcut: {game_install_dir}")
-
-                    except ImportError:
-                         logging.error("The 'winshell' library is not installed. Unable to read .lnk files.")
-                         QMessageBox.critical(self, "Errore Dipendenza", "La libreria 'winshell' necessaria per leggere i collegamenti non è installata.\nImpossibile creare profilo da .lnk.")
-                         return
-                    except Exception as e_lnk:
-                        logging.error(f"Error while reading the .lnk link: {e_lnk}", exc_info=True)
-                        QMessageBox.critical(self, self.tr("Errore Collegamento"), self.tr("Impossibile leggere il file .lnk:\n{0}").format(e_lnk))
-                        return # Esce se non possiamo leggere il link
-    
-                   # --- Ottieni e Pulisci il Nome Profilo (CORRETTO) ---
-                    base_name = os.path.basename(file_path)
-                    # 1. Ottieni il nome senza estensione
-                    profile_name_temp, _ = os.path.splitext(base_name)
-
-                    # 2. Assegnalo a profile_name_original PRIMA di usarlo
-                    profile_name_original = profile_name_temp
-
-                    # 3. Pulisci profile_name_original da ™ e ® (se vuoi mantenere questa pulizia base)
-                    profile_name_original = profile_name_original.replace('™', '').replace('®', '').strip()
-                    logging.debug(f"Original name derived from LNK: '{profile_name_original}'")
-
-                    # 4. Applica la sanificazione COMPLETA a quello originale pulito
-                    profile_name = sanitize_profile_name(profile_name_original)
-                    logging.info(f"Original Name (after basic clean): '{profile_name_original}', Sanitized Name: '{profile_name}'")
-                    # --- FINE SEZIONE CORRETTA ---
-
-                    # --- CONTROLLO NOME VUOTO (USA VARIABILI CORRETTE) ---
-                    if not profile_name: # Controlla il nome finale pulito
-                        logging.error(f"Sanitized profile name for '{profile_name_original}' became empty!") # Usa l'originale (ora definito) nel log
-                        QMessageBox.warning(self, self.tr("Errore Nome Profilo"),
-                                              self.tr("Impossibile generare un nome profilo valido dal collegamento trascinato."))
-                        return # Esce se il nome pulito è vuoto
-                    # --- FINE CONTROLLO ---
-
-                    # --- Controllo Esistenza Profilo (USA NOME PULITO) ---
-                    # (Il resto della funzione da qui in poi dovrebbe usare 'profile_name', che è quello pulito)
-                    if profile_name in self.profiles:
-                        QMessageBox.warning(self, self.tr("Profilo Esistente"), self.tr("Profilo '{0}' esiste già.").format(profile_name))
-                        return # Esce se profilo esiste
-
-                    # --- AVVIO THREAD DI RICERCA (USA NOME PULITO) ---
-                    if hasattr(self, 'detection_thread') and self.detection_thread and self.detection_thread.isRunning():
-                        QMessageBox.information(self, self.tr("Operazione in Corso"), self.tr("Un'altra ricerca di percorso è già in corso. Attendi."))
-                        return
-
-                    # Mostra feedback e disabilita controlli
-                    self.set_controls_enabled(False) # Disabilita quasi tutto
-                    self.status_label.setText(self.tr("Ricerca percorso per '{0}' in corso...").format(profile_name))
-                    QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor) # Cursore di attesa
-
-                    # Crea e avvia il thread di rilevamento
-                    # Passiamo una COPIA delle impostazioni per sicurezza
-                    # Assicurati che DetectionWorkerThread sia importato da gui_utils
-                    self.detection_thread = DetectionWorkerThread(
-                        game_install_dir=game_install_dir, # Può essere None se non trovato
-                        profile_name_suggestion=profile_name,
-                        current_settings=self.current_settings.copy()
-                    )
-
-                    # Connetti i segnali agli slot (devono esistere nella classe MainWindow)
-                    self.detection_thread.progress.connect(self.on_detection_progress)
-                    self.detection_thread.finished.connect(self.on_detection_finished)
-
-                    # Avvia il thread
-                    self.detection_thread.start()
-                    logging.debug("Path detection thread started.")
-                    # --- FINE AVVIO THREAD ---
-
-                    # !!! NOTA BENE: Tutto il codice che prima era qui sotto
-                    # (la scansione INI, l'euristica, la richiesta di input,
-                    # il salvataggio del profilo) NON deve più essere qui.
-                    # Viene gestito da on_detection_finished !!!
-
-                else: # File non .lnk
-                    QMessageBox.information(self, self.tr("File Ignorato"), self.tr("Per favore, trascina un collegamento (.lnk) a un gioco."))
-            # else: Dati non URL ignorati
-
-    # --- METODO HELPER PER VALIDAZIONE PERCORSO ---
-    def validate_save_path(self, path_to_check, context_profile_name="profilo"):
-        """
-        Controlla se un percorso è valido come cartella di salvataggio.
-        Verifica che non sia vuoto, che non sia una radice di drive,
-        e che sia una cartella esistente.
-        Mostra un QMessageBox in caso di errore.
-        Restituisce il percorso normalizzato se valido, altrimenti None.
-        """
-        if not path_to_check:
-            QMessageBox.warning(self, "Errore Percorso", "Il percorso non può essere vuoto.")
-            return None
-
-        norm_path = os.path.normpath(path_to_check)
-
-        # --- Controllo Percorso Radice (Metodo Esplicito) ---
-        try:
-            available_drives = ['%s:' % d for d in string.ascii_uppercase if os.path.exists('%s:' % d)]
-            known_roots = []
-            for d in available_drives:
-                known_roots.append(os.path.normpath(d))
-                known_roots.append(os.path.normpath(d + os.sep))
-            known_roots = list(set(known_roots))
-
-            logging.debug(f"Path validation: Path='{norm_path}', KnownRoots='{known_roots}', IsRoot={norm_path in known_roots}")
-            if norm_path in known_roots:
-                 QMessageBox.warning(self, "Errore Percorso",
-                                     f"Non è possibile usare una radice del drive ('{norm_path}') come cartella dei salvataggi per '{context_profile_name}'.\n"
-                                     "Per favore, scegli o crea una sottocartella specifica.")
-                 return None # Percorso radice non valido
-        except Exception:
-             logging.warning("Root path check failed during validation.", exc_info=True)
-             # Non blocchiamo per questo errore raro, continuiamo con isdir
-             pass
-
-        # --- Controllo Esistenza e Tipo (Directory) ---
-        if not os.path.isdir(norm_path):
-            QMessageBox.warning(self, "Errore Percorso",
-                                 f"Il percorso specificato non esiste o non è una cartella valida:\n'{norm_path}'")
-            return None # Non è una directory valida
-
-        # Se tutti i controlli passano, restituisce il percorso normalizzato
-        logging.debug(f"Path validation: '{norm_path}' considered valid.")
-        return norm_path
-    # --- FINE NUOVO METODO HELPER ---
-
 
     def get_selected_profile_name(self):
         selected_rows = self.profile_table_widget.selectionModel().selectedRows()
@@ -730,7 +461,7 @@ class MainWindow(QMainWindow):
 
         # 2. Installa quello nuovo SE è Inglese
         if lang_code == "en":
-            qm_filename = f"game_saver_{lang_code}.qm"
+            qm_filename = f"SaveState_{lang_code}.qm"
             # Usa resource_path per trovare il percorso corretto
             qm_file_path = resource_path(qm_filename)
             logging.info(f"Attempting to load English translator from: {qm_file_path}")
@@ -819,56 +550,6 @@ class MainWindow(QMainWindow):
                 # Le impostazioni NON sono state aggiornate se il salvataggio fallisce
         else:
             logging.debug("Settings dialog cancelled by user.") # L'utente ha annullato, non fare nulla  
-              
-    @Slot()
-    def handle_new_profile(self):
-        logging.debug("handle_new_profile - START")
-        profile_name, ok = QInputDialog.getText(self, "Nuovo Profilo", "Inserisci un nome per il nuovo profilo:")
-        logging.debug(f"handle_new_profile - Name entered: '{profile_name}', ok={ok}")
-
-        if ok and profile_name:
-            if profile_name in self.profiles:
-                logging.debug(f"handle_new_profile - Profile '{profile_name}' already exists.")
-                QMessageBox.warning(self, "Errore", f"Un profilo chiamato '{profile_name}' esiste già.")
-                return
-
-            logging.debug(f"handle_new_profile - Requesting path for '{profile_name}'...")
-            path_prompt = f"Ora inserisci il percorso COMPLETO per i salvataggi del profilo:\n'{profile_name}'"
-            input_path, ok2 = QInputDialog.getText(self, "Percorso Salvataggi", path_prompt)
-            logging.debug(f"handle_new_profile - Path entered: '{input_path}', ok2={ok2}")
-
-            if ok2:
-                # --- USA LA NUOVA FUNZIONE DI VALIDAZIONE ---
-                validated_path = self.validate_save_path(input_path, profile_name)
-                # --- FINE VALIDAZIONE ---
-
-                if validated_path:
-                    logging.debug(f"handle_new_profile - Valid path: '{validated_path}'.")
-                    self.profiles[profile_name] = validated_path
-                    logging.debug("handle_new_profile - Attempting to save profiles to file...")
-                    save_success = core_logic.save_profiles(self.profiles)
-                    logging.debug(f"handle_new_profile - Result of core_logic.save_profiles: {save_success}")
-
-                    if save_success:
-                        logging.debug("handle_new_profile - Profile save OK. Calling update_profile_table().")
-                        try:
-                            self.update_profile_table()
-                            logging.debug("handle_new_profile - Call to update_profile_table() completed.")
-                            QMessageBox.information(self, "Successo", f"Profilo '{profile_name}' creato e salvato.")
-                        except Exception as e_update:
-                             logging.critical("Critical error during update_profile_table()", exc_info=True)
-                             QMessageBox.critical(self, "Errore UI", f"Profilo salvato ma errore aggiornamento lista:\n{e_update}")
-                    else:
-                        logging.debug("handle_new_profile - core_logic.save_profiles returned False.")
-                        QMessageBox.critical(self, "Errore", "Impossibile salvare il file dei profili.")
-                        if profile_name in self.profiles:
-                             logging.debug("handle_new_profile - Removing unsaved profile from memory.")
-                             del self.profiles[profile_name]
-            else:
-                 logging.debug("handle_new_profile - Path input cancelled (ok2=False).")
-        else:
-            logging.debug("handle_new_profile - Name input cancelled (ok=False or empty name).")
-        logging.debug("handle_new_profile - END")
 
     @Slot()
     def handle_delete_profile(self):
@@ -1039,160 +720,6 @@ class MainWindow(QMainWindow):
         if not success: QMessageBox.critical(self, self.tr("Errore Operazione"), message)
         else: logging.debug("Operation thread worker successful, calling update_profile_table() to update view.")
         self.profile_table_manager.update_profile_table()
-
-    @Slot(str)
-    def on_detection_progress(self, message):
-        """Aggiorna la status bar con i messaggi dal thread di rilevamento."""
-        # Potremmo voler filtrare i messaggi o renderli più user-friendly
-        self.status_label.setText(message)
-
-    @Slot(bool, dict)
-    def on_detection_finished(self, success, results):
-        """Chiamato quando il thread di rilevamento ha finito."""
-        logging.debug(f"Detection thread finished. Success: {success}, Results: {results}")
-        QApplication.restoreOverrideCursor() # Ripristina cursore normale
-        self.set_controls_enabled(True)     # Riabilita controlli
-        self.status_label.setText(self.tr("Ricerca percorso completata."))
-
-        # Rimuovi riferimento al thread (importante per permettere nuove ricerche)
-        # Controlla se l'attributo esiste prima di provare a impostarlo a None
-        if hasattr(self, 'detection_thread'):
-             self.detection_thread = None
-
-        # Recupera il nome del profilo dai risultati del thread
-        profile_name = results.get('profile_name_suggestion', 'profilo_sconosciuto')
-
-        if not success:
-            error_msg = results.get('message', self.tr("Errore sconosciuto durante la ricerca."))
-            # Non mostrare l'errore se era solo "Ricerca interrotta" (potrebbe essere voluto)
-            if error_msg != "Ricerca interrotta.":
-                 QMessageBox.critical(self, self.tr("Errore Ricerca Percorso"), error_msg)
-            else:
-                 # Se interrotta, mostra solo messaggio in status bar
-                 self.status_label.setText(self.tr("Ricerca interrotta."))
-            return # Esce in caso di errore o interruzione
-
-        # --- Logica di gestione risultati e interazione utente ---
-        final_path_to_use = None
-        paths_found = results.get('paths', [])
-        status = results.get('status', 'error') # Dovrebbe essere 'found' o 'not_found' se success è True
-
-        if status == 'found':
-            logging.debug(f"Paths found by detection thread: {paths_found}")
-            if len(paths_found) == 1:
-                # Trovato un solo percorso, chiedi conferma semplice
-                
-                reply = QMessageBox.question(self,
-                                             self.tr("Conferma Percorso Automatico"),
-                                             self.tr("È stato rilevato questo percorso:\n\n{0}\n\nVuoi usarlo per il profilo '{1}'?").format(paths_found[0], profile_name),
-                                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
-                                             QMessageBox.StandardButton.Yes)
-                if reply == QMessageBox.StandardButton.Yes:
-                    final_path_to_use = paths_found[0]
-                elif reply == QMessageBox.StandardButton.No:
-                     logging.info("User rejected single automatic path. Requesting manual input.")
-                     final_path_to_use = None # Forza richiesta manuale sotto
-                else: # Cancel
-                    self.status_label.setText(self.tr("Creazione profilo annullata."))
-                    return # Esce se utente annulla
-            
-            # --- MODIFICA PER MULTIPLI PERCORSI ---
-            elif len(paths_found) > 1: # Trovati multipli percorsi
-                logging.debug(f"Found {len(paths_found)} paths, applying priority sorting.")
-
-                # 1. Definisci i nomi di cartella prioritari (in minuscolo)
-                #    (Potremmo spostare questa lista in config.py o ottenerla da core_logic in futuro)
-                preferred_suffixes = ['saves', 'save', 'savegame', 'savegames',
-                                      'saved', 'storage', 'playerdata', 'profile',
-                                      'profiles', 'user', 'data', 'savedata']
-
-                # 2. Definisci la funzione chiave per l'ordinamento
-                def sort_key(path):
-                    basename_lower = os.path.basename(os.path.normpath(path)).lower()
-                    # Priorità 0 se finisce con suffisso preferito, 1 altrimenti
-                    priority = 0 if basename_lower in preferred_suffixes else 1
-                    # Criterio secondario: ordinamento alfabetico del percorso completo
-                    return (priority, path.lower())
-
-                # 3. Ordina la lista paths_found usando la chiave
-                sorted_paths = sorted(paths_found, key=sort_key)
-                logging.debug(f"Paths sorted for selection: {sorted_paths}")
-
-                # 4. Crea le scelte per il dialogo usando la lista ORDINATA
-                #    Aggiungi sempre l'opzione manuale alla fine.
-                choices = sorted_paths + [self.tr("[Inserisci Manualmente...]")] # <-- Usa sorted_paths qui
-
-                # 5. Mostra il dialogo (il resto rimane uguale)
-                chosen_path_str, ok = QInputDialog.getItem(
-                    self,
-                    self.tr("Conferma Percorso Salvataggi"),
-                    self.tr("Sono stati trovati questi percorsi potenziali per '{0}'.\nSeleziona quello corretto o scegli l'inserimento manuale:").format(profile_name),
-                    choices, # Passa la lista ordinata con l'opzione manuale
-                    0, False # Seleziona il primo (ora quello più probabile)   
-                )
-                
-                if ok and chosen_path_str:
-                    if chosen_path_str == self.tr("[Inserisci Manualmente...]"):
-                        logging.info("User chose manual input from multiple paths list.")
-                        final_path_to_use = None # Forza richiesta manuale sotto
-                    else:
-                        # L'utente ha scelto un percorso dalla lista
-                        final_path_to_use = chosen_path_str # Il percorso è la stringa senza tag aggiunti
-                else: # Annullato QInputDialog
-                    self.status_label.setText(self.tr("Creazione profilo annullata."))
-                    return # Esce se utente annulla
-
-        elif status == 'not_found':
-            # Nessun percorso trovato automaticamente
-            QMessageBox.information(self, self.tr("Percorso Non Rilevato"), self.tr("Impossibile rilevare automaticamente il percorso dei salvataggi per '{0}'.\nPer favore, inseriscilo manualmente.").format(profile_name))
-            final_path_to_use = None # Forza richiesta manuale sotto
-        else: # Altro stato inatteso se success era True? Logghiamo e usciamo
-             logging.warning(f"Unexpected status '{status}' received from detection thread despite success=True")
-             self.status_label.setText(self.tr("Errore interno durante la gestione dei risultati."))
-             return
-
-        # --- Richiesta Inserimento Manuale (se final_path_to_use è None a questo punto) ---
-        if final_path_to_use is None:
-             path_prompt = self.tr("Inserisci il percorso COMPLETO per i salvataggi del profilo:\n'{0}'").format(profile_name)
-             input_path, ok_manual = QInputDialog.getText(self, self.tr("Percorso Salvataggi Manuale"), path_prompt)
-
-             if ok_manual and input_path:
-                 # Abbiamo ottenuto un percorso manuale dall'utente
-                 final_path_to_use = input_path
-             elif ok_manual and not input_path:
-                  # Utente ha premuto OK ma non ha inserito nulla
-                  QMessageBox.warning(self, self.tr("Errore Percorso"), self.tr("Il percorso non può essere vuoto."))
-                  self.status_label.setText(self.tr("Creazione profilo annullata (percorso vuoto)."))
-                  return # Esce
-             else: # Annullato QInputDialog
-                 self.status_label.setText(self.tr("Creazione profilo annullata."))
-                 return # Esce
-
-        # --- Validazione Finale e Salvataggio Profilo ---
-        # Arriviamo qui solo se final_path_to_use contiene un percorso (da selezione o manuale)
-        if final_path_to_use:
-            # Usa la funzione di validazione esistente nella MainWindow
-            validated_path = self.validate_save_path(final_path_to_use, profile_name)
-
-            if validated_path:
-                # Il percorso è stato validato con successo
-                logging.debug(f"Final path validated: {validated_path}. Saving profile '{profile_name}'")
-                self.profiles[profile_name] = validated_path # Aggiorna dizionario in memoria
-
-                # Salva su file
-                if core_logic.save_profiles(self.profiles):
-                    self.update_profile_table() # Aggiorna la tabella nella GUI
-                    self.select_profile_in_table(profile_name) # Prova a selezionare il nuovo profilo
-                    QMessageBox.information(self, self.tr("Profilo Creato"), self.tr("Profilo '{0}' creato con successo.").format(profile_name))
-                    self.status_label.setText(self.tr("Profilo '{0}' creato.").format(profile_name))
-                else:
-                    # Errore durante il salvataggio su file
-                    QMessageBox.critical(self, self.tr("Errore"), self.tr("Impossibile salvare il file dei profili."))
-                    # Rimuovi il profilo aggiunto alla memoria per consistenza
-                    if profile_name in self.profiles:
-                         del self.profiles[profile_name]
-            # else: la validazione è fallita, validate_save_path ha già mostrato l'errore
-            #       non facciamo nient'altro, l'utente è stato avvisato.
                        
     @Slot(str)
     def handle_create_shortcut(self, profile_name):
@@ -1217,7 +744,7 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(self, self.tr("Errore Creazione Collegamento"), message)
 
-    # --- NUOVO SLOT PER ATTIVARE FINESTRA DA SECONDA ISTANZA ---
+    # --- SLOT PER ATTIVARE FINESTRA DA SECONDA ISTANZA ---
     @Slot()
     def activateExistingInstance(self):
         logging.info("Received signal to activate existing instance.")
@@ -1225,7 +752,6 @@ class MainWindow(QMainWindow):
         self.showNormal() # Mostra se era minimizzata
         self.raise_()     # Porta sopra le altre finestre dell'app (se ci fossero dialoghi)
         self.activateWindow() # Attiva la finestra nel sistema operativo
-    # --- FINE NUOVO SLOT ---
 
 # --- Avvio Applicazione GUI ---
 if __name__ == "__main__":
@@ -1349,7 +875,7 @@ if __name__ == "__main__":
                     selected_language = current_settings.get("language", "en")
                     if selected_language == "en":
                         # --- Logica caricamento/installazione per 'en' ---
-                        qm_filename = f"game_saver_{selected_language}.qm"
+                        qm_filename = f"SaveState_{selected_language}.qm"
                         qm_file_path = resource_path(qm_filename)
                         logging.info(f"Attempting to load English translator from: {qm_file_path}")
                         if os.path.exists(qm_file_path):
