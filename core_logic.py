@@ -1223,100 +1223,102 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     # Converti in lista di tuple per l'ordinamento: [(path, source, contains_saves), ...]
     guesses_list = [(data[0], data[1], data[2]) for data in guesses_data.values()]
 
-    # <<< NUOVO: Funzione di ordinamento migliorata >>>
+    # <<< Funzione di ordinamento con CORREZIONE ordine check Steam Base >>>
     def final_sort_key(guess_tuple):
         """
         Assegna un punteggio a una tupla (path, source, contains_saves).
         Punteggi più alti = più probabile.
         """
+        # --- Estrai dati dalla tupla ---
         path, source, contains_saves = guess_tuple
-        score = 0
+        score = 0 # Inizializza punteggio
         path_lower = path.lower()
         basename_lower = os.path.basename(path_lower)
         source_lower = source.lower()
-        parent_dir_lower = os.path.dirname(path_lower)
+        parent_dir_lower = os.path.dirname(path_lower) # Utile per controlli
 
-        # --- PRIORITÀ BASE LOCAZIONE ---
-        # Altissima priorità per locazioni utente specifiche note
-        prime_locations = [
+        # --- Identifica Tipi Speciali di Percorso ---
+        # Controlla se è Steam Remote
+        is_steam_remote = steam_userdata_path and 'steam userdata' in source_lower and '/remote' in source_lower
+
+        # Controlla se è Steam Base (userdata ma finisce con /Base nel source)
+        is_steam_base = steam_userdata_path and 'steam userdata' in source_lower and source_lower.endswith('/base') # Più specifico
+
+        # Controlla se è in una locazione utente primaria (ESCLUSA steam userdata, gestita sopra)
+        prime_locations_parents = [ # Lista dei parent delle locazioni primarie
             os.path.normpath(os.path.expanduser('~/Saved Games')).lower(),
             os.path.normpath(os.getenv('APPDATA', '')).lower(),
             os.path.normpath(os.getenv('LOCALAPPDATA', '')).lower(),
-            # LocalLow è spesso sotto LocalAppData, controlla quello
             os.path.normpath(os.path.join(os.getenv('LOCALAPPDATA', ''), '..', 'LocalLow')).lower() if os.getenv('LOCALAPPDATA') else None,
             os.path.normpath(os.path.join(os.path.expanduser('~/Documents'), 'My Games')).lower(),
         ]
-        # Aggiungi Steam Userdata se disponibile
-        if steam_userdata_path:
-             prime_locations.append(os.path.normpath(steam_userdata_path).lower())
+        prime_locations_parents = [loc for loc in prime_locations_parents if loc] # Rimuovi None
+        # <<< MODIFICATO: Rinominato e non controlla più steam_userdata_path qui >>>
+        is_in_prime_user_location = any(path_lower.startswith(loc + os.sep) for loc in prime_locations_parents)
 
-        # Rimuovi None dalla lista prime_locations
-        prime_locations = [loc for loc in prime_locations if loc]
+        # Controlla se proviene dalla cartella di installazione
+        is_install_dir_walk = 'installdirwalk' in source_lower
+        # --- FINE Identificazione Tipi Speciali ---
 
-        is_in_prime_location = False
-        for prime_loc in prime_locations:
-             # Controlla se il percorso INIZIA con una locazione primaria
-             # (per coprire /AppData/Roaming/Game vs /AppData/Roaming/Publisher/Game)
-             if path_lower.startswith(prime_loc + os.sep):
-                  is_in_prime_location = True
-                  break
-        # Controllo specifico per Steam Userdata Remote (merita ancora di più)
-        is_steam_remote = steam_userdata_path and 'steam userdata' in source_lower and '/remote' in source_lower
 
+        # --- ASSEGNA PUNTEGGIO BASE (ORDINE CORRETTO) ---
         if is_steam_remote:
-            score += 1500 # Massimo punteggio base
-        elif is_in_prime_location:
-            score += 1000 # Alto punteggio base per locazioni utente
+            score += 1500  # 1. Massima priorità Steam Cloud Remote
+        elif is_steam_base:
+            # 2. Gestisci Steam Base (DE-PRIORITIZZATO) CORRETTAMENTE ORA
+            score += 150   # Punteggio base molto basso
+            if contains_saves: score += 500 # Bonus solo se ha saves
+        elif is_in_prime_user_location: # Rinominato
+            # 3. Priorità alta per AppData, Saved Games, My Games, LocalLow
+            score += 1000
         elif 'documents' in path_lower and 'my games' not in path_lower:
-             score += 300 # Documents generico è meno probabile di My Games
-        elif 'installdirwalk' in source_lower:
-            # <<< PENALITÀ FORTE per InstallDir >>>
-            score -= 500 # Penalità base forte
+            # 4. Documents generico
+            score += 300
+        elif is_install_dir_walk:
+            # 5. Penalità base per InstallDirWalk
+            score -= 500
         else:
-            score += 100 # Punteggio base basso per altre locazioni (es. Public)
+            # 6. Altro (Public, root, etc.)
+            score += 100
 
-        # --- BONUS INDICATORI POSITIVI ---
-        # Contiene save-like files?
+
+        # --- BONUS INDICATORI POSITIVI (Logica invariata rispetto a prima) ---
         if contains_saves:
-            score += 600 # Bonus molto forte
+            if not is_steam_base: score += 600
+            else: score += 50 # Piccolo bonus aggiuntivo anche a steam base se ha saves
 
-        # Nome base è save subdir comune?
         is_common_save_subdir = basename_lower in common_save_subdirs_lower
         if is_common_save_subdir:
             score += 350
 
-        # Trovato tramite match diretto nome/abbreviazione/sequenza?
-        is_direct_abbr_match = False
-        # Nota: game_abbreviations deve essere accessibile qui (definita fuori)
-        for abbr in game_abbreviations:
-            if os.path.basename(path) == abbr: # Forse meglio case-insensitive? basename_lower == abbr.lower()?
-                is_direct_abbr_match = True; break
-        is_sequence_match = matches_initial_sequence(os.path.basename(path), game_title_sig_words) # Ricalcola qui o passa da source?
+        # Assicurati che game_abbreviations, matches_initial_sequence, game_title_sig_words
+        # siano accessibili (definite nell'ambito di guess_save_path)
+        is_direct_abbr_match = any(os.path.basename(path) == abbr for abbr in game_abbreviations)
+        is_sequence_match = matches_initial_sequence(os.path.basename(path), game_title_sig_words)
+        is_direct_source = 'direct' in source_lower or 'gamenamelvl' in source_lower
 
-        if is_direct_abbr_match or is_sequence_match or 'direct' in source_lower or 'gamenamelvl' in source_lower:
-             score += 250 # Bonus per match nome/abbr/sequenza
-             if is_sequence_match: score += 100 # Extra per sequenza (molto specifica)
-             if 'direct' in source_lower: score += 50 # Extra per match diretto nome/path
+        if is_direct_abbr_match or is_sequence_match or is_direct_source:
+            score += 250
+            if is_sequence_match: score += 100
+            if 'direct' in source_lower: score += 50
 
-        # --- BONUS/MALUS SPECIFICI ---
-        # Bonus se è una subdir comune *DENTRO* un'altra cartella che matcha il nome/abbr
-        # Questo aiuta a preferire "GameName/Saves" a "GameName" se entrambi trovati
-        # Controlla se il parent è una delle abbreviazioni (un po' complesso qui)
         parent_basename_lower = os.path.basename(parent_dir_lower)
         if is_common_save_subdir and parent_basename_lower in [a.lower() for a in game_abbreviations]:
-            score += 100 # Bonus per struttura NomeGioco/Saves
+            score += 100
 
-        # Malus per nomi generici se NON contengono saves e NON sono in locazioni prime
-        if basename_lower in ['data', 'settings', 'config', 'cache', 'logs'] and not contains_saves and not is_in_prime_location:
+
+        # --- MALUS SPECIFICI (Logica invariata rispetto a prima) ---
+        if basename_lower in ['data', 'settings', 'config', 'cache', 'logs'] and not contains_saves and not is_in_prime_user_location and not is_steam_remote:
             score -= 150
-        # Malus per nomi corti generici
+
         if len(basename_lower) <= 3 and not is_common_save_subdir and not contains_saves:
             score -= 50
-        # Penalità extra per InstallDir se non contiene saves
-        if 'installdirwalk' in source_lower and not contains_saves:
-             score -= 300 # Penalità aggiuntiva
 
-        # Restituisce punteggio negativo per ordinamento decrescente
+        if is_install_dir_walk and (not contains_saves or not is_common_save_subdir):
+            score -= 300 # Penalità extra se non convincente
+
+
+        # --- Restituisci il punteggio ---
         return (-score, path_lower)
     # <<< FINE Funzione di ordinamento >>>
 
@@ -1325,12 +1327,6 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
 
     # Estrai solo i percorsi ordinati per il risultato finale
     final_sorted_paths = [item[0] for item in sorted_guesses_list]
-
-    # <<< OPZIONALE: Filtro post-processing per rimuovere figli se il padre è 'meglio' >>>
-    # Questa parte è più complessa da fare bene, proviamo prima solo con l'ordinamento.
-    # Se necessario, si può aggiungere un filtro qui che rimuove percorsi P
-    # se esiste un percorso P/Subdir che ha un punteggio *significativamente* migliore
-    # o viceversa.
 
     logging.info(f"Search finished. Found {len(final_sorted_paths)} unique potential paths (sorted by likelihood).")
     if final_sorted_paths:
@@ -1345,7 +1341,50 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
              else: # Non dovrebbe succedere
                   logging.debug(f"  {i+1}. Path: '{p}' (Data not found?)")
 
-    return final_sorted_paths
+    # Ora che la funzione chiave è definita, usiamola per ordinare
+    final_sorted_paths = [] # Inizializza a lista vuota per sicurezza
+    try:
+        logging.info("Finalizing and sorting potential paths...") # Messaggio spostato qui
+
+        # Converti guesses_data in lista di tuple per l'ordinamento
+        # guesses_data ora contiene {norm_path_lower: (original_norm_path, source, contains_saves)}
+        guesses_list = [(data[0], data[1], data[2]) for data in guesses_data.values()]
+
+        # Ordina la lista di tuple usando la chiave definita sopra
+        sorted_guesses_list = sorted(guesses_list, key=final_sort_key)
+
+        # Estrai solo i percorsi ordinati (con case originale) per il risultato finale
+        final_sorted_paths = [item[0] for item in sorted_guesses_list] # Questa era una delle righe mancanti
+
+        logging.info(f"Search finished. Found {len(final_sorted_paths)} unique potential paths (sorted by likelihood).")
+        if final_sorted_paths:
+             logging.debug(f"Paths found with scores (higher is better):")
+             # Ricrea punteggi per logging
+             for i, p in enumerate(final_sorted_paths):
+                 # Trova dati originali usando la chiave lowercase
+                 orig_data_tuple = guesses_data.get(p.lower())
+                 if orig_data_tuple:
+                     try:
+                         # Ricalcola il punteggio per il log
+                         # Nota: Assicurati che le variabili esterne usate da final_sort_key
+                         # (game_abbreviations, game_title_sig_words, etc.) siano ancora accessibili qui se necessario
+                         # In questo caso final_sort_key le usa come closure, quindi dovrebbe essere ok.
+                         score = -final_sort_key( (orig_data_tuple[0], orig_data_tuple[1], orig_data_tuple[2]) )[0]
+                         logging.debug(f"  {i+1}. Score: {score} | Path: '{p}' (Source: {orig_data_tuple[1]}, HasSaves: {orig_data_tuple[2]})")
+                     except Exception as e_log_score:
+                          logging.warning(f"Could not calculate score for logging path '{p}': {e_log_score}")
+                          logging.debug(f"  {i+1}. Path: '{p}' (Source: {orig_data_tuple[1]}, HasSaves: {orig_data_tuple[2]})")
+                 else:
+                      logging.debug(f"  {i+1}. Path: '{p}' (Original data not found in guesses_data?)") # Improbabile
+
+    except Exception as e_final:
+        logging.error(f"Error during final sorting/processing of paths: {e_final}", exc_info=True)
+        final_sorted_paths = [] # Resetta a lista vuota in caso di errore
+
+    # Questa return è ora fuori dal try...except e restituirà sempre una lista
+    return final_sorted_paths # Questa era l'altra riga mancante
+
+# <<< FINE BLOCCO DA AGGIUNGERE >>>
 
 
 def delete_single_backup_file(file_path):
