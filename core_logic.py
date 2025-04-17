@@ -7,7 +7,8 @@ import json
 import zipfile
 import config
 import re
-import platform # <<< NUOVO: Per rilevamento OS
+import platform
+import glob
 
 try:
     import winreg
@@ -18,7 +19,7 @@ try:
 except ImportError:
     vdf = None
 try:
-    # <<< NUOVO: Importa thefuzz per fuzzy matching
+    # Importa thefuzz per fuzzy matching
     from thefuzz import fuzz
     THEFUZZ_AVAILABLE = True
 except ImportError:
@@ -43,6 +44,150 @@ logging.info(f"Profile file path in use: {PROFILES_FILE_PATH}")
 # Assicurati che sia configurato solo una volta all'avvio dell'applicazione
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# <<< NUOVO: Funzione per generare abbreviazioni multiple >>>
+def generate_abbreviations(name, game_install_dir=None):
+    """
+    Genera una lista di possibili abbreviazioni/nomi alternativi per il gioco.
+    Include gestione colon e parsing exe migliorato.
+    """
+    abbreviations = set()
+    if not name: return []
+
+    # Nome base pulito
+    sanitized_name = re.sub(r'[™®©:]', '', name).strip() # Rimuovi : per processing base
+    sanitized_name_nospace = re.sub(r'\s+', '', sanitized_name)
+    abbreviations.add(sanitized_name)
+    abbreviations.add(sanitized_name_nospace)
+    abbreviations.add(re.sub(r'[^a-zA-Z0-9]', '', sanitized_name)) # Solo alfanumerico
+
+    # Ignora parole (da config?)
+    ignore_words = getattr(config, 'SIMILARITY_IGNORE_WORDS',
+                      {'a', 'an', 'the', 'of', 'and', 'remake', 'intergrade',
+                       'edition', 'goty', 'demo', 'trial', 'play', 'launch',
+                       'definitive', 'enhanced', 'complete', 'collection',
+                       'hd', 'ultra', 'deluxe', 'game', 'year'})
+    ignore_words_lower = {w.lower() for w in ignore_words}
+
+    # --- Logica Acronimi Standard ---
+    words = re.findall(r'\b\w+\b', sanitized_name)
+    significant_words = [w for w in words if w.lower() not in ignore_words_lower and len(w) > 1]
+    significant_words_capitalized = [w for w in significant_words if w and w[0].isupper()] # Check w non sia vuoto
+
+    if significant_words:
+        acr_all = "".join(w[0] for w in significant_words if w).upper()
+        if len(acr_all) >= 2: abbreviations.add(acr_all)
+
+    if significant_words_capitalized:
+        acr_caps = "".join(w[0] for w in significant_words_capitalized if w).upper()
+        if len(acr_caps) >= 2: abbreviations.add(acr_caps) # Es: HMCC
+
+    # --- NUOVO: Logica Acronimi Post-Colon ---
+    if ':' in name: # Usa nome originale con :
+        parts = name.split(':', 1)
+        if len(parts) > 1 and parts[1].strip():
+            name_after_colon = parts[1].strip()
+            logging.debug(f"Found colon, analyzing part: '{name_after_colon}'")
+            words_after_colon = re.findall(r'\b\w+\b', name_after_colon)
+            sig_words_after_colon = [w for w in words_after_colon if w.lower() not in ignore_words_lower and len(w) > 1]
+            sig_words_caps_after_colon = [w for w in sig_words_after_colon if w and w[0].isupper()]
+
+            if sig_words_caps_after_colon:
+                # Genera acronimo solo dalle maiuscole DOPO il colon
+                acr_caps_after_colon = "".join(w[0] for w in sig_words_caps_after_colon if w).upper()
+                if len(acr_caps_after_colon) >= 2:
+                    logging.info(f"Derived abbreviation from capitalized words after colon: {acr_caps_after_colon}")
+                    abbreviations.add(acr_caps_after_colon) # Es: MCC da "Master Chief Collection"
+
+    # --- NUOVO: Parsing Eseguibile Migliorato ---
+    if game_install_dir and os.path.isdir(game_install_dir):
+        exe_base_name = None
+        try:
+            # ... (Logica di ricerca .exe come prima usando glob) ...
+            common_suffixes = ['Win64-Shipping.exe', 'Win32-Shipping.exe', '.exe']
+            found_exe_path = None
+            # ... (ciclo glob per cercare exe) ...
+            # Assumiamo che trovi 'mcclauncher.exe' e lo metta in found_exe_path
+
+            # --- Blocco di ricerca exe ---
+            found_exe = None
+            exe_search_patterns = [
+                 os.path.join(game_install_dir, f"*{suffix}") for suffix in common_suffixes
+            ] + [
+                 os.path.join(game_install_dir, "Binaries", "Win64", f"*{suffix}") for suffix in common_suffixes
+            ] + [
+                 os.path.join(game_install_dir, "bin", f"*{suffix}") for suffix in common_suffixes
+            ]
+            for pattern in exe_search_patterns:
+                 executables = glob.glob(pattern)
+                 if executables:
+                     # Scegli l'eseguibile più probabile (es. non uno piccolo?)
+                     valid_exes = [e for e in executables if os.path.getsize(e) > 100*1024] # Ignora exe piccoli?
+                     if valid_exes: found_exe = os.path.basename(valid_exes[0])
+                     elif executables: found_exe = os.path.basename(executables[0]) # Fallback al primo trovato
+                     if found_exe: break
+            # --- Fine blocco ricerca ---
+
+            if found_exe:
+                logging.info(f"Found executable: {found_exe}")
+                # Estrai nome base rimuovendo suffissi noti
+                exe_base_name_temp = found_exe
+                for suffix in common_suffixes + ['-Win64-Shipping', '-Win32-Shipping', '-Shipping']:
+                     if exe_base_name_temp.lower().endswith(suffix.lower()): # Case insensitive
+                          exe_base_name_temp = exe_base_name_temp[:-len(suffix)]
+                          break
+                exe_base_name_temp = re.sub(r'[-_]+$', '', exe_base_name_temp) # Rimuovi trattini finali
+
+                # <<< NUOVO: Rimuovi parole chiave comuni come 'launcher' >>>
+                common_exe_keywords = ['launcher', 'server', 'client', 'editor']
+                processed_name = exe_base_name_temp
+                keyword_removed = False
+                for keyword in common_exe_keywords:
+                     if processed_name.lower().endswith(keyword):
+                          processed_name = processed_name[:-len(keyword)]
+                          keyword_removed = True
+                          break # Rimuovi solo la prima occorrenza trovata
+
+                # Pulisci ancora eventuali separatori rimasti alla fine
+                processed_name = re.sub(r'[-_]+$', '', processed_name)
+
+                if len(processed_name) >= 2:
+                    exe_base_name = processed_name # Usa nome processato
+                    logging.info(f"Derived abbreviation from executable: {exe_base_name}")
+                    abbreviations.add(exe_base_name)
+                elif len(exe_base_name_temp) >= 2:
+                     # Fallback: se la rimozione keyword ha reso il nome troppo corto, usa quello originale pre-rimozione
+                     exe_base_name = exe_base_name_temp
+                     logging.info(f"Derived abbreviation from executable (fallback): {exe_base_name}")
+                     abbreviations.add(exe_base_name)
+
+        except Exception as e_exe:
+            logging.warning(f"Could not derive name from executable: {e_exe}")
+
+    # Rimuovi None/vuoti e ordina (opzionale)
+    final_list = sorted(list(filter(lambda x: x and len(x) >= 2, abbreviations)), key=len, reverse=True)
+    logging.debug(f"Generated abbreviations for '{name}': {final_list}")
+    return final_list
+
+
+# <<< NUOVO: Helper per check sequenza iniziali >>>
+def matches_initial_sequence(folder_name, game_title_words):
+    """
+    Controlla se folder_name (es. "MCC") è una sequenza delle iniziali
+    di game_title_words (es. ["Master", "Chief", "Collection"]).
+    """
+    if not folder_name or not game_title_words: return False
+    folder_name_upper = folder_name.upper()
+    word_initials = [word[0].upper() for word in game_title_words if word]
+
+    folder_idx = 0
+    word_idx = 0
+    while folder_idx < len(folder_name_upper) and word_idx < len(word_initials):
+        if folder_name_upper[folder_idx] == word_initials[word_idx]:
+            folder_idx += 1 # Lettera del nome cartella trovata, passa alla successiva
+        word_idx += 1 # Passa alla parola successiva del titolo in ogni caso
+
+    # Ritorna True solo se abbiamo matchato TUTTE le lettere del nome cartella
+    return folder_idx == len(folder_name_upper)
 
 def sanitize_foldername(name):
     """Rimuove o sostituisce caratteri non validi per nomi di file/cartelle."""
@@ -51,7 +196,7 @@ def sanitize_foldername(name):
         safe_name = "_invalid_profile_name_"
     return safe_name
 
-# --- Gestione Profili ---
+ # --- Gestione Profili ---
 def get_profile_backup_summary(profile_name):
     """
     Restituisce un riassunto dei backup per un profilo.
@@ -101,7 +246,6 @@ def load_profiles():
 
 def save_profiles(profiles):
     """Salva i profili in PROFILES_FILE_PATH."""
-    # <<< NUOVO: Wrapper per compatibilità futura e metadati
     data_to_save = {
         "__metadata__": {
             "version": 1, # Esempio
@@ -657,42 +801,33 @@ def find_steam_userdata_info():
     return userdata_base, likely_id, possible_ids, id_details
 
 
-# <<< MODIFICATO: Funzione are_names_similar con Fuzzy Matching opzionale
-def are_names_similar(name1, name2, min_match_words=2, fuzzy_threshold=88):
+# <<< MODIFICATO: Funzione are_names_similar usa anche check sequenza >>>
+def are_names_similar(name1, name2, min_match_words=2, fuzzy_threshold=88, game_title_words_for_seq=None):
     """
-    Compares two names for similarity based on common words and optionally fuzzy matching.
+    Compares two names for similarity.
+    Includes fuzzy matching and initial sequence check.
     Args:
-        name1 (str): First name.
-        name2 (str): Second name.
-        min_match_words (int): Minimum number of common significant words to consider similar.
-        fuzzy_threshold (int): Minimum score (0-100) for fuzzy matching (token_sort_ratio)
-                               to consider names similar if word match fails. Set to >100 to disable.
-    Returns:
-        bool: True if names are considered similar, False otherwise.
+        ... (parametri precedenti)
+        game_title_words_for_seq (list[str], optional): List of significant game title words
+                                                      used for the initial sequence check.
     """
-    if not name1 or not name2: return False # Gestisce input vuoti
-
+    # ... (inizio funzione invariato: pulizia, ignore words, tokenizzazione) ...
     try:
-        # Pulizia base (rimuovi simboli comuni, lowercase)
+        # Pulizia base
         clean_name1 = re.sub(r'[™®©:,.\-\(\)]', '', name1).lower()
         clean_name2 = re.sub(r'[™®©:,.\-\(\)]', '', name2).lower()
-
-        # Rimuovi spazi multipli
         clean_name1 = re.sub(r'\s+', ' ', clean_name1).strip()
         clean_name2 = re.sub(r'\s+', ' ', clean_name2).strip()
 
-        # Ignora parole comuni (configurabili?)
-        # <<< NOTA: Caricare da config se possibile
         ignore_words = getattr(config, 'SIMILARITY_IGNORE_WORDS',
                               {'a', 'an', 'the', 'of', 'and', 'remake', 'intergrade',
                                'edition', 'goty', 'demo', 'trial', 'play', 'launch',
                                'definitive', 'enhanced', 'complete', 'collection',
                                'hd', 'ultra', 'deluxe', 'game', 'year'})
-
-        # Estrai parole significative (almeno 2 caratteri, numeri romani/arabi)
-        pattern = r'\b(?:[ivxlcdm]+|[a-z0-9]+)\b' # Regex leggermente migliorata per romani
-        words1 = {w for w in re.findall(pattern, clean_name1) if w not in ignore_words and len(w) > 1}
-        words2 = {w for w in re.findall(pattern, clean_name2) if w not in ignore_words and len(w) > 1}
+        ignore_words_lower = {w.lower() for w in ignore_words}
+        pattern = r'\b(?:[ivxlcdm]+|[a-z0-9]+)\b'
+        words1 = {w for w in re.findall(pattern, clean_name1) if w not in ignore_words_lower and len(w) > 1}
+        words2 = {w for w in re.findall(pattern, clean_name2) if w not in ignore_words_lower and len(w) > 1}
 
         # 1. Check parole comuni
         common_words = words1.intersection(words2)
@@ -700,109 +835,85 @@ def are_names_similar(name1, name2, min_match_words=2, fuzzy_threshold=88):
             logging.debug(f"Similar by common words ({len(common_words)} >= {min_match_words}): '{name1}' vs '{name2}' -> Common: {common_words}")
             return True
 
-        # 2. Check se uno inizia con l'altro (senza spazi, utile per acronimi o nomi troncati)
+        # 2. Check prefix (starts_with)
         name1_no_space = clean_name1.replace(' ', '')
         name2_no_space = clean_name2.replace(' ', '')
-        MIN_PREFIX_LEN = 4 # Aumentato per ridurre falsi positivi
+        MIN_PREFIX_LEN = 4
         starts_with_match = False
         if len(name1_no_space) >= MIN_PREFIX_LEN and len(name2_no_space) >= MIN_PREFIX_LEN:
-            # Controlla il più lungo inizia con il più corto
             if len(name1_no_space) > len(name2_no_space):
                 if name1_no_space.startswith(name2_no_space): starts_with_match = True
             elif len(name2_no_space) > len(name1_no_space):
                  if name2_no_space.startswith(name1_no_space): starts_with_match = True
-            # Considera anche uguaglianza senza spazi
             elif name1_no_space == name2_no_space:
                  starts_with_match = True
-
         if starts_with_match:
              logging.debug(f"Similar by prefix match: '{name1}' vs '{name2}'")
              return True
 
-        # 3. <<< NUOVO: Check con Fuzzy Matching (se abilitato e libreria presente)
+        # 3. <<< NUOVO: Check Sequenza Iniziali (es. MCC da Master Chief Collection) >>>
+        # Controlliamo se name2 (il nome cartella) è una sequenza delle iniziali di name1 (il nome gioco)
+        if game_title_words_for_seq and matches_initial_sequence(name2, game_title_words_for_seq):
+             logging.debug(f"Similar by initial sequence match: Folder '{name2}' matches sequence in '{' '.join(game_title_words_for_seq)}'")
+             return True
+
+        # 4. Fuzzy Matching (come prima)
         if THEFUZZ_AVAILABLE and fuzzy_threshold <= 100:
-            # Usa token_sort_ratio che ignora ordine parole ed è robusto
             ratio = fuzz.token_sort_ratio(clean_name1, clean_name2)
             if ratio >= fuzzy_threshold:
                 logging.debug(f"Similar by fuzzy match (Score: {ratio} >= {fuzzy_threshold}): '{name1}' vs '{name2}'")
                 return True
-            # else: logging.debug(f"Fuzzy score {ratio} below threshold for '{name1}' vs '{name2}'")
 
-        # Se nessun check ha avuto successo
-        # logging.debug(f"Names considered NOT similar: '{name1}' vs '{name2}'")
-        return False
+        return False # Nessun match
 
     except Exception as e_sim:
         logging.error(f"Error in are_names_similar('{name1}', '{name2}'): {e_sim}", exc_info=True)
         return False
 
 
-# <<< NUOVO: Helper per generare acronimo migliorato
-def generate_acronym(name, ignore_words_lower):
-    """Genera un acronimo dalle iniziali delle parole significative."""
-    # Rimuovi punteggiatura base per la tokenizzazione
-    clean_name = re.sub(r'[™®©:,.\-\(\)]', '', name).lower()
-    words = re.findall(r'\b\w+\b', clean_name)
-    # Prendi iniziale di parole > 1 carattere non in ignore list
-    acronym = "".join(w[0] for w in words if w not in ignore_words_lower and len(w) > 1)
-    # Considera anche solo le maiuscole se l'altro fallisce? Forse no.
-    # acronym_upper = "".join(c for c in name if c.isupper()) # Vecchio metodo
-
-    return acronym.upper() if len(acronym) >= 2 else None
-
-
-# <<< MODIFICATO: Funzione guess_save_path con Cross-Platform, Content Check, Sorting migliorato
+# <<< MODIFICATO: Funzione guess_save_path usa abbreviazioni e check sequenza >>>
 def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path=None, steam_id3_to_use=None, is_steam_game=True):
-    """
-    Tenta di indovinare i percorsi di salvataggio di un gioco usando varie euristiche.
-    Restituisce una lista ordinata di percorsi potenziali (i più probabili prima).
-    """
-    guesses_data = {} # Usa un dict {norm_path: (source, contains_saves)} per deduplicare e tenere dati
+    guesses_data = {}
     checked_paths = set()
 
-    # --- Variabili comuni definite presto ---
+    # --- Variabili comuni ---
     sanitized_name_base = re.sub(r'^(Play |Launch )', '', game_name, flags=re.IGNORECASE)
     sanitized_name = re.sub(r'[™®©:]', '', sanitized_name_base).strip()
-    sanitized_name_nospace = re.sub(r'\s+', '', sanitized_name) # Rimuovi tutti gli spazi
 
-    # <<< NUOVO: Acronimo migliorato e Ignore Words
-    # <<< NOTA: Caricare da config se possibile
+    # <<< NUOVO: Genera lista di abbreviazioni possibili >>>
+    game_abbreviations = generate_abbreviations(sanitized_name, game_install_dir)
+    # Aggiungi il nome sanificato originale se non già presente per sicurezza
+    if sanitized_name not in game_abbreviations:
+        game_abbreviations.insert(0, sanitized_name) # Mettilo all'inizio
+
+    # Estrai parole significative per il check sequenza (da fare una sola volta)
     ignore_words = getattr(config, 'SIMILARITY_IGNORE_WORDS',
                           {'a', 'an', 'the', 'of', 'and', 'remake', 'intergrade',
                            'edition', 'goty', 'demo', 'trial', 'play', 'launch',
                            'definitive', 'enhanced', 'complete', 'collection',
-                           'hd', 'ultra', 'deluxe', 'game', 'year'})
+                           'hd', 'ultra', 'deluxe', 'game', 'year', 'subtitle'}) # Come prima
+    
     ignore_words_lower = {w.lower() for w in ignore_words}
-    valid_acronym = generate_acronym(sanitized_name, ignore_words_lower)
+    game_title_sig_words = [w for w in re.findall(r'\b\w+\b', sanitized_name) if w.lower() not in ignore_words_lower and len(w) > 1]
 
-    # Variazioni nome da controllare (rimuovi duplicati e None/vuoti)
-    name_variations = list(dict.fromkeys(filter(None, [
-        sanitized_name,
-        sanitized_name_nospace,
-        valid_acronym,
-        # Potresti aggiungere altre variazioni qui, es. rimuovere sottotitoli comuni?
-    ])))
 
-    # <<< NUOVO: Liste per content check (configurabili?)
-    # <<< NOTA: Caricare da config se possibile
+    # ... (Definizione common_save_extensions, filenames, subdirs come prima) ...
     common_save_extensions = getattr(config, 'COMMON_SAVE_EXTENSIONS',
-                                    {'.sav', '.save', '.dat', '.bin', '.xml', '.json', '.ini', '.slot', '.prof', '.usr', '.cfg', '.details', '.backup', '.meta'})
+                                {'.sav', '.save', '.dat', '.bin', '.xml', '.json', '.ini', '.slot', '.prof', '.usr', '.cfg', '.details', '.backup', '.meta'})
+    
     common_save_filenames = getattr(config, 'COMMON_SAVE_FILENAMES',
-                                   {'save', 'user', 'profile', 'settings', 'config', 'game', 'player', 'slot', 'steam_autocloud', 'persistent', 'backup', 'world', 'character'}) # Nomi file parziali
+                               {'save', 'user', 'profile', 'settings', 'config', 'game', 'player', 'slot', 'steam_autocloud', 'persistent', 'backup', 'world', 'character'})
+    
     common_save_subdirs = getattr(config, 'COMMON_SAVE_SUBDIRS',
-                                 ['Saves', 'Save', 'SaveGame', 'Saved', 'SaveGames', 'storage', 'PlayerData', 'Profile', 'Profiles', 'User', 'Data', 'SaveData', 'Backup', 'Worlds', 'Players', 'Characters', 'output', 'settings'])
+                             ['Saves', 'Save', 'SaveGame', 'Saved', 'SaveGames', 'storage', 'PlayerData', 'Profile', 'Profiles', 'User', 'Data', 'SaveData', 'Backup', 'Worlds', 'Players', 'Characters', 'output', 'settings'])
+    
     common_save_subdirs_lower = {s.lower() for s in common_save_subdirs}
-
-    # <<< NOTA: Caricare da config se possibile
-    common_publishers = getattr(config, 'COMMON_PUBLISHERS', []) # Lista potenzialmente lunga e poco utile?
+    common_publishers = getattr(config, 'COMMON_PUBLISHERS', [])
 
     logging.info(f"Heuristic save search for '{game_name}' (AppID: {appid})")
-    logging.info(f"Cleaned game name for search: '{sanitized_name}'")
-    if valid_acronym: logging.info(f"Generated acronym for search: '{valid_acronym}'")
-    logging.debug(f"Name variations for checks: {name_variations}")
-    logging.debug(f"Common save subdirs (lower): {common_save_subdirs_lower}")
-    logging.debug(f"Common save extensions: {common_save_extensions}")
-    logging.debug(f"Common save filename parts: {common_save_filenames}")
+    logging.debug(f"Generated name variations/abbreviations: {game_abbreviations}")
+    logging.debug(f"Significant title words for sequence check: {game_title_sig_words}")
+
 
     # --- Funzione Helper add_guess (MODIFICATA per content check) ---
     def add_guess(path, source_description):
@@ -864,8 +975,10 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                 logging.info(log_msg_found)
 
                 # Aggiungi o aggiorna in guesses_data (sempre tenendo il primo source trovato)
-                if norm_path not in guesses_data:
-                    guesses_data[norm_path] = (source_description, contains_save_like_files)
+                dict_key = norm_path.lower()
+                if dict_key not in guesses_data:
+                    # Salva il path con case originale, source, e flag saves
+                    guesses_data[dict_key] = (norm_path, source_description, contains_save_like_files)
                     return True
                 # else: Non aggiorniamo source o flag se già presente
 
@@ -964,184 +1077,143 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     # --- FINE Logica Cross-Platform ---
 
 
-    # --- Steam Userdata Check (Prima di ricerca generica) ---
+    # --- Steam Userdata Check ---
+    # <<< MODIFICATO: Usa are_names_similar con check sequenza per subfolders >>>
     if is_steam_game and appid and steam_userdata_path and steam_id3_to_use:
         logging.info(f"Checking Steam Userdata for AppID {appid} (User: {steam_id3_to_use})...")
-        # Assicurati che steam_userdata_path sia valido
         if os.path.isdir(steam_userdata_path):
             base_userdata_appid = os.path.join(steam_userdata_path, steam_id3_to_use, appid)
             remote_path = os.path.join(base_userdata_appid, 'remote')
-
-            # Controlla <appid>/remote prima (più comune per Cloud Saves)
             if add_guess(remote_path, f"Steam Userdata/{steam_id3_to_use}/{appid}/remote"):
-                # Se 'remote' esiste, controlla anche le sue sottocartelle
                 try:
                     for entry in os.listdir(remote_path):
                         sub_path = os.path.join(remote_path, entry)
                         sub_lower = entry.lower()
-                        # Aggiungi sub se è una cartella e sembra un save o matcha nome/acronimo
+                        # Aggiungi sub se è dir E (sembra save O matcha nome/abbr/sequenza)
                         if os.path.isdir(sub_path) and \
                            (sub_lower in common_save_subdirs_lower or
                             any(s in sub_lower for s in ['save', 'profile']) or
-                            are_names_similar(sanitized_name, entry) or
-                            (valid_acronym and sub_lower == valid_acronym.lower())):
+                            # Passa game_title_sig_words per check sequenza
+                            are_names_similar(sanitized_name, entry, game_title_words_for_seq=game_title_sig_words) or
+                            entry.upper() in [a.upper() for a in game_abbreviations] ): # Confronto case-insensitive abbreviazioni
                                 add_guess(sub_path, f"Steam Userdata/.../remote/{entry}")
                 except Exception as e_remote_sub: logging.warning(f"Error scanning subfolders in remote: {e_remote_sub}")
-
-            # Controlla la base <appid> (alcuni giochi salvano qui direttamente)
             add_guess(base_userdata_appid, f"Steam Userdata/{steam_id3_to_use}/{appid}/Base")
-        else:
-            logging.warning(f"Steam userdata path provided is invalid: '{steam_userdata_path}'")
+        else: logging.warning(f"Steam userdata path provided is invalid: '{steam_userdata_path}'")
     # --- FINE Steam Userdata Check ---
 
 
     # --- Generic Heuristic Search ---
     logging.info("Starting generic heuristic search in common locations...")
 
-    # --- >> Direct Path Checks (Controlli diretti <Location>/<GameVar> etc.) ---
+    # --- >> Direct Path Checks (Usa lista abbreviazioni) ---
     logging.info("Performing direct path checks...")
     for loc_name, base_folder in valid_locations.items():
-        for variation in name_variations:
-            if not variation: continue # Salta variazioni vuote
-
-            # Check <Location>/<GameVariation>
+        # <<< MODIFICATO: Itera su game_abbreviations invece di name_variations >>>
+        for variation in game_abbreviations:
+            if not variation: continue
+            # Check <Location>/<Variation>
             direct_path = os.path.join(base_folder, variation)
             add_guess(direct_path, f"{loc_name}/Direct/{variation}")
-
-            # Check <Location>/<Publisher>/<GameVariation> (meno prioritario?)
+            # Check <Location>/<Publisher>/<Variation>
             for publisher in common_publishers:
                 pub_path = os.path.join(base_folder, publisher, variation)
-                add_guess(pub_path, f"{loc_name}/{publisher}/Direct/{variation}") # Source indica publisher
-
+                add_guess(pub_path, f"{loc_name}/{publisher}/Direct/{variation}")
             # Check <Location>/<Variation>/<CommonSaveSubdir>
-            # (Es: Documents/MyGame/Saves)
-            if os.path.isdir(direct_path): # Solo se la cartella base del gioco esiste
+            if os.path.isdir(direct_path):
                 for save_subdir in common_save_subdirs:
                      add_guess(os.path.join(direct_path, save_subdir), f"{loc_name}/Direct/{variation}/{save_subdir}")
 
-    # --- >> Exploratory Search (Itera cartelle Lvl1/Lvl2) ---
+    # --- >> Exploratory Search (Usa lista abbreviazioni e check sequenza) ---
     logging.info("Performing exploratory search (iterating folders)...")
-    # <<< NOTA: Questa parte potrebbe essere sostituita/integrata con os.walk(max_depth=...)
-    # <<< Ma manteniamo Lvl1/Lvl2 per ora per integrare facilmente il content check
     for loc_name, base_folder in valid_locations.items():
         logging.debug(f"Exploring in '{loc_name}' ({base_folder})...")
         try:
-            # Itera Livello 1 (es. cartelle in Documents)
             for lvl1_folder_name in os.listdir(base_folder):
                 lvl1_path = os.path.join(base_folder, lvl1_folder_name)
-                # Salta file, controlla permessi lettura implicito con isdir
                 if not os.path.isdir(lvl1_path): continue
-
                 lvl1_name_lower = lvl1_folder_name.lower()
+                lvl1_name_upper = lvl1_folder_name.upper() # Per confronto abbreviazioni
 
-                # Check 1: Lvl1 è simile al nome gioco o acronimo?
-                # (Es: Documents/MyAwesomeGame)
-                is_lvl1_match = are_names_similar(sanitized_name, lvl1_folder_name) or \
-                                (valid_acronym and lvl1_name_lower == valid_acronym.lower())
+                # <<< MODIFICATO: Check Lvl1 usa abbreviazioni e check sequenza >>>
+                is_lvl1_match = lvl1_name_upper in [a.upper() for a in game_abbreviations] or \
+                                are_names_similar(sanitized_name, lvl1_folder_name, game_title_words_for_seq=game_title_sig_words)
 
                 if is_lvl1_match:
-                    logging.debug(f"  Match found at Lvl1: '{lvl1_folder_name}'")
-                    # Aggiungi Lvl1 path (add_guess fa content check)
+                    # ... (logica aggiunta path e check subdirs come prima) ...
+                    logging.debug(f"  Match found at Lvl1: '{lvl1_folder_name}'")
                     if add_guess(lvl1_path, f"{loc_name}/GameNameLvl1/{lvl1_folder_name}"):
-                        # E controlla subdir comuni DENTRO Lvl1 se aggiunto
-                        # (Es. Documents/MyAwesomeGame/Saves)
-                        try:
+                        try: # Check subdirs comuni
                             for save_subdir in os.listdir(lvl1_path):
                                 if save_subdir.lower() in common_save_subdirs_lower:
                                     add_guess(os.path.join(lvl1_path, save_subdir), f"{loc_name}/GameNameLvl1/{lvl1_folder_name}/{save_subdir}")
-                        except OSError: pass # Ignora errori lettura subdir
+                        except OSError: pass
 
-                # Check 2: Guarda dentro Lvl1 per trovare Lvl2
-                # (Es: Documents/PublisherName/MyAwesomeGame)
-                # Evita di scendere in cartelle già identificate come gioco a Lvl1? No, potrebbe esserci struttura /Publisher/Game/Saves
+                # Check Lvl2
                 try:
                     for lvl2_folder_name in os.listdir(lvl1_path):
                         lvl2_path = os.path.join(lvl1_path, lvl2_folder_name)
                         if not os.path.isdir(lvl2_path): continue
-
                         lvl2_name_lower = lvl2_folder_name.lower()
+                        lvl2_name_upper = lvl2_folder_name.upper()
 
-                        # Check 2a: Lvl2 è simile al nome gioco o acronimo?
-                        # (Es. AppData/Roaming/AwesomeInc/MyGame)
-                        is_lvl2_match = are_names_similar(sanitized_name, lvl2_folder_name) or \
-                                        (valid_acronym and lvl2_name_lower == valid_acronym.lower())
+                        # <<< MODIFICATO: Check Lvl2a usa abbreviazioni e check sequenza >>>
+                        is_lvl2_match = lvl2_name_upper in [a.upper() for a in game_abbreviations] or \
+                                        are_names_similar(sanitized_name, lvl2_folder_name, game_title_words_for_seq=game_title_sig_words)
 
                         if is_lvl2_match:
-                            logging.debug(f"    Match found at Lvl2 (Game Name): '{lvl2_folder_name}' in '{lvl1_folder_name}'")
-                            # Aggiungi Lvl2 path
+                            # ... (logica aggiunta path e check subdirs come prima) ...
+                            logging.debug(f"    Match found at Lvl2 (Game Name): '{lvl2_folder_name}' in '{lvl1_folder_name}'")
                             if add_guess(lvl2_path, f"{loc_name}/{lvl1_folder_name}/GameNameLvl2/{lvl2_folder_name}"):
-                                # E controlla subdir comuni DENTRO Lvl2 se aggiunto
-                                # (Es. AppData/Roaming/AwesomeInc/MyGame/Saves)
-                                try:
-                                    for save_subdir in os.listdir(lvl2_path):
-                                        if save_subdir.lower() in common_save_subdirs_lower:
-                                            add_guess(os.path.join(lvl2_path, save_subdir), f"{loc_name}/.../GameNameLvl2/{lvl2_folder_name}/{save_subdir}")
-                                except OSError: pass # Ignora errori lettura subdir
+                                 try: # Check subdirs comuni
+                                     for save_subdir in os.listdir(lvl2_path):
+                                         if save_subdir.lower() in common_save_subdirs_lower:
+                                             add_guess(os.path.join(lvl2_path, save_subdir), f"{loc_name}/.../GameNameLvl2/{lvl2_folder_name}/{save_subdir}")
+                                 except OSError: pass
 
-                        # Check 2b: Lvl2 è una cartella save comune E Lvl1 era un publisher/nome simile?
-                        # (Es. Documents/MyGames/GameName/Save) -> Già coperto sopra?
-                        # (Es. AppData/Local/PublisherName/Saved) <- Questo è interessante ma rischioso
-                        # Aggiungiamo solo se Lvl1 sembrava rilevante (publisher o simile al gioco)
+                        # Check 2b (Lvl2 è save subdir comune E Lvl1 rilevante)
                         elif lvl2_name_lower in common_save_subdirs_lower and \
-                             (lvl1_folder_name in common_publishers or is_lvl1_match or are_names_similar(sanitized_name, lvl1_folder_name, min_match_words=1)): # Match Lvl1 più permissivo qui?
-                                  logging.debug(f"    Match found at Lvl2 (Save Subdir): '{lvl2_folder_name}' in '{lvl1_folder_name}' (Parent relevant)")
+                             (lvl1_folder_name in common_publishers or is_lvl1_match or are_names_similar(sanitized_name, lvl1_folder_name, min_match_words=1)): # Match Lvl1 permissivo
+                                  logging.debug(f"    Match found at Lvl2 (Save Subdir): '{lvl2_folder_name}' in '{lvl1_folder_name}' (Parent relevant)")
                                   add_guess(lvl2_path, f"{loc_name}/{lvl1_folder_name}/SaveSubdirLvl2/{lvl2_folder_name}")
 
-
-                except OSError as e_lvl1:
-                    # Ignora errori comuni come Permesso Negato (5)
-                    if not isinstance(e_lvl1, PermissionError) and getattr(e_lvl1, 'winerror', 0) != 5:
-                        logging.warning(f"  Could not read inside '{lvl1_path}': {e_lvl1}")
-        except OSError as e_base:
-             if not isinstance(e_base, PermissionError) and getattr(e_base, 'winerror', 0) != 5:
-                logging.warning(f"Error accessing subfolders in '{base_folder}': {e_base}")
+                except OSError as e_lvl1: # Errori lettura Lvl2
+                    if not isinstance(e_lvl1, PermissionError) and getattr(e_lvl1, 'winerror', 0) != 5: logging.warning(f"  Could not read inside '{lvl1_path}': {e_lvl1}")
+        except OSError as e_base: # Errori lettura Lvl1
+            if not isinstance(e_base, PermissionError) and getattr(e_base, 'winerror', 0) != 5: logging.warning(f"Error accessing subfolders in '{base_folder}': {e_base}")
     # --- FINE Exploratory Search ---
 
 
-    # --- Search Inside Install Dir (Logica os.walk esistente) ---
+    # --- Search Inside Install Dir (Usa lista abbreviazioni e check sequenza) ---
     if game_install_dir and os.path.isdir(game_install_dir):
         logging.info(f"Checking common subfolders INSIDE (max depth 3) '{game_install_dir}'...")
-        max_depth = 3 # Profondità relativa alla cartella di installazione
-        # Calcola profondità base una sola volta
-        try:
-            install_dir_depth = game_install_dir.rstrip(os.sep).count(os.sep)
-        except Exception: install_dir_depth = 0 # Fallback
-
+        max_depth = 3
+        try: install_dir_depth = game_install_dir.rstrip(os.sep).count(os.sep)
+        except Exception: install_dir_depth = 0
         try:
             for root, dirs, files in os.walk(game_install_dir, topdown=True, onerror=lambda err: logging.warning(f"Error during install dir walk: {err}")):
-                # Calcola profondità relativa corrente
-                try:
-                    current_depth = root.rstrip(os.sep).count(os.sep)
-                    current_relative_depth = current_depth - install_dir_depth
-                except Exception: current_relative_depth = 0 # Fallback
+                try: current_depth = root.rstrip(os.sep).count(os.sep); current_relative_depth = current_depth - install_dir_depth
+                except Exception: current_relative_depth = 0
+                if current_relative_depth >= max_depth: dirs[:] = []; continue
 
-                # Limita profondità
-                if current_relative_depth >= max_depth:
-                    dirs[:] = [] # Non scendere oltre in questo ramo
-                    continue
-
-                # Controlla le sottocartelle a questa profondità
-                for dir_name in list(dirs): # Itera su copia perché potremmo rimuovere da dirs
+                for dir_name in list(dirs):
                     potential_path = os.path.join(root, dir_name)
-                    # Calcola path relativo per log (più leggibile)
                     try: relative_log_path = os.path.relpath(potential_path, game_install_dir)
-                    except ValueError: relative_log_path = dir_name # Se su drive diversi (improbabile)
+                    except ValueError: relative_log_path = dir_name
 
-                    # Cerca nomi comuni di salvataggio o nomi simili al gioco/acronimo
                     dir_name_lower = dir_name.lower()
+                    dir_name_upper = dir_name.upper() # Per confronto abbreviazioni
+
+                    # <<< MODIFICATO: Check usa abbreviazioni e check sequenza >>>
                     if dir_name_lower in common_save_subdirs_lower:
                         add_guess(potential_path, f"InstallDirWalk/SaveSubdir/{relative_log_path}")
-                        # Se troviamo una cartella save comune, non scendiamo al suo interno?
-                        # dirs.remove(dir_name) # Forse troppo aggressivo?
-                    elif are_names_similar(sanitized_name, dir_name) or \
-                         (valid_acronym and dir_name_lower == valid_acronym.lower()):
-                        add_guess(potential_path, f"InstallDirWalk/GameMatch/{relative_log_path}")
-                        # Non scendere in questa cartella se già matchata?
-                        # dirs.remove(dir_name) # Forse troppo aggressivo?
+                    elif dir_name_upper in [a.upper() for a in game_abbreviations] or \
+                         are_names_similar(sanitized_name, dir_name, game_title_words_for_seq=game_title_sig_words):
+                         add_guess(potential_path, f"InstallDirWalk/GameMatch/{relative_log_path}")
 
-        except Exception as e_walk:
-            logging.error(f"Unexpected error during os.walk in '{game_install_dir}': {e_walk}")
+        except Exception as e_walk: logging.error(f"Unexpected error during os.walk in '{game_install_dir}': {e_walk}")
     # --- FINE Search Inside Install Dir ---
+
 
 
     # --- Deduplicate and Final Sort (MODIFICATO per nuovo guesses_data e sorting) ---
@@ -1149,7 +1221,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
 
     # guesses_data ora contiene {norm_path: (source, contains_saves)}
     # Converti in lista di tuple per l'ordinamento: [(path, source, contains_saves), ...]
-    guesses_list = [(path, data[0], data[1]) for path, data in guesses_data.items()]
+    guesses_list = [(data[0], data[1], data[2]) for data in guesses_data.values()]
 
     # <<< NUOVO: Funzione di ordinamento migliorata >>>
     def final_sort_key(guess_tuple):
@@ -1162,48 +1234,89 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
         path_lower = path.lower()
         basename_lower = os.path.basename(path_lower)
         source_lower = source.lower()
+        parent_dir_lower = os.path.dirname(path_lower)
 
-        # Priorità massima a Steam Userdata (specialmente 'remote')
-        if steam_userdata_path and 'steam userdata' in source_lower:
-            if '/remote' in source_lower:
-                score += 1000 # Molto probabile
-            elif '/base' in source_lower:
-                 score += 800 # Abbastanza probabile
-            else: # Altra sottocartella in userdata
-                 score += 700
+        # --- PRIORITÀ BASE LOCAZIONE ---
+        # Altissima priorità per locazioni utente specifiche note
+        prime_locations = [
+            os.path.normpath(os.path.expanduser('~/Saved Games')).lower(),
+            os.path.normpath(os.getenv('APPDATA', '')).lower(),
+            os.path.normpath(os.getenv('LOCALAPPDATA', '')).lower(),
+            # LocalLow è spesso sotto LocalAppData, controlla quello
+            os.path.normpath(os.path.join(os.getenv('LOCALAPPDATA', ''), '..', 'LocalLow')).lower() if os.getenv('LOCALAPPDATA') else None,
+            os.path.normpath(os.path.join(os.path.expanduser('~/Documents'), 'My Games')).lower(),
+        ]
+        # Aggiungi Steam Userdata se disponibile
+        if steam_userdata_path:
+             prime_locations.append(os.path.normpath(steam_userdata_path).lower())
 
-        # Priorità alta se contiene file sospetti
-        if contains_saves:
-            score += 500
+        # Rimuovi None dalla lista prime_locations
+        prime_locations = [loc for loc in prime_locations if loc]
 
-        # Priorità alta se il nome base è una cartella save comune
-        if basename_lower in common_save_subdirs_lower:
-            score += 300
+        is_in_prime_location = False
+        for prime_loc in prime_locations:
+             # Controlla se il percorso INIZIA con una locazione primaria
+             # (per coprire /AppData/Roaming/Game vs /AppData/Roaming/Publisher/Game)
+             if path_lower.startswith(prime_loc + os.sep):
+                  is_in_prime_location = True
+                  break
+        # Controllo specifico per Steam Userdata Remote (merita ancora di più)
+        is_steam_remote = steam_userdata_path and 'steam userdata' in source_lower and '/remote' in source_lower
 
-        # Bonus basato sulla fonte della scoperta
-        if 'direct' in source_lower:
-            score += 200 # Trovato con match diretto nome/publisher
-        elif 'gamenamelvl1' in source_lower or 'gamenamelvl2' in source_lower:
-            score += 150 # Trovato per similarità nome gioco
+        if is_steam_remote:
+            score += 1500 # Massimo punteggio base
+        elif is_in_prime_location:
+            score += 1000 # Alto punteggio base per locazioni utente
+        elif 'documents' in path_lower and 'my games' not in path_lower:
+             score += 300 # Documents generico è meno probabile di My Games
         elif 'installdirwalk' in source_lower:
-            score += 100 # Trovato dentro cartella installazione (un po' meno standard)
-        elif 'savesubdir' in source_lower: # Es. AppData/Publisher/Saved
-             score += 120 # Nome save comune ma non da match diretto gioco
+            # <<< PENALITÀ FORTE per InstallDir >>>
+            score -= 500 # Penalità base forte
+        else:
+            score += 100 # Punteggio base basso per altre locazioni (es. Public)
 
-        # Malus per percorsi molto profondi? (Potrebbe penalizzare giochi complessi)
-        # depth = path.count(os.sep)
-        # score -= depth * 5
+        # --- BONUS INDICATORI POSITIVI ---
+        # Contiene save-like files?
+        if contains_saves:
+            score += 600 # Bonus molto forte
 
-        # Malus leggero se finisce solo con 'Data' o 'Settings' (meno specifiche di 'Saves')
-        if basename_lower in ['data', 'settings', 'config', 'cache']:
-            score -= 20
+        # Nome base è save subdir comune?
+        is_common_save_subdir = basename_lower in common_save_subdirs_lower
+        if is_common_save_subdir:
+            score += 350
 
-        # Malus se trovato sotto 'ProgramData' o 'Public Documents' (meno comuni per user saves)
-        if 'programdata' in path_lower or 'public documents' in path_lower:
-             score -= 50
+        # Trovato tramite match diretto nome/abbreviazione/sequenza?
+        is_direct_abbr_match = False
+        # Nota: game_abbreviations deve essere accessibile qui (definita fuori)
+        for abbr in game_abbreviations:
+            if os.path.basename(path) == abbr: # Forse meglio case-insensitive? basename_lower == abbr.lower()?
+                is_direct_abbr_match = True; break
+        is_sequence_match = matches_initial_sequence(os.path.basename(path), game_title_sig_words) # Ricalcola qui o passa da source?
 
-        # Restituisce punteggio negativo per ordinamento decrescente (punteggio più alto prima)
-        # A parità di punteggio, ordina alfabeticamente per path (assicura stabilità)
+        if is_direct_abbr_match or is_sequence_match or 'direct' in source_lower or 'gamenamelvl' in source_lower:
+             score += 250 # Bonus per match nome/abbr/sequenza
+             if is_sequence_match: score += 100 # Extra per sequenza (molto specifica)
+             if 'direct' in source_lower: score += 50 # Extra per match diretto nome/path
+
+        # --- BONUS/MALUS SPECIFICI ---
+        # Bonus se è una subdir comune *DENTRO* un'altra cartella che matcha il nome/abbr
+        # Questo aiuta a preferire "GameName/Saves" a "GameName" se entrambi trovati
+        # Controlla se il parent è una delle abbreviazioni (un po' complesso qui)
+        parent_basename_lower = os.path.basename(parent_dir_lower)
+        if is_common_save_subdir and parent_basename_lower in [a.lower() for a in game_abbreviations]:
+            score += 100 # Bonus per struttura NomeGioco/Saves
+
+        # Malus per nomi generici se NON contengono saves e NON sono in locazioni prime
+        if basename_lower in ['data', 'settings', 'config', 'cache', 'logs'] and not contains_saves and not is_in_prime_location:
+            score -= 150
+        # Malus per nomi corti generici
+        if len(basename_lower) <= 3 and not is_common_save_subdir and not contains_saves:
+            score -= 50
+        # Penalità extra per InstallDir se non contiene saves
+        if 'installdirwalk' in source_lower and not contains_saves:
+             score -= 300 # Penalità aggiuntiva
+
+        # Restituisce punteggio negativo per ordinamento decrescente
         return (-score, path_lower)
     # <<< FINE Funzione di ordinamento >>>
 
@@ -1213,14 +1326,24 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     # Estrai solo i percorsi ordinati per il risultato finale
     final_sorted_paths = [item[0] for item in sorted_guesses_list]
 
+    # <<< OPZIONALE: Filtro post-processing per rimuovere figli se il padre è 'meglio' >>>
+    # Questa parte è più complessa da fare bene, proviamo prima solo con l'ordinamento.
+    # Se necessario, si può aggiungere un filtro qui che rimuove percorsi P
+    # se esiste un percorso P/Subdir che ha un punteggio *significativamente* migliore
+    # o viceversa.
+
     logging.info(f"Search finished. Found {len(final_sorted_paths)} unique potential paths (sorted by likelihood).")
     if final_sorted_paths:
-         logging.debug(f"Top 5 potential paths:")
-         for i, p in enumerate(final_sorted_paths[:5]):
-             # Trova dati originali per logging dettagliato
-             orig_data = guesses_data.get(p, ("?", False))
-             logging.debug(f"  {i+1}. '{p}' (Source: {orig_data[0]}, HasSaves: {orig_data[1]})")
-    # logging.debug(f"Full sorted list: {final_sorted_paths}") # Log completo se necessario
+         logging.debug(f"Paths found with scores (higher is better):")
+         # Ricrea punteggi per logging (o salva punteggio durante sort)
+         for i, p in enumerate(final_sorted_paths):
+             # Trova dati originali per calcolare punteggio
+             orig_data_tuple = guesses_data.get(p.lower())
+             if orig_data_tuple:
+                 score = -final_sort_key( (orig_data_tuple[0], orig_data_tuple[1], orig_data_tuple[2]) )[0] # Calcola punteggio
+                 logging.debug(f"  {i+1}. Score: {score} | Path: '{p}' (Source: {orig_data_tuple[1]}, HasSaves: {orig_data_tuple[2]})")
+             else: # Non dovrebbe succedere
+                  logging.debug(f"  {i+1}. Path: '{p}' (Data not found?)")
 
     return final_sorted_paths
 
