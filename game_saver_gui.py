@@ -7,10 +7,10 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QStatusBar, QMessageBox, QDialog,
     QProgressBar, QGroupBox, QInputDialog,
-    QTableWidget, QTableWidgetItem, QHeaderView, QStyle, QDockWidget, QPlainTextEdit
+    QStyle, QDockWidget, QPlainTextEdit,QTableWidget
 )
 from PySide6.QtCore import ( Slot, Qt, QUrl, QSize, QTranslator, QCoreApplication, 
-     QEvent, QLocale, QSharedMemory #QSystemSemaphore, QLockFile
+     QEvent, QSharedMemory #QSystemSemaphore, QLockFile
 )
 from PySide6.QtGui import QIcon, QDesktopServices, QPalette, QColor
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
@@ -21,8 +21,10 @@ from dialogs.manage_backups_dialog import ManageBackupsDialog
 from dialogs.steam_dialog import SteamDialog
 from dialogs.minecraft_dialog import MinecraftWorldsDialog
 from gui_utils import WorkerThread, DetectionWorkerThread, QtLogHandler, resource_path
+from gui_components.profile_list_manager import ProfileListManager
+from gui_components.theme_manager import ThemeManager
 
-# Importa logica e configurazionez
+# Importa logica e configurazione
 import core_logic 
 import settings_manager 
 import config           
@@ -52,7 +54,6 @@ CURRENT_TRANSLATOR = None
 class MainWindow(QMainWindow):
     def __init__(self, initial_settings, log_handler):
         super().__init__()
-        self.load_theme_icons()
         self.setGeometry(100, 100, 720, 600)
         self.setAcceptDrops(True)
         self.current_settings = initial_settings
@@ -64,12 +65,7 @@ class MainWindow(QMainWindow):
 
         # --- Widget ---
         self.profile_table_widget = QTableWidget()
-        self.profile_table_widget.setObjectName("ProfileTable")
-        self.profile_table_widget.setColumnCount(2)
-        self.profile_table_widget.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.profile_table_widget.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.profile_table_widget.verticalHeader().setVisible(False)
-        self.profile_table_widget.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        
         self.settings_button = QPushButton()
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
@@ -100,9 +96,6 @@ class MainWindow(QMainWindow):
         self.toggle_log_button.setToolTip(self.tr("Mostra Log"))
 
         
-        header = self.profile_table_widget.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch) # Col 0 (Nome Profilo) = Stretch
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents) # Col 1 (Info Backup) = Adatta al contenuto
         icon_path = resource_path("icons/settings.png") # Percorso relativo dell'icona
         if os.path.exists(icon_path): # Controlla se il file esiste
             settings_icon = QIcon(icon_path)
@@ -111,13 +104,8 @@ class MainWindow(QMainWindow):
         else:
             logging.warning(f"File icona impostazioni non trovato: {icon_path}")
             
-        # --- PULSANTE TEMA ---
-        self.theme_button = QPushButton() # Senza testo
-        self.theme_button.setFlat(True)   # Aspetto meno invadente
-        self.theme_button.setFixedSize(QSize(24, 24)) # Adatta dimensione se serve
-        self.theme_button.setObjectName("ThemeToggleButton")
-        # Icona iniziale e tooltip verranno impostati da update_theme()
-     
+        self.theme_button = QPushButton()
+        
         #self.status_label = QLabel(self.tr("Pronto."))
         self.status_label.setObjectName("StatusLabel")
         self.progress_bar = QProgressBar()
@@ -189,7 +177,7 @@ class MainWindow(QMainWindow):
         # self.settings_button.setIconSize(icon_size)
         # self.steam_button.setIconSize(icon_size)
 
-        self.update_profile_table()
+        #self.update_profile_table()
 
         # --- Layout ---
         main_layout = QVBoxLayout()
@@ -303,6 +291,10 @@ class MainWindow(QMainWindow):
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
 
+        self.profile_table_manager = ProfileListManager(self.profile_table_widget, self)
+        self.profile_table_manager.update_profile_table()
+        self.theme_manager = ThemeManager(self.theme_button, self)
+        
         # Connessioni
         self.backup_button.clicked.connect(self.handle_backup)
         self.restore_button.clicked.connect(self.handle_restore)
@@ -313,7 +305,6 @@ class MainWindow(QMainWindow):
         self.manage_backups_button.clicked.connect(self.handle_manage_backups)
         self.settings_button.clicked.connect(self.handle_settings)
         self.open_backup_dir_button.clicked.connect(self.handle_open_backup_folder)
-        self.theme_button.clicked.connect(self.handle_theme_toggle)
         self.toggle_log_button.clicked.connect(self.handle_toggle_log)
         self.minecraft_button.clicked.connect(self.handle_minecraft_button)
         self.create_shortcut_button.clicked.connect(self.handle_create_shortcut)
@@ -321,7 +312,6 @@ class MainWindow(QMainWindow):
         # Stato Iniziale e Tema
         self.update_action_button_states()
         self.worker_thread = None
-        self.update_theme()
         self.retranslateUi()
         self.setWindowIcon(QIcon(resource_path("icon.png"))) # Icona finestra principale
     
@@ -329,7 +319,8 @@ class MainWindow(QMainWindow):
         """Aggiorna il testo di tutti i widget traducibili."""
         logging.debug("MainWindow.retranslateUi() chiamato") # Utile per debug
         self.setWindowTitle("SaveState")
-        self.profile_table_widget.setHorizontalHeaderLabels([self.tr("Profilo"), self.tr("Info Backup")]) # <-- Solo 2 etichette
+        #self.profile_table_widget.setHorizontalHeaderLabels([self.tr("Profilo"), self.tr("Info Backup")]) # <-- Solo 2 etichette
+        self.profile_table_manager.retranslate_headers()
         self.settings_button.setText(self.tr("Impostazioni"))
         self.new_profile_button.setText(self.tr("Nuovo Profilo Manuale"))
         self.steam_button.setText(self.tr("Gestisci Giochi Steam"))
@@ -346,15 +337,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'general_group'):
             self.general_group.setTitle(self.tr("Azioni Generali"))
             
-        # Aggiorna tooltip pulsante tema
-        current_theme = self.current_settings.get('theme', 'dark')
-        if current_theme == 'light':
-            self.theme_button.setToolTip(self.tr("Passa al tema scuro"))
-        else:
-            self.theme_button.setToolTip(self.tr("Passa al tema chiaro"))
-            
             logging.debug("Aggiornamento tabella profili a seguito di retranslateUi")
-            self.update_profile_table() # Così la tabella usa le nuove traduzioni subito
+            self.profile_table_manager.update_profile_table()
 
     def changeEvent(self, event):
         """Chiamato quando avvengono eventi nella finestra, inclusi cambi lingua."""
@@ -700,81 +684,6 @@ class MainWindow(QMainWindow):
         return norm_path
     # --- FINE NUOVO METODO HELPER ---
 
-    def update_profile_table(self):
-        """Aggiorna QTableWidget con i profili e le info sui backup."""
-        selected_profile_name = self.get_selected_profile_name()
-        self.profile_table_widget.setRowCount(0)
-        sorted_profiles = sorted(self.profiles.keys())
-
-        if not sorted_profiles:
-            self.profile_table_widget.setRowCount(1)
-            item_nome = QTableWidgetItem("Nessun profilo creato.")
-            item_info = QTableWidgetItem("")
-            item_nome.setData(Qt.ItemDataRole.UserRole, None)
-            item_nome.setFlags(item_nome.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            item_info.setFlags(item_info.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.profile_table_widget.setItem(0, 0, item_nome)
-            self.profile_table_widget.setItem(0, 1, item_info)
-            self.profile_table_widget.setEnabled(False)
-        else:
-            self.profile_table_widget.setEnabled(True)
-            row_to_select = -1
-            for row_index, profile_name in enumerate(sorted_profiles):
-                count, last_backup_dt = core_logic.get_profile_backup_summary(profile_name)
-                info_str = "" # Inizializza stringa vuota
-
-                if count > 0:
-                    date_str = "N/D" # Valore predefinito se non c'è data
-                    if last_backup_dt:
-                        try:
-                            # --- NUOVA LOGICA FORMATTAZIONE DATA ---
-                            lang_code = self.current_settings.get("language", "en") # Prendi lingua corrente
-                            # Crea oggetto QLocale per la lingua giusta
-                            if lang_code == "en":
-                                locale = QLocale(QLocale.Language.English)
-                            else:
-                                locale = QLocale(QLocale.Language.Italian)
-
-                            # Formatta la data usando QLocale (mese abbreviato + giorno)
-                            # Esempio: "Apr 11" o "Giu 10"
-                            date_str = locale.toString(last_backup_dt, "MMM d")
-                            # Se preferisci il mese completo (es. "April 11"), usa:
-                            # date_str = locale.toString(last_backup_dt, "MMMM d")
-                            # --- FINE NUOVA LOGICA ---
-                        except Exception as e:
-                            logging.error(f"Error formatting last backup date for {profile_name}", exc_info=True)
-                            date_str = "???" # Metti un placeholder diverso in caso di errore
-
-                    # --- NUOVA LOGICA TRADUZIONE ETICHETTE ---
-                    # Traduci le etichette che servono
-                    backup_label_singular = ("Backup")
-                    backup_label_plural = ("Backups")
-                    last_label = self.tr("Ultimo")
-
-                    # Scegli singolare o plurale
-                    backup_label = backup_label_singular if count == 1 else backup_label_plural
-
-                    # Componi la stringa finale usando le etichette tradotte
-                    info_str = f"{backup_label}: {count} | {last_label}: {date_str}"
-                    # --- FINE NUOVA LOGICA ---
-
-
-                name_item = QTableWidgetItem(profile_name)
-                name_item.setData(Qt.ItemDataRole.UserRole, profile_name)
-                info_item = QTableWidgetItem(info_str)
-                info_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-                self.profile_table_widget.insertRow(row_index)
-                self.profile_table_widget.setItem(row_index, 0, name_item)
-                self.profile_table_widget.setItem(row_index, 1, info_item)
-                
-                if profile_name == selected_profile_name:
-                     row_to_select = row_index
-
-            if row_to_select != -1:
-                  self.profile_table_widget.selectRow(row_to_select)
-
-        self.update_action_button_states()
 
     def get_selected_profile_name(self):
         selected_rows = self.profile_table_widget.selectionModel().selectedRows()
@@ -785,7 +694,8 @@ class MainWindow(QMainWindow):
         return None
 
     def update_action_button_states(self):
-        selected = self.get_selected_profile_name() is not None
+        #selected = self.get_selected_profile_name() is not None
+        selected = self.profile_table_manager.get_selected_profile_name() is not None
         self.backup_button.setEnabled(selected)
         self.restore_button.setEnabled(selected)
         self.delete_profile_button.setEnabled(selected)
@@ -794,7 +704,8 @@ class MainWindow(QMainWindow):
 
     def set_controls_enabled(self, enabled):
         self.profile_table_widget.setEnabled(enabled)
-        selected_profile_exists = self.get_selected_profile_name() is not None
+        #selected_profile_exists = self.get_selected_profile_name() is not None
+        selected_profile_exists = self.profile_table_manager.get_selected_profile_name() is not None
         self.backup_button.setEnabled(enabled and selected_profile_exists)
         self.restore_button.setEnabled(enabled and selected_profile_exists)
         self.delete_profile_button.setEnabled(enabled and selected_profile_exists)
@@ -863,6 +774,13 @@ class MainWindow(QMainWindow):
                 logging.debug("Removed previous translator that was no longer needed.")
             CURRENT_TRANSLATOR = None # Imposta a None per sicurezzar
 
+        logging.debug("Forcing UI updates after potential language change.")
+        if hasattr(self, 'theme_manager') and self.theme_manager:
+            self.theme_manager.update_theme() # <-- ASSICURATI CHE CI SIA: Aggiorna tooltip pulsante tema nella nuova lingua
+        if hasattr(self, 'profile_table_manager') and self.profile_table_manager:
+            self.profile_table_manager.retranslate_headers() # <-- ASSICURATI CHE CI SIA: Aggiorna intestazioni tabella
+
+        
         # Forzare un aggiornamento dell'UI dopo il cambio? Qt dovrebbe farlo con LanguageChange.
         # Se non lo fa, potresti forzarlo qui con self.retranslateUi(), ma di solito non serve.
 
@@ -1077,49 +995,6 @@ class MainWindow(QMainWindow):
         self.worker_thread.progress.connect(self.status_label.setText)
         self.worker_thread.start()
         logging.debug(f"Started backup thread for profile '{profile_name}'.")
-        
-    def load_theme_icons(self):
-        """Carica le icone sole/luna."""
-        sun_icon_path = resource_path("icons/sun.png")
-        moon_icon_path = resource_path("icons/moon.png")
-        self.sun_icon = QIcon(sun_icon_path) if os.path.exists(sun_icon_path) else None
-        self.moon_icon = QIcon(moon_icon_path) if os.path.exists(moon_icon_path) else None
-        if not self.sun_icon: logging.warning(f"Sun icon not found: {sun_icon_path}")
-        if not self.moon_icon: logging.warning(f"Moon icon not found: {moon_icon_path}")
-
-    def update_theme(self):
-        """Applica il tema corrente e aggiorna l'icona del pulsante."""
-        theme_name = self.current_settings.get('theme', 'dark')
-        qss_to_apply = config.LIGHT_THEME_QSS if theme_name == 'light' else config.DARK_THEME_QSS
-        try:
-            app_instance = QApplication.instance()
-            if app_instance: app_instance.setStyleSheet(qss_to_apply)
-            else: logging.error("Unable to apply theme: QApplication instance not found."); return
-            logging.info(f"Theme '{theme_name}' applied.")
-            icon_size = QSize(16, 16) # Usa la stessa dimensione definita in init
-            if theme_name == 'light':
-                if self.moon_icon: self.theme_button.setIcon(self.moon_icon); self.theme_button.setIconSize(icon_size)
-                else: self.theme_button.setText("D"); self.theme_button.setIcon(QIcon()) # Fallback testo
-                self.theme_button.setToolTip("Passa al tema scuro")
-            else: # Dark theme
-                if self.sun_icon: self.theme_button.setIcon(self.sun_icon); self.theme_button.setIconSize(icon_size)
-                else: self.theme_button.setText("L"); self.theme_button.setIcon(QIcon()) # Fallback testo
-                self.theme_button.setToolTip("Passa al tema chiaro")
-        except Exception: logging.error(f"Error when applying the theme '{theme_name}'", exc_info=True)
-
-    @Slot()
-    def handle_theme_toggle(self):
-        """Inverte il tema, lo salva e lo applica."""
-        current_theme = self.current_settings.get('theme', 'dark')
-        new_theme = 'light' if current_theme == 'dark' else 'dark'
-        logging.debug(f"Theme change requested from '{current_theme}' to '{new_theme}'")
-        self.current_settings['theme'] = new_theme
-        if not settings_manager.save_settings(self.current_settings):
-            QMessageBox.warning(self, "Errore", "Impossibile salvare l'impostazione del tema.")
-            self.current_settings['theme'] = current_theme # Ripristina se salvataggio fallisce
-        else:
-            self.update_theme() # Applica il nuovo tema solo se salvato con successo
-        
 
     @Slot()
     def handle_restore(self):
@@ -1163,7 +1038,7 @@ class MainWindow(QMainWindow):
         self.worker_thread = None
         if not success: QMessageBox.critical(self, self.tr("Errore Operazione"), message)
         else: logging.debug("Operation thread worker successful, calling update_profile_table() to update view.")
-        self.update_profile_table()
+        self.profile_table_manager.update_profile_table()
 
     @Slot(str)
     def on_detection_progress(self, message):

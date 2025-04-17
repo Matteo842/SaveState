@@ -9,45 +9,24 @@ import logging          # Per loggare eventuali errori interni al thread
 import os               # Per os.walk, os.path, ecc.
 import configparser     # Per leggere i file .ini
 import sys
-import tempfile
-from datetime import datetime
-
-DEBUG_LOG_FILE = os.path.join(tempfile.gettempdir(), "savestate_resource_path_debug.log")
-try: # Pulisci log vecchio
-    if os.path.exists(DEBUG_LOG_FILE): os.remove(DEBUG_LOG_FILE)
-    print(f"Cleaned old debug log file: {DEBUG_LOG_FILE}")
-except Exception as e_del:
-    print(f"WARN: Unable to clean old debug log file: {e_del}")
-
-#def write_debug_log(message):
-    #try:
-        #with open(DEBUG_LOG_FILE, "a", encoding="utf-8") as f:
-            #f.write(f"{datetime.now()} - {message}\n")
-    #except Exception as e:
-        #print(f"!!! ERRORE SCRITTURA DEBUG LOG: {e}")
+#import tempfile
+#from datetime import datetime
 
 def resource_path(relative_path):
     """ Trova il percorso assoluto della risorsa, funziona sia in sviluppo che con PyInstaller """
-    #write_debug_log(f"--- resource_path called with: {relative_path}")
     base_path = None # Inizializza per sicurezza
     try:
         # Metodo standard per PyInstaller (_MEIPASS) o sviluppo (directory script)
-        base_path = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(sys.argv[0])))
-        #write_debug_log(f"--- base_path determined as: {base_path}")    
+        base_path = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(sys.argv[0])))  
     except Exception as e:
-        #write_debug_log(f"--- EXCEPTION determining base_path: {e}")
         logging.error(f"Error calculating base_path for resource_path: {e}", exc_info=True)
         base_path = os.path.abspath(".")
-        #write_debug_log(f"--- base_path fallback (CWD): {base_path}")
 
     path = os.path.join(base_path, relative_path)
-    #write_debug_log(f"--- resource_path returning: {path}")
 
     # Controllo opzionale se il percorso generato esiste
     if not os.path.exists(path):
         logging.warning(f"resource_path: Calculated path DOES NOT EXIST: {path}")
-        #write_debug_log(f"--- WARNING! Path does NOT exist: {path}")
-
     return path
 # --- Thread Worker per Operazioni Lunghe ---
 
