@@ -914,6 +914,24 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     logging.debug(f"Generated name variations/abbreviations: {game_abbreviations}")
     logging.debug(f"Significant title words for sequence check: {game_title_sig_words}")
 
+    # <<< NUOVO: Blacklist di nomi cartella da ignorare (lowercase) >>>
+    # Idealmente caricare da config: getattr(config, 'BANNED_FOLDER_NAMES', set())
+    BANNED_FOLDER_NAMES_LOWER = {
+        # Nomi comuni di sistema/aziende/programmi
+        "microsoft", "nvidia corporation", "intel", "amd", "google", "mozilla",
+        "common files", "internet explorer", "windows", "system32", "syswow64",
+        "program files", "program files (x86)", "programdata", # ProgramData lo esploriamo, ma non le subdir comuni qui sotto
+        "drivers", "perflogs", "dell", "hp", "lenovo",
+        # Antivirus comuni (esempi)
+        "avast software", "avg", "kaspersky lab", "mcafee",
+        # Altri programmi comuni
+        "adobe", "python", "java", "oracle", "steam", # Ignora la cartella 'Steam' generica in posti come Program Files
+        # Cartelle di sistema nascoste/speciali
+        "$recycle.bin", "config.msi", "system volume information",
+        "default", "all users", "public", # Nomi utente generici che appaiono a volte
+        # Aggiungi altri nomi che ritieni opportuno ignorare
+    }
+    logging.debug(f"Using banned folder names (lowercase): {BANNED_FOLDER_NAMES_LOWER}")
 
     # --- Funzione Helper add_guess (MODIFICATA per content check) ---
     def add_guess(path, source_description):
@@ -1130,6 +1148,10 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
         logging.debug(f"Exploring in '{loc_name}' ({base_folder})...")
         try:
             for lvl1_folder_name in os.listdir(base_folder):
+                if lvl1_folder_name.lower() in BANNED_FOLDER_NAMES_LOWER:
+                    logging.debug(f"  Skipping banned Lvl1 folder: '{lvl1_folder_name}' in '{base_folder}'")
+                    continue # Salta questa cartella e passa alla successiva
+
                 lvl1_path = os.path.join(base_folder, lvl1_folder_name)
                 if not os.path.isdir(lvl1_path): continue
                 lvl1_name_lower = lvl1_folder_name.lower()
@@ -1196,6 +1218,10 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                 except Exception: current_relative_depth = 0
                 if current_relative_depth >= max_depth: dirs[:] = []; continue
 
+                # <<< NUOVO: Filtra le directory da esplorare ulteriormente usando la blacklist >>>
+                # Modifica la lista 'dirs' in-place per evitare la discesa in cartelle bannate
+                dirs[:] = [d for d in dirs if d.lower() not in BANNED_FOLDER_NAMES_LOWER]
+                
                 for dir_name in list(dirs):
                     potential_path = os.path.join(root, dir_name)
                     try: relative_log_path = os.path.relpath(potential_path, game_install_dir)
