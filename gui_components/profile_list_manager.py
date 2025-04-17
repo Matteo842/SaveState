@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QPushButton, QMess
 from PySide6.QtCore import Qt, QLocale
 import core_logic
 from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QPushButton, QMessageBox, QHeaderView
-
+import config
 class ProfileListManager:
     """Gestisce la QTableWidget dei profili e i pulsanti di azione correlati."""
 
@@ -95,9 +95,11 @@ class ProfileListManager:
             self.table_widget.setEnabled(True) # Assicura che la tabella sia abilitata
             row_to_reselect = -1
             for row_index, profile_name in enumerate(sorted_profiles):
-                count, last_backup_dt = core_logic.get_profile_backup_summary(profile_name)
+                # Righe 98-101 riscritte:
+                current_backup_base_dir = self.main_window.current_settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
+                count, last_backup_dt = core_logic.get_profile_backup_summary(profile_name, current_backup_base_dir)
                 info_str = ""
-
+                # La riga successiva dovrebbe essere l'if (riga 103 nello screenshot)
                 if count > 0:
                     date_str = "N/D"
                     if last_backup_dt:

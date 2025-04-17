@@ -8,6 +8,8 @@ from PySide6.QtCore import Slot, Qt
 
 # Importa la logica necessaria
 import core_logic
+import config
+import logging 
 
 
 class ManageBackupsDialog(QDialog):
@@ -53,7 +55,18 @@ class ManageBackupsDialog(QDialog):
      def populate_backup_list(self):
         self.backup_list_widget.clear()
         self.delete_button.setEnabled(False)
-        backups = core_logic.list_available_backups(self.profile_name)
+       
+        # Recupera il percorso base CORRENTE dalle impostazioni del parent
+        current_backup_base_dir = "" # Default vuoto
+        parent_window = self.parent() # Ottieni il parent una sola volta
+        if parent_window and hasattr(parent_window, 'current_settings'):
+            current_backup_base_dir = parent_window.current_settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
+        else:
+            logging.warning("ManageBackupsDialog: Impossibile accedere a current_settings dal parent. Uso il default da config.")
+            current_backup_base_dir = config.BACKUP_BASE_DIR
+
+        # Chiama la funzione passando il percorso recuperato
+        backups = core_logic.list_available_backups(self.profile_name, current_backup_base_dir) # <-- Riga Nuova
         if not backups:
             item = QListWidgetItem("Nessun backup trovato.")
             item.setData(Qt.ItemDataRole.UserRole, None)

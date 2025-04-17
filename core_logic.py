@@ -188,13 +188,14 @@ def sanitize_foldername(name):
     return safe_name
 
  # --- Gestione Profili ---
-def get_profile_backup_summary(profile_name):
+
+def get_profile_backup_summary(profile_name, backup_base_dir):
     """
     Restituisce un riassunto dei backup per un profilo.
     Returns: tuple (count: int, last_backup_datetime: datetime | None)
     """
     # Usa la funzione esistente che già ordina per data (nuovo prima)
-    backups = list_available_backups(profile_name)
+    backups = list_available_backups(profile_name, backup_base_dir) # Passa l'argomento
     count = len(backups)
     last_backup_dt = None
 
@@ -416,18 +417,13 @@ def perform_backup(profile_name, save_folder_path, backup_base_dir, max_backups,
         return False, msg
 
 
-def list_available_backups(profile_name):
+def list_available_backups(profile_name, backup_base_dir):
     """Restituisce una lista di tuple (nome_file, percorso_completo, data_modifica_str) per i backup di un profilo."""
     backups = []
     sanitized_folder_name = sanitize_foldername(profile_name)
     # <<< MODIFICATO: Usa backup_base_dir dalle impostazioni (richiede passaggio o accesso globale)
     # Assumendo che 'config' fornisca il percorso corretto
-    try:
-       backup_base_dir = config.BACKUP_BASE_DIR # O ottienilo dalle impostazioni caricate
-    except AttributeError:
-       logging.error("BACKUP_BASE_DIR not found in config. Unable to list backups.")
-       return [] # Restituisce lista vuota se manca la configurazione base
-
+    
     profile_backup_dir = os.path.join(backup_base_dir, sanitized_folder_name)
     logging.debug(f"ListBackups - Original name: '{profile_name}', Folder searched: '{profile_backup_dir}'")
 

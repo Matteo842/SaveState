@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QStyle, QDockWidget, QPlainTextEdit, QTableWidget
 )
 from PySide6.QtCore import ( Slot, Qt, QUrl, QSize, QTranslator, QCoreApplication,
-     QEvent, QSharedMemory #QSystemSemaphore, QLockFile
+     QEvent, QSharedMemory, QTimer
 )
 from PySide6.QtGui import QIcon, QDesktopServices, QPalette, QColor
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
@@ -56,6 +56,11 @@ class MainWindow(QMainWindow):
         self.current_settings = initial_settings
         self.profiles = core_logic.load_profiles()
         
+        self.developer_mode_enabled = False # Stato iniziale delle opzioni sviluppatore
+        self.log_button_press_timer = None  # Timer per il long press
+        self.log_icon_normal = None         # Icona normale del log
+        self.log_icon_dev = None            # Icona modalità sviluppatore
+                
         # Ottieni lo stile per le icone standard
         style = QApplication.instance().style()
         icon_size = QSize(16, 16) # Dimensione comune icone
@@ -81,16 +86,31 @@ class MainWindow(QMainWindow):
         self.toggle_log_button.setFixedSize(QSize(24, 24))
         self.toggle_log_button.setObjectName("LogToggleButton")
         
-        icon_path = resource_path("icons/terminal.png") # Assicurati che il file sia qui
-        if os.path.exists(icon_path):
-            log_icon = QIcon(icon_path)
-            self.toggle_log_button.setIcon(log_icon)
+        # Carica entrambe le icone per il pulsante log
+        icon_normal_path = resource_path("icons/terminal.png")
+        icon_dev_path = resource_path("icons/terminalDev.png") # Nuova icona
+
+        if os.path.exists(icon_normal_path):
+            self.log_icon_normal = QIcon(icon_normal_path)
         else:
-            logging.warning(f"File icona log non trovato: {icon_path}")
-            self.toggle_log_button.setText("L") # Fallback a testo se icona manca
+            logging.warning(f"File icona log NORMALE non trovato: {icon_normal_path}")
+            self.log_icon_normal = None # O gestisci il fallback
+
+        if os.path.exists(icon_dev_path):
+            self.log_icon_dev = QIcon(icon_dev_path)
+        else:
+            logging.warning(f"File icona log DEVELOPER non trovato: {icon_dev_path}")
+            self.log_icon_dev = self.log_icon_normal # Usa icona normale come fallback se manca quella dev
+
+        # Imposta l'icona iniziale (normale)
+        if self.log_icon_normal:
+            self.toggle_log_button.setIcon(self.log_icon_normal)
+        else:
+            self.toggle_log_button.setText("L") # Fallback testo se manca anche l'icona normale
+
         button_size = QSize(24, 24)
         self.toggle_log_button.setFixedSize(button_size)
-        self.toggle_log_button.setToolTip(self.tr("Mostra Log"))
+        #self.toggle_log_button.setToolTip(self.tr("Mostra/Nascondi Log (Tieni premuto per Opzioni Sviluppatore)"))
 
         
         icon_path = resource_path("icons/settings.png") # Percorso relativo dell'icona
@@ -581,7 +601,7 @@ class MainWindow(QMainWindow):
     def on_steam_profile_configured(self, profile_name, save_path):
         logging.debug(f"Received profile_configured signal: profile '{profile_name}'")
         self.profiles = core_logic.load_profiles()
-        self.update_profile_table()
+        self.profile_table_manager.update_profile_table()
         # Seleziona il profilo appena configurato nella tabella
         for row in range(self.profile_table_widget.rowCount()):
              item = self.profile_table_widget.item(row, 0)
@@ -710,6 +730,7 @@ class MainWindow(QMainWindow):
         if not profile_name: QMessageBox.warning(self, "Errore", "Nessun profilo selezionato."); return
         dialog = ManageBackupsDialog(profile_name, self)
         dialog.exec()
+        self.profile_table_manager.update_profile_table()
         self.update_profile_table()
 
     @Slot(bool, str)

@@ -7,6 +7,8 @@ from PySide6.QtCore import Qt
 
 # Importa la logica necessaria
 import core_logic
+import config
+import logging
 
 
 class RestoreDialog(QDialog):
@@ -18,7 +20,18 @@ class RestoreDialog(QDialog):
         self.backup_list_widget = QListWidget()
         self.selected_backup_path = None
         no_backup_label = None
-        backups = core_logic.list_available_backups(profile_name)
+        
+        # Recupera il percorso base CORRENTE dalle impostazioni del parent
+        current_backup_base_dir = "" # Default vuoto
+        if parent and hasattr(parent, 'current_settings'): # Controlla se parent e settings esistono
+            current_backup_base_dir = parent.current_settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
+        else:
+            # Fallback se non riusciamo a ottenere le impostazioni (improbabile)
+            logging.warning("RestoreDialog: Impossibile accedere a current_settings dal parent. Uso il default da config.")
+            current_backup_base_dir = config.BACKUP_BASE_DIR
+
+        # Chiama la funzione passando il percorso recuperato
+        backups = core_logic.list_available_backups(profile_name, current_backup_base_dir) # <-- Riga Nuova
         if not backups:
             no_backup_label = QLabel("Nessun backup trovato per questo profilo.")
             self.backup_list_widget.setEnabled(False)
