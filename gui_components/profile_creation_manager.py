@@ -354,7 +354,6 @@ class ProfileCreationManager:
         logging.debug("Path detection thread started.")
     # --- FINE dropEvent ---
 
-
     # --- Slot per Progresso Rilevamento (Spostato qui) ---
     @Slot(str)
     def on_detection_progress(self, message):
@@ -362,7 +361,6 @@ class ProfileCreationManager:
         # Potrebbe essere utile filtrare/semplificare i messaggi qui
         self.main_window.status_label.setText(message)
     # --- FINE on_detection_progress ---
-
 
     # --- Slot per Fine Rilevamento (Spostato qui) ---
     @Slot(bool, dict)
@@ -388,58 +386,104 @@ class ProfileCreationManager:
 
         # --- Logica gestione risultati ---
         final_path_to_use = None
-        paths_found = results.get('paths', [])
+        paths_found = results.get('path_data', []) # Ottiene la lista di tuple (path, score)
         status = results.get('status', 'error')
 
         if status == 'found':
-            logging.debug(f"Paths found by detection thread: {paths_found}")
+            logging.debug(f"Path data found by detection thread: {paths_found}") # Log aggiornato
             if len(paths_found) == 1:
-                # Un solo percorso trovato
+                # Un solo percorso trovato (ora è una tupla)
+                single_path, single_score = paths_found[0] # Estrai path e score
                 reply = QMessageBox.question(mw, mw.tr("Conferma Percorso Automatico"),
-                                             mw.tr("È stato rilevato questo percorso:\n\n{0}\n\nVuoi usarlo per il profilo '{1}'?").format(paths_found[0], profile_name),
+                                             # Mostra solo il percorso nel messaggio
+                                             mw.tr("È stato rilevato questo percorso:\n\n{0}\n\nVuoi usarlo per il profilo '{1}'?").format(single_path, profile_name),
                                              QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
                                              QMessageBox.StandardButton.Yes)
                 if reply == QMessageBox.StandardButton.Yes:
-                    final_path_to_use = paths_found[0]
+                    final_path_to_use = single_path # Usa solo il percorso
                 elif reply == QMessageBox.StandardButton.No:
                     logging.info("User rejected single automatic path. Requesting manual input.")
-                    final_path_to_use = None # Forza richiesta manuale sotto
+                    final_path_to_use = None # Forza richiesta manuale
                 else: # Cancel
                     mw.status_label.setText(mw.tr("Creazione profilo annullata."))
                     return
-            elif len(paths_found) > 1:
-                # Multipli percorsi trovati, ordina e chiedi
-                logging.debug(f"Found {len(paths_found)} paths, applying priority sorting.")
-                preferred_suffixes = ['saves', 'save', 'savegame', 'savegames', 'saved', 'storage',
-                                      'playerdata', 'profile', 'profiles', 'user', 'data', 'savedata']
-                def sort_key(path):
-                    basename_lower = os.path.basename(os.path.normpath(path)).lower()
-                    priority = 0 if basename_lower in preferred_suffixes else 1
-                    return (priority, path.lower())
-                sorted_paths = sorted(paths_found, key=sort_key)
-                logging.debug(f"Paths sorted for selection: {sorted_paths}")
 
-                choices = sorted_paths + [mw.tr("[Inserisci Manualmente...]")]
-                chosen_path_str, ok = QInputDialog.getItem(mw, mw.tr("Conferma Percorso Salvataggi"),
-                                                           mw.tr("Sono stati trovati questi percorsi potenziali per '{0}'.\nSeleziona quello corretto o scegli l'inserimento manuale:").format(profile_name),
-                                                           choices, 0, False)
-                if ok and chosen_path_str:
-                    if chosen_path_str == mw.tr("[Inserisci Manualmente...]"):
-                        logging.info("User chose manual input from multiple paths list.")
-                        final_path_to_use = None # Forza richiesta manuale
+            elif len(paths_found) > 1: # Qui inizia il blocco che hai appena sostituito
+                # Multipli percorsi trovati, ora abbiamo path_data con gli score
+                # La lista path_data dovrebbe essere già ordinata per score decrescente dal thread
+
+                # --- NUOVO: Leggi impostazione sviluppatore (verrà aggiunta dopo) ---
+                # Usiamo mw (self.main_window) per accedere alle impostazioni correnti
+                show_scores = mw.developer_mode_enabled
+                logging.debug(f"Handling multiple paths. Developer mode active (show scores): {show_scores}")
+
+                choices = []
+                # Mappa per recuperare il path originale dalla stringa visualizzata
+                display_str_to_path_map = {}
+
+                logging.debug(f"Original path_data received (sorted by score desc): {paths_found}") # Logga i dati ricevuti
+
+                # Crea le stringhe per il dialogo
+                for path, score in paths_found: # Itera sulle tuple (path, score)
+                    display_text = ""
+                    if show_scores:
+                        # Mostra percorso e score
+                        # Pulisci un po' il percorso per la visualizzazione se troppo lungo? Opzionale
+                        # display_path = path if len(path) < 60 else path[:25] + "..." + path[-30:]
+                        display_path = path # Per ora usiamo path completo
+                        display_text = f"{display_path} (Score: {score})"
                     else:
-                        final_path_to_use = chosen_path_str
-                else: # Annullato
+                        # Mostra solo percorso
+                        display_text = path
+
+                    choices.append(display_text)
+                    display_str_to_path_map[display_text] = path # Mappa stringa visualizzata -> path originale
+
+                # Aggiungi opzione manuale
+                manual_entry_text = mw.tr("[Inserisci Manualmente...]")
+                choices.append(manual_entry_text)
+                # Associa il testo dell'opzione manuale a None nella mappa
+                display_str_to_path_map[manual_entry_text] = None
+
+                logging.debug(f"Choices prepared for QInputDialog: {choices}")
+
+                # Mostra il dialogo QInputDialog.getItem
+                chosen_display_str, ok = QInputDialog.getItem(
+                    mw,
+                    mw.tr("Conferma Percorso Salvataggi"),
+                    mw.tr("Sono stati trovati questi percorsi potenziali per '{0}'.\nSeleziona quello corretto (ordinati per probabilità) o scegli l'inserimento manuale:").format(profile_name),
+                    choices, # Lista di stringhe (con o senza score)
+                    0,       # Indice iniziale (il primo, che ha score più alto)
+                    False    # Non editabile
+                )
+
+                # Gestisci la scelta dell'utente
+                if ok and chosen_display_str:
+                    # Recupera il path corrispondente alla stringa scelta usando la mappa
+                    # Questo funziona sia che lo score fosse visibile o meno
+                    selected_path_or_none = display_str_to_path_map.get(chosen_display_str)
+
+                    if selected_path_or_none is None: # L'utente ha scelto "[Inserisci Manualmente...]"
+                        logging.info("User chose manual input from multiple paths list.")
+                        final_path_to_use = None # Forza richiesta manuale più avanti nel codice
+                    else:
+                        # L'utente ha scelto un percorso specifico dalla lista
+                        final_path_to_use = selected_path_or_none # Salva il path effettivo
+                        logging.debug(f"User selected path: {final_path_to_use}")
+
+                else: # L'utente ha premuto Annulla
                     mw.status_label.setText(mw.tr("Creazione profilo annullata."))
-                    return
+                    return # Esce dalla funzione on_detection_finished
+
         elif status == 'not_found':
             # Nessun percorso trovato automaticamente
             QMessageBox.information(mw, mw.tr("Percorso Non Rilevato"), mw.tr("Impossibile rilevare automaticamente il percorso dei salvataggi per '{0}'.\nPer favore, inseriscilo manualmente.").format(profile_name))
             final_path_to_use = None # Forza richiesta manuale
-        else:
+        else: # status == 'error' o altro caso imprevisto
             logging.error(f"Unexpected status '{status}' from detection thread with success=True")
             mw.status_label.setText(mw.tr("Errore interno durante la gestione dei risultati."))
-            return
+            # Potremmo chiedere input manuale anche qui? Forse meglio di no.
+            return # Esci se lo stato non è 'found' o 'not_found'
 
         # --- Richiesta Inserimento Manuale (se necessario) ---
         if final_path_to_use is None:

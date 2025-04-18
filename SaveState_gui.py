@@ -742,7 +742,6 @@ class MainWindow(QMainWindow):
         dialog = ManageBackupsDialog(profile_name, self)
         dialog.exec()
         self.profile_table_manager.update_profile_table()
-        self.update_profile_table()
 
     @Slot(bool, str)
     def on_operation_finished(self, success, message):

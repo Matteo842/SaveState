@@ -182,19 +182,77 @@ class SteamDialog(QDialog):
             if reply == QMessageBox.StandardButton.Yes: confirmed_path = existing_path
             else: confirmed_path = None
         else:
-             path_choices = []; current_path_index = -1
-             for i, p in enumerate(guesses): is_current = "[ATTUALE]" if p == existing_path else ""; path_choices.append(f"{p} {is_current}")
-             if p == existing_path: current_path_index = i
+             path_choices = []
+             display_str_to_path_map = {} # Mappa per recuperare il path
+
+             # Accedi alla main window (parent) per controllare la modalità sviluppatore
+             main_window = self.parent()
+             show_scores = False
+             if main_window and hasattr(main_window, 'developer_mode_enabled'):
+                  show_scores = main_window.developer_mode_enabled
+             logging.debug(f"SteamDialog: Show scores in path selection: {show_scores}")
+
+             # La lista 'guesses' contiene tuple (path, score) ed è già ordinata da core_logic
+             logging.debug(f"SteamDialog: Guesses received (sorted): {guesses}")
+
+             # Crea le stringhe per il dialogo
+             for i, (p, score) in enumerate(guesses): # Itera sulle tuple
+                 display_text = ""
+                 # Controlla se questo percorso corrisponde a uno esistente
+                 is_current = "[ATTUALE]" if p == existing_path else ""
+
+                 if show_scores:
+                     # Mostra path, score e [ATTUALE] se necessario
+                     display_text = f"{p} (Score: {score}) {is_current}".strip()
+                 else:
+                     # Mostra solo path e [ATTUALE] se necessario
+                     display_text = f"{p} {is_current}".strip()
+
+                 path_choices.append(display_text)
+                 display_str_to_path_map[display_text] = p # Mappa stringa visualizzata -> path originale
+
              dialog_text = "Select the correct path for saves:"
-             if existing_path: dialog_text += f"\n(Attuale: {existing_path})"
-             chosen_path_str, ok = QInputDialog.getItem(self, "Confirm Save Path", dialog_text, path_choices, current_path_index if current_path_index != -1 else 0, False)
-             if ok and chosen_path_str: confirmed_path = chosen_path_str.split(" [ATTUALE]")[0].strip()
-             elif ok and not chosen_path_str: ok = False
-             if not ok:
+             if existing_path: dialog_text += f"\n(Current: {existing_path})"
+
+             # Trova l'indice della scelta corrente (se esiste) per preselezionarla
+             current_selection_index = 0 # Default al primo (più probabile)
+             for idx, choice_str in enumerate(path_choices):
+                  # Recupera il path originale dalla mappa per il confronto
+                  path_from_choice = display_str_to_path_map.get(choice_str)
+                  if path_from_choice == existing_path:
+                       current_selection_index = idx
+                       break
+
+             # Mostra il dialogo
+             chosen_display_str, ok = QInputDialog.getItem(
+                 self,
+                 "Confirm Save Path",
+                 dialog_text,
+                 path_choices,
+                 current_selection_index, # Usa l'indice trovato o 0
+                 False # Non editabile
+             )
+
+             if ok and chosen_display_str:
+                 # Recupera il path originale usando la mappa dalla stringa scelta
+                 confirmed_path = display_str_to_path_map.get(chosen_display_str)
+                 logging.debug(f"SteamDialog: User selected path: {confirmed_path}")
+                 # Se confirmed_path è None qui, significa che qualcosa è andato storto nella mappa (improbabile)
+                 if confirmed_path is None:
+                     logging.error(f"Could not map chosen display string '{chosen_display_str}' back to path!")
+                     ok = False # Tratta come se l'utente avesse annullato
+             elif ok and not chosen_display_str:
+                 # Scelta vuota? Tratta come annullato
+                 ok = False
+             # --- FINE MODIFICHE ---
+
+             if not ok: # Se l'utente ha annullato getItem o la mappatura è fallita
                  manual_reply = QMessageBox.question(self, "Manual Entry?", "Do you want to enter the path manually?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-                 if manual_reply == QMessageBox.StandardButton.Yes: confirmed_path = None
-                 else: self.status_label.setText(self.tr("Configuration cancelled."))
-                 return
+                 if manual_reply == QMessageBox.StandardButton.Yes:
+                     confirmed_path = None # Forza inserimento manuale sotto
+                 else:
+                     self.status_label.setText(self.tr("Configuration cancelled."))
+                     return # Esce da configure_selected_game
         
         # Logica per inserimento/validazione manuale
         if confirmed_path is None:

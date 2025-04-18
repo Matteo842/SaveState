@@ -71,247 +71,287 @@ class DetectionWorkerThread(QThread):
 
     def run(self):
         """Contiene la logica di scansione INI e euristica."""
-        detected_save_path = None
-        final_paths = []
+        # --- VARIABILI INIZIALI ---
+        final_path_data = [] # Ora conterrà tuple (path, score)
+        paths_already_added = set() # Per evitare duplicati di percorsi
         error_message = ""
         status = "not_found" # Default
-        profile_name = self.profile_name_suggestion # Usa il nome passato
+        profile_name = self.profile_name_suggestion
+
+        INI_SCORE_BONUS = 10000 # Score fittizio alto per percorsi trovati da INI
 
         try:
             self.progress.emit(f"Starting search for '{profile_name}'...")
-
-            # --- INIZIO LOGICA ESTRATTA E ADATTATA ---
+            path_found_via_ini = False # Flag specifico per INI
 
             if self.game_install_dir:
                 self.progress.emit("Scanning INI files...") # Messaggio più generico
                 # Usa self.current_settings passato nell'init
                 ini_whitelist = self.current_settings.get("ini_whitelist", [])
                 ini_blacklist = self.current_settings.get("ini_blacklist", [])
-                ini_whitelist_lower = [name.lower() for name in ini_whitelist]
-                ini_blacklist_lower = [name.lower() for name in ini_blacklist]
+                ini_whitelist_lower = {name.lower() for name in ini_whitelist} # Usa set per efficienza
+                ini_blacklist_lower = {name.lower() for name in ini_blacklist} # Usa set per efficienza
                 keys_to_check = {
                     'SavePath': ['Settings', 'Storage', 'Game'],
                     'AppDataPath': ['Settings', 'Storage'],
                     'Dir_0': ['Settings', 'Directories', 'Paths', 'Location'],
                     'UserDataFolder': ['Settings', 'Storage']
+                    # Aggiungi altre chiavi/sezioni comuni se necessario
                 }
-                parser = configparser.ConfigParser(interpolation=None)
-                path_found_flag = False
-                decoded_ini_files = []
+                parser = configparser.ConfigParser(interpolation=None, allow_no_value=True, comment_prefixes=('#', ';'), inline_comment_prefixes=('#', ';')) # Configurazione parser
+                decoded_ini_files = [] # Per fallback
 
-                # Scansione INI (Whitelist)
-                #print(f"THREAD DEBUG: Inizio scansione INI in {self.game_install_dir}...")
+                # --- Inizio Scansione INI (Whitelist) ---
                 logging.debug(f"Starting INI scan in {self.game_install_dir}...")
-
-                for root, dirs, files in os.walk(self.game_install_dir):
+                for root, dirs, files in os.walk(self.game_install_dir, topdown=True):
                     if not self.is_running: break
-                    if path_found_flag: break
-                    # Limita la profondità? Potrebbe essere un'ottimizzazione futura
-                    # depth = root[len(self.game_install_dir):].count(os.sep)
-                    # if depth > MAX_SCAN_DEPTH: dirs[:] = []; continue
+                    # Ottimizzazione: Non scendere in cartelle comuni non utili (es. '.git', 'engine')
+                    dirs[:] = [d for d in dirs if d.lower() not in ['__pycache__', '.git', '.svn', 'engine', 'binaries', 'intermediates', 'logs']]
 
                     for filename in files:
                         if not self.is_running: break
-                        if path_found_flag: break
                         filename_lower = filename.lower()
                         if filename_lower in ini_blacklist_lower: continue
+
                         # Processa solo se nella whitelist
                         if filename_lower in ini_whitelist_lower:
                             ini_path = os.path.join(root, filename)
-                            #print(f"THREAD DEBUG: Trovato potenziale file INI: {ini_path}") # Forse troppo verboso
+                            logging.debug(f"  Processing potential INI: {ini_path}")
                             try:
                                 possible_encodings = ['utf-8', 'cp1252', 'latin-1']
-                                parsed_successfully = False; used_encoding = None
+                                parsed_successfully = False
+                                used_encoding = None
+                                ini_content_for_fallback = None # Salva contenuto per fallback
+
                                 for enc in possible_encodings:
                                     if not self.is_running: break
                                     try:
                                         parser.clear()
-                                        # Leggi contenuto per evitare errori strani con parser.read a volte
                                         with open(ini_path, 'r', encoding=enc) as f_content:
                                             ini_content = f_content.read()
                                         parser.read_string(ini_content) # Usa read_string
-                                        parsed_successfully = True; used_encoding = enc
-                                        # Aggiungi ai decodificati solo se il parsing va a buon fine
-                                        decoded_ini_files.append((ini_path, used_encoding))
-                                        #print(f"THREAD DEBUG: Letto {ini_path} con encoding '{used_encoding}'")
+                                        parsed_successfully = True
+                                        used_encoding = enc
+                                        ini_content_for_fallback = ini_content # Salva per dopo
+                                        logging.debug(f"    Successfully parsed {filename} with encoding '{used_encoding}'")
                                         break # Trovato encoding
                                     except UnicodeDecodeError: continue
-                                    except configparser.Error:
-                                        #print(f"THREAD WARN: Errore parsing INI (con '{enc}') {ini_path}: {e_inner_parse}")
+                                    except configparser.Error as e_inner_parse:
+                                        logging.debug(f"    Parsing error for {filename} with '{enc}': {e_inner_parse}")
                                         parsed_successfully = False
                                         break # Inutile provare altri encoding se il formato è errato
+
                                 if not parsed_successfully: continue
 
-                                # Cerca Chiavi Standard
+                                # Aggiungi ai file decodificati per eventuale fallback DOPO check chiavi
+                                decoded_ini_files.append((ini_path, used_encoding, ini_content_for_fallback))
+
+                                # --- Cerca Chiavi Standard ---
+                                found_in_this_file = False # Flag per sapere se abbiamo trovato una chiave in QUESTO file
                                 for key, sections in keys_to_check.items():
-                                    if path_found_flag: break
+                                    if not self.is_running: break
                                     possible_value = None
                                     for section in sections:
                                         if parser.has_section(section) and parser.has_option(section, key):
-                                            possible_value = parser.get(section, key); break
+                                            possible_value = parser.get(section, key, fallback=None)
+                                            break # Trovato, esci loop sezioni
+                                    # Controlla anche nella sezione di default [DEFAULT]
                                     if not possible_value and parser.has_option(configparser.DEFAULTSECT, key):
-                                            possible_value = parser.get(configparser.DEFAULTSECT, key)
+                                            possible_value = parser.get(configparser.DEFAULTSECT, key, fallback=None)
 
+                                    # --- Blocco che USA resolved_path ---
                                     if possible_value:
                                         expanded_path = os.path.expandvars(possible_value.strip('"\' '))
-                                        if not os.path.isabs(expanded_path):
-                                            # Risolvi relativo alla cartella del GIOCO, non dell'INI
-                                            resolved_path = os.path.normpath(os.path.join(self.game_install_dir, expanded_path))
-                                        else:
-                                            resolved_path = os.path.normpath(expanded_path)
+                                        resolved_path = None # Inizializza a None per sicurezza
+                                        try:
+                                            if not os.path.isabs(expanded_path):
+                                                # Risolvi relativo alla cartella del GIOCO, non dell'INI
+                                                resolved_path = os.path.normpath(os.path.join(self.game_install_dir, expanded_path))
+                                            else:
+                                                resolved_path = os.path.normpath(expanded_path)
 
-                                        # VALIDAZIONE: è una dir esistente e non è radice?
-                                        if os.path.isdir(resolved_path) and len(os.path.splitdrive(resolved_path)[1]) > 1:
-                                            logging.info(f"THREAD INFO: Percorso RILEVATO (Chiave Standard '{key}' in {os.path.basename(ini_path)}): {resolved_path}")
-                                            detected_save_path = resolved_path
-                                            path_found_flag = True; break # Esce dal loop chiavi
-                                        #else:
-                                            #print(f"THREAD DEBUG: Percorso da chiave '{key}' ('{resolved_path}') non è dir valido o è radice.")
+                                            # VALIDAZIONE: è una dir esistente e non è radice?
+                                            if os.path.isdir(resolved_path) and len(os.path.splitdrive(resolved_path)[1]) > 1:
+                                                logging.info(f"    Percorso RILEVATO (Chiave Standard '{key}' in {filename}): {resolved_path}")
+                                                norm_path = os.path.normpath(resolved_path)
+                                                if norm_path not in paths_already_added:
+                                                    final_path_data.append((norm_path, INI_SCORE_BONUS)) # Aggiungi con score alto
+                                                    paths_already_added.add(norm_path)
+                                                    path_found_via_ini = True # Imposta il flag INI generale
+                                                found_in_this_file = True # Trovato in questo file specifico
+                                                # Non usciamo dal loop chiavi/sezioni, potremmo trovarne altri in questo file
+                                            else:
+                                                 logging.debug(f"    Path from key '{key}' ('{resolved_path}') is not a valid directory or is root.")
+                                        except ValueError as e_path:
+                                             logging.warning(f"    Error processing path '{expanded_path}' from key '{key}': {e_path}")
+                                        except Exception as e_resolve:
+                                             logging.error(f"    Unexpected error resolving path for key '{key}': {e_resolve}", exc_info=True)
+                                    # --- Fine Blocco che USA resolved_path ---
+                                # Fine ciclo for key, sections... (check chiavi standard)
+
                             except FileNotFoundError:
-                                logging.warning(f"THREAD WARN: File INI scomparso durante analisi? {ini_path}")
+                                logging.warning(f"  INI file vanished during analysis? {ini_path}")
                             except Exception as e_outer:
-                                logging.warning(f"THREAD WARN: Errore generico processando {ini_path}: {e_outer}")
-                        if path_found_flag: break # Esce dal loop file
-                    if path_found_flag: break # Esce dal loop os.walk
-                logging.debug(f"Fine scansione INI (Whitelist). Trovato path da chiave standard: {detected_save_path is not None}")
+                                logging.warning(f"  Generic error processing {ini_path}: {e_outer}", exc_info=True)
+                        # Fine if filename_lower in ini_whitelist_lower
+                    # Fine ciclo for filename in files
+                    if not self.is_running: break # Esci da os.walk se interrotto
+                # Fine ciclo for root, dirs, files (os.walk)
+                logging.debug(f"Finished INI scan (Whitelist). Found paths via standard keys: {path_found_via_ini}")
+                # --- Fine Scansione INI (Whitelist) ---
 
-                # Fallback Logic (Commenti/Prefissi) - Esegui solo se non trovato con chiavi e thread attivo
-                if not path_found_flag and self.is_running:
-                    self.progress.emit("Ricerca fallback in file INI...")
-                    logging.debug(f"Nessuna chiave standard trovata. Tento fallback su {len(decoded_ini_files)} file INI decodificati...")
+                # --- Logica Fallback (Commenti/Prefissi) ---
+                # Esegui solo se il thread è attivo
+                if self.is_running:
+                    self.progress.emit("Checking INI files for fallback paths...")
+                    logging.debug(f"Attempting fallback scan on {len(decoded_ini_files)} successfully decoded INI files...")
                     preferred_inis = ['steam_emu.ini'] # Dai priorità
+                    # Ordina mettendo prima i preferiti
                     sorted_decoded_inis = sorted(
                         decoded_ini_files,
                         key=lambda item: os.path.basename(item[0]).lower() not in preferred_inis
                     )
-                    fallback_prefixes = { # Prefissi da cercare
+                    fallback_prefixes = { # Prefissi da cercare (chiave: testo, valore: lunghezza)
                         "### Game data is stored at ": len("### Game data is stored at "),
-                        "Dir_0=": len("Dir_0=")
-                        # Aggiungi altri se necessario
+                        "# SavesDir = ": len("# SavesDir = "),
+                        "; SavesDir = ": len("; SavesDir = "),
+                        "Dir_0=": len("Dir_0="),
+                        "Save Path = ": len("Save Path = "),
+                        # Aggiungi altri se necessario, es. da diversi emu/config
                     }
 
-                    for ini_path_to_check, encoding_to_use in sorted_decoded_inis:
+                    for ini_path_to_check, encoding_to_use, ini_content in sorted_decoded_inis:
                         if not self.is_running: break
-                        if detected_save_path: break # Se trovato nel frattempo
-                        #print(f"THREAD DEBUG: Tento fallback commenti in: {ini_path_to_check}")
+                        logging.debug(f"  Scanning for fallback prefixes in: {os.path.basename(ini_path_to_check)}")
                         try:
-                            with open(ini_path_to_check, 'r', encoding=encoding_to_use) as f:
-                                for line_num, line in enumerate(f):
-                                    if not self.is_running: break
-                                    cleaned_line = line.strip()
-                                    if not cleaned_line or cleaned_line.startswith('['): continue # Salta vuote e sezioni
+                            lines = ini_content.splitlines() # Usa contenuto già letto
+                            found_in_this_file_fallback = False
+                            for line_num, line in enumerate(lines):
+                                if not self.is_running: break
+                                cleaned_line = line.strip()
+                                if not cleaned_line or cleaned_line.startswith('['): continue # Salta vuote e sezioni
 
-                                    for prefix, prefix_len in fallback_prefixes.items():
-                                        if cleaned_line.startswith(prefix):
-                                            path_from_line = cleaned_line[prefix_len:].strip('"\' ')
-                                            #print(f"THREAD DEBUG:  -> Riga {line_num+1}: Trovato prefisso '{prefix}', path estratto: '{path_from_line}'")
-                                            try:
-                                                expanded_path = os.path.expandvars(path_from_line)
-                                                # Risolvi relativo alla cartella GIOCO
-                                                if not os.path.isabs(expanded_path):
-                                                    resolved_path = os.path.normpath(os.path.join(self.game_install_dir, expanded_path))
-                                                else:
-                                                    resolved_path = os.path.normpath(expanded_path)
+                                for prefix, prefix_len in fallback_prefixes.items():
+                                    if cleaned_line.startswith(prefix):
+                                        path_from_line = cleaned_line[prefix_len:].strip('"\' ')
+                                        logging.debug(f"    -> Line {line_num+1}: Found prefix '{prefix}', extracted path: '{path_from_line}'")
+                                        resolved_path = None # Inizializza
+                                        try:
+                                            expanded_path = os.path.expandvars(path_from_line)
+                                            # Risolvi relativo alla cartella GIOCO
+                                            if not os.path.isabs(expanded_path):
+                                                resolved_path = os.path.normpath(os.path.join(self.game_install_dir, expanded_path))
+                                            else:
+                                                resolved_path = os.path.normpath(expanded_path)
 
-                                                # VALIDAZIONE
-                                                if os.path.isdir(resolved_path) and len(os.path.splitdrive(resolved_path)[1]) > 1:
-                                                    logging.info(f"Percorso RILEVATO (Fallback prefisso '{prefix}' in {os.path.basename(ini_path_to_check)}): {resolved_path}")
-                                                    detected_save_path = resolved_path
-                                                    path_found_flag = True # Segna trovato anche qui
-                                                    break # Trovato, esci loop prefissi
-                                                #else:
-                                                    #print(f"THREAD WARN:   -> Il percorso da fallback '{resolved_path}' NON è valido o è radice.")
-                                            except Exception as e_resolve:
-                                                logging.warning(f"Errore durante espansione/normalizzazione percorso da fallback: {e_resolve}")
-                                    if path_found_flag: break # Esci loop righe
-                        except FileNotFoundError:
-                            logging.warning(f"File INI scomparso durante ricerca fallback? Path: {ini_path_to_check}")
-                        except Exception:
-                            logging.warning(f"Errore lettura file {ini_path_to_check} per fallback.", exc_info=True) # Aggiunto exc_info per dettagli errore lettura
-                        if path_found_flag: break # Esci loop file INI
-                    logging.debug(f"Fine ricerca fallback. Trovato path: {detected_save_path is not None}")
+                                            # VALIDAZIONE
+                                            if os.path.isdir(resolved_path) and len(os.path.splitdrive(resolved_path)[1]) > 1:
+                                                logging.info(f"    Percorso RILEVATO (Fallback prefisso '{prefix}' in {os.path.basename(ini_path_to_check)}): {resolved_path}")
+                                                norm_path = os.path.normpath(resolved_path)
+                                                if norm_path not in paths_already_added:
+                                                     final_path_data.append((norm_path, INI_SCORE_BONUS)) # Aggiungi con score alto
+                                                     paths_already_added.add(norm_path)
+                                                     path_found_via_ini = True # Imposta flag generale
+                                                found_in_this_file_fallback = True
+                                                # Non usciamo dal loop prefissi, potrebbero essercene altri utili
+                                            else:
+                                                 logging.debug(f"    -> Fallback path '{resolved_path}' is not valid or is root.")
+                                        except ValueError as e_path_fb:
+                                             logging.warning(f"    Error processing path '{path_from_line}' from fallback: {e_path_fb}")
+                                        except Exception as e_resolve_fb:
+                                            logging.warning(f"    Error expanding/normalizing fallback path: {e_resolve_fb}", exc_info=True)
+                                # Fine ciclo for prefix...
+                            # Fine ciclo for line...
+                        except Exception as e_fallback_read:
+                            logging.warning(f"  Error reading/processing {os.path.basename(ini_path_to_check)} for fallback.", exc_info=True)
+                        # Fine try...except lettura fallback
+                    # Fine ciclo for ini_path_to_check...
+                    logging.debug(f"Finished INI fallback scan. Found paths via fallback: {path_found_via_ini}")
+                # --- Fine Logica Fallback ---
 
+            # --- Euristica Aggiuntiva (Ora AGGIUNGE ai risultati INI, non sostituisce) ---
+            if self.is_running: # L'euristica si esegue sempre se c'è install dir (e non interrotto)
+                if not path_found_via_ini: # Mostra messaggio solo se INI non ha trovato nulla
+                    self.progress.emit("Performing heuristic search...")
+                    logging.info("No valid paths found via INI scan. Starting generic heuristic search...")
+                else:
+                    self.progress.emit("Performing additional heuristic search...")
+                    logging.info("INI scan found paths. Starting additional heuristic search...")
 
-            # Se trovato percorso da INI (chiave o fallback), aggiungilo ai risultati
-            # Usiamo path_found_flag per sicurezza
-            if path_found_flag and detected_save_path and self.is_running:
-                norm_path = os.path.normpath(detected_save_path)
-                if norm_path not in final_paths:
-                    final_paths.append(norm_path)
-                status = "found" # Aggiorna stato
-
-            # Euristica Aggiuntiva (se INI fallisce o non applicabile E thread attivo)
-            if not path_found_flag and self.game_install_dir and self.is_running:
-                self.progress.emit("Ricerca euristica generica...")
-                logging.info("Ricerca INI fallita o non applicabile. Avvio ricerca euristica generica...")
                 try:
-                    # Chiamiamo guess_save_path qui dentro il thread
-                    heuristic_guesses = core_logic.guess_save_path(
-                        game_name=profile_name, # Usa il nome profilo passato
+                    # Chiamata a guess_save_path (ora restituisce lista di tuple)
+                    heuristic_guesses_with_scores = core_logic.guess_save_path(
+                        game_name=profile_name,
                         game_install_dir=self.game_install_dir,
-                        is_steam_game=False # Ricerca generica per drag-drop
+                        is_steam_game=False # Per drag&drop è generico
                     )
-                    logging.debug(f"Risultati ricerca euristica: {heuristic_guesses}")
-                    # Aggiungi i risultati validi dell'euristica (se non già presenti)
-                    for guess in heuristic_guesses:
-                         norm_guess = os.path.normpath(guess)
-                         # guess_save_path dovrebbe già validare, ma doppio check
-                         if os.path.isdir(norm_guess) and len(os.path.splitdrive(norm_guess)[1]) > 1:
-                             if norm_guess not in final_paths:
-                                 logging.info(f"Aggiunto percorso valido trovato tramite euristica: {norm_guess}")
-                                 final_paths.append(norm_guess)
-                         #else:
-                         #     print(f"THREAD WARN: Scarto guess euristico non valido restituito da core_logic: {norm_guess}")
+                    logging.debug(f"Heuristic search results (with scores): {heuristic_guesses_with_scores}")
 
-                    if final_paths: # Se abbiamo trovato qualcosa (da INI o euristica)
-                        status = "found" # Conferma lo stato 'found'
-                    else:
-                        logging.info("La ricerca euristica non ha prodotto percorsi validi aggiuntivi.")
-                        status = "not_found" # Rimane 'not_found' se anche euristica fallisce
+                    # Aggiungi i risultati dell'euristica se non già presenti
+                    added_heuristic_count = 0
+                    for path, score in heuristic_guesses_with_scores:
+                        norm_path = os.path.normpath(path)
+                        if norm_path not in paths_already_added:
+                             # <<< CORREZIONE: valida di nuovo qui per sicurezza >>>
+                             if os.path.isdir(norm_path) and len(os.path.splitdrive(norm_path)[1]) > 1:
+                                 logging.info(f"  Adding valid path (Score: {score}) from heuristic: {norm_path}")
+                                 final_path_data.append((norm_path, score))
+                                 paths_already_added.add(norm_path)
+                                 added_heuristic_count += 1
+                             else:
+                                 logging.warning(f"  Skipping invalid heuristic guess: {norm_path}")
+                    logging.info(f"Added {added_heuristic_count} new unique paths from heuristic search.")
+
+                    # Imposta lo stato finale basato sulla presenza di dati
+                    if final_path_data:
+                        status = "found"
+                        # Ordina la lista finale in base allo score (decrescente) prima di emetterla
+                        final_path_data.sort(key=lambda item: item[1], reverse=True)
+                    elif not path_found_via_ini: # Se INI non ha trovato nulla E neanche euristica
+                        status = "not_found"
+                        logging.info("Heuristic search did not yield any valid paths.")
 
                 except Exception as e_heuristic:
                     error_message = f"Error during heuristic search: {e_heuristic}"
-                    logging.error(f"Error during heuristic search: {e_heuristic}", exc_info=True) # Usa direttamente l'eccezione e aggiungi traceback
-                    # Non impostare status="error" qui a meno che non sia fatale?
-                    # Se l'euristica fallisce ma INI aveva trovato qualcosa, status dovrebbe rimanere 'found'.
-                    # Se INI non aveva trovato nulla, status rimane 'not_found'.
-                    # Aggiungiamo l'errore al messaggio finale.
-                    error_message = f"Error heuristics: {e_heuristic}" # Sovrascrive eventuali errori precedenti? Meglio accumulare?
+                    logging.error(f"Error during heuristic search: {e_heuristic}", exc_info=True)
+                    # Non cambiare status qui, l'errore è nel messaggio
 
-            elif not self.game_install_dir:
-                 # Questo caso dovrebbe essere gestito prima di avviare il thread, ma per sicurezza...
+            elif not self.game_install_dir and self.is_running: # Caso in cui non c'è install_dir
                  logging.warning("Unable to perform automatic search: game installation folder not specified.")
                  status = "not_found"
 
-            # --- FINE LOGICA ESTRATTA E ADATTATA ---
-
+        # --- Gestione Errori Generali ---
         except Exception as e:
             error_message = f"Unexpected error during search: {e}"
-            logging.critical(f"Unexpected critical error in detection thread: {e}") # Il logging.exception successivo cattura già il traceback
-            logging.exception("Error in detection thread:") # Logga traceback
-            status = "error" # Errore generale impedisce di continuare
+            logging.critical(f"Unexpected critical error in detection thread: {e}")
+            logging.exception("Error in detection thread:") # Logga traceback completo
+            status = "error"
 
+        # --- Blocco Finally per Emettere Risultati ---
         finally:
-            # Alla fine, emetti il segnale 'finished' con i risultati
             if self.is_running:
+                # Prepara il dizionario dei risultati
                 results = {
                     'status': status,
-                    'paths': final_paths, # Lista dei percorsi trovati
-                    'message': error_message, # Eventuale messaggio di errore
-                    'profile_name_suggestion': profile_name # Passiamo indietro il nome
+                    'path_data': final_path_data, # Lista di tuple (path, score) ordinata
+                    'message': error_message,
+                    'profile_name_suggestion': profile_name
                 }
-                self.finished.emit(status != "error", results) # successo è True se non ci sono stati errori critici
+                # Emetti il segnale
+                self.finished.emit(status != "error", results) # successo se non 'error'
             else:
-                 # Thread interrotto
+                 # Se il thread è stato interrotto
                  results = {
                      'status': 'error', # Segnala come errore l'interruzione
-                     'paths': [],
-                     'message': "Ricerca interrotta.",
+                     'path_data': [],
+                     'message': "Search interrupted by user.", # Messaggio più specifico
                      'profile_name_suggestion': profile_name
                  }
                  self.finished.emit(False, results)
-            logging.debug(f"DetectionWorkerThread.run() terminato. Status: {status}, Paths: {final_paths}")
 
+            logging.debug(f"DetectionWorkerThread.run() finished. Status: {status}, PathData Count: {len(final_path_data)}")
+            if final_path_data and status == 'found':
+                logging.debug(f"Top path found: {final_path_data[0]}")
     def stop(self):
         self.is_running = False
         self.progress.emit("Interruzione ricerca...")

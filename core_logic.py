@@ -1376,47 +1376,45 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     # Ora che la funzione chiave è definita, usiamola per ordinare
     final_sorted_paths = [] # Inizializza a lista vuota per sicurezza
     try:
-        logging.info("Finalizing and sorting potential paths...") # Messaggio spostato qui
+        logging.info("Finalizing and sorting potential paths with scores...")
 
-        # Converti guesses_data in lista di tuple per l'ordinamento
-        # guesses_data ora contiene {norm_path_lower: (original_norm_path, source, contains_saves)}
+        # guesses_data ora è {norm_path_lower: (original_norm_path, source, contains_saves)}
         guesses_list = [(data[0], data[1], data[2]) for data in guesses_data.values()]
 
         # Ordina la lista di tuple usando la chiave definita sopra
+        # La chiave restituisce (-score, path_lower)
         sorted_guesses_list = sorted(guesses_list, key=final_sort_key)
 
-        # Estrai solo i percorsi ordinati (con case originale) per il risultato finale
-        final_sorted_paths = [item[0] for item in sorted_guesses_list] # Questa era una delle righe mancanti
+        # Estrai percorso e punteggio per il risultato finale
+        final_results_with_scores = []
+        for item_tuple in sorted_guesses_list:
+            original_path = item_tuple[0]
+            # Ricalcola il punteggio per questo elemento
+            try:
+                # Usiamo la chiave di ordinamento negata per ottenere il punteggio positivo
+                score = -final_sort_key(item_tuple)[0]
+                final_results_with_scores.append((original_path, score))
+            except Exception as e_score_calc:
+                logging.warning(f"Could not calculate score for path '{original_path}' during final list creation: {e_score_calc}")
+                final_results_with_scores.append((original_path, 0)) # Aggiungi con score 0 in caso di errore
 
-        logging.info(f"Search finished. Found {len(final_sorted_paths)} unique potential paths (sorted by likelihood).")
-        if final_sorted_paths:
-             logging.debug(f"Paths found with scores (higher is better):")
-             # Ricrea punteggi per logging
-             for i, p in enumerate(final_sorted_paths):
-                 # Trova dati originali usando la chiave lowercase
-                 orig_data_tuple = guesses_data.get(p.lower())
-                 if orig_data_tuple:
-                     try:
-                         # Ricalcola il punteggio per il log
-                         # Nota: Assicurati che le variabili esterne usate da final_sort_key
-                         # (game_abbreviations, game_title_sig_words, etc.) siano ancora accessibili qui se necessario
-                         # In questo caso final_sort_key le usa come closure, quindi dovrebbe essere ok.
-                         score = -final_sort_key( (orig_data_tuple[0], orig_data_tuple[1], orig_data_tuple[2]) )[0]
-                         logging.debug(f"  {i+1}. Score: {score} | Path: '{p}' (Source: {orig_data_tuple[1]}, HasSaves: {orig_data_tuple[2]})")
-                     except Exception as e_log_score:
-                          logging.warning(f"Could not calculate score for logging path '{p}': {e_log_score}")
-                          logging.debug(f"  {i+1}. Path: '{p}' (Source: {orig_data_tuple[1]}, HasSaves: {orig_data_tuple[2]})")
-                 else:
-                      logging.debug(f"  {i+1}. Path: '{p}' (Original data not found in guesses_data?)") # Improbabile
+        logging.info(f"Search finished. Found {len(final_results_with_scores)} unique paths with scores.")
+        # Log aggiornato per mostrare gli score
+        if final_results_with_scores:
+            logging.debug(f"Paths found (sorted by likelihood):")
+            for i, (p, s) in enumerate(final_results_with_scores):
+                orig_data_tuple = guesses_data.get(p.lower())
+                source_info = f"(Source: {orig_data_tuple[1]}, HasSaves: {orig_data_tuple[2]})" if orig_data_tuple else "(Data not found?)"
+                logging.debug(f"  {i+1}. Score: {s} | Path: '{p}' {source_info}")
 
     except Exception as e_final:
-        logging.error(f"Error during final sorting/processing of paths: {e_final}", exc_info=True)
-        final_sorted_paths = [] # Resetta a lista vuota in caso di errore
+        logging.error(f"Error during final sorting/processing of paths with scores: {e_final}", exc_info=True)
+        final_results_with_scores = [] # Resetta a lista vuota in caso di errore grave
 
-    # Questa return è ora fuori dal try...except e restituirà sempre una lista
-    return final_sorted_paths # Questa era l'altra riga mancante
+    # Restituisce la lista di tuple (path, score)
+    return final_results_with_scores
 
-# <<< FINE BLOCCO DA AGGIUNGERE >>>
+    # <<< FINE BLOCCO DA AGGIUNGERE >>>
 
 
 def delete_single_backup_file(file_path):
