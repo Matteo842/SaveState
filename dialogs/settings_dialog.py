@@ -201,16 +201,23 @@ class SettingsDialog(QDialog):
         if 0 <= selected_size_index < len(self.size_options):
             _, new_max_src_size_mb = self.size_options[selected_size_index]
 
-        # --- VALIDAZIONE PERCORSO (Assumendo che parent() sia MainWindow) ---
+        # --- VALIDAZIONE PERCORSO (Ora usa ProfileCreationManager) ---
         main_window = self.parent()
-        if not main_window or not hasattr(main_window, 'validate_save_path'):
-            logging.error("Impossibile validare il percorso: parent non trovato o metodo mancante.")
-            # Mostra un errore o gestisci come preferisci
+        # Controlla se main_window e il suo profile_creation_manager esistono,
+        # e se quest'ultimo ha il metodo validate_save_path.
+        if not main_window or \
+           not hasattr(main_window, 'profile_creation_manager') or \
+           not main_window.profile_creation_manager or \
+           not hasattr(main_window.profile_creation_manager, 'validate_save_path'):
+            logging.error("Impossibile validare il percorso: main_window o profile_creation_manager o metodo mancante.")
             QMessageBox.critical(self, self.tr("Errore Interno"), self.tr("Impossibile validare il percorso."))
             return
 
         context_name = self.tr("Impostazioni")
-        validated_new_path = main_window.validate_save_path(new_path, context_profile_name=context_name)
+        # Chiama il metodo tramite il manager
+        validated_new_path = main_window.profile_creation_manager.validate_save_path(
+            new_path, context_profile_name=context_name
+        )
         if validated_new_path is None:
              return # La validazione è fallita e ha già mostrato un messaggio
 

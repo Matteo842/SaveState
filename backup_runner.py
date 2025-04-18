@@ -29,48 +29,7 @@ except ImportError as e_mod:
     logging.error(f"Error importing modules ({e_mod}).")
     sys.exit(1)
 
-# --- Configurazione Logging (Runner con File) ---
-# Imposta il percorso del file di log nella stessa cartella dello script
-try:
-    log_file_dir = os.path.dirname(os.path.abspath(__file__)) # Cartella dello script corrente
-except NameError:
-    log_file_dir = os.getcwd() # Fallback se __file__ non è definito
-log_file = os.path.join(log_file_dir, "backup_runner.log")
 
-log_level = logging.INFO # USIAMO DEBUG per catturare tutto ora!
-log_format = '%(asctime)s [%(levelname)s] %(message)s'
-log_datefmt = '%Y-%m-%d %H:%M:%S'
-log_formatter = logging.Formatter(log_format, log_datefmt)
-
-root_logger = logging.getLogger()
-root_logger.setLevel(log_level)
-
-# Rimuovi vecchi handler se presenti
-for handler in root_logger.handlers[:]:
-    root_logger.removeHandler(handler)
-    handler.close()
-
-# Gestore per File ('w' sovrascrive il log ad ogni esecuzione)
-# --- Blocco FileHandler COMMENTATO ---
-# # Gestore per File ('w' sovrascrive il log ad ogni esecuzione)
-# try:
-#     file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
-#     file_handler.setFormatter(log_formatter)
-#     root_logger.addHandler(file_handler) # <-- COMMENTATO ANCHE QUESTO
-# except Exception as e_log_file:
-#      print(f"ERRORE CRITICO: Impossibile creare/scrivere file di log {log_file}: {e_log_file}")
-# --- FINE Blocco FileHandler COMMENTATO ---
-
-# Gestore per Console (Lo teniamo, utile se eseguiamo backup_runner.py manualmente da cmd)
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(log_formatter)
-root_logger.addHandler(console_handler)
-
-logging.info("--- Starting Backup Runner (Console Log Only) ---")
-# logging.info(f"Logging configurato per File ('{log_file}') e Console.") # Commentato/Rimosso
-logging.info("Logging configured for Console.") # Nuovo messaggio
-logging.info(f"Received arguments: {' '.join(sys.argv)}")
-# --- FINE Logging ---
 
 # --- Funzione per Notifica ---
 def show_notification(success, message):
@@ -276,6 +235,39 @@ def run_silent_backup(profile_name):
 
 # --- Blocco Esecuzione Principale dello Script Runner ---
 if __name__ == "__main__":
+    
+    # --- Configurazione Logging (Runner con File) ---
+    # Imposta il percorso del file di log nella stessa cartella dello script
+    try:
+        log_file_dir = os.path.dirname(os.path.abspath(__file__)) # Cartella dello script corrente
+    except NameError:
+        log_file_dir = os.getcwd() # Fallback se __file__ non è definito
+    log_file = os.path.join(log_file_dir, "backup_runner.log")
+
+    log_level = logging.INFO # USIAMO DEBUG per catturare tutto ora!
+    log_format = '%(asctime)s [%(levelname)s] %(message)s'
+    log_datefmt = '%Y-%m-%d %H:%M:%S'
+    log_formatter = logging.Formatter(log_format, log_datefmt)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+
+    # Rimuovi vecchi handler se presenti
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+        handler.close()
+
+    # Gestore per Console (Lo teniamo, utile se eseguiamo backup_runner.py manualmente da cmd)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(log_formatter)
+    root_logger.addHandler(console_handler)
+
+    logging.info("--- Starting Backup Runner (Console Log Only) ---")
+    # logging.info(f"Logging configurato per File ('{log_file}') e Console.") # Commentato/Rimosso
+    logging.info("Logging configured for Console.") # Nuovo messaggio
+    logging.info(f"Received arguments: {' '.join(sys.argv)}")
+    # --- FINE Logging ---
+
     parser = argparse.ArgumentParser(description="Esegue il backup per un profilo specifico di Game Saver.")
     parser.add_argument("--backup", required=True, help="Nome del profilo per cui eseguire il backup.")
     # Potremmo aggiungere altri argomenti in futuro (es. --force per sovrascrivere, ecc.)

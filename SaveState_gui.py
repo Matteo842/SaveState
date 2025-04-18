@@ -49,8 +49,10 @@ CURRENT_TRANSLATOR = None
 
 # --- Finestra Principale ---
 class MainWindow(QMainWindow):
-    def __init__(self, initial_settings, log_handler):
+    def __init__(self, initial_settings, console_log_handler, qt_log_handler):
         super().__init__()
+        self.console_log_handler = console_log_handler # Salva riferimento al gestore console
+        self.qt_log_handler = qt_log_handler
         self.setGeometry(100, 100, 720, 600)
         self.setAcceptDrops(True)
         self.current_settings = initial_settings
@@ -102,6 +104,12 @@ class MainWindow(QMainWindow):
             logging.warning(f"File icona log DEVELOPER non trovato: {icon_dev_path}")
             self.log_icon_dev = self.log_icon_normal # Usa icona normale come fallback se manca quella dev
 
+        self.log_button_press_timer = QTimer(self)
+        self.log_button_press_timer.setSingleShot(True) # Scatta una sola volta
+        self.log_button_press_timer.setInterval(1500) # Durata pressione lunga in ms (1.5 secondi)
+        self.log_button_press_timer.timeout.connect(self.handle_developer_mode_toggle) # Collega il timeout alla funzione che hai già aggiunto
+        logging.debug(f"Timer object created in __init__: {self.log_button_press_timer}")
+        
         # Imposta l'icona iniziale (normale)
         if self.log_icon_normal:
             self.toggle_log_button.setIcon(self.log_icon_normal)
@@ -296,12 +304,13 @@ class MainWindow(QMainWindow):
 
         # --- Connessione Segnale Log ---
         # Connetti il segnale dal gestore log allo slot appendHtml del widget
-        if log_handler:
-            log_handler.log_signal.connect(self.log_output.appendHtml)
-            # Aggiungi il gestore al root logger se non è già presente
+        if self.qt_log_handler: # <-- Usa il nuovo riferimento
+            self.qt_log_handler.log_signal.connect(self.log_output.appendHtml) # <-- Usa il nuovo riferimento
+            # Potremmo anche rimuovere il controllo e l'aggiunta dell'handler qui,
+            # perché l'handler viene già aggiunto nel blocco main, ma lasciamolo per ora.
             root_logger = logging.getLogger()
-            if log_handler not in root_logger.handlers:
-                root_logger.addHandler(log_handler)
+            if self.qt_log_handler not in root_logger.handlers:
+                root_logger.addHandler(self.qt_log_handler)
         # --- FINE Connessione Segnale ---
         
         central_widget = QWidget()
@@ -323,7 +332,9 @@ class MainWindow(QMainWindow):
         self.manage_backups_button.clicked.connect(self.handle_manage_backups)
         self.settings_button.clicked.connect(self.handle_settings)
         self.open_backup_dir_button.clicked.connect(self.handle_open_backup_folder)
-        self.toggle_log_button.clicked.connect(self.handle_toggle_log)
+        #self.toggle_log_button.clicked.connect(self.handle_toggle_log)
+        self.toggle_log_button.pressed.connect(self.handle_log_button_pressed) # <-- AGGIUNGI QUESTA
+        self.toggle_log_button.released.connect(self.handle_log_button_released)
         self.minecraft_button.clicked.connect(self.profile_creation_manager.handle_minecraft_button)
         self.create_shortcut_button.clicked.connect(self.handle_create_shortcut)
 
@@ -775,11 +786,75 @@ class MainWindow(QMainWindow):
         self.showNormal() # Mostra se era minimizzata
         self.raise_()     # Porta sopra le altre finestre dell'app (se ci fossero dialoghi)
         self.activateWindow() # Attiva la finestra nel sistema operativo
+        
+    @Slot()
+    def handle_developer_mode_toggle(self):
+        """Attiva/Disattiva la modalità sviluppatore, aggiorna l'icona e il livello di log."""
+        logging.debug(">>> Developer Mode Toggle TIMER TIMEOUT triggered.")
+        self.developer_mode_enabled = not self.developer_mode_enabled
+        root_logger = logging.getLogger() # Ottieni istanza del root logger
+
+        if self.developer_mode_enabled:
+            new_level = logging.DEBUG # Attiva DEBUG
+            # Usa getLevelName per un log più leggibile
+            logging.info(f"Modalità Sviluppatore ATTIVATA (Log {logging.getLevelName(new_level)} abilitati).")
+            # Cambia icona
+            if self.log_icon_dev:
+                self.toggle_log_button.setIcon(self.log_icon_dev)
+            else:
+                self.toggle_log_button.setText("D")
+        else:
+            new_level = logging.INFO # Disattiva DEBUG (torna a INFO)
+            # Usa getLevelName per un log più leggibile
+            logging.info(f"Modalità Sviluppatore DISATTIVATA (Log {logging.getLevelName(new_level)} disabilitati).")
+            # Cambia icona
+            if self.log_icon_normal:
+                self.toggle_log_button.setIcon(self.log_icon_normal)
+            else:
+                self.toggle_log_button.setText("L")
+
+        # *** NUOVO: Imposta il livello ANCHE sul root logger ***
+        logging.debug(f"   - Setting root logger level to {logging.getLevelName(new_level)}")
+        root_logger.setLevel(new_level)
+        # *** FINE NUOVO ***
+
+        # Applica il nuovo livello a ENTRAMBI gli handler (come prima)
+        if self.console_log_handler:
+            logging.debug(f"   - Setting console_handler level to {logging.getLevelName(new_level)}")
+            self.console_log_handler.setLevel(new_level)
+        if self.qt_log_handler:
+            logging.debug(f"   - Setting qt_log_handler level to {logging.getLevelName(new_level)}")
+            self.qt_log_handler.setLevel(new_level)
+
+                
+    @Slot()
+    def handle_log_button_pressed(self):
+        """Avvia il timer quando il pulsante log viene premuto."""
+        logging.debug(f"Entering handle_log_button_pressed. Timer is: {self.log_button_press_timer}")
+        if not self.log_button_press_timer.isActive():
+            logging.debug(">>> Log button PRESSED. Starting timer...") # Log
+            self.log_button_press_timer.start()
+        else:
+            logging.debug(">>> Log button PRESSED. Timer already active?") # Log
+
+    @Slot()
+    def handle_log_button_released(self):
+        """Gestisce il rilascio del pulsante log."""
+        logging.debug(">>> Log button RELEASED.") # Log
+        if self.log_button_press_timer.isActive():
+            # Timer ancora attivo = Click Breve
+            logging.debug("   - Timer was active (Short press). Stopping timer and toggling log panel.") # Log
+            self.log_button_press_timer.stop()
+            self.handle_toggle_log() # Esegui l'azione originale
+        else:
+            # Timer NON attivo = Click Lungo (l'azione è gestita dal timeout)
+            logging.debug("   - Timer was NOT active (Long press detected). Doing nothing on release.") # Log
+            # Non fare nulla qui                
 
 # --- Avvio Applicazione GUI ---
 if __name__ == "__main__":
     # --- Configurazione Logging ---
-    log_level = logging.DEBUG
+    log_level = logging.INFO
     log_format = '%(asctime)s - %(levelname)s - %(message)s'
     log_datefmt = '%H:%M:%S'
     log_formatter = logging.Formatter(log_format, log_datefmt)
@@ -790,11 +865,11 @@ if __name__ == "__main__":
         handler.close()
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(log_formatter)
-    console_handler.setLevel(logging.DEBUG)
+    console_handler.setLevel(logging.INFO)
     root_logger.addHandler(console_handler)
     qt_log_handler = QtLogHandler()
     qt_log_handler.setFormatter(log_formatter)
-    qt_log_handler.setLevel(logging.DEBUG)
+    qt_log_handler.setLevel(logging.INFO)
     root_logger.addHandler(qt_log_handler)
     logging.info("Logging configured.")
 
@@ -921,7 +996,7 @@ if __name__ == "__main__":
                         # Passa None come parent se app non è ancora completamente inizializzata?
                         # Meglio creare window prima e passargli window come parent
                         # Spostiamo la creazione della finestra qui:
-                        window = MainWindow(current_settings, qt_log_handler) # Crea PRIMA del dialogo
+                        window = MainWindow(current_settings, console_handler, qt_log_handler) # Crea PRIMA del dialogo
                         settings_dialog = SettingsDialog(current_settings, window) # Passa window come parent
                         if settings_dialog.exec() == QDialog.Accepted:
                             current_settings = settings_dialog.get_settings()
@@ -949,7 +1024,7 @@ if __name__ == "__main__":
                                 # Continua comunque con i default caricati
 
                     else: # Non è il primo avvio, crea la finestra normalmente
-                        window = MainWindow(current_settings, qt_log_handler)
+                        window = MainWindow(current_settings, console_handler, qt_log_handler)
 
                     # Connetti server allo slot della finestra
                     if local_server:
