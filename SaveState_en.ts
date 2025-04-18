@@ -8,254 +8,206 @@
         <translation type="vanished">Backup Management Saves</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="331"/>
         <source>Profilo</source>
-        <translation>Profile</translation>
+        <translation type="vanished">Profile</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="331"/>
         <source>Info Backup</source>
-        <translation>Info Backup</translation>
+        <translation type="vanished">Info Backup</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="332"/>
+        <location filename="SaveState_gui.py" line="371"/>
         <source>Impostazioni</source>
         <translation>Settings</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="351"/>
         <source>Passa al tema scuro</source>
-        <translation>switch to dark theme</translation>
+        <translation type="vanished">switch to dark theme</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="353"/>
         <source>Passa al tema chiaro</source>
-        <translation>switch to the clear theme</translation>
+        <translation type="vanished">switch to the clear theme</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="374"/>
+        <location filename="SaveState_gui.py" line="406"/>
         <source>Nascondi Log</source>
         <translation>hide log</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="430"/>
         <source>Ricerca cartella salvataggi Minecraft...</source>
-        <translation>minecraft save folders search...</translation>
+        <translation type="vanished">minecraft save folders search...</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="439"/>
-        <location filename="game_saver_gui.py" line="458"/>
         <source>Errore Minecraft</source>
-        <translation>Minecraft Error</translation>
+        <translation type="vanished">Minecraft Error</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="439"/>
         <source>Errore imprevisto durante la ricerca della cartella Minecraft.</source>
-        <translation>Unexpected error when searching minecraft folder.</translation>
+        <translation type="vanished">Unexpected error when searching minecraft folder.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="440"/>
         <source>Errore ricerca Minecraft.</source>
-        <translation>Minecraft search error.</translation>
+        <translation type="vanished">Minecraft search error.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="446"/>
         <source>Cartella Non Trovata</source>
-        <translation>folder not found</translation>
+        <translation type="vanished">folder not found</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="447"/>
         <source>Impossibile trovare la cartella dei salvataggi standard di Minecraft (.minecraft/saves).
 Assicurati che Minecraft Java Edition sia installato.</source>
-        <translation>Unable to find the standard Minecraft saves folder (.minecraft/saves).
+        <translation type="vanished">Unable to find the standard Minecraft saves folder (.minecraft/saves).
 Make sure Minecraft Java Edition is installed.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="448"/>
         <source>Cartella Minecraft non trovata.</source>
-        <translation>Minecraft folder not found.</translation>
+        <translation type="vanished">Minecraft folder not found.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="452"/>
         <source>Lettura mondi Minecraft...</source>
-        <translation>Reading Minecraft worlds...</translation>
+        <translation type="vanished">Reading Minecraft worlds...</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="458"/>
         <source>Errore imprevisto durante la lettura dei mondi Minecraft.</source>
-        <translation>Unexpected error while reading Minecraft worlds.</translation>
+        <translation type="vanished">Unexpected error while reading Minecraft worlds.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="459"/>
         <source>Errore lettura mondi Minecraft.</source>
-        <translation>Minecraft worlds read error.</translation>
+        <translation type="vanished">Minecraft worlds read error.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="465"/>
         <source>Nessun Mondo Trovato</source>
-        <translation>No World Found</translation>
+        <translation type="vanished">No World Found</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="466"/>
         <source>Nessun mondo trovato nella cartella:
 {0}</source>
-        <translation>No world found in the folder:
+        <translation type="vanished">No world found in the folder:
 {0}</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="467"/>
         <source>Nessun mondo Minecraft trovato.</source>
-        <translation>No Minecraft worlds found.</translation>
+        <translation type="vanished">No Minecraft worlds found.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="475"/>
         <source>Errore Interfaccia</source>
-        <translation>Interface Error</translation>
+        <translation type="vanished">Interface Error</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="475"/>
         <source>Impossibile creare la finestra di selezione dei mondi.</source>
-        <translation>Unable to create the worlds selection window.</translation>
+        <translation type="vanished">Unable to create the worlds selection window.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="478"/>
         <source>Pronto.</source>
-        <translation>Ready.</translation>
+        <translation type="vanished">Ready.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="491"/>
         <source>Errore Interno</source>
-        <translation>Internal Error</translation>
+        <translation type="vanished">Internal Error</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="491"/>
         <source>Nome del mondo selezionato non valido.</source>
-        <translation>Name of selected world invalid.</translation>
+        <translation type="vanished">Name of selected world invalid.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="496"/>
-        <location filename="game_saver_gui.py" line="1270"/>
         <source>Errore Percorso</source>
-        <translation>Path Error</translation>
+        <translation type="vanished">Path Error</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="496"/>
         <source>Il percorso del mondo selezionato (&apos;{0}&apos;) non è valido.</source>
-        <translation>The selected world path (&apos;{0}&apos;) is invalid.</translation>
+        <translation type="vanished">The selected world path (&apos;{0}&apos;) is invalid.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="504"/>
-        <location filename="game_saver_gui.py" line="596"/>
         <source>Profilo Esistente</source>
-        <translation>Existing Profile</translation>
+        <translation type="vanished">Existing Profile</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="505"/>
         <source>Un profilo chiamato &apos;{0}&apos; esiste già.
 Scegli un altro mondo o rinomina il profilo esistente.</source>
-        <translation>A profile named &apos;{0}&apos; already exists.
+        <translation type="vanished">A profile named &apos;{0}&apos; already exists.
 Choose another world or rename the existing profile.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="515"/>
-        <location filename="game_saver_gui.py" line="1292"/>
         <source>Profilo Creato</source>
-        <translation>Profile Created</translation>
+        <translation type="vanished">Profile Created</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="516"/>
         <source>Profilo &apos;{0}&apos; creato con successo per il mondo Minecraft.</source>
-        <translation>&apos;{0}&apos; profile successfully created for the Minecraft world.</translation>
+        <translation type="vanished">&apos;{0}&apos; profile successfully created for the Minecraft world.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="517"/>
-        <location filename="game_saver_gui.py" line="1293"/>
         <source>Profilo &apos;{0}&apos; creato.</source>
-        <translation>Profile &apos;{0}&apos; created.</translation>
+        <translation type="vanished">Profile &apos;{0}&apos; created.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="520"/>
-        <location filename="game_saver_gui.py" line="1296"/>
         <source>Errore</source>
-        <translation>Error</translation>
+        <translation type="vanished">Error</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="520"/>
         <source>Impossibile salvare il file dei profili dopo aver aggiunto &apos;{0}&apos;.</source>
-        <translation>Unable to save profile file after adding &apos;{0}&apos;.</translation>
+        <translation type="vanished">Unable to save profile file after adding &apos;{0}&apos;.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="526"/>
         <source>Selezione mondo annullata o fallita.</source>
-        <translation>World selection canceled or failed.</translation>
+        <translation type="vanished">World selection canceled or failed.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="530"/>
         <source>Selezione mondo annullata.</source>
-        <translation>World selection canceled.</translation>
+        <translation type="vanished">World selection canceled.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="584"/>
         <source>Errore Collegamento</source>
-        <translation>Link Error</translation>
+        <translation type="vanished">Link Error</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="584"/>
         <source>Impossibile leggere il file .lnk:
 {0}</source>
-        <translation>Cannot read .lnk file:
+        <translation type="vanished">Cannot read .lnk file:
 {0}</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="596"/>
         <source>Profilo &apos;{0}&apos; esiste già.</source>
-        <translation>Profilo &apos;{0}&apos; esiste già.</translation>
+        <translation type="vanished">Profilo &apos;{0}&apos; esiste già.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="603"/>
-        <location filename="game_saver_gui.py" line="1041"/>
+        <location filename="SaveState_gui.py" line="692"/>
         <source>Operazione in Corso</source>
         <translation>Operation in Progress</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="603"/>
         <source>Un&apos;altra ricerca di percorso è già in corso. Attendi.</source>
-        <translation>Another route search is already in progress. Hold.</translation>
+        <translation type="vanished">Another route search is already in progress. Hold.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="608"/>
         <source>Ricerca percorso per &apos;{0}&apos; in corso...</source>
-        <translation>Path search for &apos;{0}&apos; in progress...</translation>
+        <translation type="vanished">Path search for &apos;{0}&apos; in progress...</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="635"/>
         <source>File Ignorato</source>
-        <translation>File Ignored</translation>
+        <translation type="vanished">File Ignored</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="635"/>
         <source>Per favore, trascina un collegamento (.lnk) a un gioco.</source>
-        <translation>Please drag a link (.lnk) to a game.</translation>
+        <translation type="vanished">Please drag a link (.lnk) to a game.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="736"/>
         <source>Ultimo</source>
-        <translation>Last</translation>
+        <translation type="vanished">Last</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="812"/>
+        <location filename="SaveState_gui.py" line="506"/>
         <source>Errore Traduzione</source>
         <translation>Translation Error</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="814"/>
+        <location filename="SaveState_gui.py" line="508"/>
         <source>Impossibile caricare il file di traduzione per l&apos;inglese ({0}).
 L&apos;interfaccia rimarrà in italiano.</source>
         <translation>Unable to upload the translation file for English ({0}).
 The interface will remain in Italian.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="948"/>
+        <location filename="SaveState_gui.py" line="599"/>
         <source>Profilo &apos;{0}&apos; eliminato.</source>
         <translation>Profile ‘{0}’ deleted.</translation>
     </message>
@@ -266,29 +218,29 @@ L&apos;interfaccia rimarrà in italiano.</source>
 The interface will remain in Italian.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="992"/>
+        <location filename="SaveState_gui.py" line="643"/>
         <source>Errore Configurazione</source>
         <translation>Configuration Error</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="992"/>
+        <location filename="SaveState_gui.py" line="643"/>
         <source>Impostazioni necessarie (percorso base, max backup, max dimensione sorgente) non trovate o non valide!</source>
         <translation>Required settings (base path, max backup, max source size) not found or invalid!</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="995"/>
+        <location filename="SaveState_gui.py" line="646"/>
         <source>Errore Percorso Sorgente</source>
         <translation>Source Path Error</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="995"/>
+        <location filename="SaveState_gui.py" line="646"/>
         <source>La cartella sorgente dei salvataggi non esiste o non è valida:
 {0}</source>
         <translation>The source folder of the saves does not exist or is invalid:
 {0}</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1017"/>
+        <location filename="SaveState_gui.py" line="668"/>
         <source>Spazio su disco insufficiente per il backup!
 
 Spazio libero: {0:.2f} GB
@@ -303,283 +255,316 @@ Minimum space required: {1} GB
 Free up space on target disk (&apos;{2}&apos;) or disable control in settings.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1018"/>
+        <location filename="SaveState_gui.py" line="669"/>
         <source>Spazio Disco Insufficiente</source>
         <translation>Insufficient Disk Space</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1023"/>
+        <location filename="SaveState_gui.py" line="674"/>
         <source>Errore nel controllo dello spazio: il percorso di backup specificato non sembra essere valido o accessibile:
 {0}</source>
         <translation>Error checking space: the specified backup path does not appear to be valid or accessible:
 {0}</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1024"/>
+        <location filename="SaveState_gui.py" line="675"/>
         <source>Errore Percorso Backup</source>
         <translation>Backup Path Error</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1028"/>
+        <location filename="SaveState_gui.py" line="679"/>
         <source>Si è verificato un errore durante il controllo dello spazio libero sul disco:
 {0}</source>
         <translation>An error occurred while checking the free disk space:
 {0}</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1029"/>
+        <location filename="SaveState_gui.py" line="680"/>
         <source>Errore Controllo Spazio</source>
         <translation>Space Control Error</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1041"/>
+        <location filename="SaveState_gui.py" line="692"/>
         <source>Un backup o ripristino è già in corso. Attendi il completamento.</source>
         <translation>A backup or restore is already in progress. Wait for completion.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1044"/>
+        <location filename="SaveState_gui.py" line="695"/>
         <source>Avvio backup per &apos;{0}&apos;...</source>
         <translation>Start backup for &apos;{0}&apos;...</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1120"/>
+        <location filename="SaveState_gui.py" line="728"/>
         <source>Avvio ripristino per &apos;{0}&apos;...</source>
         <translation>Restart restoration for ‘{0}’...</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1126"/>
+        <location filename="SaveState_gui.py" line="734"/>
         <source>Ripristino annullato.</source>
         <translation>Restore cancelled.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1127"/>
+        <location filename="SaveState_gui.py" line="735"/>
         <source>Nessun backup selezionato per il ripristino.</source>
         <translation>No backup selected for recovery.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1128"/>
+        <location filename="SaveState_gui.py" line="736"/>
         <source>Selezione backup annullata.</source>
         <translation>Backup selection canceled.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1141"/>
+        <location filename="SaveState_gui.py" line="749"/>
         <source>Operazione terminata senza messaggio.</source>
         <translation>Operation terminated with no message.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1141"/>
+        <location filename="SaveState_gui.py" line="749"/>
         <source>Completato: {0}</source>
         <translation>Completed: {0}</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1142"/>
+        <location filename="SaveState_gui.py" line="750"/>
         <source>ERRORE: {0}</source>
         <translation>ERROR: {0}</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1145"/>
+        <location filename="SaveState_gui.py" line="753"/>
         <source>Errore Operazione</source>
         <translation>Operation Error</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1161"/>
         <source>Ricerca percorso completata.</source>
-        <translation>Path search completed.</translation>
+        <translation type="vanished">Path search completed.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1172"/>
         <source>Errore sconosciuto durante la ricerca.</source>
-        <translation>Unknown error during search.</translation>
+        <translation type="vanished">Unknown error during search.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1175"/>
         <source>Errore Ricerca Percorso</source>
-        <translation>Path Search Error</translation>
+        <translation type="vanished">Path Search Error</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1178"/>
         <source>Ricerca interrotta.</source>
-        <translation>Search aborted.</translation>
+        <translation type="vanished">Search aborted.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1192"/>
         <source>Conferma Percorso Automatico</source>
-        <translation>Automatic Route Confirmation</translation>
+        <translation type="vanished">Automatic Route Confirmation</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1193"/>
         <source>È stato rilevato questo percorso:
 
 {0}
 
 Vuoi usarlo per il profilo &apos;{1}&apos;?</source>
-        <translation>This path was detected:
+        <translation type="vanished">This path was detected:
 
 {0}
 
 Do you want to use it for profile &apos;{1}&apos;?</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1202"/>
-        <location filename="game_saver_gui.py" line="1248"/>
-        <location filename="game_saver_gui.py" line="1274"/>
         <source>Creazione profilo annullata.</source>
-        <translation>Profile creation cancelled.</translation>
+        <translation type="vanished">Profile creation cancelled.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1232"/>
-        <location filename="game_saver_gui.py" line="1242"/>
         <source>[Inserisci Manualmente...]</source>
-        <translation>[Insert Manually...]</translation>
+        <translation type="vanished">[Insert Manually...]</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1234"/>
         <source>Conferma Percorso Salvataggi</source>
-        <translation>Confirm Save Path</translation>
+        <translation type="vanished">Confirm Save Path</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1235"/>
         <source>Sono stati trovati questi percorsi potenziali per &apos;{0}&apos;.
 Seleziona quello corretto o scegli l&apos;inserimento manuale:</source>
-        <translation>These potential paths were found for &apos;{0}&apos;.
+        <translation type="vanished">These potential paths were found for &apos;{0}&apos;.
 Select the correct one or choose manual entry:</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1253"/>
         <source>Percorso Non Rilevato</source>
-        <translation>Path Not Detected</translation>
+        <translation type="vanished">Path Not Detected</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1253"/>
         <source>Impossibile rilevare automaticamente il percorso dei salvataggi per &apos;{0}&apos;.
 Per favore, inseriscilo manualmente.</source>
-        <translation>Unable to automatically detect save path for &apos;{0}&apos;.
+        <translation type="vanished">Unable to automatically detect save path for &apos;{0}&apos;.
 Please enter it manually.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1257"/>
         <source>Errore interno durante la gestione dei risultati.</source>
-        <translation>Errore interno durante la gestione dei risultati.</translation>
+        <translation type="vanished">Errore interno durante la gestione dei risultati.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1262"/>
         <source>Inserisci il percorso COMPLETO per i salvataggi del profilo:
 &apos;{0}&apos;</source>
-        <translation>Enter the FULL path for profile saves:
+        <translation type="vanished">Enter the FULL path for profile saves:
 &apos;{0}&apos;</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1263"/>
         <source>Percorso Salvataggi Manuale</source>
-        <translation>Manual Save Path</translation>
+        <translation type="vanished">Manual Save Path</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1270"/>
         <source>Il percorso non può essere vuoto.</source>
-        <translation>Il percorso non può essere vuoto.</translation>
+        <translation type="vanished">Il percorso non può essere vuoto.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1271"/>
         <source>Creazione profilo annullata (percorso vuoto).</source>
-        <translation>Creazione profilo annullata (percorso vuoto).</translation>
+        <translation type="vanished">Creazione profilo annullata (percorso vuoto).</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1292"/>
         <source>Profilo &apos;{0}&apos; creato con successo.</source>
-        <translation>Profile &apos;{0}&apos; successfully created.</translation>
+        <translation type="vanished">Profile &apos;{0}&apos; successfully created.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1296"/>
         <source>Impossibile salvare il file dei profili.</source>
-        <translation>Unable to save profile file.</translation>
+        <translation type="vanished">Unable to save profile file.</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1322"/>
+        <location filename="SaveState_gui.py" line="776"/>
         <source>Creazione Collegamento</source>
         <translation>Link Creation</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="1324"/>
+        <location filename="SaveState_gui.py" line="778"/>
         <source>Errore Creazione Collegamento</source>
         <translation>Link Creation Error</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="333"/>
+        <location filename="SaveState_gui.py" line="372"/>
         <source>Nuovo Profilo Manuale</source>
         <translation>New Manual Profile</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="271"/>
+        <location filename="SaveState_gui.py" line="285"/>
         <source>Console Log</source>
         <translation>Console Log</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="334"/>
+        <location filename="SaveState_gui.py" line="373"/>
         <source>Gestisci Giochi Steam</source>
         <translation>Manage Steam Games</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="335"/>
+        <location filename="SaveState_gui.py" line="374"/>
         <source>Elimina Profilo</source>
         <translation>Delete Profile</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="141"/>
-        <location filename="game_saver_gui.py" line="336"/>
+        <location filename="SaveState_gui.py" line="155"/>
+        <location filename="SaveState_gui.py" line="375"/>
         <source>Esegui Backup</source>
         <translation>Run Backup</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="99"/>
-        <location filename="game_saver_gui.py" line="376"/>
+        <location filename="SaveState_gui.py" line="408"/>
         <source>Mostra Log</source>
         <translation>Show Log</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="145"/>
-        <location filename="game_saver_gui.py" line="337"/>
+        <location filename="SaveState_gui.py" line="159"/>
+        <location filename="SaveState_gui.py" line="376"/>
         <source>Ripristina da Backup</source>
         <translation>Restore from Backup</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="150"/>
-        <location filename="game_saver_gui.py" line="338"/>
+        <location filename="SaveState_gui.py" line="164"/>
+        <location filename="SaveState_gui.py" line="377"/>
         <source>Gestisci Backup</source>
         <translation>manage backup</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="154"/>
-        <location filename="game_saver_gui.py" line="339"/>
+        <location filename="SaveState_gui.py" line="168"/>
+        <location filename="SaveState_gui.py" line="378"/>
         <source>Apri Cartella Backup</source>
         <translation>Open Backup folder</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="177"/>
+        <location filename="SaveState_gui.py" line="191"/>
         <source>Crea collegamento backup sul desktop</source>
         <translation>Create desktop backup shortcut</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="195"/>
-        <location filename="game_saver_gui.py" line="342"/>
+        <location filename="SaveState_gui.py" line="209"/>
+        <location filename="SaveState_gui.py" line="381"/>
         <source>Profili Salvati</source>
         <translation>saved profiles</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="201"/>
-        <location filename="game_saver_gui.py" line="344"/>
+        <location filename="SaveState_gui.py" line="215"/>
+        <location filename="SaveState_gui.py" line="383"/>
         <source>Azioni sul Profilo Selezionato</source>
         <translation>Profile Action</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="212"/>
+        <location filename="SaveState_gui.py" line="226"/>
         <source>Crea profilo da mondo Minecraft</source>
         <translation>Create profile from Minecraft world</translation>
     </message>
     <message>
-        <location filename="game_saver_gui.py" line="234"/>
-        <location filename="game_saver_gui.py" line="346"/>
+        <location filename="SaveState_gui.py" line="248"/>
+        <location filename="SaveState_gui.py" line="385"/>
         <source>Azioni Generali</source>
         <translation>General Action</translation>
+    </message>
+</context>
+<context>
+    <name>ManageBackupsDialog</name>
+    <message>
+        <location filename="dialogs/manage_backups_dialog.py" line="20"/>
+        <source>Gestisci Backup per {0}</source>
+        <translation>Manage Backup for {0}</translation>
+    </message>
+    <message>
+        <location filename="dialogs/manage_backups_dialog.py" line="27"/>
+        <source>Elimina Selezionato</source>
+        <translation>Delete Selected</translation>
+    </message>
+    <message>
+        <location filename="dialogs/manage_backups_dialog.py" line="34"/>
+        <source>Chiudi</source>
+        <translation>Close</translation>
+    </message>
+    <message>
+        <location filename="dialogs/manage_backups_dialog.py" line="42"/>
+        <source>Backup esistenti per &apos;{0}&apos;:</source>
+        <translation>Existing backups for &apos;{0}&apos;:</translation>
+    </message>
+    <message>
+        <location filename="dialogs/manage_backups_dialog.py" line="71"/>
+        <source>Nessun backup trovato.</source>
+        <translation>No backups found.</translation>
+    </message>
+    <message>
+        <location filename="dialogs/manage_backups_dialog.py" line="90"/>
+        <source>Conferma Eliminazione</source>
+        <translation>Confirm Deletion</translation>
+    </message>
+    <message>
+        <location filename="dialogs/manage_backups_dialog.py" line="94"/>
+        <source>Sei sicuro di voler eliminare PERMANENTEMENTE il file di backup:
+
+{0}
+
+Questa azione non può essere annullata!</source>
+        <translation>Are you sure you want to PERMANENTLY delete the backup file:
+
+{0}
+
+This action cannot be undone!</translation>
+    </message>
+    <message>
+        <location filename="dialogs/manage_backups_dialog.py" line="106"/>
+        <source>Successo</source>
+        <translation>Success</translation>
+    </message>
+    <message>
+        <location filename="dialogs/manage_backups_dialog.py" line="109"/>
+        <source>Errore Eliminazione</source>
+        <translation>Error Deleting</translation>
     </message>
 </context>
 <context>
@@ -688,18 +673,18 @@ Verify that Minecraft Java Edition is installed correctly.</translation>
 The interface will remain in Italian.Select Base Folder for Backups</translation>
     </message>
     <message>
-        <location filename="dialogs/settings_dialog.py" line="209"/>
+        <location filename="dialogs/settings_dialog.py" line="213"/>
         <source>Errore Interno</source>
         <translation>Internal Error</translation>
     </message>
     <message>
-        <location filename="dialogs/settings_dialog.py" line="209"/>
+        <location filename="dialogs/settings_dialog.py" line="213"/>
         <source>Impossibile validare il percorso.</source>
         <translation>Unable to load the translation file for English ({0}).
 The interface will remain in Italian.SelectCannot validate path.ona Base Folder for Backups.</translation>
     </message>
     <message>
-        <location filename="dialogs/settings_dialog.py" line="213"/>
+        <location filename="dialogs/settings_dialog.py" line="218"/>
         <source>Impostazioni</source>
         <translation>Settings</translation>
     </message>
@@ -779,23 +764,23 @@ Select the correct one (usually the most recent):</translation>
         <translation></translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="196"/>
-        <location filename="dialogs/steam_dialog.py" line="208"/>
+        <location filename="dialogs/steam_dialog.py" line="254"/>
+        <location filename="dialogs/steam_dialog.py" line="266"/>
         <source>Configuration cancelled.</source>
         <translation></translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="205"/>
+        <location filename="dialogs/steam_dialog.py" line="263"/>
         <source>Configuration cancelled (invalid manual path).</source>
         <translation></translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="214"/>
+        <location filename="dialogs/steam_dialog.py" line="272"/>
         <source>Profile &apos;{0}&apos; configured with path: {1}</source>
         <translation></translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="220"/>
+        <location filename="dialogs/steam_dialog.py" line="278"/>
         <source>Error saving profiles.</source>
         <translation></translation>
     </message>
@@ -810,6 +795,458 @@ Select the correct one (usually the most recent):</translation>
     <message>
         <source>Configurazione annullata (selezione profilo vuota?).</source>
         <translation type="vanished">Configuration cancelled (empty profile selection?).</translation>
+    </message>
+</context>
+<context>
+    <name>mw</name>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="48"/>
+        <location filename="gui_components/profile_creation_manager.py" line="62"/>
+        <location filename="gui_components/profile_creation_manager.py" line="72"/>
+        <location filename="gui_components/profile_creation_manager.py" line="216"/>
+        <location filename="gui_components/profile_creation_manager.py" line="495"/>
+        <source>Errore Percorso</source>
+        <translation>Path Error</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="48"/>
+        <location filename="gui_components/profile_creation_manager.py" line="495"/>
+        <source>Il percorso non può essere vuoto.</source>
+        <translation>The path cannot be empty.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="64"/>
+        <source>Non è possibile usare una radice del drive (&apos;{0}&apos;) come cartella dei salvataggi per &apos;{1}&apos;.
+Per favore, scegli o crea una sottocartella specifica.</source>
+        <translation>Cannot use a root drive (&apos;{0}&apos;) as a save folder for &apos;{1}&apos;.
+Please choose or create a specific subfolder.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="73"/>
+        <source>Il percorso specificato non esiste o non è una cartella valida:
+&apos;{0}&apos;</source>
+        <translation>The specified path does not exist or is not a valid folder:
+&apos;{0}&apos;</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="87"/>
+        <source>Nuovo Profilo</source>
+        <translation>New Profile</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="87"/>
+        <source>Inserisci un nome per il nuovo profilo:</source>
+        <translation>Enter a name for the new profile:</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="95"/>
+        <location filename="gui_components/profile_creation_manager.py" line="210"/>
+        <location filename="gui_components/profile_creation_manager.py" line="327"/>
+        <source>Errore Nome Profilo</source>
+        <translation>Profile Name Error</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="96"/>
+        <source>Il nome del profilo (&apos;{0}&apos;) contiene caratteri non validi o è vuoto dopo la pulizia.</source>
+        <translation>The profile name (&apos;{0}&apos;) contains invalid characters or is empty after cleanup.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="101"/>
+        <location filename="gui_components/profile_creation_manager.py" line="130"/>
+        <location filename="gui_components/profile_creation_manager.py" line="238"/>
+        <location filename="gui_components/profile_creation_manager.py" line="518"/>
+        <source>Errore</source>
+        <translation>Error</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="101"/>
+        <source>Un profilo chiamato &apos;{0}&apos; esiste già.</source>
+        <translation>A profile called &apos;{0}&apos; already exists.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="105"/>
+        <source>Ora inserisci il percorso COMPLETO per i salvataggi del profilo:
+&apos;{0}&apos;</source>
+        <translation>Now enter the FULL path to your profile saves:
+&apos;{0}&apos;</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="106"/>
+        <source>Percorso Salvataggi</source>
+        <translation>Save Path</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="126"/>
+        <source>Successo</source>
+        <translation>Success</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="126"/>
+        <source>Profilo &apos;{0}&apos; creato e salvato.</source>
+        <translation>Profile &apos;{0}&apos; created and saved.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="127"/>
+        <location filename="gui_components/profile_creation_manager.py" line="236"/>
+        <location filename="gui_components/profile_creation_manager.py" line="516"/>
+        <source>Profilo &apos;{0}&apos; creato.</source>
+        <translation>Profile &apos;{0}&apos; created.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="130"/>
+        <location filename="gui_components/profile_creation_manager.py" line="518"/>
+        <source>Impossibile salvare il file dei profili.</source>
+        <translation>Unable to save profile file.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="151"/>
+        <source>Ricerca cartella salvataggi Minecraft...</source>
+        <translation>minecraft save folders search...</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="158"/>
+        <location filename="gui_components/profile_creation_manager.py" line="175"/>
+        <source>Errore Minecraft</source>
+        <translation>Minecraft Error</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="158"/>
+        <source>Errore imprevisto durante la ricerca della cartella Minecraft.</source>
+        <translation>Unexpected error when searching minecraft folder.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="159"/>
+        <source>Errore ricerca Minecraft.</source>
+        <translation>Minecraft search error.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="164"/>
+        <source>Cartella Non Trovata</source>
+        <translation>folder not found</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="165"/>
+        <source>Impossibile trovare la cartella dei salvataggi standard di Minecraft (.minecraft/saves).
+Assicurati che Minecraft Java Edition sia installato.</source>
+        <translation>Unable to find the standard Minecraft saves folder (.minecraft/saves).
+Make sure Minecraft Java Edition is installed.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="166"/>
+        <source>Cartella Minecraft non trovata.</source>
+        <translation>Minecraft folder not found.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="169"/>
+        <source>Lettura mondi Minecraft...</source>
+        <translation>Reading Minecraft worlds...</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="175"/>
+        <source>Errore imprevisto durante la lettura dei mondi Minecraft.</source>
+        <translation>Unexpected error while reading Minecraft worlds.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="176"/>
+        <source>Errore lettura mondi Minecraft.</source>
+        <translation>Minecraft worlds read error.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="181"/>
+        <source>Nessun Mondo Trovato</source>
+        <translation>No World Found</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="182"/>
+        <source>Nessun mondo trovato nella cartella:
+{0}</source>
+        <translation>No world found in the folder:
+{0}</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="183"/>
+        <source>Nessun mondo Minecraft trovato.</source>
+        <translation>No Minecraft worlds found.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="190"/>
+        <source>Errore Interfaccia</source>
+        <translation>Interface Error</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="190"/>
+        <source>Impossibile creare la finestra di selezione dei mondi.</source>
+        <translation>Unable to create the worlds selection window.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="193"/>
+        <source>Pronto.</source>
+        <translation>Ready.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="203"/>
+        <source>Errore Interno</source>
+        <translation>Internal Error</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="203"/>
+        <source>Nome del mondo selezionato non valido.</source>
+        <translation>Name of selected world invalid.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="211"/>
+        <source>Il nome del mondo (&apos;{0}&apos;) contiene caratteri non validi o è vuoto dopo la pulizia.</source>
+        <translation>The world name (&apos;{0}&apos;) contains invalid characters or is empty after cleanup.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="216"/>
+        <source>Il percorso del mondo selezionato (&apos;{0}&apos;) non è valido.</source>
+        <translation>The selected world path (&apos;{0}&apos;) is invalid.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="222"/>
+        <location filename="gui_components/profile_creation_manager.py" line="332"/>
+        <source>Profilo Esistente</source>
+        <translation>Existing Profile</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="223"/>
+        <source>Un profilo chiamato &apos;{0}&apos; esiste già.
+Scegli un altro mondo o rinomina il profilo esistente.</source>
+        <translation>A profile named &apos;{0}&apos; already exists.
+Choose another world or rename the existing profile.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="234"/>
+        <location filename="gui_components/profile_creation_manager.py" line="515"/>
+        <source>Profilo Creato</source>
+        <translation>Profile Created</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="235"/>
+        <source>Profilo &apos;{0}&apos; creato con successo per il mondo Minecraft.</source>
+        <translation>&apos;{0}&apos; profile successfully created for the Minecraft world.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="238"/>
+        <source>Impossibile salvare il file dei profili dopo aver aggiunto &apos;{0}&apos;.</source>
+        <translation>Unable to save profile file after adding &apos;{0}&apos;.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="242"/>
+        <source>Selezione mondo annullata o fallita.</source>
+        <translation>World selection canceled or failed.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="245"/>
+        <source>Selezione mondo annullata.</source>
+        <translation>World selection canceled.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="311"/>
+        <source>Errore Dipendenza</source>
+        <translation>Dependency Error</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="311"/>
+        <source>La libreria &apos;winshell&apos; necessaria non è installata.</source>
+        <translation>The required &apos;winshell&apos; library is not installed.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="315"/>
+        <source>Errore Collegamento</source>
+        <translation>Link Error</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="315"/>
+        <source>Impossibile leggere il file .lnk:
+{0}</source>
+        <translation>Cannot read .lnk file:
+{0}</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="328"/>
+        <source>Impossibile generare un nome profilo valido dal collegamento trascinato.</source>
+        <translation>Unable to generate a valid profile name from the dragged link.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="332"/>
+        <source>Profilo &apos;{0}&apos; esiste già.</source>
+        <translation>Profile &apos;{0}&apos; already exists.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="337"/>
+        <source>Operazione in Corso</source>
+        <translation>Operation in Progress</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="337"/>
+        <source>Un&apos;altra ricerca di percorso è già in corso. Attendi.</source>
+        <translation>Another route search is already in progress. Hold.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="341"/>
+        <source>Ricerca percorso per &apos;{0}&apos; in corso...</source>
+        <translation>Path search for &apos;{0}&apos; in progress...</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="373"/>
+        <source>Ricerca percorso completata.</source>
+        <translation>Path search completed.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="380"/>
+        <source>Errore sconosciuto durante la ricerca.</source>
+        <translation>Unknown error during search.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="382"/>
+        <source>Errore Ricerca Percorso</source>
+        <translation>Path Search Error</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="384"/>
+        <source>Ricerca interrotta.</source>
+        <translation>Search aborted.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="397"/>
+        <source>Conferma Percorso Automatico</source>
+        <translation>Confirm Automatic Route</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="399"/>
+        <source>È stato rilevato questo percorso:
+
+{0}
+
+Vuoi usarlo per il profilo &apos;{1}&apos;?</source>
+        <translation>This path was detected:
+
+{0}
+
+Do you want to use it for profile &apos;{1}&apos;?</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="408"/>
+        <location filename="gui_components/profile_creation_manager.py" line="475"/>
+        <location filename="gui_components/profile_creation_manager.py" line="499"/>
+        <source>Creazione profilo annullata.</source>
+        <translation>Profile creation cancelled.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="444"/>
+        <source>[Inserisci Manualmente...]</source>
+        <translation>[Insert Manually...]</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="453"/>
+        <source>Conferma Percorso Salvataggi</source>
+        <translation>Confirm Save Path</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="454"/>
+        <source>Sono stati trovati questi percorsi potenziali per &apos;{0}&apos;.
+Seleziona quello corretto (ordinati per probabilità) o scegli l&apos;inserimento manuale:</source>
+        <translation>These potential paths for &apos;{0}&apos; were found.
+Select the correct one (sorted by probability) or choose manual entry:</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="480"/>
+        <source>Percorso Non Rilevato</source>
+        <translation>Path Not Detected</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="480"/>
+        <source>Impossibile rilevare automaticamente il percorso dei salvataggi per &apos;{0}&apos;.
+Per favore, inseriscilo manualmente.</source>
+        <translation>Unable to automatically detect save path for &apos;{0}&apos;.
+Please enter it manually.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="484"/>
+        <source>Errore interno durante la gestione dei risultati.</source>
+        <translation>Internal error while handling results.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="490"/>
+        <source>Inserisci il percorso COMPLETO per i salvataggi del profilo:
+&apos;{0}&apos;</source>
+        <translation>Enter the FULL path for profile saves:
+&apos;{0}&apos;</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="491"/>
+        <source>Percorso Salvataggi Manuale</source>
+        <translation>Manual Save Path</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="496"/>
+        <source>Creazione profilo annullata (percorso vuoto).</source>
+        <translation>Profile creation cancelled (empty path).</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_creation_manager.py" line="515"/>
+        <source>Profilo &apos;{0}&apos; creato con successo.</source>
+        <translation>Profile &apos;{0}&apos; successfully created.</translation>
+    </message>
+</context>
+<context>
+    <name>self.main_window</name>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="39"/>
+        <source>Profilo</source>
+        <translation>Profile</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="41"/>
+        <source>Info Backup</source>
+        <translation>Info Backup</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="80"/>
+        <source>Nessun profilo creato.</source>
+        <translation>No profile created.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="120"/>
+        <source>Backup</source>
+        <translation>Backup</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="121"/>
+        <source>Backups</source>
+        <translation>Backups</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="122"/>
+        <source>Ultimo</source>
+        <translation>Last</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="127"/>
+        <source>Nessun backup</source>
+        <translation>No backup</translation>
+    </message>
+    <message>
+        <location filename="gui_components/theme_manager.py" line="86"/>
+        <source>Passa al tema scuro</source>
+        <translation>switch to dark theme</translation>
+    </message>
+    <message>
+        <location filename="gui_components/theme_manager.py" line="97"/>
+        <source>Passa al tema chiaro</source>
+        <translation>Switch to light theme</translation>
+    </message>
+    <message>
+        <location filename="gui_components/theme_manager.py" line="129"/>
+        <source>Errore</source>
+        <translation>Error</translation>
+    </message>
+    <message>
+        <location filename="gui_components/theme_manager.py" line="130"/>
+        <source>Impossibile salvare l&apos;impostazione del tema.</source>
+        <translation>Unable to save theme settings.</translation>
     </message>
 </context>
 </TS>
