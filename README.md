@@ -139,6 +139,7 @@ This project relies on the following Python packages:
 * **Optional (for enhanced features):**
     * [`vdf`](https://pypi.org/project/vdf/): Used to parse Valve's VDF/ACF files to get more accurate Steam game names and library information. If not installed, Steam detection will still work but might use less precise names.
     * [`nbtlib`](https://pypi.org/project/nbtlib/): Used to read Minecraft's `level.dat` NBT files to get the actual world names. If not installed, the world's folder name will be used as the profile name instead.
+    *  [`thefuzz`]((https://github.com/seatgeek/thefuzz)): It uses Levenshtein Distance to calculate the differences between sequences in a simple-to-use package.
 
 You can install all dependencies using pip. It is recommended to create a `requirements.txt` file with the following content:
 
@@ -148,12 +149,42 @@ winshell
 pywin32
 vdf
 nbtlib
+thefuzz
 ```
 
 And then run:
 ```txt
 pip install -r requirements.txt
 ```
+
+## Development Tools
+
+### SaveState Tool (Helper GUI)
+
+To aid in the development process, particularly with managing translations and creating application packages, a dedicated helper tool with a graphical interface is available within the project repository.
+
+![SaveState Tool GUI](images/SaveStateTools.png)
+*(Screenshot: SaveStateTools.png)*
+
+This tool provides a user-friendly way to perform common development tasks without directly using the command line:
+
+* **Translation Management:**
+    * Run `pyside6-lupdate` (or standard `lupdate`) to scan the configured Python source files and update the `.ts` translation file (`SaveState_en.ts` by default) with new or changed translatable strings.
+    * Run `pyside6-lrelease` to compile the `.ts` file into the binary `.qm` format required by the application.
+* **Application Packaging:**
+    * Run `PyInstaller` to package the SaveState application for distribution.
+    * Allows choosing between **One-File** mode (using `SaveState-OneFile.spec`) or **One-Folder** mode (using command-line arguments).
+* **Integrated Output:** Displays the real-time output from `lupdate`, `lrelease`, and `PyInstaller` directly within the tool's log window.
+* **Configuration:** Saves its own settings (paths to Qt tools, source file lists) persistently.
+
+**To Use:**
+
+1.  Ensure you have the necessary dependencies installed (`PySide6`, `PyInstaller`, and the Qt SDK containing `lupdate`/`lrelease` accessible in your system or configured in the tool's settings).
+2.  Locate the tool's script (e.g., `SaveStateTool.py` or `Update_Translation.py` - *rename it consistently!*) within the repository. It's recommended to run it from the **root directory** of the SaveState project.
+3.  Run it using `python path/to/your_tool_script.py`.
+4.  Use the buttons to update translations, create `.qm` files, or build the application package.
+
+*(This tool itself requires PySide6 to run).*
 
 ## License
 
