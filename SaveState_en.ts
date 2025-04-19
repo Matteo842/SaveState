@@ -238,6 +238,26 @@ Free up space on target disk (&apos;{2}&apos;) or disable control in settings.</
         <source>Azioni Generali</source>
         <translation>General Action</translation>
     </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="40"/>
+        <source>Profilo</source>
+        <translation>Profile</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="83"/>
+        <source>Nessun profilo creato.</source>
+        <translation>No profile created.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="125"/>
+        <source>Ultimo</source>
+        <translation>Last</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="130"/>
+        <source>Nessun backup</source>
+        <translation>No backup</translation>
+    </message>
 </context>
 <context>
     <name>ManageBackupsDialog</name>
@@ -933,36 +953,20 @@ Please enter it manually.</translation>
 <context>
     <name>self.main_window</name>
     <message>
-        <location filename="gui_components/profile_list_manager.py" line="39"/>
         <source>Profilo</source>
-        <translation>Profile</translation>
+        <translation type="vanished">Profile</translation>
     </message>
     <message>
-        <source>Info Backup</source>
-        <translation type="vanished">Info Backup</translation>
-    </message>
-    <message>
-        <location filename="gui_components/profile_list_manager.py" line="80"/>
         <source>Nessun profilo creato.</source>
-        <translation>No profile created.</translation>
+        <translation type="vanished">No profile created.</translation>
     </message>
     <message>
-        <source>Backup</source>
-        <translation type="vanished">Backup</translation>
-    </message>
-    <message>
-        <source>Backups</source>
-        <translation type="vanished">Backups</translation>
-    </message>
-    <message>
-        <location filename="gui_components/profile_list_manager.py" line="122"/>
         <source>Ultimo</source>
-        <translation>Last</translation>
+        <translation type="vanished">Last</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_list_manager.py" line="127"/>
         <source>Nessun backup</source>
-        <translation>No backup</translation>
+        <translation type="vanished">No backup</translation>
     </message>
     <message>
         <location filename="gui_components/theme_manager.py" line="86"/>

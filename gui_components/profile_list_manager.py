@@ -1,11 +1,11 @@
 # gui_components/profile_list_manager.py
 # -*- coding: utf-8 -*-
 import logging
-import os
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QPushButton, QMessageBox
-from PySide6.QtCore import Qt, QLocale
+#import os
+from PySide6.QtWidgets import QTableWidget, QTableWidgetItem
+from PySide6.QtCore import Qt, QLocale, QCoreApplication
 import core_logic
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QPushButton, QMessageBox, QHeaderView
+from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView
 import config
 class ProfileListManager:
     """Gestisce la QTableWidget dei profili e i pulsanti di azione correlati."""
@@ -36,8 +36,9 @@ class ProfileListManager:
     def retranslate_headers(self):
         """Aggiorna le etichette delle intestazioni della tabella."""
         self.table_widget.setHorizontalHeaderLabels([
-            self.main_window.tr("Profilo"),
-            "Info Backup"
+            # Usa QCoreApplication.translate specificando contesto e sorgente
+            QCoreApplication.translate("MainWindow", "Profilo"),
+            "Info Backup" # Manteniamo questa fissa
         ])
 
     def get_selected_profile_name(self):
@@ -77,7 +78,9 @@ class ProfileListManager:
         if not sorted_profiles:
             # Mostra riga "Nessun profilo"
             self.table_widget.setRowCount(1)
-            item_nome = QTableWidgetItem(self.main_window.tr("Nessun profilo creato."))
+            item_nome = QTableWidgetItem(
+                QCoreApplication.translate("MainWindow", "Nessun profilo creato.")
+            )
             item_info = QTableWidgetItem("")
             # Importante: Non impostare UserRole qui o impostalo a None
             item_nome.setData(Qt.ItemDataRole.UserRole, None)
@@ -118,11 +121,11 @@ class ProfileListManager:
                     # Traduzione etichette
                     backup_label_singular = "Backup"
                     backup_label_plural = "Backups"
-                    last_label = self.main_window.tr("Ultimo")
+                    last_label = QCoreApplication.translate("MainWindow", "Ultimo")
                     backup_label = backup_label_singular if count == 1 else backup_label_plural
                     info_str = f"{backup_label}: {count} | {last_label}: {date_str}"
                 else:
-                     info_str = self.main_window.tr("Nessun backup") # O lascia vuoto ""
+                     info_str = QCoreApplication.translate("MainWindow", "Nessun backup")
 
                 name_item = QTableWidgetItem(profile_name)
                 name_item.setData(Qt.ItemDataRole.UserRole, profile_name) # Memorizza nome profilo nell'item
