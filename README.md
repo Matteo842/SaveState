@@ -103,12 +103,12 @@ Get SaveState up and running on your system.
     *(Note: You need to create the `requirements.txt` file first!)*
 6.  Run the application:
     ```bash
-    python game_saver_gui.py
+    python SaveState.py
     ```
 
 ## Usage
 
-1.  **Launch** `SaveState.exe` or run `python game_saver_gui.py`.
+1.  **Launch** `SaveState_gui.exe` or run `python SaveState_gui.py`.
 2.  **Configure Settings (Recommended on first launch):** Click the Settings button. Set your desired "Percorso Base Backup" (Base Backup Path) where all backups will be stored in subfolders named after your profiles. Adjust other settings like max backups, theme, language, etc.
 3.  **Add Profiles:**
     * **Manually:** Click New Manual Profile, enter a name, and provide the full path to the game's save folder.
