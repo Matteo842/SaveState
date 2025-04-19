@@ -4,29 +4,9 @@
 <context>
     <name>MainWindow</name>
     <message>
-        <source>Gestione Backup Salvataggi</source>
-        <translation type="vanished">Backup Management Saves</translation>
-    </message>
-    <message>
-        <source>Profilo</source>
-        <translation type="vanished">Profile</translation>
-    </message>
-    <message>
-        <source>Info Backup</source>
-        <translation type="vanished">Info Backup</translation>
-    </message>
-    <message>
         <location filename="SaveState_gui.py" line="371"/>
         <source>Impostazioni</source>
         <translation>Settings</translation>
-    </message>
-    <message>
-        <source>Passa al tema scuro</source>
-        <translation type="vanished">switch to dark theme</translation>
-    </message>
-    <message>
-        <source>Passa al tema chiaro</source>
-        <translation type="vanished">switch to the clear theme</translation>
     </message>
     <message>
         <location filename="SaveState_gui.py" line="406"/>
@@ -34,165 +14,9 @@
         <translation>hide log</translation>
     </message>
     <message>
-        <source>Ricerca cartella salvataggi Minecraft...</source>
-        <translation type="vanished">minecraft save folders search...</translation>
-    </message>
-    <message>
-        <source>Errore Minecraft</source>
-        <translation type="vanished">Minecraft Error</translation>
-    </message>
-    <message>
-        <source>Errore imprevisto durante la ricerca della cartella Minecraft.</source>
-        <translation type="vanished">Unexpected error when searching minecraft folder.</translation>
-    </message>
-    <message>
-        <source>Errore ricerca Minecraft.</source>
-        <translation type="vanished">Minecraft search error.</translation>
-    </message>
-    <message>
-        <source>Cartella Non Trovata</source>
-        <translation type="vanished">folder not found</translation>
-    </message>
-    <message>
-        <source>Impossibile trovare la cartella dei salvataggi standard di Minecraft (.minecraft/saves).
-Assicurati che Minecraft Java Edition sia installato.</source>
-        <translation type="vanished">Unable to find the standard Minecraft saves folder (.minecraft/saves).
-Make sure Minecraft Java Edition is installed.</translation>
-    </message>
-    <message>
-        <source>Cartella Minecraft non trovata.</source>
-        <translation type="vanished">Minecraft folder not found.</translation>
-    </message>
-    <message>
-        <source>Lettura mondi Minecraft...</source>
-        <translation type="vanished">Reading Minecraft worlds...</translation>
-    </message>
-    <message>
-        <source>Errore imprevisto durante la lettura dei mondi Minecraft.</source>
-        <translation type="vanished">Unexpected error while reading Minecraft worlds.</translation>
-    </message>
-    <message>
-        <source>Errore lettura mondi Minecraft.</source>
-        <translation type="vanished">Minecraft worlds read error.</translation>
-    </message>
-    <message>
-        <source>Nessun Mondo Trovato</source>
-        <translation type="vanished">No World Found</translation>
-    </message>
-    <message>
-        <source>Nessun mondo trovato nella cartella:
-{0}</source>
-        <translation type="vanished">No world found in the folder:
-{0}</translation>
-    </message>
-    <message>
-        <source>Nessun mondo Minecraft trovato.</source>
-        <translation type="vanished">No Minecraft worlds found.</translation>
-    </message>
-    <message>
-        <source>Errore Interfaccia</source>
-        <translation type="vanished">Interface Error</translation>
-    </message>
-    <message>
-        <source>Impossibile creare la finestra di selezione dei mondi.</source>
-        <translation type="vanished">Unable to create the worlds selection window.</translation>
-    </message>
-    <message>
-        <source>Pronto.</source>
-        <translation type="vanished">Ready.</translation>
-    </message>
-    <message>
-        <source>Errore Interno</source>
-        <translation type="vanished">Internal Error</translation>
-    </message>
-    <message>
-        <source>Nome del mondo selezionato non valido.</source>
-        <translation type="vanished">Name of selected world invalid.</translation>
-    </message>
-    <message>
-        <source>Errore Percorso</source>
-        <translation type="vanished">Path Error</translation>
-    </message>
-    <message>
-        <source>Il percorso del mondo selezionato (&apos;{0}&apos;) non è valido.</source>
-        <translation type="vanished">The selected world path (&apos;{0}&apos;) is invalid.</translation>
-    </message>
-    <message>
-        <source>Profilo Esistente</source>
-        <translation type="vanished">Existing Profile</translation>
-    </message>
-    <message>
-        <source>Un profilo chiamato &apos;{0}&apos; esiste già.
-Scegli un altro mondo o rinomina il profilo esistente.</source>
-        <translation type="vanished">A profile named &apos;{0}&apos; already exists.
-Choose another world or rename the existing profile.</translation>
-    </message>
-    <message>
-        <source>Profilo Creato</source>
-        <translation type="vanished">Profile Created</translation>
-    </message>
-    <message>
-        <source>Profilo &apos;{0}&apos; creato con successo per il mondo Minecraft.</source>
-        <translation type="vanished">&apos;{0}&apos; profile successfully created for the Minecraft world.</translation>
-    </message>
-    <message>
-        <source>Profilo &apos;{0}&apos; creato.</source>
-        <translation type="vanished">Profile &apos;{0}&apos; created.</translation>
-    </message>
-    <message>
-        <source>Errore</source>
-        <translation type="vanished">Error</translation>
-    </message>
-    <message>
-        <source>Impossibile salvare il file dei profili dopo aver aggiunto &apos;{0}&apos;.</source>
-        <translation type="vanished">Unable to save profile file after adding &apos;{0}&apos;.</translation>
-    </message>
-    <message>
-        <source>Selezione mondo annullata o fallita.</source>
-        <translation type="vanished">World selection canceled or failed.</translation>
-    </message>
-    <message>
-        <source>Selezione mondo annullata.</source>
-        <translation type="vanished">World selection canceled.</translation>
-    </message>
-    <message>
-        <source>Errore Collegamento</source>
-        <translation type="vanished">Link Error</translation>
-    </message>
-    <message>
-        <source>Impossibile leggere il file .lnk:
-{0}</source>
-        <translation type="vanished">Cannot read .lnk file:
-{0}</translation>
-    </message>
-    <message>
-        <source>Profilo &apos;{0}&apos; esiste già.</source>
-        <translation type="vanished">Profilo &apos;{0}&apos; esiste già.</translation>
-    </message>
-    <message>
         <location filename="SaveState_gui.py" line="692"/>
         <source>Operazione in Corso</source>
         <translation>Operation in Progress</translation>
-    </message>
-    <message>
-        <source>Un&apos;altra ricerca di percorso è già in corso. Attendi.</source>
-        <translation type="vanished">Another route search is already in progress. Hold.</translation>
-    </message>
-    <message>
-        <source>Ricerca percorso per &apos;{0}&apos; in corso...</source>
-        <translation type="vanished">Path search for &apos;{0}&apos; in progress...</translation>
-    </message>
-    <message>
-        <source>File Ignorato</source>
-        <translation type="vanished">File Ignored</translation>
-    </message>
-    <message>
-        <source>Per favore, trascina un collegamento (.lnk) a un gioco.</source>
-        <translation type="vanished">Please drag a link (.lnk) to a game.</translation>
-    </message>
-    <message>
-        <source>Ultimo</source>
-        <translation type="vanished">Last</translation>
     </message>
     <message>
         <location filename="SaveState_gui.py" line="506"/>
@@ -210,12 +34,6 @@ The interface will remain in Italian.</translation>
         <location filename="SaveState_gui.py" line="599"/>
         <source>Profilo &apos;{0}&apos; eliminato.</source>
         <translation>Profile ‘{0}’ deleted.</translation>
-    </message>
-    <message>
-        <source>Impossibile caricare il file di traduzione per l&apos;inglese (game_saver_en.qm).
-L&apos;interfaccia rimarrà in italiano.</source>
-        <translation type="vanished">Unable to load the translation file for English (game_saver_en.qm).
-The interface will remain in Italian.</translation>
     </message>
     <message>
         <location filename="SaveState_gui.py" line="643"/>
@@ -332,96 +150,6 @@ Free up space on target disk (&apos;{2}&apos;) or disable control in settings.</
         <location filename="SaveState_gui.py" line="753"/>
         <source>Errore Operazione</source>
         <translation>Operation Error</translation>
-    </message>
-    <message>
-        <source>Ricerca percorso completata.</source>
-        <translation type="vanished">Path search completed.</translation>
-    </message>
-    <message>
-        <source>Errore sconosciuto durante la ricerca.</source>
-        <translation type="vanished">Unknown error during search.</translation>
-    </message>
-    <message>
-        <source>Errore Ricerca Percorso</source>
-        <translation type="vanished">Path Search Error</translation>
-    </message>
-    <message>
-        <source>Ricerca interrotta.</source>
-        <translation type="vanished">Search aborted.</translation>
-    </message>
-    <message>
-        <source>Conferma Percorso Automatico</source>
-        <translation type="vanished">Automatic Route Confirmation</translation>
-    </message>
-    <message>
-        <source>È stato rilevato questo percorso:
-
-{0}
-
-Vuoi usarlo per il profilo &apos;{1}&apos;?</source>
-        <translation type="vanished">This path was detected:
-
-{0}
-
-Do you want to use it for profile &apos;{1}&apos;?</translation>
-    </message>
-    <message>
-        <source>Creazione profilo annullata.</source>
-        <translation type="vanished">Profile creation cancelled.</translation>
-    </message>
-    <message>
-        <source>[Inserisci Manualmente...]</source>
-        <translation type="vanished">[Insert Manually...]</translation>
-    </message>
-    <message>
-        <source>Conferma Percorso Salvataggi</source>
-        <translation type="vanished">Confirm Save Path</translation>
-    </message>
-    <message>
-        <source>Sono stati trovati questi percorsi potenziali per &apos;{0}&apos;.
-Seleziona quello corretto o scegli l&apos;inserimento manuale:</source>
-        <translation type="vanished">These potential paths were found for &apos;{0}&apos;.
-Select the correct one or choose manual entry:</translation>
-    </message>
-    <message>
-        <source>Percorso Non Rilevato</source>
-        <translation type="vanished">Path Not Detected</translation>
-    </message>
-    <message>
-        <source>Impossibile rilevare automaticamente il percorso dei salvataggi per &apos;{0}&apos;.
-Per favore, inseriscilo manualmente.</source>
-        <translation type="vanished">Unable to automatically detect save path for &apos;{0}&apos;.
-Please enter it manually.</translation>
-    </message>
-    <message>
-        <source>Errore interno durante la gestione dei risultati.</source>
-        <translation type="vanished">Errore interno durante la gestione dei risultati.</translation>
-    </message>
-    <message>
-        <source>Inserisci il percorso COMPLETO per i salvataggi del profilo:
-&apos;{0}&apos;</source>
-        <translation type="vanished">Enter the FULL path for profile saves:
-&apos;{0}&apos;</translation>
-    </message>
-    <message>
-        <source>Percorso Salvataggi Manuale</source>
-        <translation type="vanished">Manual Save Path</translation>
-    </message>
-    <message>
-        <source>Il percorso non può essere vuoto.</source>
-        <translation type="vanished">Il percorso non può essere vuoto.</translation>
-    </message>
-    <message>
-        <source>Creazione profilo annullata (percorso vuoto).</source>
-        <translation type="vanished">Creazione profilo annullata (percorso vuoto).</translation>
-    </message>
-    <message>
-        <source>Profilo &apos;{0}&apos; creato con successo.</source>
-        <translation type="vanished">Profile &apos;{0}&apos; successfully created.</translation>
-    </message>
-    <message>
-        <source>Impossibile salvare il file dei profili.</source>
-        <translation type="vanished">Unable to save profile file.</translation>
     </message>
     <message>
         <location filename="SaveState_gui.py" line="776"/>
@@ -806,18 +534,6 @@ Select the correct one (usually the most recent):</translation>
         <location filename="dialogs/steam_dialog.py" line="278"/>
         <source>Error saving profiles.</source>
         <translation></translation>
-    </message>
-    <message>
-        <source>Errore selezione profilo.</source>
-        <translation type="vanished">Profile selection error.</translation>
-    </message>
-    <message>
-        <source>Configurazione annullata (nessun profilo selezionato).</source>
-        <translation type="vanished">Configuration cancelled (no profile selected).</translation>
-    </message>
-    <message>
-        <source>Configurazione annullata (selezione profilo vuota?).</source>
-        <translation type="vanished">Configuration cancelled (empty profile selection?).</translation>
     </message>
 </context>
 <context>
@@ -1222,9 +938,8 @@ Please enter it manually.</translation>
         <translation>Profile</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_list_manager.py" line="41"/>
         <source>Info Backup</source>
-        <translation>Info Backup</translation>
+        <translation type="vanished">Info Backup</translation>
     </message>
     <message>
         <location filename="gui_components/profile_list_manager.py" line="80"/>
@@ -1232,14 +947,12 @@ Please enter it manually.</translation>
         <translation>No profile created.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_list_manager.py" line="120"/>
         <source>Backup</source>
-        <translation>Backup</translation>
+        <translation type="vanished">Backup</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_list_manager.py" line="121"/>
         <source>Backups</source>
-        <translation>Backups</translation>
+        <translation type="vanished">Backups</translation>
     </message>
     <message>
         <location filename="gui_components/profile_list_manager.py" line="122"/>

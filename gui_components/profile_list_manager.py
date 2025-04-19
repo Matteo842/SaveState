@@ -37,7 +37,7 @@ class ProfileListManager:
         """Aggiorna le etichette delle intestazioni della tabella."""
         self.table_widget.setHorizontalHeaderLabels([
             self.main_window.tr("Profilo"),
-            self.main_window.tr("Info Backup")
+            "Info Backup"
         ])
 
     def get_selected_profile_name(self):
@@ -116,8 +116,8 @@ class ProfileListManager:
                             date_str = "???"
 
                     # Traduzione etichette
-                    backup_label_singular = self.main_window.tr("Backup")
-                    backup_label_plural = self.main_window.tr("Backups")
+                    backup_label_singular = "Backup"
+                    backup_label_plural = "Backups"
                     last_label = self.main_window.tr("Ultimo")
                     backup_label = backup_label_singular if count == 1 else backup_label_plural
                     info_str = f"{backup_label}: {count} | {last_label}: {date_str}"
