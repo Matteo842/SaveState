@@ -159,7 +159,7 @@ pip install -r requirements.txt
 
 ### SaveState Tool (Helper GUI)
 
-To aid in the development process, particularly with managing translations and creating application packages, a dedicated helper tool with a graphical interface is available within the project repository (e.g., in a `tools/` subfolder or alongside the main script).
+To aid in the development process, particularly with managing translations and creating application packages, a dedicated helper tool with a graphical interface is available within the project repository.
 
 ![SaveState Tool GUI](images/SaveStateTools.png)
 *(Screenshot: SaveStateTools.png)*
