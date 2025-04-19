@@ -13,10 +13,11 @@ from PySide6.QtWidgets import (
     QStyle, QDockWidget, QPlainTextEdit, QTableWidget
 )
 from PySide6.QtCore import ( Slot, Qt, QUrl, QSize, QTranslator, QCoreApplication,
-     QEvent, QSharedMemory, QTimer
+     QEvent, QSharedMemory, QTimer, Property, QPropertyAnimation, QEasingCurve
 )
 from PySide6.QtGui import QIcon, QDesktopServices, QPalette, QColor
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
+
 from dialogs.settings_dialog import SettingsDialog
 from dialogs.restore_dialog import RestoreDialog
 from dialogs.manage_backups_dialog import ManageBackupsDialog
@@ -29,12 +30,12 @@ from gui_components.theme_manager import ThemeManager
 from gui_components.profile_creation_manager import ProfileCreationManager
 import core_logic
 import settings_manager
-
 import config
-import logging # Importa sia il modulo che la funzione specifica se serve ancora qui
+import logging 
 import shortcut_utils
+from gui_utils import resource_path
 
-# --- NUOVE COSTANTI GLOBALI PER IDENTIFICARE L'ISTANZA ---
+# --- COSTANTI GLOBALI PER IDENTIFICARE L'ISTANZA ---
 # Usa stringhe univoche per la tua applicazione
 APP_GUID = "SaveState_App_Unique_GUID_6f459a83-4f6a-4e3e-8c1e-7a4d5e3d2b1a" 
 SHARED_MEM_KEY = f"{APP_GUID}_SharedMem"
@@ -44,16 +45,49 @@ LOCAL_SERVER_NAME = f"{APP_GUID}_LocalServer"
 ENGLISH_TRANSLATOR = QTranslator() # Crea l'istanza QUI
 CURRENT_TRANSLATOR = None # Questa traccia solo quale è ATTIVO (o None)
 
-
-CURRENT_TRANSLATOR = None 
-
 # --- Finestra Principale ---
-class MainWindow(QMainWindow):
+class MainWindow(QMainWindow):  
+    def _get_overlay_opacity(self):
+        try:
+            # Legge l'alpha dal colore di sfondo esistente
+            return self.overlay_widget.palette().window().color().alphaF()
+        except Exception:
+            return 0.0
+
+    def _set_overlay_opacity(self, opacity):
+        # Imposta l'opacità usando setStyleSheet con rgba()
+        if not hasattr(self, 'overlay_widget'):
+            return
+        try:
+            opacity = max(0.0, min(1.0, opacity)) # Limita tra 0 e 1
+            alpha = int(opacity * 255) # Calcola valore alpha (0-255)
+
+            # Imposta lo stile del widget overlay
+            # Usiamo nero (0,0,0) con l'alpha calcolato.
+            style_sheet = f"QWidget#BusyOverlay {{ background-color: rgba(0, 0, 0, {alpha}); }}"
+            self.overlay_widget.setStyleSheet(style_sheet)
+            # print(f"DEBUG: Setting stylesheet: {style_sheet}") # Log se serve
+
+            # Gestisci visibilità e posizione della label animazione (come prima)
+            if hasattr(self, 'loading_label') and self.loading_label:
+                 is_visible = opacity > 0.1
+                 self.loading_label.setVisible(is_visible)
+                 if is_visible: # Centra solo se sta per essere visibile
+                      self._center_loading_label()
+
+            # Potrebbe non servire update() con stylesheet, ma lasciamolo per sicurezza
+            self.overlay_widget.update()
+
+        except Exception as e:
+             logging.error(f"Error setting overlay opacity via stylesheet: {e}")
+
+    _overlay_opacity = Property(float, _get_overlay_opacity, _set_overlay_opacity)
+    
     def __init__(self, initial_settings, console_log_handler, qt_log_handler):
         super().__init__()
         self.console_log_handler = console_log_handler # Salva riferimento al gestore console
         self.qt_log_handler = qt_log_handler
-        self.setGeometry(100, 100, 720, 600)
+        self.setGeometry(650, 250, 720, 600)
         self.setAcceptDrops(True)
         self.current_settings = initial_settings
         self.profiles = core_logic.load_profiles()
@@ -317,6 +351,53 @@ class MainWindow(QMainWindow):
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
 
+        
+        # --- NUOVO: Creazione Overlay Widget ---
+        self.overlay_widget = QWidget(self.centralWidget())
+        self.overlay_widget.setObjectName("BusyOverlay")
+        # Imposta un colore di base (qui verrà applicato l'alpha da _set_overlay_opacity)
+        base_palette = self.overlay_widget.palette()
+        base_palette.setColor(QPalette.ColorRole.Window, QColor(0, 0, 0, 0)) # Nero, alpha 0 iniziale
+        self.overlay_widget.setPalette(base_palette)
+        self.overlay_widget.setAutoFillBackground(True)
+        self.overlay_widget.hide()
+        # --- FINE Overlay ---
+
+
+        # --- Creazione Label per Animazione/Placeholder ---
+        self.loading_label = QLabel(self.overlay_widget) # Figlio dell'overlay!
+        self.loading_label.setObjectName("LoadingIndicatorLabel")
+        self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        loading_indicator_size = QSize(200, 200) 
+        self.loading_label.setFixedSize(loading_indicator_size)
+        self.loading_label.setText(self.tr("Ricerca in corso..."))
+        # Stile per il testo caricamento
+        self.loading_label.setStyleSheet("QLabel#LoadingIndicatorLabel { color: white; font-size: 17pt; background-color: transparent; }")
+        # Nascondi la label all'inizio (verrà mostrata dal set_overlay_opacity)
+        self.loading_label.hide()
+        # --- FINE Label Animazione ---
+
+
+        # --- NUOVO: Creazione Animazioni Opacità ---
+        fade_duration = 250 # Durata animazione in ms
+
+        self.fade_in_animation = QPropertyAnimation(self, b"_overlay_opacity", self)
+        self.fade_in_animation.setDuration(fade_duration)
+        self.fade_in_animation.setStartValue(0.0)
+        self.fade_in_animation.setEndValue(0.6) # Opacità 60%
+        self.fade_in_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+
+        self.fade_out_animation = QPropertyAnimation(self, b"_overlay_opacity", self)
+        self.fade_out_animation.setDuration(fade_duration)
+        self.fade_out_animation.setStartValue(0.6)
+        self.fade_out_animation.setEndValue(0.0)
+        self.fade_out_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+
+        # Nasconde l'overlay (e quindi la label figlia) quando il fade-out finisce
+        self.fade_out_animation.finished.connect(self.overlay_widget.hide)
+        # --- FINE Animazioni ---
+        
         self.profile_table_manager = ProfileListManager(self.profile_table_widget, self)
         self.profile_table_manager.update_profile_table()
         self.theme_manager = ThemeManager(self.theme_button, self)
@@ -343,6 +424,34 @@ class MainWindow(QMainWindow):
         self.worker_thread = None
         self.retranslateUi()
         self.setWindowIcon(QIcon(resource_path("icon.png"))) # Icona finestra principale
+    
+    # --- Metodo Helper per Centrare la Label ---
+    def _center_loading_label(self):
+     """Posiziona loading_label al centro dell'overlay_widget."""
+     if hasattr(self, 'loading_label') and self.loading_label and hasattr(self, 'overlay_widget') and self.overlay_widget and self.overlay_widget.isVisible():
+         try:
+             # Usa la dimensione fissa che abbiamo impostato
+             label_size = self.loading_label.size()
+
+             if label_size.isValid() and label_size.width() > 0:
+                 overlay_rect = self.overlay_widget.rect()
+                 top_left_x = (overlay_rect.width() - label_size.width()) // 2
+                 top_left_y = (overlay_rect.height() - label_size.height()) // 2
+                 self.loading_label.move(top_left_x, top_left_y)
+             else:
+                  logging.warning("Cannot center loading label: invalid size.")
+         except Exception as e:
+              logging.error(f"Error centering loading label: {e}")
+
+    # --- Modifica resizeEvent per centrare la label ---
+    def resizeEvent(self, event):
+        """Sovrascritto per ridimensionare l'overlay E centrare la label."""
+        # Ridimensiona overlay
+        if hasattr(self, 'overlay_widget') and self.overlay_widget:
+            self.overlay_widget.resize(self.centralWidget().size())
+        # Centra label
+        self._center_loading_label() # Chiama il metodo helper
+        super().resizeEvent(event)
     
     def dragEnterEvent(self, event):
         if hasattr(self, 'profile_creation_manager'):
@@ -383,6 +492,14 @@ class MainWindow(QMainWindow):
             self.actions_group.setTitle(self.tr("Azioni sul Profilo Selezionato"))
         if hasattr(self, 'general_group'):
             self.general_group.setTitle(self.tr("Azioni Generali"))
+            
+            # --- INSERISCI QUI IL NUOVO BLOCCO ---
+            # Aggiorna testo placeholder label animazione
+            # Controlla se la label esiste e se NON sta mostrando la GIF (movie)
+            if hasattr(self, 'loading_label') and self.loading_label and \
+            (not hasattr(self, 'loading_movie') or not self.loading_movie or not self.loading_movie.isValid()):
+                self.loading_label.setText(self.tr("Ricerca in corso..."))
+            # --- FINE NUOVO BLOCCO ---
             
             logging.debug("Aggiornamento tabella profili a seguito di retranslateUi")
             self.profile_table_manager.update_profile_table()

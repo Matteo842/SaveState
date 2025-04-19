@@ -341,6 +341,28 @@ class ProfileCreationManager:
         mw.status_label.setText(mw.tr("Ricerca percorso per '{0}' in corso...").format(profile_name))
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor) # Cursore di attesa
 
+        # --- NUOVO: ATTIVAZIONE EFFETTO FADE/ANIMAZIONE ---
+        try:
+            if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
+                # Assicurati che l'overlay sia dimensionato correttamente prima di mostrarlo
+                mw.overlay_widget.resize(mw.centralWidget().size())
+                # Centra la label con la GIF/Placeholder
+                if hasattr(mw, '_center_loading_label'):
+                    mw._center_loading_label() # Usa la funzione helper che abbiamo creato
+
+                # Mostra overlay e label (la label è figlia dell'overlay)
+                mw.overlay_widget.show()
+
+                # Avvia l'animazione di fade-in per l'overlay
+                if hasattr(mw, 'fade_in_animation'):
+                    mw.fade_in_animation.start()
+                logging.debug("Fade-in animation started.")
+            else:
+                logging.warning("Overlay widget or fade animation not found in MainWindow.")
+        except Exception as e_fade_start:
+            logging.error(f"Error starting fade/animation effect: {e_fade_start}", exc_info=True)
+        # --- FINE NUOVO ---
+        
         # Crea e avvia il thread di rilevamento
         self.detection_thread = DetectionWorkerThread(
             game_install_dir=game_install_dir,
@@ -368,6 +390,24 @@ class ProfileCreationManager:
         """Chiamato quando il thread di rilevamento percorso ha finito."""
         mw = self.main_window
         logging.debug(f"Detection thread finished. Success: {success}, Results: {results}")
+        
+        # --- STOP EFFETTO FADE/ANIMAZIONE ---
+        try:
+            # Avvia animazione fade-out (nasconderà overlay e label alla fine)
+            if hasattr(mw, 'fade_out_animation'):
+                mw.fade_out_animation.start()
+                logging.debug("Fade-out animation started.")
+            elif hasattr(mw, 'overlay_widget'):
+                 # Fallback: nascondi subito se l'animazione non esiste
+                 mw.overlay_widget.hide()
+                 if hasattr(mw, 'loading_label'): mw.loading_label.hide()
+            else:
+                 logging.warning("Overlay widget or fade animation not found in MainWindow for stopping.")
+
+        except Exception as e_fade_stop:
+            logging.error(f"Error stopping fade/animation effect: {e_fade_stop}", exc_info=True)
+        # --- FINE EFFETTO FADE ---
+        
         QApplication.restoreOverrideCursor() # Ripristina cursore
         mw.set_controls_enabled(True)      # Riabilita controlli in MainWindow
         mw.status_label.setText(mw.tr("Ricerca percorso completata."))

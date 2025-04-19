@@ -4,61 +4,66 @@
 <context>
     <name>MainWindow</name>
     <message>
-        <location filename="SaveState_gui.py" line="371"/>
+        <location filename="SaveState_gui.py" line="517"/>
         <source>Impostazioni</source>
         <translation>Settings</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="406"/>
+        <location filename="SaveState_gui.py" line="552"/>
         <source>Nascondi Log</source>
         <translation>hide log</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="692"/>
+        <location filename="SaveState_gui.py" line="838"/>
         <source>Operazione in Corso</source>
         <translation>Operation in Progress</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="506"/>
+        <location filename="SaveState_gui.py" line="652"/>
         <source>Errore Traduzione</source>
         <translation>Translation Error</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="508"/>
+        <location filename="SaveState_gui.py" line="392"/>
+        <source>Ricerca in corso...</source>
+        <translation>Searching...</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="654"/>
         <source>Impossibile caricare il file di traduzione per l&apos;inglese ({0}).
 L&apos;interfaccia rimarrà in italiano.</source>
         <translation>Unable to upload the translation file for English ({0}).
 The interface will remain in Italian.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="599"/>
+        <location filename="SaveState_gui.py" line="745"/>
         <source>Profilo &apos;{0}&apos; eliminato.</source>
         <translation>Profile ‘{0}’ deleted.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="643"/>
+        <location filename="SaveState_gui.py" line="789"/>
         <source>Errore Configurazione</source>
         <translation>Configuration Error</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="643"/>
+        <location filename="SaveState_gui.py" line="789"/>
         <source>Impostazioni necessarie (percorso base, max backup, max dimensione sorgente) non trovate o non valide!</source>
         <translation>Required settings (base path, max backup, max source size) not found or invalid!</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="646"/>
+        <location filename="SaveState_gui.py" line="792"/>
         <source>Errore Percorso Sorgente</source>
         <translation>Source Path Error</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="646"/>
+        <location filename="SaveState_gui.py" line="792"/>
         <source>La cartella sorgente dei salvataggi non esiste o non è valida:
 {0}</source>
         <translation>The source folder of the saves does not exist or is invalid:
 {0}</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="668"/>
+        <location filename="SaveState_gui.py" line="814"/>
         <source>Spazio su disco insufficiente per il backup!
 
 Spazio libero: {0:.2f} GB
@@ -73,168 +78,168 @@ Minimum space required: {1} GB
 Free up space on target disk (&apos;{2}&apos;) or disable control in settings.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="669"/>
+        <location filename="SaveState_gui.py" line="815"/>
         <source>Spazio Disco Insufficiente</source>
         <translation>Insufficient Disk Space</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="674"/>
+        <location filename="SaveState_gui.py" line="820"/>
         <source>Errore nel controllo dello spazio: il percorso di backup specificato non sembra essere valido o accessibile:
 {0}</source>
         <translation>Error checking space: the specified backup path does not appear to be valid or accessible:
 {0}</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="675"/>
+        <location filename="SaveState_gui.py" line="821"/>
         <source>Errore Percorso Backup</source>
         <translation>Backup Path Error</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="679"/>
+        <location filename="SaveState_gui.py" line="825"/>
         <source>Si è verificato un errore durante il controllo dello spazio libero sul disco:
 {0}</source>
         <translation>An error occurred while checking the free disk space:
 {0}</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="680"/>
+        <location filename="SaveState_gui.py" line="826"/>
         <source>Errore Controllo Spazio</source>
         <translation>Space Control Error</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="692"/>
+        <location filename="SaveState_gui.py" line="838"/>
         <source>Un backup o ripristino è già in corso. Attendi il completamento.</source>
         <translation>A backup or restore is already in progress. Wait for completion.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="695"/>
+        <location filename="SaveState_gui.py" line="841"/>
         <source>Avvio backup per &apos;{0}&apos;...</source>
         <translation>Start backup for &apos;{0}&apos;...</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="728"/>
+        <location filename="SaveState_gui.py" line="874"/>
         <source>Avvio ripristino per &apos;{0}&apos;...</source>
         <translation>Restart restoration for ‘{0}’...</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="734"/>
+        <location filename="SaveState_gui.py" line="880"/>
         <source>Ripristino annullato.</source>
         <translation>Restore cancelled.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="735"/>
+        <location filename="SaveState_gui.py" line="881"/>
         <source>Nessun backup selezionato per il ripristino.</source>
         <translation>No backup selected for recovery.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="736"/>
+        <location filename="SaveState_gui.py" line="882"/>
         <source>Selezione backup annullata.</source>
         <translation>Backup selection canceled.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="749"/>
+        <location filename="SaveState_gui.py" line="895"/>
         <source>Operazione terminata senza messaggio.</source>
         <translation>Operation terminated with no message.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="749"/>
+        <location filename="SaveState_gui.py" line="895"/>
         <source>Completato: {0}</source>
         <translation>Completed: {0}</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="750"/>
+        <location filename="SaveState_gui.py" line="896"/>
         <source>ERRORE: {0}</source>
         <translation>ERROR: {0}</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="753"/>
+        <location filename="SaveState_gui.py" line="899"/>
         <source>Errore Operazione</source>
         <translation>Operation Error</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="776"/>
+        <location filename="SaveState_gui.py" line="922"/>
         <source>Creazione Collegamento</source>
         <translation>Link Creation</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="778"/>
+        <location filename="SaveState_gui.py" line="924"/>
         <source>Errore Creazione Collegamento</source>
         <translation>Link Creation Error</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="372"/>
+        <location filename="SaveState_gui.py" line="518"/>
         <source>Nuovo Profilo Manuale</source>
         <translation>New Manual Profile</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="285"/>
+        <location filename="SaveState_gui.py" line="319"/>
         <source>Console Log</source>
         <translation>Console Log</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="373"/>
+        <location filename="SaveState_gui.py" line="519"/>
         <source>Gestisci Giochi Steam</source>
         <translation>Manage Steam Games</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="374"/>
+        <location filename="SaveState_gui.py" line="520"/>
         <source>Elimina Profilo</source>
         <translation>Delete Profile</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="155"/>
-        <location filename="SaveState_gui.py" line="375"/>
+        <location filename="SaveState_gui.py" line="189"/>
+        <location filename="SaveState_gui.py" line="521"/>
         <source>Esegui Backup</source>
         <translation>Run Backup</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="408"/>
+        <location filename="SaveState_gui.py" line="554"/>
         <source>Mostra Log</source>
         <translation>Show Log</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="159"/>
-        <location filename="SaveState_gui.py" line="376"/>
+        <location filename="SaveState_gui.py" line="193"/>
+        <location filename="SaveState_gui.py" line="522"/>
         <source>Ripristina da Backup</source>
         <translation>Restore from Backup</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="164"/>
-        <location filename="SaveState_gui.py" line="377"/>
+        <location filename="SaveState_gui.py" line="198"/>
+        <location filename="SaveState_gui.py" line="523"/>
         <source>Gestisci Backup</source>
         <translation>manage backup</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="168"/>
-        <location filename="SaveState_gui.py" line="378"/>
+        <location filename="SaveState_gui.py" line="202"/>
+        <location filename="SaveState_gui.py" line="524"/>
         <source>Apri Cartella Backup</source>
         <translation>Open Backup folder</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="191"/>
+        <location filename="SaveState_gui.py" line="225"/>
         <source>Crea collegamento backup sul desktop</source>
         <translation>Create desktop backup shortcut</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="209"/>
-        <location filename="SaveState_gui.py" line="381"/>
+        <location filename="SaveState_gui.py" line="243"/>
+        <location filename="SaveState_gui.py" line="527"/>
         <source>Profili Salvati</source>
         <translation>saved profiles</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="215"/>
-        <location filename="SaveState_gui.py" line="383"/>
+        <location filename="SaveState_gui.py" line="249"/>
+        <location filename="SaveState_gui.py" line="529"/>
         <source>Azioni sul Profilo Selezionato</source>
         <translation>Profile Action</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="226"/>
+        <location filename="SaveState_gui.py" line="260"/>
         <source>Crea profilo da mondo Minecraft</source>
         <translation>Create profile from Minecraft world</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="248"/>
-        <location filename="SaveState_gui.py" line="385"/>
+        <location filename="SaveState_gui.py" line="282"/>
+        <location filename="SaveState_gui.py" line="531"/>
         <source>Azioni Generali</source>
         <translation>General Action</translation>
     </message>
@@ -563,13 +568,13 @@ Select the correct one (usually the most recent):</translation>
         <location filename="gui_components/profile_creation_manager.py" line="62"/>
         <location filename="gui_components/profile_creation_manager.py" line="72"/>
         <location filename="gui_components/profile_creation_manager.py" line="216"/>
-        <location filename="gui_components/profile_creation_manager.py" line="495"/>
+        <location filename="gui_components/profile_creation_manager.py" line="544"/>
         <source>Errore Percorso</source>
         <translation>Path Error</translation>
     </message>
     <message>
         <location filename="gui_components/profile_creation_manager.py" line="48"/>
-        <location filename="gui_components/profile_creation_manager.py" line="495"/>
+        <location filename="gui_components/profile_creation_manager.py" line="544"/>
         <source>Il percorso non può essere vuoto.</source>
         <translation>The path cannot be empty.</translation>
     </message>
@@ -613,7 +618,7 @@ Please choose or create a specific subfolder.</translation>
         <location filename="gui_components/profile_creation_manager.py" line="101"/>
         <location filename="gui_components/profile_creation_manager.py" line="130"/>
         <location filename="gui_components/profile_creation_manager.py" line="238"/>
-        <location filename="gui_components/profile_creation_manager.py" line="518"/>
+        <location filename="gui_components/profile_creation_manager.py" line="567"/>
         <source>Errore</source>
         <translation>Error</translation>
     </message>
@@ -647,13 +652,13 @@ Please choose or create a specific subfolder.</translation>
     <message>
         <location filename="gui_components/profile_creation_manager.py" line="127"/>
         <location filename="gui_components/profile_creation_manager.py" line="236"/>
-        <location filename="gui_components/profile_creation_manager.py" line="516"/>
+        <location filename="gui_components/profile_creation_manager.py" line="565"/>
         <source>Profilo &apos;{0}&apos; creato.</source>
         <translation>Profile &apos;{0}&apos; created.</translation>
     </message>
     <message>
         <location filename="gui_components/profile_creation_manager.py" line="130"/>
-        <location filename="gui_components/profile_creation_manager.py" line="518"/>
+        <location filename="gui_components/profile_creation_manager.py" line="567"/>
         <source>Impossibile salvare il file dei profili.</source>
         <translation>Unable to save profile file.</translation>
     </message>
@@ -777,7 +782,7 @@ Choose another world or rename the existing profile.</translation>
     </message>
     <message>
         <location filename="gui_components/profile_creation_manager.py" line="234"/>
-        <location filename="gui_components/profile_creation_manager.py" line="515"/>
+        <location filename="gui_components/profile_creation_manager.py" line="564"/>
         <source>Profilo Creato</source>
         <translation>Profile Created</translation>
     </message>
@@ -849,32 +854,32 @@ Choose another world or rename the existing profile.</translation>
         <translation>Path search for &apos;{0}&apos; in progress...</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="373"/>
+        <location filename="gui_components/profile_creation_manager.py" line="422"/>
         <source>Ricerca percorso completata.</source>
         <translation>Path search completed.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="380"/>
+        <location filename="gui_components/profile_creation_manager.py" line="429"/>
         <source>Errore sconosciuto durante la ricerca.</source>
         <translation>Unknown error during search.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="382"/>
+        <location filename="gui_components/profile_creation_manager.py" line="431"/>
         <source>Errore Ricerca Percorso</source>
         <translation>Path Search Error</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="384"/>
+        <location filename="gui_components/profile_creation_manager.py" line="433"/>
         <source>Ricerca interrotta.</source>
         <translation>Search aborted.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="397"/>
+        <location filename="gui_components/profile_creation_manager.py" line="446"/>
         <source>Conferma Percorso Automatico</source>
         <translation>Confirm Automatic Route</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="399"/>
+        <location filename="gui_components/profile_creation_manager.py" line="448"/>
         <source>È stato rilevato questo percorso:
 
 {0}
@@ -887,65 +892,65 @@ Vuoi usarlo per il profilo &apos;{1}&apos;?</source>
 Do you want to use it for profile &apos;{1}&apos;?</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="408"/>
-        <location filename="gui_components/profile_creation_manager.py" line="475"/>
-        <location filename="gui_components/profile_creation_manager.py" line="499"/>
+        <location filename="gui_components/profile_creation_manager.py" line="457"/>
+        <location filename="gui_components/profile_creation_manager.py" line="524"/>
+        <location filename="gui_components/profile_creation_manager.py" line="548"/>
         <source>Creazione profilo annullata.</source>
         <translation>Profile creation cancelled.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="444"/>
+        <location filename="gui_components/profile_creation_manager.py" line="493"/>
         <source>[Inserisci Manualmente...]</source>
         <translation>[Insert Manually...]</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="453"/>
+        <location filename="gui_components/profile_creation_manager.py" line="502"/>
         <source>Conferma Percorso Salvataggi</source>
         <translation>Confirm Save Path</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="454"/>
+        <location filename="gui_components/profile_creation_manager.py" line="503"/>
         <source>Sono stati trovati questi percorsi potenziali per &apos;{0}&apos;.
 Seleziona quello corretto (ordinati per probabilità) o scegli l&apos;inserimento manuale:</source>
         <translation>These potential paths for &apos;{0}&apos; were found.
 Select the correct one (sorted by probability) or choose manual entry:</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="480"/>
+        <location filename="gui_components/profile_creation_manager.py" line="529"/>
         <source>Percorso Non Rilevato</source>
         <translation>Path Not Detected</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="480"/>
+        <location filename="gui_components/profile_creation_manager.py" line="529"/>
         <source>Impossibile rilevare automaticamente il percorso dei salvataggi per &apos;{0}&apos;.
 Per favore, inseriscilo manualmente.</source>
         <translation>Unable to automatically detect save path for &apos;{0}&apos;.
 Please enter it manually.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="484"/>
+        <location filename="gui_components/profile_creation_manager.py" line="533"/>
         <source>Errore interno durante la gestione dei risultati.</source>
         <translation>Internal error while handling results.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="490"/>
+        <location filename="gui_components/profile_creation_manager.py" line="539"/>
         <source>Inserisci il percorso COMPLETO per i salvataggi del profilo:
 &apos;{0}&apos;</source>
         <translation>Enter the FULL path for profile saves:
 &apos;{0}&apos;</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="491"/>
+        <location filename="gui_components/profile_creation_manager.py" line="540"/>
         <source>Percorso Salvataggi Manuale</source>
         <translation>Manual Save Path</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="496"/>
+        <location filename="gui_components/profile_creation_manager.py" line="545"/>
         <source>Creazione profilo annullata (percorso vuoto).</source>
         <translation>Profile creation cancelled (empty path).</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="515"/>
+        <location filename="gui_components/profile_creation_manager.py" line="564"/>
         <source>Profilo &apos;{0}&apos; creato con successo.</source>
         <translation>Profile &apos;{0}&apos; successfully created.</translation>
     </message>
