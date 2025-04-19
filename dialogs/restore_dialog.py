@@ -12,15 +12,15 @@ import logging
 
 
 class RestoreDialog(QDialog):
-    # ... (Codice come prima, sembrava OK con correzioni caratteri) ...
-     def __init__(self, profile_name, parent=None):
+    def __init__(self, profile_name, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Ripristina Backup per {profile_name}")
+        # CORRETTO: Usa self.tr() per il titolo e poi .format()
+        self.setWindowTitle(self.tr("Ripristina Backup per {}").format(profile_name))
         self.setMinimumWidth(450)
         self.backup_list_widget = QListWidget()
         self.selected_backup_path = None
         no_backup_label = None
-        
+
         # Recupera il percorso base CORRENTE dalle impostazioni del parent
         current_backup_base_dir = "" # Default vuoto
         if parent and hasattr(parent, 'current_settings'): # Controlla se parent e settings esistono
@@ -31,34 +31,57 @@ class RestoreDialog(QDialog):
             current_backup_base_dir = config.BACKUP_BASE_DIR
 
         # Chiama la funzione passando il percorso recuperato
-        backups = core_logic.list_available_backups(profile_name, current_backup_base_dir) # <-- Riga Nuova
+        backups = core_logic.list_available_backups(profile_name, current_backup_base_dir)
         if not backups:
-            no_backup_label = QLabel("Nessun backup trovato per questo profilo.")
+            # CORRETTO: Usa self.tr() per il testo dell'etichetta
+            no_backup_label = QLabel(self.tr("Nessun backup trovato per questo profilo."))
             self.backup_list_widget.setEnabled(False)
         else:
             for name, path, date_str in backups:
-                item = QListWidgetItem(f"{name} ({date_str})")
+                item = QListWidgetItem(f"{name} ({date_str})") # Nome e data non tradotti, di solito ok
                 item.setData(Qt.ItemDataRole.UserRole, path)
                 self.backup_list_widget.addItem(item)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+
+        # Usa la traduzione standard per OK e Cancel se possibile, altrimenti sovrascrivi
+        # buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        # Nota: Qt traduce automaticamente i pulsanti standard come Ok e Cancel se carichi qtbase_xx.qm
+        # Se vuoi un testo personalizzato, devi usare self.tr() come sotto.
+        # Scegliamo di personalizzare OK e usare il Cancel standard
+        buttons = QDialogButtonBox()
+        # CORRETTO: Usa self.tr() per il testo personalizzato del pulsante OK
+        ok_button = buttons.addButton(self.tr("Ripristina Selezionato"), QDialogButtonBox.ButtonRole.AcceptRole)
+        cancel_button = buttons.addButton(QDialogButtonBox.StandardButton.Cancel) # Qt gestisce la traduzione di "Cancel"
+
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Ripristina Selezionato")
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
+
+        # Il riferimento corretto al pulsante è quello restituito da addButton o tramite buttons.button(StandardButton...)
+        ok_button.setEnabled(False) # Disabilita OK all'inizio
+
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Seleziona il backup da cui ripristinare:"))
+        # CORRETTO: Usa self.tr() per il testo dell'etichetta
+        layout.addWidget(QLabel(self.tr("Seleziona il backup da cui ripristinare:")))
         if no_backup_label: layout.addWidget(no_backup_label)
         layout.addWidget(self.backup_list_widget)
         layout.addWidget(buttons)
-        self.backup_list_widget.currentItemChanged.connect(self.on_selection_change)
-     def on_selection_change(self, current_item, previous_item):
-        ok_button = self.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Ok)
-        if current_item and current_item.data(Qt.ItemDataRole.UserRole) is not None:
-            self.selected_backup_path = current_item.data(Qt.ItemDataRole.UserRole)
-            ok_button.setEnabled(True)
-        else:
-            self.selected_backup_path = None
-            ok_button.setEnabled(False)
-     def get_selected_path(self): return self.selected_backup_path
 
-# --- Dialogo Gestione/Eliminazione Backup ---
+        self.backup_list_widget.currentItemChanged.connect(self.on_selection_change)
+
+    def on_selection_change(self, current_item, previous_item):
+        # Trova il pulsante OK tramite il suo ruolo o riferimento
+        button_box = self.findChild(QDialogButtonBox)
+        ok_button = button_box.button(QDialogButtonBox.ButtonRole.AcceptRole) # Trova tramite ruolo
+
+        if ok_button: # Aggiunto controllo per sicurezza
+            if current_item and current_item.data(Qt.ItemDataRole.UserRole) is not None:
+                self.selected_backup_path = current_item.data(Qt.ItemDataRole.UserRole)
+                ok_button.setEnabled(True)
+            else:
+                self.selected_backup_path = None
+                ok_button.setEnabled(False)
+        else:
+             logging.error("Pulsante OK non trovato in RestoreDialog!")
+
+
+    def get_selected_path(self):
+        return self.selected_backup_path

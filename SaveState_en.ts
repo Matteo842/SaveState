@@ -598,6 +598,29 @@ Verify that Minecraft Java Edition is installed correctly.</translation>
     </message>
 </context>
 <context>
+    <name>RestoreDialog</name>
+    <message>
+        <location filename="dialogs/restore_dialog.py" line="18"/>
+        <source>Ripristina Backup per {}</source>
+        <translation>Restore Backup for {}</translation>
+    </message>
+    <message>
+        <location filename="dialogs/restore_dialog.py" line="37"/>
+        <source>Nessun backup trovato per questo profilo.</source>
+        <translation>No backups found for this profile.</translation>
+    </message>
+    <message>
+        <location filename="dialogs/restore_dialog.py" line="52"/>
+        <source>Ripristina Selezionato</source>
+        <translation>Restore Selected</translation>
+    </message>
+    <message>
+        <location filename="dialogs/restore_dialog.py" line="63"/>
+        <source>Seleziona il backup da cui ripristinare:</source>
+        <translation>Select the backup to restore from:</translation>
+    </message>
+</context>
+<context>
     <name>SettingsDialog</name>
     <message>
         <location filename="dialogs/settings_dialog.py" line="26"/>

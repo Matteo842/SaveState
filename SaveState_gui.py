@@ -948,7 +948,6 @@ if __name__ == "__main__":
             else:
                 logging.info(f"Local server listening on: {local_server.fullServerName()}")
 
-                # ---->> SOLO ORA CREIAMO QApplication <<----
                 try:
                     app = QApplication(sys.argv)
 
