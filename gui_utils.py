@@ -473,3 +473,52 @@ class NotificationPopup(QWidget):
         super().leaveEvent(event)
 
 # --- FINE CLASSE NotificationPopup ---
+
+class SteamSearchWorkerThread(QThread):
+    """
+    Thread per eseguire SOLO la ricerca euristica di core_logic.guess_save_path
+    per i giochi Steam in background.
+    """
+    # Segnale emesso alla fine: restituisce la lista di tuple (path, score) trovate
+    finished = Signal(list)
+    # Segnale per messaggi di stato semplici (opzionale)
+    progress = Signal(str)
+
+    def __init__(self, game_name, game_install_dir, appid, steam_userdata_path, steam_id3_to_use):
+        super().__init__()
+        # Memorizza i parametri necessari per guess_save_path
+        self.game_name = game_name
+        self.game_install_dir = game_install_dir
+        self.appid = appid
+        self.steam_userdata_path = steam_userdata_path
+        self.steam_id3_to_use = steam_id3_to_use
+        self.setObjectName("SteamSearchWorkerThread")
+
+    def run(self):
+        """Esegue la ricerca del percorso."""
+        results = [] # Lista vuota di default
+        try:
+            self.progress.emit(f"Searching path for '{self.game_name}'...") # Messaggio iniziale
+            logging.info(f"[Steam Worker] Starting guess_save_path for '{self.game_name}' (AppID: {self.appid})")
+
+            # Chiama la funzione di core_logic con i parametri specifici per Steam
+            results = core_logic.guess_save_path(
+                game_name=self.game_name,
+                game_install_dir=self.game_install_dir,
+                appid=self.appid,
+                steam_userdata_path=self.steam_userdata_path,
+                steam_id3_to_use=self.steam_id3_to_use,
+                is_steam_game=True # Importante per la logica interna di guess_save_path
+            )
+            logging.info(f"[Steam Worker] guess_save_path finished, found {len(results)} potential paths.")
+            self.progress.emit(f"Search complete for '{self.game_name}'.") # Messaggio finale
+
+        except Exception as e:
+            error_msg = f"Error during Steam path search thread: {e}"
+            logging.error(error_msg, exc_info=True)
+            self.progress.emit("Error during search.") # Segnala errore
+            # Emettiamo comunque una lista vuota in caso di errore grave nel thread
+            results = []
+        finally:
+            # Emetti il segnale finished con la lista dei risultati (può essere vuota)
+            self.finished.emit(results)
