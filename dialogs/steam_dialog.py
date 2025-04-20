@@ -21,7 +21,7 @@ class SteamDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(self.tr("Steam Games Management")) # Traduci titolo
+        self.setWindowTitle(self.tr("Gestione dei giochi Steam")) # Traduci titolo
         self.setMinimumWidth(600)
         self.setMinimumHeight(400)
 
@@ -33,11 +33,11 @@ class SteamDialog(QDialog):
 
         # --- Creazione Widget UI ---
         self.game_list_widget = QListWidget()
-        self.status_label = QLabel(self.tr("Starting Steam scan...")) # Traduci stato iniziale
+        self.status_label = QLabel(self.tr("Avvio scansione Steam...")) # Traduci stato iniziale
 
         self.configure_button = QPushButton(self.tr("Configura Profilo Selezionato"))
-        self.refresh_button = QPushButton(self.tr("Refresh Games List")) # Traduci bottone
-        self.close_button = QPushButton(self.tr("Close")) # Traduci bottone
+        self.refresh_button = QPushButton(self.tr("Aggiorna elenco giochi")) # Traduci bottone
+        self.close_button = QPushButton(self.tr("Chiudi")) # Traduci bottone
 
         self.configure_button.setEnabled(False) # Disabilitato finché non si seleziona un gioco
 
@@ -109,7 +109,7 @@ class SteamDialog(QDialog):
         """Popola la lista dei giochi trovati nell'interfaccia."""
         self.game_list_widget.clear()
         if not self.steam_games_data:
-            self.game_list_widget.addItem(self.tr("No games found.")) # Traduci
+            self.game_list_widget.addItem(self.tr("Nessun gioco trovato.")) # Traduci
             return
 
         # Ordina i giochi per nome per una migliore visualizzazione

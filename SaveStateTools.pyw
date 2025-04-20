@@ -16,8 +16,8 @@ from PySide6.QtWidgets import (
     QPlainTextEdit, QFileDialog, QDialogButtonBox, QMessageBox,
     QLabel, QLineEdit, QRadioButton
 )
-from PySide6.QtCore import Slot, QProcess, QSize, QCoreApplication
-from PySide6.QtGui import QIcon, QTextCursor
+from PySide6.QtCore import Slot, QProcess, QSize, QCoreApplication, QUrl #QTimer
+from PySide6.QtGui import QIcon, QTextCursor, QColor, QDesktopServices
 
 # --- Costanti Globali ---
 APP_NAME = "SaveStateTools"
@@ -765,11 +765,44 @@ class TranslatorToolWindow(QMainWindow):
         self.log_message(f"Configuration loaded by: {self.config_manager._config_filepath}")
         self.log_message("Press 'Start Update' or open Settings (⚙️/Set/F1).")
 
-    def log_message(self, message: str):
-        """Aggiunge un messaggio al log della GUI e al logger principale."""
-        self.log_output.appendPlainText(message)
+    def log_message(self, message: str, level: str = "info"):
+        """Aggiunge un messaggio al log della GUI e al logger principale.
+
+        Args:
+            message: Il messaggio da loggare.
+            level: Il tipo di messaggio ('info', 'success', 'warning', 'error').
+                   Influenza il colore nel log GUI.
+        """
+        color_map = {
+            "success": QColor("lime"),  # Verde brillante per successo
+            "warning": QColor("orange"), # Arancione per warning
+            "error": QColor("red"),      # Rosso per errore
+            "info": None                 # Nessun colore speciale per info
+        }
+
+        log_prefix = "" # Prefisso per il file di log/console
+        if level == "success":
+            log_prefix = "SUCCESS: "
+        elif level == "warning":
+            log_prefix = "WARNING: "
+        elif level == "error":
+            log_prefix = "ERROR: "
+
+        # Logga sempre su file/console con il prefisso
+        logging.info(f"GUI-{level.upper()}: {message}")
+
+        color = color_map.get(level)
+
+        if color:
+            # Usa HTML per colorare il messaggio nella GUI
+            escaped_message = message.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            html_message = f'<font color="{color.name()}">{log_prefix}{escaped_message}</font>'
+            self.log_output.appendHtml(html_message)
+        else:
+            # Messaggio normale (info)
+            self.log_output.appendPlainText(message) # Non aggiungere prefisso qui, solo colore
+
         self.log_output.moveCursor(QTextCursor.MoveOperation.End)
-        logging.info(f"GUI: {message}") # Logga anche su file/console
 
     def _resolve_path_for_run(self, path_str: str) -> Optional[Path]:
         """Risolve un path (relativo a SCRIPT_DIR o assoluto) per l'esecuzione."""
@@ -1139,113 +1172,134 @@ class TranslatorToolWindow(QMainWindow):
         if not self.process_runner: return
         try:
             data = self.process_runner.readAllStandardOutput() # QByteArray
-            text = ""
-            try:
-                 import locale
-                 preferred_encoding = locale.getpreferredencoding(False) or 'utf-8'
-                 text = data.data().decode(preferred_encoding, errors='replace')
-            except Exception:
-                 try:
-                      text = data.data().decode('utf-8', errors='replace')
-                 except Exception:
-                      text = data.data().decode('latin-1', errors='replace')
 
-            # Keywords per identificare righe di interesse (lupdate e lrelease)
+            # --- INIZIO BLOCCO MANCANTE REINTEGRATO ---
+            text = "" # Inizializza text
+            try:
+                # Prova con la codifica preferita dal sistema
+                import locale
+                preferred_encoding = locale.getpreferredencoding(False) or 'utf-8'
+                text = data.data().decode(preferred_encoding, errors='replace')
+            except Exception:
+                try:
+                    # Fallback a UTF-8
+                    text = data.data().decode('utf-8', errors='replace')
+                except Exception:
+                    # Fallback estremo a latin-1
+                    text = data.data().decode('latin-1', errors='replace')
+            # --- FINE BLOCCO MANCANTE REINTEGRATO ---
+
+            # Keywords per identificare righe di interesse
             info_keywords_lupdate = ["updating", "found", "new and", "removed", "obsolete", "finished"]
             info_keywords_lrelease = ["releasing", "writing", "generated"]
             warning_keywords = ["warning:"]
+            error_keywords = ["error:", "fail", "critical", "traceback (most recent call last):"]
 
-            # Logga righe non vuote
-            for line in text.strip().splitlines():
-                 line_content = line.strip()
-                 if not line_content:
-                      continue # Salta righe vuote
+            for line in text.strip().splitlines(): # Ora 'text' è definita
+                line_content = line.strip()
+                if not line_content:
+                    continue
 
-                 line_lower = line_content.lower()
-                 prefix = "" # Prefisso per il log GUI
+                line_lower = line_content.lower()
+                level = "info" # Default
+                log_prefix_gui = "" # Prefisso solo per la GUI se necessario
 
-                 # Controlla se è una riga di avviso
-                 is_warning = any(keyword in line_lower for keyword in warning_keywords)
-                 if is_warning:
-                      prefix = f"ATTENZIONE [{self.current_process_type or 'Processo'}]: "
-                      logging.warning(f"{self.current_process_type or 'Process'}: {line_content}")
-                 # Controlla se è una riga informativa specifica del processo
-                 elif self.current_process_type == "lupdate":
-                      is_info = any(keyword in line_lower for keyword in info_keywords_lupdate)
-                      if is_info:
-                           prefix = "LUpdate Info: "
-                           logging.info(f"LUpdate Stat: {line_content}")
-                 elif self.current_process_type == "lrelease":
-                       is_info = any(keyword in line_lower for keyword in info_keywords_lrelease)
-                       if is_info:
-                            prefix = "LRelease Info: "
-                            logging.info(f"LRelease Stat: {line_content}")
-                 elif self.current_process_type == "pyinstaller":
-                      # PyInstaller ha molto output, potremmo filtrare o loggare tutto
-                      # Per ora logghiamo tutto senza prefisso specifico, a meno che non sia un warning
-                      if not is_warning:
-                           prefix = "PyInstaller: " # Aggiungi prefisso generico
+                # Controlla errori prima
+                is_error = any(keyword in line_lower for keyword in error_keywords)
+                if is_error:
+                    level = "error"
+                    log_prefix_gui = f"[{self.current_process_type or 'Process'} Error]: "
+                else:
+                    # Controlla warnings
+                    is_warning = any(keyword in line_lower for keyword in warning_keywords)
+                    if is_warning:
+                        level = "warning"
+                        log_prefix_gui = f"[{self.current_process_type or 'Process'} Warning]: "
+                    # Se non errore o warning, considera info specifiche
+                    elif self.current_process_type == "lupdate" and any(kw in line_lower for kw in info_keywords_lupdate):
+                         log_prefix_gui = "LUpdate: "
+                    elif self.current_process_type == "lrelease" and any(kw in line_lower for kw in info_keywords_lrelease):
+                         log_prefix_gui = "LRelease: "
+                    elif self.current_process_type == "pyinstaller":
+                         log_prefix_gui = "PyInstaller: "
 
-                 # Se non è un avviso o un'info specifica, potrebbe essere altro output
-                 if not prefix and not is_warning:
-                      # Potresti decidere di loggare comunque o ignorare output generico
-                      # Per ora logghiamo con un prefisso generico se non identificato
-                      prefix = "Output: "
-
-                 self.log_message(prefix + line_content)
+                # Logga con il livello determinato
+                self.log_message(log_prefix_gui + line_content, level=level)
 
         except Exception as e:
-             logging.error(f"Error reading process output: {e}", exc_info=True)
-
+            logging.error(f"Error reading process output: {e}", exc_info=True)
+            self.log_message(f"Internal error processing output: {e}", level="error")
+   
     @Slot()
     def process_finished(self, exit_code: int = 0, exit_status: QProcess.ExitStatus = QProcess.ExitStatus.NormalExit):
         """Slot chiamato quando il processo QProcess (lupdate o pyinstaller) termina."""
-        # Se non c'è processo, esci
-        actual_exit_code = exit_code
-        actual_exit_status = exit_status
-        if self.process_runner and self.process_runner.state() == QProcess.ProcessState.NotRunning:
-                # Se il processo è terminato, controlla il suo stato
-                 try:
-                     actual_exit_code = self.process_runner.exitCode()
-                     actual_exit_status = self.process_runner.exitStatus()
-                 except RuntimeError: # Può capitare se il processo non è mai stato valido
-                     pass
 
+        # --- INIZIO BLOCCO MANCANTE REINTEGRATO ---
+        # Recupera lo stato finale REALE dal processo QProcess,
+        # i parametri passati allo slot potrebbero non essere sempre accurati (es. crash)
+        actual_exit_code = exit_code  # Valore di default dai parametri
+        actual_exit_status = exit_status # Valore di default dai parametri
+        if self.process_runner and self.process_runner.state() == QProcess.ProcessState.NotRunning:
+             # Il processo è effettivamente terminato, chiedi il suo stato finale
+             try:
+                  actual_exit_code = self.process_runner.exitCode()
+                  actual_exit_status = self.process_runner.exitStatus()
+             except RuntimeError:
+                  # Potrebbe accadere se il QProcess non è mai stato valido o è già stato distrutto
+                  logging.warning("Could not retrieve exit status/code from QProcess object.", exc_info=True)
+                  # Manteniamo i valori dei parametri come fallback in questo caso raro
+                  pass
+        # --- FINE BLOCCO MANCANTE REINTEGRATO ---
 
         process_name = self.current_process_type or "Unknown process"
-        log_prefix = f"[{process_name.upper()}] "
-        self.log_message("-" * 30)
+        self.log_message("-" * 30) # Usa il default (info)
 
+        should_show_linguist_popup = False # Flag per il popup
+
+        # Ora usa actual_exit_status e actual_exit_code recuperati
         if actual_exit_status == QProcess.ExitStatus.NormalExit and actual_exit_code == 0:
             msg = f"{process_name.capitalize()} completed successfully."
-            self.log_message(log_prefix + msg)
-            
+            self.log_message(msg, level="success") # <-- Usa level="success"
+
             # Mostra messaggio specifico per processi di successo
-            if self.current_process_type == "pyinstaller":
-                 dist_folder = SCRIPT_DIR / "dist" # Cartella output di PyInstaller
+            if self.current_process_type == "lupdate":
+                 should_show_linguist_popup = True
+                 ts_file = self.config_manager.get_str("translation_file", "N/A")
+                 self.log_message(f"File translation '{ts_file}' aggiornato.", level="info")
+
+            elif self.current_process_type == "pyinstaller":
+                dist_folder = SCRIPT_DIR / "dist"
+                self.log_message(f"Pacchetto creato nella cartella: {dist_folder}", level="info")
+                QMessageBox.information(self, "Packaging Complete",
+                                        f"'{process_name.capitalize()}' completed successfully.\n\n"
+                                        f"Output folder:\n{dist_folder}")
 
             elif self.current_process_type == "lrelease":
-                 # Cerca di mostrare il percorso del file .qm creato
-                 translation_file_str = self.config_manager.get_str("translation_file")
-                 ts_path_resolved = self._resolve_path_for_run(translation_file_str) # Usa la stessa logica di run_lrelease
-                 if ts_path_resolved and ts_path_resolved.exists(): # Controlla se il .ts esiste ancora
-                      output_qm_file = ts_path_resolved.with_suffix(".qm")
-                      # Mostra il percorso del file .qm atteso
+                translation_file_str = self.config_manager.get_str("translation_file")
+                ts_path_resolved = self._resolve_path_for_run(translation_file_str)
+                if ts_path_resolved:
+                    output_qm_file = ts_path_resolved.with_suffix(".qm")
+                    self.log_message(f"File .qm created: {output_qm_file}", level="info")
 
         elif actual_exit_status == QProcess.ExitStatus.NormalExit:
             msg = f"{process_name.capitalize()} terminated with exit code: {actual_exit_code}."
-            self.log_message(log_prefix + msg)
-            logging.warning(log_prefix + msg)
+            self.log_message(msg, level="warning")
+            logging.warning(f"Process ended with code {actual_exit_code}: {process_name}")
             QMessageBox.warning(self, "Process Completed with Code", f"{process_name.capitalize()} finished with code {actual_exit_code}.\nCheck the log for details.")
         else: # CrashExit
             msg = f"ERROR: {process_name.capitalize()} terminated abnormally (crash?). Code: {actual_exit_code}"
-            self.log_message(log_prefix + msg)
-            logging.error(log_prefix + msg)
+            self.log_message(msg, level="error")
+            logging.error(f"Process crashed {actual_exit_code}: {process_name}")
             QMessageBox.critical(self, f"Process Error {process_name.capitalize()}", f"The process terminated abnormally.\nCode: {actual_exit_code}")
 
         # Riabilita i pulsanti e resetta lo stato
         self._set_buttons_enabled(True)
+        process_that_just_finished = self.current_process_type
         self.current_process_type = None
+
+        # Chiama la funzione per il popup LINGUIST se necessario
+        if should_show_linguist_popup:
+             self.ask_open_linguist()
         
     # --- Metodo Helper per abilitare/disabilitare bottoni ---
     def _set_buttons_enabled(self, enabled: bool):
@@ -1261,6 +1315,57 @@ class TranslatorToolWindow(QMainWindow):
         logging.info("Application closing.")
         event.accept()
 
+    @Slot()
+    def ask_open_linguist(self):
+        """Chiede all'utente se vuole aprire Qt Linguist con il file .ts."""
+        ts_file_str = self.config_manager.get_str("translation_file")
+        ts_path_resolved = self._resolve_path_for_run(ts_file_str)
+
+        if not ts_path_resolved or not ts_path_resolved.is_file():
+            self.log_message(f"File .ts non trovato ({ts_file_str}), impossibile suggerire l'apertura di Linguist.", level="warning")
+            return
+
+        reply = QMessageBox.question(self, "Open Qt Linguist?",
+                                     f"L'aggiornamento del file di traduzione è terminato:\n"
+                                     f"{ts_path_resolved.name}\n\n"
+                                     f"Vuoi aprirlo ora con Qt Linguist?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                     QMessageBox.StandardButton.Yes) # Preseleziona Yes
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.open_linguist(ts_path_resolved)
+
+    def open_linguist(self, ts_file_path: Path):
+        """Tenta di avviare Qt Linguist con il file .ts specificato."""
+        lupdate_dir = self.config_manager.get_path("lupdate_path")
+        linguist_exe_name = "linguist.exe" if platform.system() == "Windows" else "linguist"
+        linguist_path = lupdate_dir / linguist_exe_name
+
+        if not linguist_path.is_file():
+            import shutil
+            linguist_in_path = shutil.which(linguist_exe_name)
+            if linguist_in_path:
+                linguist_path = Path(linguist_in_path)
+                self.log_message(f"Trovato Linguist nel PATH: {linguist_path}", level="info")
+            else:
+                 error_msg = f"Qt Linguist executable non trovato in:\n{linguist_path}\n(o nel PATH di sistema).\n\nImpossibile aprirlo automatically."
+                 self.log_message(error_msg, level="error")
+                 QMessageBox.warning(self, "Linguist Not Found", error_msg)
+                 return
+
+        # Assicurati che ci sia SOLO questo blocco per l'avvio:
+        self.log_message(f"Tentativo di avviare: {linguist_path} {ts_file_path}", level="info") # Log senza "(comando unico)"
+        # Usa il metodo con eseguibile e lista di argomenti separati
+        success = QProcess.startDetached(str(linguist_path), [str(ts_file_path)])
+
+        if success:
+            self.log_message("Qt Linguist avviato (o tentativo avviato).", level="info")
+        else:
+            # Costruisci il comando come stringa per il messaggio di errore
+            command_str = f'"{linguist_path}" "{ts_file_path}"' # Per visualizzazione
+            error_msg = f"Errore durante l'avvio di Qt Linguist.\nComando tentato: {command_str}"
+            self.log_message(error_msg, level="error")
+            QMessageBox.critical(self, "Errore Avvio Linguist", error_msg)
 
 # --- Blocco Principale di Avvio ---
 if __name__ == "__main__":
