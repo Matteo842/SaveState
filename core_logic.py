@@ -844,7 +844,7 @@ def are_names_similar(name1, name2, min_match_words=2, fuzzy_threshold=88, game_
         # 2. Check prefix (starts_with)
         name1_no_space = clean_name1.replace(' ', '')
         name2_no_space = clean_name2.replace(' ', '')
-        MIN_PREFIX_LEN = 4
+        MIN_PREFIX_LEN = 3 # Lunghezza minima per il check prefix
         starts_with_match = False
         if len(name1_no_space) >= MIN_PREFIX_LEN and len(name2_no_space) >= MIN_PREFIX_LEN:
             if len(name1_no_space) > len(name2_no_space):
