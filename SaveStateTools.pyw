@@ -761,7 +761,12 @@ class TranslatorToolWindow(QMainWindow):
         self.process_runner.finished.connect(self.process_finished)
 
         
-        self.log_message(f"[{APP_NAME}] Ready.")
+        ready_message_plain = f"[{APP_NAME}] Ready." # Messaggio per il log su file
+        ready_html = f"[{APP_NAME}] <font color=\"lime\">Ready</font>."
+        self.log_output.appendHtml(ready_html)
+        self.log_output.moveCursor(QTextCursor.MoveOperation.End)
+        logging.info(f"GUI-INFO: {ready_message_plain}")
+        
         self.log_message(f"Configuration loaded by: {self.config_manager._config_filepath}")
         self.log_message("Press 'Start Update' or open Settings (⚙️/Set/F1).")
 
