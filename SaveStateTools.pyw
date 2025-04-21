@@ -1278,7 +1278,7 @@ class TranslatorToolWindow(QMainWindow):
 
             elif self.current_process_type == "pyinstaller":
                 dist_folder = SCRIPT_DIR / "dist"
-                self.log_message(f"Pacchetto creato nella cartella: {dist_folder}", level="info")
+                self.log_message(f"Package created in folder:: {dist_folder}", level="info")
                 QMessageBox.information(self, "Packaging Complete",
                                         f"'{process_name.capitalize()}' completed successfully.\n\n"
                                         f"Output folder:\n{dist_folder}")
