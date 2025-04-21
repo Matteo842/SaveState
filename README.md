@@ -60,9 +60,9 @@ Please note: **English localisation is ongoing.**
 ![Drag and Drop GIF](images/drag_and_drop.gif)
 
 
-## Come Funziona la Ricerca dei Salvataggi (Euristica)
+## How Save Search Works (Heuristics)
 
-Il diagramma seguente illustra i passi principali che SaveState segue per tentare di individuare la cartella dei salvataggi di un gioco:
+The following diagram illustrates the main steps that SaveState follows when attempting to locate a game's save folder:
 
 ![FlowChart](images/FlowChart.png)
 
