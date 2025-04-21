@@ -59,6 +59,13 @@ Please note: **English localisation is ongoing.**
 **Drag & Drop Shortcut for Profile Creation:**
 ![Drag and Drop GIF](images/drag_and_drop.gif)
 
+
+## Come Funziona la Ricerca dei Salvataggi (Euristica)
+
+Il diagramma seguente illustra i passi principali che SaveState segue per tentare di individuare la cartella dei salvataggi di un gioco:
+
+![FlowChart](images/FlowChart.png)
+
 **Log Console:**
 ![Log Console](images/log.png)
 
