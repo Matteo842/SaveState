@@ -10,10 +10,10 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QStatusBar, QMessageBox, QDialog,
     QProgressBar, QGroupBox,
-    QStyle, QDockWidget, QPlainTextEdit, QTableWidget
+    QStyle, QDockWidget, QPlainTextEdit, QTableWidget, QInputDialog
 )
 from PySide6.QtCore import ( Slot, Qt, QUrl, QSize, QTranslator, QCoreApplication,
-     QEvent, QSharedMemory, QTimer, Property, QPropertyAnimation, QEasingCurve
+     QEvent, QSharedMemory, QTimer, Property, QPropertyAnimation, QEasingCurve 
 )
 from PySide6.QtGui import QIcon, QDesktopServices, QPalette, QColor
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
@@ -24,7 +24,7 @@ from dialogs.manage_backups_dialog import ManageBackupsDialog
 from dialogs.steam_dialog import SteamDialog
 # --- GUI Utils/Components Imports ---
 # Importa tutto il necessario da gui_utils in una volta
-from gui_utils import WorkerThread, QtLogHandler, resource_path
+from gui_utils import WorkerThread, QtLogHandler, resource_path, SteamSearchWorkerThread
 from gui_components.profile_list_manager import ProfileListManager
 from gui_components.theme_manager import ThemeManager
 from gui_components.profile_creation_manager import ProfileCreationManager
@@ -402,6 +402,7 @@ class MainWindow(QMainWindow):
         self.profile_table_manager.update_profile_table()
         self.theme_manager = ThemeManager(self.theme_button, self)
         self.profile_creation_manager = ProfileCreationManager(self)
+        self.current_search_thread = None
         
         # Connessioni
         self.backup_button.clicked.connect(self.handle_backup)
@@ -721,10 +722,308 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def handle_steam(self):
-        dialog = SteamDialog(parent=self)
-        dialog.profile_configured.connect(self.on_steam_profile_configured)
-        dialog.exec()
+        # --- AGGIORNAMENTO: Esegui scansione PRIMA di aprire il dialogo ---
+        # Questo assicura che i dati siano pronti per SteamDialog
+        try:
+            logging.info("Scanning Steam data before opening dialog...")
+            # Chiami le funzioni di core_logic per ottenere i dati aggiornati
+            core_logic._steam_install_path = None # Forza ri-scansione path? Opzionale
+            core_logic._steam_libraries = None
+            core_logic._installed_steam_games = None
+            core_logic._steam_userdata_path = None
+            core_logic._steam_id3 = None
+            core_logic._cached_possible_ids = None
+            core_logic._cached_id_details = None
 
+            steam_path = core_logic.get_steam_install_path()
+            if not steam_path: raise ValueError("Steam installation not found.")
+            self.steam_games_data = core_logic.find_installed_steam_games()
+            udp, l_id, p_ids, d_ids = core_logic.find_steam_userdata_info()
+            self.steam_userdata_info = {'path': udp, 'likely_id': l_id, 'possible_ids': p_ids, 'details': d_ids}
+            logging.info("Steam data scan complete.")
+
+        except Exception as e_scan:
+            logging.error(f"Error scanning Steam data: {e_scan}", exc_info=True)
+            QMessageBox.critical(self, "Errore Scansione Steam", f"Impossibile leggere i dati di Steam:\n{e_scan}")
+            return # Non aprire il dialogo se la scansione fallisce
+
+        # --- APERTURA DIALOGO SEMPLIFICATO ---
+        # Ora SteamDialog usa i dati già scansionati e memorizzati in self
+        dialog = SteamDialog(main_window_ref=self, parent=self)        # Collega il NUOVO segnale al NUOVO slot
+        dialog.game_selected_for_config.connect(self.start_steam_configuration)
+
+        dialog.exec() # Questo ritorna SUBITO dopo che l'utente seleziona un gioco
+
+    # --- SLOT per avviare configurazione e ricerca ---
+    @Slot(str, str) # Riceve appid, profile_name
+    def start_steam_configuration(self, appid, profile_name):
+        logging.info(f"Starting configuration process for '{profile_name}' (AppID: {appid}) in MainWindow.")
+
+        # 1. Recupera dati necessari (install_dir, userdata)
+        game_data = self.steam_games_data.get(appid)
+        if not game_data:
+            logging.error(f"Game data for {appid} not found in self.steam_games_data.")
+            QMessageBox.critical(self, "Errore Interno", f"Dati gioco mancanti per AppID {appid}.")
+            return
+        install_dir = game_data.get('installdir')
+
+        steam_userdata_path = self.steam_userdata_info.get('path')
+        likely_id3 = self.steam_userdata_info.get('likely_id')
+        possible_ids = self.steam_userdata_info.get('possible_ids', [])
+        id_details = self.steam_userdata_info.get('details', {})
+        steam_id_to_use = likely_id3 # Default
+
+        # 2. Chiedi ID utente se necessario (logica spostata qui da SteamDialog)
+        if len(possible_ids) > 1:
+            id_choices_display = []
+            display_to_id_map = {}
+            index_to_select = 0
+            for i, uid in enumerate(possible_ids):
+                user_details = id_details.get(uid, {})
+                display_name = user_details.get('display_name', uid)
+                last_mod_str = user_details.get('last_mod_str', 'N/D')
+                is_likely_marker = self.tr("(Recente)") if uid == likely_id3 else ""
+                choice_str = f"{display_name} {is_likely_marker} [{last_mod_str}]".strip().replace("  ", " ")
+                id_choices_display.append(choice_str)
+                display_to_id_map[choice_str] = uid
+                if uid == likely_id3: index_to_select = i
+            # --- Fine Ciclo For ---
+                
+            dialog_label_text = self.tr(
+                "Trovati multipli profili Steam.\n"
+                "Seleziona quello corretto (di solito il più recente):"
+            )
+
+            # -> Anche questo è indentato sotto l'if
+            chosen_display_str, ok = QInputDialog.getItem(
+                 self, self.tr("Selezione Profilo Steam"), dialog_label_text,
+                 id_choices_display, index_to_select, False
+            )
+
+            if ok and chosen_display_str:
+                selected_id3 = display_to_id_map.get(chosen_display_str)
+                if selected_id3: steam_id_to_use = selected_id3
+                else: logging.error("..."); QMessageBox.warning(self, "..."); return # Gestisci errore
+            else:
+                self.status_label.setText(self.tr("Configurazione annullata (nessun profilo Steam selezionato)."))
+                return # Esce se l'utente annulla
+
+        elif not steam_id_to_use and len(possible_ids) == 1: steam_id_to_use = possible_ids[0]
+        elif not possible_ids: logging.warning("No Steam user IDs found.")
+
+        # 3. Avvia Effetto Fade
+        logging.debug("Attempting to start fade effect from start_steam_configuration...")
+        can_show_effect = False
+        try:
+            # Semplice check attributi
+            has_overlay = hasattr(self, 'overlay_widget') and self.overlay_widget is not None
+            has_label = hasattr(self, 'loading_label') and self.loading_label is not None
+            has_center_func = hasattr(self, '_center_loading_label')
+            has_fade_in = hasattr(self, 'fade_in_animation') and self.fade_in_animation is not None
+            can_show_effect = (has_overlay and has_label and has_center_func and has_fade_in)
+            logging.debug(f"Fade check results: overlay={has_overlay}, label={has_label}, center={has_center_func}, fade_in={has_fade_in}")
+        except Exception as e: logging.error(f"Error checking fade components: {e}", exc_info=True)
+
+        if can_show_effect:
+            logging.info("Activating fade effect...")
+            try:
+                self.overlay_widget.resize(self.centralWidget().size())
+                self._center_loading_label()
+                self.overlay_widget.show()
+                self.overlay_widget.raise_()
+                self.fade_in_animation.start()
+            except Exception as e_fade: logging.error(f"Error starting fade: {e_fade}", exc_info=True)
+        else:
+            logging.error("Cannot show fade effect (components missing or check failed).")
+
+        # 4. Avvia Thread di Ricerca
+        self.status_label.setText(self.tr("Ricerca percorso per '{0}' in corso...").format(profile_name))
+        QApplication.processEvents() # Aggiorna status label
+
+        logging.info("Starting SteamSearchWorkerThread from MainWindow...")
+        # Passa anche profile_name al thread così lo abbiamo nel risultato
+        thread = SteamSearchWorkerThread(
+            game_name=profile_name,
+            game_install_dir=install_dir,
+            appid=appid,
+            steam_userdata_path=steam_userdata_path,
+            steam_id3_to_use=steam_id_to_use,
+            installed_steam_games_dict=self.steam_games_data,
+            # Passa il nome profilo per riceverlo indietro con i risultati
+            profile_name_for_results=profile_name
+        )
+        # Collega il finished del thread al gestore risultati
+        thread.finished.connect(self.handle_steam_search_results)
+        self.current_search_thread = thread
+        self.set_controls_enabled(False)
+        thread.start()
+
+
+     # --- NUOVO SLOT per gestire i risultati della ricerca ---
+    @Slot(list, str) # Riceve guesses_with_scores (lista di tuple (path, score)) e profile_name_from_thread
+    def handle_steam_search_results(self, guesses_with_scores, profile_name_from_thread):
+        logging.debug(f"Handling Steam search results for '{profile_name_from_thread}'. Guesses: {len(guesses_with_scores)}")
+
+        # Rilascia il riferimento al thread che ha finito
+        self.current_search_thread = None
+        self.set_controls_enabled(True)
+        
+        # 1. Ferma l'effetto Fade sulla MainWindow
+        if hasattr(self, 'fade_out_animation') and self.fade_out_animation:
+            # Controlla se l'animazione è in esecuzione prima di avviarla (evita start multipli)
+            if self.fade_out_animation.state() != QPropertyAnimation.State.Running:
+                self.fade_out_animation.start()
+                logging.debug("Fade-out animation started.")
+            else:
+                logging.debug("Fade-out animation already running or finished.")
+        elif hasattr(self, 'overlay_widget'):
+             # Fallback se l'animazione non c'è ma l'overlay sì
+             if self.overlay_widget.isVisible():
+                  self.overlay_widget.hide()
+                  logging.debug("Overlay hidden via fallback.")
+
+        # 2. Mostra QInputDialog per scelta percorso e salva profilo
+        profile_name = profile_name_from_thread # Usa il nome ricevuto dal thread
+        confirmed_path = None                   # Percorso finale scelto dall'utente
+        existing_path = self.profiles.get(profile_name) # Percorso attuale, se esiste
+
+        # --- Gestione casi: Nessun suggerimento vs Suggerimenti trovati ---
+        if not guesses_with_scores:
+            # Nessun percorso trovato automaticamente dal thread
+            logging.info(f"No paths guessed by search thread for '{profile_name}'.")
+            if not existing_path:
+                # Nessun suggerimento e nessun profilo esistente -> Chiedi input manuale
+                QMessageBox.information(self, self.tr("Percorso Non Trovato"),
+                                        self.tr("Impossibile trovare automaticamente un percorso per '{0}'.\n"
+                                                "Per favore, inseriscilo manualmente.").format(profile_name))
+                # Chiama la funzione helper per chiedere il percorso all'utente
+                confirmed_path = self._ask_user_for_path_manually(profile_name, existing_path)
+            else:
+                # Nessun suggerimento, ma profilo esiste -> Chiedi se mantenere o inserire manualmente
+                reply = QMessageBox.question(self, self.tr("Nessun Nuovo Percorso Trovato"),
+                                             self.tr("La ricerca automatica non ha trovato nuovi percorsi.\n"
+                                                     "Vuoi mantenere il percorso attuale?\n'{0}'")
+                                             .format(existing_path),
+                                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
+                                             QMessageBox.StandardButton.Yes)
+                if reply == QMessageBox.StandardButton.Yes:
+                    confirmed_path = existing_path # Mantiene quello vecchio
+                elif reply == QMessageBox.StandardButton.No:
+                    confirmed_path = self._ask_user_for_path_manually(profile_name, existing_path) # Chiede nuovo
+                # else: Cancel -> confirmed_path rimane None
+        else:
+            # Ci sono suggerimenti (guesses_with_scores non è vuota) -> Mostra QInputDialog.getItem
+            path_choices = []                       # Lista di stringhe per il dialogo
+            display_text_to_original_path = {}    # Mappa per recuperare il percorso vero
+            current_selection_index = 0           # Indice preselezionato
+            existing_path_found_in_list = False     # Flag
+
+            # Determina se mostrare gli score (modalità sviluppatore)
+            show_scores = self.developer_mode_enabled
+            logging.debug(f"Preparing QInputDialog items. Show scores: {show_scores}")
+
+            # Crea le stringhe e popola la mappa, trova indice per preselezionare existing_path
+            norm_existing = os.path.normpath(existing_path) if existing_path else None
+            for i, (p, score) in enumerate(guesses_with_scores):
+                norm_p = os.path.normpath(p)
+                is_current_marker = self.tr("[ATTUALE]") if norm_existing and norm_p == norm_existing else ""
+                score_str = f"(Score: {score})" if show_scores else ""
+                display_text = f"{p} {score_str} {is_current_marker}".strip().replace("  ", " ")
+                path_choices.append(display_text)
+                display_text_to_original_path[display_text] = p
+                if norm_existing and norm_p == norm_existing:
+                    current_selection_index = i
+                    existing_path_found_in_list = True
+
+            if existing_path and not existing_path_found_in_list:
+                logging.warning(f"Existing path '{existing_path}' was not found in the suggested paths list.")
+
+            # Aggiungi opzione manuale
+            manual_option_str = self.tr("--- Inserisci percorso manualmente ---")
+            path_choices.append(manual_option_str)
+
+            # Definisci il testo (label) per il dialogo
+            dialog_label_text = self.tr(
+                "Sono stati trovati questi percorsi potenziali per '{0}'.\n"
+                "Seleziona quello corretto (ordinati per probabilità) o scegli l'inserimento manuale:"
+            ).format(profile_name)
+
+            # Mostra il dialogo QInputDialog.getItem
+            logging.debug(f"Showing QInputDialog.getItem with {len(path_choices)} choices, pre-selected index: {current_selection_index}")
+            chosen_display_str, ok = QInputDialog.getItem(
+                self,                                     # parent
+                self.tr("Conferma Percorso Salvataggi"), # title
+                dialog_label_text,                        # label
+                path_choices,                             # items
+                current_selection_index,                  # current
+                False                                     # editable
+            )
+
+            # Gestisci la scelta dell'utente
+            if ok and chosen_display_str:
+                if chosen_display_str == manual_option_str:
+                    # L'utente ha scelto di inserire manualmente
+                    confirmed_path = self._ask_user_for_path_manually(profile_name, existing_path)
+                else:
+                    # L'utente ha scelto un percorso dalla lista
+                    confirmed_path = display_text_to_original_path.get(chosen_display_str)
+                    if confirmed_path is None:
+                        # Errore imprevisto nel recuperare il percorso dalla mappa
+                        logging.error(f"Error mapping selected choice '{chosen_display_str}' back to path.")
+                        QMessageBox.critical(self, self.tr("Errore Interno"), self.tr("Errore nella selezione del percorso."))
+                        confirmed_path = None # Resetta per sicurezza
+            # else: L'utente ha premuto Annulla, confirmed_path rimane None
+
+        # --- Fine gestione if/else sui suggerimenti ---
+
+        # 3. Salva il profilo se un percorso valido è stato confermato/inserito
+        if confirmed_path:
+            # Valida il percorso usando il validator della MainWindow (tramite ProfileCreationManager)
+            validator_func = None
+            if hasattr(self, 'profile_creation_manager') and self.profile_creation_manager and hasattr(self.profile_creation_manager, 'validate_save_path'):
+                 validator_func = self.profile_creation_manager.validate_save_path
+            else: # Fallback basico se il manager non c'è
+                 logging.warning("ProfileCreationManager validator not found, using basic os.path.isdir validation.")
+                 def basic_validator(p, _name): return p if os.path.isdir(p) else None
+                 validator_func = basic_validator
+
+            validated_path = validator_func(confirmed_path, profile_name)
+
+            if validated_path:
+                # Percorso valido, procedi con salvataggio
+                logging.info(f"Saving profile '{profile_name}' with path '{validated_path}' from MainWindow slot.")
+                self.profiles[profile_name] = validated_path # Aggiorna dizionario in memoria
+                if core_logic.save_profiles(self.profiles): # Salva su file
+                    self.status_label.setText(self.tr("Profilo '{0}' configurato.").format(profile_name))
+                    self.profile_table_manager.update_profile_table() # Aggiorna tabella nella GUI
+                    self.profile_table_manager.select_profile_in_table(profile_name) # Seleziona il profilo appena configurato
+                    QMessageBox.information(self, self.tr("Profilo Configurato"), self.tr("Profilo '{0}' salvato con successo.").format(profile_name))
+                else:
+                    # Errore durante il salvataggio su file
+                    QMessageBox.critical(self, self.tr("Errore Salvataggio"), self.tr("Impossibile salvare il file dei profili."))
+                    # Rimuovi dal dizionario in memoria per coerenza? O lascia così? Rimuoviamo.
+                    if profile_name in self.profiles: del self.profiles[profile_name]
+            # else: La funzione validator_func ha già mostrato un messaggio di errore
+
+        else: # confirmed_path è None (l'utente ha annullato o la validazione è fallita)
+             self.status_label.setText(self.tr("Configurazione profilo annullata o fallita."))
+
+    # Assicurati che _ask_user_for_path_manually esista o copia/adatta la logica
+    # da steam_dialog.py o profile_creation_manager.py
+    def _ask_user_for_path_manually(self, profile_name, existing_path):
+         # ... (Logica QInputDialog.getText) ...
+         # ... (Logica validazione) ...
+         # Ritorna path validato o None
+         input_path, ok = QInputDialog.getText(self, self.tr("Percorso Manuale"), self.tr("Inserisci il percorso COMPLETO...").format(profile_name), text=existing_path or "")
+         if ok and input_path:
+              if hasattr(self, 'profile_creation_manager') and self.profile_creation_manager:
+                   validated = self.profile_creation_manager.validate_save_path(input_path, profile_name)
+                   return validated
+              else: return input_path if os.path.isdir(input_path) else None # Fallback
+         return None
+
+    
+    
     @Slot(str, str)
     def on_steam_profile_configured(self, profile_name, save_path):
         logging.debug(f"Received profile_configured signal: profile '{profile_name}'")

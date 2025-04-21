@@ -367,7 +367,8 @@ class ProfileCreationManager:
         self.detection_thread = DetectionWorkerThread(
             game_install_dir=game_install_dir,
             profile_name_suggestion=profile_name,
-            current_settings=mw.current_settings.copy() # Passa copia impostazioni
+            current_settings=mw.current_settings.copy(),
+            installed_steam_games_dict=None# Passa copia impostazioni
         )
         # Connetti i segnali ai metodi DI QUESTA CLASSE (ProfileCreationManager)
         self.detection_thread.progress.connect(self.on_detection_progress)

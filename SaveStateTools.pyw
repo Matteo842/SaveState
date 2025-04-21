@@ -779,7 +779,7 @@ class TranslatorToolWindow(QMainWindow):
                    Influenza il colore nel log GUI.
         """
         color_map = {
-            "success": QColor("lime"),  # Verde brillante per successo
+            #"success": QColor("lime"),  # Verde brillante per successo
             "warning": QColor("orange"), # Arancione per warning
             "error": QColor("red"),      # Rosso per errore
             "info": None                 # Nessun colore speciale per info
@@ -787,7 +787,7 @@ class TranslatorToolWindow(QMainWindow):
 
         log_prefix = "" # Prefisso per il file di log/console
         if level == "success":
-            log_prefix = "SUCCESS: "
+            pass # Non usiamo success qui, solo info
         elif level == "warning":
             log_prefix = "WARNING: "
         elif level == "error":
@@ -804,8 +804,9 @@ class TranslatorToolWindow(QMainWindow):
             html_message = f'<font color="{color.name()}">{log_prefix}{escaped_message}</font>'
             self.log_output.appendHtml(html_message)
         else:
-            # Messaggio normale (info)
-            self.log_output.appendPlainText(message) # Non aggiungere prefisso qui, solo colore
+            # Messaggio normale (info e success)
+            # Non aggiungiamo il prefisso qui per non duplicarlo se già presente nel messaggio
+            self.log_output.appendPlainText(message)
 
         self.log_output.moveCursor(QTextCursor.MoveOperation.End)
 
@@ -1263,8 +1264,11 @@ class TranslatorToolWindow(QMainWindow):
 
         # Ora usa actual_exit_status e actual_exit_code recuperati
         if actual_exit_status == QProcess.ExitStatus.NormalExit and actual_exit_code == 0:
-            msg = f"{process_name.capitalize()} completed successfully."
-            self.log_message(msg, level="success") # <-- Usa level="success"
+            success_html = f'{process_name.capitalize()} <font color="lime">completed successfully.</font>'
+            # Aggiungi direttamente l'HTML all'output del log
+            self.log_output.appendHtml(success_html)
+            # Logga anche nel file di log (senza HTML)
+            logging.info(f"GUI-SUCCESS: {process_name.capitalize()} completed successfully.")
 
             # Mostra messaggio specifico per processi di successo
             if self.current_process_type == "lupdate":

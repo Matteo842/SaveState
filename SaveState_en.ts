@@ -548,8 +548,8 @@ The interface will remain in Italian.SelectCannot validate path.ona Base Folder 
     <message>
         <location filename="dialogs/steam_dialog.py" line="142"/>
         <location filename="dialogs/steam_dialog.py" line="185"/>
-        <location filename="dialogs/steam_dialog.py" line="314"/>
-        <location filename="dialogs/steam_dialog.py" line="394"/>
+        <location filename="dialogs/steam_dialog.py" line="315"/>
+        <location filename="dialogs/steam_dialog.py" line="395"/>
         <source>Errore Interno</source>
         <translation>Internal Error</translation>
     </message>
@@ -591,29 +591,29 @@ Select the correct one (usually the most recent):</translation>
         <translation>Path search for &apos;{0}&apos; in progress...</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="315"/>
+        <location filename="dialogs/steam_dialog.py" line="316"/>
         <source>Impossibile recuperare il nome del profilo in configurazione.</source>
         <translation>Unable to retrieve profile name in configuration.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="328"/>
+        <location filename="dialogs/steam_dialog.py" line="329"/>
         <source>Percorso Non Trovato</source>
         <translation>Path Not Found</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="330"/>
+        <location filename="dialogs/steam_dialog.py" line="331"/>
         <source>Impossibile trovare automaticamente un percorso per &apos;{0}&apos;.
 Per favore, inseriscilo manualmente.</source>
         <translation>Could not automatically find a path for &apos;{0}&apos;.
 Please enter it manually.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="334"/>
+        <location filename="dialogs/steam_dialog.py" line="335"/>
         <source>Nessun Nuovo Percorso Trovato</source>
         <translation>No New Routes Found</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="337"/>
+        <location filename="dialogs/steam_dialog.py" line="338"/>
         <source>La ricerca automatica non ha trovato nuovi percorsi.
 Vuoi mantenere il percorso attuale?
 &apos;{0}&apos;</source>
@@ -622,94 +622,94 @@ Do you want to keep the current route?
 &apos;{0}&apos;</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="345"/>
-        <location filename="dialogs/steam_dialog.py" line="400"/>
+        <location filename="dialogs/steam_dialog.py" line="346"/>
+        <location filename="dialogs/steam_dialog.py" line="401"/>
         <source>Configurazione annullata.</source>
         <translation>Configuration cancelled.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="363"/>
+        <location filename="dialogs/steam_dialog.py" line="364"/>
         <source>[ATTUALE]</source>
         <translation>[CURRENT]</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="374"/>
+        <location filename="dialogs/steam_dialog.py" line="375"/>
         <source>--- Inserisci percorso manualmente ---</source>
         <translation>--- Enter path manually ---</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="376"/>
+        <location filename="dialogs/steam_dialog.py" line="377"/>
         <source>Seleziona il percorso corretto per i salvataggi di &apos;{0}&apos;:</source>
         <translation>Please select the correct path for &apos;{0}&apos; saves:</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="380"/>
+        <location filename="dialogs/steam_dialog.py" line="381"/>
         <source>Conferma Percorso Salvataggi</source>
         <translation>Confirm Save Path</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="394"/>
+        <location filename="dialogs/steam_dialog.py" line="395"/>
         <source>Errore nella selezione del percorso.</source>
         <translation>Errore nella selezione del percorso.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="410"/>
+        <location filename="dialogs/steam_dialog.py" line="411"/>
         <source>Profilo &apos;{0}&apos; configurato.</source>
         <translation>Profile &apos;{0}&apos; configured.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="411"/>
+        <location filename="dialogs/steam_dialog.py" line="412"/>
         <source>Profilo Configurato</source>
         <translation>Profile Configured</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="412"/>
+        <location filename="dialogs/steam_dialog.py" line="413"/>
         <source>Profilo &apos;{0}&apos; salvato con successo.</source>
         <translation>Profile &apos;{0}&apos; saved successfully.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="418"/>
+        <location filename="dialogs/steam_dialog.py" line="419"/>
         <source>Errore Salvataggio</source>
         <translation>Saving Error</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="419"/>
+        <location filename="dialogs/steam_dialog.py" line="420"/>
         <source>Impossibile salvare il file dei profili.</source>
         <translation>Unable to save profile file.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="420"/>
+        <location filename="dialogs/steam_dialog.py" line="421"/>
         <source>Errore durante il salvataggio dei profili.</source>
         <translation>Error saving profiles.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="428"/>
+        <location filename="dialogs/steam_dialog.py" line="429"/>
         <source>Configurazione annullata o fallita.</source>
         <translation>Setup cancelled or failed.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="444"/>
-        <location filename="dialogs/steam_dialog.py" line="470"/>
+        <location filename="dialogs/steam_dialog.py" line="445"/>
+        <location filename="dialogs/steam_dialog.py" line="471"/>
         <source>Errore Percorso</source>
         <translation>Path Error</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="445"/>
+        <location filename="dialogs/steam_dialog.py" line="446"/>
         <source>Il percorso specificato non esiste o non è una cartella valida.</source>
         <translation>The specified path does not exist or is not a valid folder.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="455"/>
+        <location filename="dialogs/steam_dialog.py" line="456"/>
         <source>Percorso Manuale</source>
         <translation>Manual Path</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="456"/>
+        <location filename="dialogs/steam_dialog.py" line="457"/>
         <source>Inserisci il percorso COMPLETO dei salvataggi per &apos;{0}&apos;:</source>
         <translation>Enter the FULL path to your saves for &apos;{0}&apos;:</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="470"/>
+        <location filename="dialogs/steam_dialog.py" line="471"/>
         <source>Il percorso non può essere vuoto.</source>
         <translation>The path cannot be empty.</translation>
     </message>
@@ -721,13 +721,13 @@ Do you want to keep the current route?
         <location filename="gui_components/profile_creation_manager.py" line="62"/>
         <location filename="gui_components/profile_creation_manager.py" line="72"/>
         <location filename="gui_components/profile_creation_manager.py" line="216"/>
-        <location filename="gui_components/profile_creation_manager.py" line="535"/>
+        <location filename="gui_components/profile_creation_manager.py" line="536"/>
         <source>Errore Percorso</source>
         <translation>Path Error</translation>
     </message>
     <message>
         <location filename="gui_components/profile_creation_manager.py" line="48"/>
-        <location filename="gui_components/profile_creation_manager.py" line="535"/>
+        <location filename="gui_components/profile_creation_manager.py" line="536"/>
         <source>Il percorso non può essere vuoto.</source>
         <translation>The path cannot be empty.</translation>
     </message>
@@ -771,7 +771,7 @@ Please choose or create a specific subfolder.</translation>
         <location filename="gui_components/profile_creation_manager.py" line="101"/>
         <location filename="gui_components/profile_creation_manager.py" line="130"/>
         <location filename="gui_components/profile_creation_manager.py" line="238"/>
-        <location filename="gui_components/profile_creation_manager.py" line="558"/>
+        <location filename="gui_components/profile_creation_manager.py" line="559"/>
         <source>Errore</source>
         <translation>Error</translation>
     </message>
@@ -805,13 +805,13 @@ Please choose or create a specific subfolder.</translation>
     <message>
         <location filename="gui_components/profile_creation_manager.py" line="127"/>
         <location filename="gui_components/profile_creation_manager.py" line="236"/>
-        <location filename="gui_components/profile_creation_manager.py" line="556"/>
+        <location filename="gui_components/profile_creation_manager.py" line="557"/>
         <source>Profilo &apos;{0}&apos; creato.</source>
         <translation>Profile &apos;{0}&apos; created.</translation>
     </message>
     <message>
         <location filename="gui_components/profile_creation_manager.py" line="130"/>
-        <location filename="gui_components/profile_creation_manager.py" line="558"/>
+        <location filename="gui_components/profile_creation_manager.py" line="559"/>
         <source>Impossibile salvare il file dei profili.</source>
         <translation>Unable to save profile file.</translation>
     </message>
@@ -935,7 +935,7 @@ Choose another world or rename the existing profile.</translation>
     </message>
     <message>
         <location filename="gui_components/profile_creation_manager.py" line="234"/>
-        <location filename="gui_components/profile_creation_manager.py" line="555"/>
+        <location filename="gui_components/profile_creation_manager.py" line="556"/>
         <source>Profilo Creato</source>
         <translation>Profile Created</translation>
     </message>
@@ -1007,32 +1007,32 @@ Choose another world or rename the existing profile.</translation>
         <translation>Path search for &apos;{0}&apos; in progress...</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="413"/>
+        <location filename="gui_components/profile_creation_manager.py" line="414"/>
         <source>Ricerca percorso completata.</source>
         <translation>Path search completed.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="420"/>
+        <location filename="gui_components/profile_creation_manager.py" line="421"/>
         <source>Errore sconosciuto durante la ricerca.</source>
         <translation>Unknown error during search.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="422"/>
+        <location filename="gui_components/profile_creation_manager.py" line="423"/>
         <source>Errore Ricerca Percorso</source>
         <translation>Path Search Error</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="424"/>
+        <location filename="gui_components/profile_creation_manager.py" line="425"/>
         <source>Ricerca interrotta.</source>
         <translation>Search aborted.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="437"/>
+        <location filename="gui_components/profile_creation_manager.py" line="438"/>
         <source>Conferma Percorso Automatico</source>
         <translation>Confirm Automatic Route</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="439"/>
+        <location filename="gui_components/profile_creation_manager.py" line="440"/>
         <source>È stato rilevato questo percorso:
 
 {0}
@@ -1045,65 +1045,65 @@ Vuoi usarlo per il profilo &apos;{1}&apos;?</source>
 Do you want to use it for profile &apos;{1}&apos;?</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="448"/>
-        <location filename="gui_components/profile_creation_manager.py" line="515"/>
-        <location filename="gui_components/profile_creation_manager.py" line="539"/>
+        <location filename="gui_components/profile_creation_manager.py" line="449"/>
+        <location filename="gui_components/profile_creation_manager.py" line="516"/>
+        <location filename="gui_components/profile_creation_manager.py" line="540"/>
         <source>Creazione profilo annullata.</source>
         <translation>Profile creation cancelled.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="484"/>
+        <location filename="gui_components/profile_creation_manager.py" line="485"/>
         <source>[Inserisci Manualmente...]</source>
         <translation>[Insert Manually...]</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="493"/>
+        <location filename="gui_components/profile_creation_manager.py" line="494"/>
         <source>Conferma Percorso Salvataggi</source>
         <translation>Confirm Save Path</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="494"/>
+        <location filename="gui_components/profile_creation_manager.py" line="495"/>
         <source>Sono stati trovati questi percorsi potenziali per &apos;{0}&apos;.
 Seleziona quello corretto (ordinati per probabilità) o scegli l&apos;inserimento manuale:</source>
         <translation>These potential paths for &apos;{0}&apos; were found.
 Select the correct one (sorted by probability) or choose manual entry:</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="520"/>
+        <location filename="gui_components/profile_creation_manager.py" line="521"/>
         <source>Percorso Non Rilevato</source>
         <translation>Path Not Detected</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="520"/>
+        <location filename="gui_components/profile_creation_manager.py" line="521"/>
         <source>Impossibile rilevare automaticamente il percorso dei salvataggi per &apos;{0}&apos;.
 Per favore, inseriscilo manualmente.</source>
         <translation>Unable to automatically detect save path for &apos;{0}&apos;.
 Please enter it manually.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="524"/>
+        <location filename="gui_components/profile_creation_manager.py" line="525"/>
         <source>Errore interno durante la gestione dei risultati.</source>
         <translation>Internal error while handling results.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="530"/>
+        <location filename="gui_components/profile_creation_manager.py" line="531"/>
         <source>Inserisci il percorso COMPLETO per i salvataggi del profilo:
 &apos;{0}&apos;</source>
         <translation>Enter the FULL path for profile saves:
 &apos;{0}&apos;</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="531"/>
+        <location filename="gui_components/profile_creation_manager.py" line="532"/>
         <source>Percorso Salvataggi Manuale</source>
         <translation>Manual Save Path</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="536"/>
+        <location filename="gui_components/profile_creation_manager.py" line="537"/>
         <source>Creazione profilo annullata (percorso vuoto).</source>
         <translation>Profile creation cancelled (empty path).</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_creation_manager.py" line="555"/>
+        <location filename="gui_components/profile_creation_manager.py" line="556"/>
         <source>Profilo &apos;{0}&apos; creato con successo.</source>
         <translation>Profile &apos;{0}&apos; successfully created.</translation>
     </message>

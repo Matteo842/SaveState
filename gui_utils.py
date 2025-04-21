@@ -61,11 +61,12 @@ class DetectionWorkerThread(QThread):
     progress = Signal(str)
     finished = Signal(bool, dict) # Segnale emesso alla fine: successo(bool), risultati(dict)
 
-    def __init__(self, game_install_dir, profile_name_suggestion, current_settings):
+    def __init__(self, game_install_dir, profile_name_suggestion, current_settings, installed_steam_games_dict=None):
         super().__init__()
         self.game_install_dir = game_install_dir
         self.profile_name_suggestion = profile_name_suggestion
         self.current_settings = current_settings
+        self.installed_steam_games_dict = installed_steam_games_dict if installed_steam_games_dict is not None else {}
         self.is_running = True
         self.setObjectName("DetectionWorkerThread") # Aggiunto ObjectName
 
@@ -283,7 +284,8 @@ class DetectionWorkerThread(QThread):
                     heuristic_guesses_with_scores = core_logic.guess_save_path(
                         game_name=profile_name,
                         game_install_dir=self.game_install_dir,
-                        is_steam_game=False # Per drag&drop è generico
+                        is_steam_game=False, # Per drag&drop è generico
+                        installed_steam_games_dict=self.installed_steam_games_dict
                     )
                     logging.debug(f"Heuristic search results (with scores): {heuristic_guesses_with_scores}")
 
@@ -480,19 +482,21 @@ class SteamSearchWorkerThread(QThread):
     per i giochi Steam in background.
     """
     # Segnale emesso alla fine: restituisce la lista di tuple (path, score) trovate
-    finished = Signal(list)
+    finished = Signal(list, str)
     # Segnale per messaggi di stato semplici (opzionale)
     progress = Signal(str)
 
-    def __init__(self, game_name, game_install_dir, appid, steam_userdata_path, steam_id3_to_use):
-        super().__init__()
-        # Memorizza i parametri necessari per guess_save_path
-        self.game_name = game_name
-        self.game_install_dir = game_install_dir
-        self.appid = appid
-        self.steam_userdata_path = steam_userdata_path
-        self.steam_id3_to_use = steam_id3_to_use
-        self.setObjectName("SteamSearchWorkerThread")
+    def __init__(self, game_name, game_install_dir, appid, steam_userdata_path,
+                  steam_id3_to_use, installed_steam_games_dict, profile_name_for_results): # <-- AGGIUNTO ARG
+         super().__init__()
+         self.game_name = game_name
+         self.game_install_dir = game_install_dir
+         self.appid = appid
+         self.steam_userdata_path = steam_userdata_path
+         self.steam_id3_to_use = steam_id3_to_use
+         self.installed_steam_games_dict = installed_steam_games_dict
+         self.profile_name_for_results = profile_name_for_results # <-- MEMORIZZA
+         self.setObjectName("SteamSearchWorkerThread")
 
     def run(self):
         """Esegue la ricerca del percorso."""
@@ -508,7 +512,8 @@ class SteamSearchWorkerThread(QThread):
                 appid=self.appid,
                 steam_userdata_path=self.steam_userdata_path,
                 steam_id3_to_use=self.steam_id3_to_use,
-                is_steam_game=True # Importante per la logica interna di guess_save_path
+                is_steam_game=True, # Importante per la logica interna di guess_save_path
+                installed_steam_games_dict=self.installed_steam_games_dict # <-- NUOVO: passa l'argomento
             )
             logging.info(f"[Steam Worker] guess_save_path finished, found {len(results)} potential paths.")
             self.progress.emit(f"Search complete for '{self.game_name}'.") # Messaggio finale
@@ -521,4 +526,4 @@ class SteamSearchWorkerThread(QThread):
             results = []
         finally:
             # Emetti il segnale finished con la lista dei risultati (può essere vuota)
-            self.finished.emit(results)
+            self.finished.emit(results, self.profile_name_for_results)
