@@ -59,6 +59,13 @@ Please note: **English localisation is ongoing.**
 **Drag & Drop Shortcut for Profile Creation:**
 ![Drag and Drop GIF](images/drag_and_drop.gif)
 
+
+## How Save Search Works (Heuristics)
+
+The following diagram illustrates the main steps that SaveState follows when attempting to locate a game's save folder:
+
+![FlowChart](images/FlowChart.png)
+
 **Log Console:**
 ![Log Console](images/log.png)
 
