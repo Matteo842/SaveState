@@ -927,13 +927,19 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     game_abbreviations = generate_abbreviations(sanitized_name, game_install_dir)
     if sanitized_name not in game_abbreviations: game_abbreviations.insert(0, sanitized_name)
 
-    # Carica configurazioni (assicurati che config sia importato e le funzioni/variabili esistano)
+    # --- Calcola set maiuscoli/minuscoli ---
+    game_abbreviations_upper = set(a.upper() for a in game_abbreviations if a) # Aggiunto 'if a' per sicurezza
+    game_abbreviations_lower = set(a.lower() for a in game_abbreviations if a) # Aggiunto 'if a' per sicurezza
+    # --- FINE ---
+    
+    # Carica configurazioni
     try:
         ignore_words = getattr(config, 'SIMILARITY_IGNORE_WORDS', set())
         common_save_extensions = getattr(config, 'COMMON_SAVE_EXTENSIONS', set())
         common_save_filenames = getattr(config, 'COMMON_SAVE_FILENAMES', set())
         common_save_subdirs = getattr(config, 'COMMON_SAVE_SUBDIRS', [])
         common_publishers = getattr(config, 'COMMON_PUBLISHERS', [])
+        common_publishers_set = set(p.lower() for p in common_publishers if p) # Converti in minuscolo per check case-insensitive
         
         BANNED_FOLDER_NAMES_LOWER = getattr(config, 'BANNED_FOLDER_NAMES_LOWER', {
              "microsoft", "nvidia corporation", "intel", "amd", "google", "mozilla",
@@ -961,15 +967,16 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     common_save_subdirs_lower = {s.lower() for s in common_save_subdirs}
 
     logging.info(f"Heuristic save search for '{game_name}' (AppID: {appid})")
-    logging.debug(f"Generated name variations/abbreviations: {game_abbreviations}")
+    logging.debug(f"Generated name abbreviations (upper): {game_abbreviations_upper}")
+    logging.debug(f"Generated name abbreviations (lower): {game_abbreviations_lower}")
     logging.debug(f"Significant title words for sequence check: {game_title_sig_words}")
     logging.debug(f"Using banned folder names (lowercase): {BANNED_FOLDER_NAMES_LOWER}")
 
-# --- Funzione Helper add_guess (CON LOGGING DETTAGLIATO - v2) ---
+
+# --- Funzione Helper add_guess ---
     def add_guess(path, source_description):
         nonlocal guesses_data, checked_paths
         # Accede a: installed_steam_games_dict, appid, clean_for_comparison, THEFUZZ_AVAILABLE, fuzz, common_save_extensions, common_save_filenames (da guess_save_path e modulo/globali)
-
         if not path: return False
         try:
             # --- NORMALIZZA E STRIPPA IL PERCORSO ---
@@ -1211,6 +1218,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
         logging.debug(f"Exploring in '{loc_name}' ({base_folder})...")
         try:
             for lvl1_folder_name in os.listdir(base_folder):
+                lvl1_folder_name_lower = lvl1_folder_name.lower()
                 if lvl1_folder_name.lower() in BANNED_FOLDER_NAMES_LOWER: continue
                 try:
                      lvl1_path = os.path.join(base_folder, lvl1_folder_name)
@@ -1219,12 +1227,13 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
 
                 # <<< Determina se la cartella Lvl1 è potenzialmente correlata al gioco target >>>
                 # Controlla se è un publisher noto O se il nome è simile al gioco target
-                is_lvl1_related_to_target = (lvl1_folder_name in common_publishers) or \
+                is_lvl1_publisher = lvl1_folder_name_lower in common_publishers_set # Check contro il set (case-insensitive)
+                is_lvl1_related_to_target = is_lvl1_publisher or \
                                             (are_names_similar(sanitized_name, lvl1_folder_name, game_title_words_for_seq=game_title_sig_words))
                 
                 lvl1_name_upper = lvl1_folder_name.upper()
-                is_lvl1_match = lvl1_name_upper in [a.upper() for a in game_abbreviations] or \
-                                are_names_similar(sanitized_name, lvl1_folder_name, game_title_words_for_seq=game_title_sig_words, min_match_words=2, fuzzy_threshold=85)
+                is_lvl1_match = lvl1_name_upper in game_abbreviations_upper or \
+                                    are_names_similar(sanitized_name, lvl1_folder_name, game_title_words_for_seq=game_title_sig_words, min_match_words=2, fuzzy_threshold=85)
 
                 if is_lvl1_match:
                     logging.debug(f"  Match found at Lvl1: '{lvl1_folder_name}'")
@@ -1239,7 +1248,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                         except OSError: pass # Ignora errori lettura subdirs Lvl1
 
                 # Check Lvl2
-                try: # try esterno per gestire errori lettura contenuto lvl1_path <--- SELEZIONA DA QUI...
+                try: # try esterno per gestire errori lettura contenuto lvl1_path
                     for lvl2_folder_name in os.listdir(lvl1_path):
                         try: # try interno per gestire errori su singola cartella lvl2
                             lvl2_path = os.path.join(lvl1_path, lvl2_folder_name)
@@ -1248,9 +1257,9 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                             lvl2_name_lower = lvl2_folder_name.lower()
                             lvl2_name_upper = lvl2_folder_name.upper()
 
-                            # <<< INIZIO LOGICA DI MATCH LVL2 MODIFICATA >>>
+                            # <<< INIZIO LOGICA DI MATCH LVL2 >>>
                             is_lvl2_similar_name = are_names_similar(sanitized_name, lvl2_folder_name, game_title_words_for_seq=game_title_sig_words)
-                            is_lvl2_abbreviation = lvl2_name_upper in [a.upper() for a in game_abbreviations]
+                            is_lvl2_abbreviation = lvl2_name_upper in game_abbreviations_upper
                             is_lvl2_match = False
                             log_reason = ""
                             if is_lvl1_related_to_target:
@@ -1275,7 +1284,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                                     except OSError: pass
 
                             elif lvl2_name_lower in common_save_subdirs_lower and \
-                                 (lvl1_folder_name in common_publishers or is_lvl1_match or are_names_similar(sanitized_name, lvl1_folder_name, min_match_words=1)):
+                                (is_lvl1_publisher or is_lvl1_match or are_names_similar(sanitized_name, lvl1_folder_name, min_match_words=1)):
                                     logging.debug(f"    Match found at Lvl2 (Save Subdir): '{lvl2_folder_name}' in '{lvl1_folder_name}' (Parent relevant)")
                                     if add_guess(lvl2_path, f"{loc_name}/{lvl1_folder_name}/SaveSubdirLvl2/{lvl2_folder_name}"):
                                         # Check Lvl3
@@ -1336,7 +1345,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                         dir_name_lower = dir_name.lower(); dir_name_upper = dir_name.upper()
                         if dir_name_lower in common_save_subdirs_lower:
                             add_guess(potential_path, f"InstallDirWalk/SaveSubdir/{relative_log_path}")
-                        elif dir_name_upper in [a.upper() for a in game_abbreviations] or \
+                        elif dir_name_upper in game_abbreviations_upper or \
                              are_names_similar(sanitized_name, dir_name, game_title_words_for_seq=game_title_sig_words, fuzzy_threshold=85):
                                  add_guess(potential_path, f"InstallDirWalk/GameMatch/{relative_log_path}")
 
@@ -1356,13 +1365,13 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
         # 1. Crea il dizionario con i dati necessari a final_sort_key
         outer_scope_data_for_sort = {
              'game_name': game_name,
-             'appid': appid,
+             #'appid': appid,
              'installed_steam_games_dict': installed_steam_games_dict,
              'common_save_subdirs_lower': common_save_subdirs_lower,
-             'game_abbreviations': game_abbreviations,
+             'game_abbreviations': game_abbreviations, # old
+             'game_abbreviations_lower': game_abbreviations_lower, 
              'game_title_sig_words': game_title_sig_words,
              'steam_userdata_path': steam_userdata_path,
-             # Passiamo anche la funzione helper, assumendo che clean_for_comparison sia definita a livello modulo
              'clean_func': clean_for_comparison
         }
 
@@ -1424,19 +1433,22 @@ def final_sort_key(guess_tuple, outer_scope_data):
     # --- Estrai dati dalla tupla e dallo scope esterno ---
     path, source, contains_saves = guess_tuple
     game_name = outer_scope_data.get('game_name', "")
-    appid = outer_scope_data.get('appid', None)
+    #appid = outer_scope_data.get('appid', None)
     common_save_subdirs_lower = outer_scope_data.get('common_save_subdirs_lower', set()) # Recupera sottocartelle comuni
-    game_abbreviations = outer_scope_data.get('game_abbreviations', []) # Recupera abbreviazioni
+    #game_abbreviations = outer_scope_data.get('game_abbreviations', []) # Recupera abbreviazioni
     game_title_sig_words = outer_scope_data.get('game_title_sig_words', []) # Recupera parole significative
     steam_userdata_path = outer_scope_data.get('steam_userdata_path', None) # Recupera userdata path
     clean_func = outer_scope_data.get('clean_func', lambda x: x.lower()) # Recupera funzione pulizia
+    game_abbreviations_lower = outer_scope_data.get('game_abbreviations_lower', set())
     global THEFUZZ_AVAILABLE # Usa globale per thefuzz
 
     score = 0
     path_lower = path.lower()
-    basename_lower = os.path.basename(path_lower)
+    basename = os.path.basename(path) # Calcola basename dall'originale path una volta
+    basename_lower = basename.lower() # Deriva la versione minuscola da esso
     source_lower = source.lower()
     parent_dir_lower = os.path.dirname(path_lower)
+    parent_basename_lower = os.path.basename(parent_dir_lower)
 
     # --- Identifica Tipi Speciali di Percorso ---
     is_steam_remote = steam_userdata_path and 'steam userdata' in source_lower and '/remote' in source_lower
@@ -1469,12 +1481,12 @@ def final_sort_key(guess_tuple, outer_scope_data):
     if contains_saves and not is_steam_base: score += 600 # Bonus saves per NON steam_base
     is_common_save_subdir_basename = basename_lower in common_save_subdirs_lower
     if is_common_save_subdir_basename: score += 350
-    is_direct_abbr_match = any(os.path.basename(path) == abbr for abbr in game_abbreviations)
-    is_sequence_match = matches_initial_sequence(os.path.basename(path), game_title_sig_words)
+    is_direct_abbr_match = basename_lower in game_abbreviations_lower
+    is_sequence_match = matches_initial_sequence(basename, game_title_sig_words)
     is_direct_source = 'direct' in source_lower or 'gamenamelvl' in source_lower
     if is_direct_abbr_match or is_sequence_match or is_direct_source: score += 100 # Bonus ridotto mantenuto
     parent_basename_lower = os.path.basename(parent_dir_lower)
-    if is_common_save_subdir_basename and parent_basename_lower in [a.lower() for a in game_abbreviations]: score += 100
+    if is_common_save_subdir_basename and parent_basename_lower in game_abbreviations_lower: score += 100
 
     # --- BONUS SIMILARITA' NOME ---
     # (Logica per exact_match_bonus e fuzzy_set_bonus)
@@ -1569,3 +1581,24 @@ def get_directory_size(directory_path):
         logging.error(f"ERROR during size calculation for {directory_path}: {e}")
         return -1 # Restituisce -1 per indicare errore nel calcolo
     return total_size
+ 
+def get_display_name_from_backup_filename(filename):
+    """
+    Rimuove il suffisso timestamp (_YYYYMMDD_HHMMSS) da un nome file di backup
+    per una visualizzazione più pulita.
+
+    Es: "Backup_ProfiloX_20250422_030000.zip" -> "Backup_ProfiloX"
+    """
+    if isinstance(filename, str) and filename.endswith(".zip"):
+        # Tenta di rimuovere il pattern specifico _8cifre_6cifre.zip
+        # Usiamo re.sub per sostituire il pattern con '' (stringa vuota)
+        # Il pattern: _ seguita da 8 cifre (\d{8}), _ seguita da 6 cifre (\d{6}), seguito da .zip alla fine ($)
+        display_name = re.sub(r'_\d{8}_\d{6}\.zip$', '.zip', filename)
+        # Se la sostituzione ha funzionato, rimuoviamo anche l'estensione .zip finale per la visualizzazione
+        if display_name != filename: # Verifica se la sostituzione è avvenuta
+             return display_name[:-4] # Rimuovi ".zip"
+        else:
+             # Se il pattern non corrisponde, restituisci il nome senza estensione come fallback
+             logging.warning(f"Timestamp pattern not found in backup filename: {filename}")
+             return filename[:-4] if filename.endswith('.zip') else filename
+    return filename # Restituisci l'input originale se non è una stringa o non finisce per .zip

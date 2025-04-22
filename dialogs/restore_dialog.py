@@ -5,7 +5,6 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-# Importa la logica necessaria
 import core_logic
 import config
 import logging
@@ -14,7 +13,6 @@ import logging
 class RestoreDialog(QDialog):
     def __init__(self, profile_name, parent=None):
         super().__init__(parent)
-        # CORRETTO: Usa self.tr() per il titolo e poi .format()
         self.setWindowTitle(self.tr("Ripristina Backup per {}").format(profile_name))
         self.setMinimumWidth(450)
         self.backup_list_widget = QListWidget()
@@ -38,24 +36,20 @@ class RestoreDialog(QDialog):
             self.backup_list_widget.setEnabled(False)
         else:
             for name, path, date_str in backups:
-                item = QListWidgetItem(f"{name} ({date_str})") # Nome e data non tradotti, di solito ok
+                display_name = core_logic.get_display_name_from_backup_filename(name)
+                item_text = f"{display_name} ({date_str})" # Usa il nome pulito
+                item = QListWidgetItem(item_text)
                 item.setData(Qt.ItemDataRole.UserRole, path)
                 self.backup_list_widget.addItem(item)
 
-        # Usa la traduzione standard per OK e Cancel se possibile, altrimenti sovrascrivi
-        # buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        # Nota: Qt traduce automaticamente i pulsanti standard come Ok e Cancel se carichi qtbase_xx.qm
-        # Se vuoi un testo personalizzato, devi usare self.tr() come sotto.
+        # Usa la traduzione standard per OK e Cancel se possibile, altrimenti sovrascrivi)
         # Scegliamo di personalizzare OK e usare il Cancel standard
         buttons = QDialogButtonBox()
-        # CORRETTO: Usa self.tr() per il testo personalizzato del pulsante OK
         ok_button = buttons.addButton(self.tr("Ripristina Selezionato"), QDialogButtonBox.ButtonRole.AcceptRole)
         cancel_button = buttons.addButton(QDialogButtonBox.StandardButton.Cancel) # Qt gestisce la traduzione di "Cancel"
 
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-
-        # Il riferimento corretto al pulsante è quello restituito da addButton o tramite buttons.button(StandardButton...)
         ok_button.setEnabled(False) # Disabilita OK all'inizio
 
         layout = QVBoxLayout(self)

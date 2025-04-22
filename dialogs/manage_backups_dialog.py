@@ -75,7 +75,9 @@ class ManageBackupsDialog(QDialog):
         else:
             self.backup_list_widget.setEnabled(True)
             for name, path, date_str in backups:
-                item = QListWidgetItem(f"{name} ({date_str})")
+                display_name = core_logic.get_display_name_from_backup_filename(name)
+                item_text = f"{display_name} ({date_str})" # Usa il nome pulito
+                item = QListWidgetItem(item_text)
                 item.setData(Qt.ItemDataRole.UserRole, path)
                 self.backup_list_widget.addItem(item)
      @Slot()
