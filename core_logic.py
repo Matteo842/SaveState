@@ -965,7 +965,6 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     ignore_words_lower = {w.lower() for w in ignore_words}
     game_title_sig_words = [w for w in re.findall(r'\b\w+\b', sanitized_name) if w.lower() not in ignore_words_lower and len(w) > 1]
     common_save_subdirs_lower = {s.lower() for s in common_save_subdirs}
-    logging.debug(f"  [DEBUG SET CHECK] common_save_subdirs_lower = {common_save_subdirs_lower}")
 
     logging.info(f"Heuristic save search for '{game_name}' (AppID: {appid})")
     logging.debug(f"Generated name abbreviations (upper): {game_abbreviations_upper}")
@@ -1147,10 +1146,8 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                 norm_path = os.path.normpath(path)
                 if os.path.isdir(norm_path):
                      valid_locations[name] = norm_path
-                # else: logging.debug(f"Common location '{name}' path '{norm_path}' is not a valid directory.")
             except (OSError, TypeError, ValueError) as e_path:
                 logging.warning(f"Could not validate common location '{name}' path '{path}': {e_path}") # <-- Riga corretta
-        # else: logging.debug(f"Common location '{name}' path is None or empty.")
 
     logging.info(f"Valid common locations to search ({system}): {list(valid_locations.keys())}")
     logging.debug(f"Valid common location paths: {list(valid_locations.values())}")

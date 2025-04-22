@@ -59,58 +59,369 @@ BACKUP_BASE_DIR = r"D:\GameSaveBackups"
 MAX_BACKUPS = 3
 MIN_FREE_SPACE_GB = 2
 
-# --- Heuristic Search Configuration ---
-# Lista di sottocartelle comuni usate per i salvataggi
+# Lista di sottocartelle comuni usate SPECIFICAMENTE per contenere i file di salvataggio
+# all'interno della cartella principale del gioco o del publisher.
 COMMON_SAVE_SUBDIRS = [
-    'Saves', 'Save', 'SaveGame', 'Saved', 'SaveGames',
-    'savegame', 'savedata', 'save_data', 'SaveData'
-    # Aggiungi altre se necessario
+    # I più comuni (con variazioni maiuscolo/minuscolo/spazi)
+    'Save',
+    'Saves',
+    'save',
+    'saves',
+    'Saved',
+    'saved',
+    'SaveGame',
+    'SaveGames',
+    'savegame',
+    'savegames',
+    'GameSave', # Invertito
+    'GameSaves', # Invertito
+    'Saved Games', # Meno comune come sottocartella, più come genitore, ma includiamolo
+    'saved games',
+    'SaveData',
+    'Save Data', # Con spazio
+    'savedata',
+    'save_data', # Con underscore
+
+    # Legati a profili/slot
+    'Profiles',
+    'Profile',
+    'profiles',
+    'profile',
+    'User', # A volte usato
+    'Users',
+    'Player', # Meno comune, ma possibile
+    'Slots',
+    'slots',
+
+    # Usati da alcuni giochi specifici / engine
+    'data', # A volte contiene salvataggi, ma può essere ambiguo
+    'UserData', # Comune in alcuni contesti Steam/Source engine?
+    'PlayerProfiles',
+    'remote', # Specifico per Steam Userdata, ma a volte replicato altrove
+    'GameData', # Simile a SaveData
+
+    # Aggiungi qui altri nomi specifici che potresti incontrare
 ]
 
 # Lista di nomi di publisher comuni usati come cartelle genitore
 COMMON_PUBLISHERS = [
-    'My Games', # Cartella genitore comune
-    # Aggiungi nomi di publisher reali se noti pattern
-    # es., 'Ubisoft', 'Rockstar Games', 'WB Games', 'DevolverDigital'
+    # Generici / Standard Windows
+    'My Games',
+    'Saved Games',
+    'MyGames', # Variazione comune
+
+    # Publisher/Sviluppatori Maggiori (con varianti comuni)
+    'Ubisoft',
+    'EA',
+    'Electronic Arts',
+    'EA Games',
+    'Rockstar Games',
+    'Bethesda Softworks',
+    'Bethesda',
+    'CD Projekt Red',
+    'CDProjektRed', # Variazione comune
+    'Square Enix',
+    'Activision',
+    'Valve',
+    'Epic Games',
+    'FromSoftware',
+    'Capcom',
+    'Sega',
+    'Bandai Namco',
+    'BANDAI NAMCO Entertainment', # Spesso usato come nome cartella
+    'DevolverDigital',
+    'Devolver Digital',
+    '2K Games',
+    '2K',
+    'Paradox Interactive',
+    'Team17',
+    'Focus Home Interactive',
+    'Focus Entertainment', # Rebranding
+    'HelloGames',
+    'Hello Games',
+    'Warner Bros. Interactive Entertainment',
+    'Warner Bros. Games',
+    'WB Games',
+    'Team Cherry', # Esempio specifico (Hollow Knight)
+    'Landfall Games',
+    'Microsoft Studios', # Anche se meno comune per savegames diretti qui
+    'XboxGamesStudios', # Meno probabile ma possibile
+    'Mojang Studios', # Minecraft (anche se ha percorsi specifici)
+    'Sony Interactive Entertainment', # Meno comune su PC, ma possibile
+    'Koei Tecmo',
+    'KOEI TECMO GAMES CO., LTD.', # A volte nomi lunghi
+    'Konami',
+    'Konami Digital Entertainment',
+    'THQ Nordic',
+    'Embracer Group', # Gruppo che possiede THQ etc.
+    'Gearbox Publishing',
+    'Gearbox Software',
+    'Deep Silver', # Parte di Plaion/Embracer
+    'Plaion', # Nuovo nome di Koch Media
+    'Koch Media', # Vecchio nome
+    'Annapurna Interactive',
+    'Atari',
+    'Blizzard Entertainment', # Spesso ha cartelle dedicate
+    'Bungie',
+    'CI Games',
+    'Crytek',
+    'Daedalic Entertainment',
+    'Disney Interactive', # Meno comune ora?
+    'Double Fine Productions',
+    'Frontier Developments',
+    'GOG.com', # A volte salva giochi GOG in una cartella specifica qui
+    'Humble Games',
+    'IO Interactive',
+    'Kalypso Media',
+    'Marvelous',
+    'Nacon',
+    'NCSOFT',
+    'Nexon',
+    'NIS America',
+    'Obsidian Entertainment',
+    'Playtonic Games',
+    'Private Division', # Etichetta di Take-Two
+    'Raw Fury',
+    'Rebellion',
+    'Remedy Entertainment',
+    'Riot Games',
+    'Shiro Games',
+    'SNK CORPORATION',
+    'Spike Chunsoft',
+    'Stardock Entertainment',
+    'Starbreeze Studios',
+    'Take-Two Interactive', # Genitore di Rockstar, 2K
+    'TellTale Games', # Ricorda di includere anche possibili nomi per giochi episodici
+    'tinyBuild',
+    'Tripwire Interactive',
+    'Unknown Worlds Entertainment',
+    'Versus Evil',
+    'WayForward',
+    'Wizards of the Coast',
+    'Xbox Game Studios', # Alternativa
+    'Yacht Club Games',
+    'Ys Net',
+    'Zen Studios',
+
+    # Altri comuni trovati in AppData/Documents
+    '11 bit studios',
+    'Coffee Stain Studios', # O 'CoffeeStainStudios'
+    ' ConcernedApe', # Stardew Valley
+    'Dontnod Entertainment',
+    'Egosoft', # Serie X
+    'Failbetter Games', # Sunless Sea/Skies
+    'Gaslamp Games', # Dungeons of Dredmor
+    'Introversion Software', # Prison Architect
+    'Klei Entertainment', # Don't Starve, Oxygen Not Included
+    'Larian Studios', # Divinity, Baldur's Gate 3
+    'Motion Twin', # Dead Cells
+    'Ninja Kiwi', # Bloons
+    'Pocketwatch Games', # Monaco
+    'Red Hook Studios', # Darkest Dungeon
+    'Re-Logic', # Terraria
+    'Runic Games', # Torchlight
+    'Subset Games', # FTL, Into the Breach
+    'Supergiant Games', # Bastion, Hades
+    'ZAUM', # Disco Elysium
+
+    # Aggiungi qui altri nomi che ti vengono in mente o che noti mancare!
 ]
 
-# Set di estensioni file comuni per i salvataggi
+# Set di estensioni file comuni (minuscolo, con punto iniziale)
+# usate per i file di salvataggio dei giochi.
 COMMON_SAVE_EXTENSIONS = {
-    '.sav', '.save', '.dat', '.bin', '.slot', '.prof', '.profile', '.usr', '.sgd'
-    # Aggiungi altre se necessario
+    '.sav',        # La più classica (Save)
+    '.save',       # Variante comune
+    '.dat',        # Generica, ma usatissima (Data)
+    '.bin',        # Generica binaria, a volte usata
+    '.slot',       # Per salvataggi basati su slot
+    '.prof',       # Profile
+    '.profile',    # Profile
+    '.usr',        # User data
+    '.sgd',        # Steam Game Data? (Specifico a volte)
+    '.json',       # Usata da alcuni giochi moderni/indie (es. Minecraft per alcuni dati)
+    '.xml',        # Meno comune per salvataggi binari, ma usata per dati strutturati
+    '.bak',        # A volte usato come estensione per backup automatici interni
+    '.tmp',        # Raramente, ma alcuni giochi salvano temporanei che diventano save
+    '.gam',        # Usato da alcuni giochi più vecchi (Game)
+    '.ess',        # Skyrim Special Edition Save
+    '.fos',        # Fallout Save
+    '.lsf',        # Larian Studios Format (Divinity: Original Sin 2)
+    '.lsb',        # Larian Studios Format (Baldur's Gate 3?)
+    '.db',         # Alcuni giochi usano database SQLite o simili
+    '.ark',        # Usato da Ark: Survival Evolved
+
+    # Estensioni Emulazione (se vuoi includerle, altrimenti rimuovile)
+    '.srm',        # Save RAM (SNES, GBA, etc.)
+    '.state',      # Save State (comune in molti emulatori)
+    '.eep',        # EEPROM save (N64, GBA)
+    '.fla',        # Flash RAM save (GBA)
+    '.mc', '.mcr', # Memory Card (PS1/PS2)
+    '.gci',        # GameCube Memory Card Image
+
+    # Aggiungi altre estensioni specifiche che conosci o trovi
 }
 
-# Set di sottostringhe comuni trovate nei nomi dei file di salvataggio
+# Set di sottostringhe comuni (minuscole) trovate nei nomi dei file di salvataggio
+# Usato per il check euristico del contenuto di una cartella
 COMMON_SAVE_FILENAMES = {
-    'save', 'user', 'profile', 'settings', 'config', 'game', 'player', 'slot', 'progress'
-    # Aggiungi altre se necessario
+    'save',        # save01.dat, gamesave.sav, quicksave
+    'user',        # user.dat, user_profile.bin
+    'profile',     # profile.sav, playerprofile
+    'settings',    # settings.ini (a volte contiene progressi)
+    'config',      # config.sav (raro ma possibile)
+    'game',        # gamedata.bin
+    'player',      # player.dat
+    'slot',        # slot0.sav, save_slot_1
+    'data',        # gamedata, savedata
+    'progress',    # progress.dat
+    'meta',        # save_meta.dat (file metadati)
+    'header',      # saveheader.bin
+    'info',        # gameinfo.sav
+    'stats',       # playerstats.sav
+    'world',       # world.sav (giochi sandbox/survival)
+    'character',   # character1.sav
+    'persistent',  # persistent.sfs (es. KSP)
+    'quicksave',   # quicksave.sav
+    'autosave',    # autosave.dat
+
+    # Aggiungi altre parti comuni che noti
 }
 
-# Set di parole da ignorare quando si confrontano nomi di giochi/cartelle per similarità
-SIMILARITY_IGNORE_WORDS = {
-    'a', 'an', 'the', 'of', 'and', 'remake', 'intergrade', 'edition', 'goty',
-    'demo', 'trial', 'play', 'launch', 'definitive', 'enhanced', 'complete',
-    'collection', 'hd', 'ultra', 'deluxe', 'game', 'year', 'server', 'client',
-    'directx', 'redist', 'sdk', 'runtime'
-    # Aggiungi altre se necessario
-}
+# Lista di sottocartelle comuni usate SPECIFICAMENTE per contenere i file di salvataggio
+# all'interno della cartella principale del gioco o del publisher.
+COMMON_SAVE_SUBDIRS = [
+    # I più comuni (con variazioni maiuscolo/minuscolo/spazi)
+    'Save',
+    'Saves',
+    'save',
+    'saves',
+    'Saved',
+    'saved',
+    'SaveGame',
+    'SaveGames',
+    'savegame',
+    'savegames',
+    'GameSave', # Invertito
+    'GameSaves', # Invertito
+    'Saved Games', # Meno comune come sottocartella, più come genitore, ma includiamolo
+    'saved games',
+    'SaveData',
+    'Save Data', # Con spazio
+    'savedata',
+    'save_data', # Con underscore
+
+    # Legati a profili/slot
+    'Profiles',
+    'Profile',
+    'profiles',
+    'profile',
+    'User', # A volte usato
+    'Users',
+    'Player', # Meno comune, ma possibile
+    'Slots',
+    'slots',
+
+    # Usati da alcuni giochi specifici / engine
+    'data', # A volte contiene salvataggi, ma può essere ambiguo
+    'UserData', # Comune in alcuni contesti Steam/Source engine?
+    'PlayerProfiles',
+    'remote', # Specifico per Steam Userdata, ma a volte replicato altrove
+    'GameData', # Simile a SaveData
+
+    # Aggiungi qui altri nomi specifici che potresti incontrare
+]
 
 # Set di nomi di cartelle (minuscolo) da ignorare sempre durante la ricerca esplorativa
-# (Evita ricerche dentro cartelle di sistema/applicazioni irrilevanti)
+# (Evita ricerche dentro cartelle di sistema/applicazioni/cache irrilevanti)
 BANNED_FOLDER_NAMES_LOWER = {
-     "microsoft", "nvidia corporation", "intel", "amd", "google", "mozilla",
-     "common files", "internet explorer", "windows", "system32", "syswow64",
-     "program files", "program files (x86)", "programdata", "drivers",
-     "perflogs", "dell", "hp", "lenovo", "avast software", "avg",
-     "kaspersky lab", "mcafee", "adobe", "python", "java", "oracle", "steam",
-     "$recycle.bin", "config.msi", "system volume information",
-     "default", "all users", "public", "vortex", "soundtrack",
-     "artbook", "extras", "dlc", "ost", "digital Content",
-     # Aggiungi launcher/manager se causano problemi
-     "epic games", "ubisoft game launcher", "battle.net", "origin", "gog galaxy",
-     # Cartelle cache comuni
-     "cache", "shadercache", "gpucache", "webcache", "log", "logs", "crash", "crashes",
-     "temp", "tmp"
+     # Sistema Windows / Utente base
+     "windows", "system32", "syswow64", "program files", "program files (x86)",
+     "programdata", "intel", "amd", "nvidia", "nvidia corporation",
+     "drivers", "$recycle.bin", "config.msi", "system volume information",
+     "default", "all users", "public", "perflogs", "users",
+
+     # Applicazioni Comuni / Microsoft
+     "microsoft", "microsoft shared", "microsoft office", "office", "edge",
+     "onedrive", "onedrivetemp", "skydrive", "internet explorer", "windows defender",
+     "windows mail", "windows media player", "windows nt", "windowsapps",
+     "microsoft games", # A meno che non si cerchino specificamente giochi MS Store datati
+
+     # Browser / Internet
+     "google", "chrome", "google drive", "mozilla", "firefox", "opera", "opera gx",
+     "vivaldi", "brave-browser",
+
+     # Sviluppo / Runtime
+     "python", "java", "oracle", "jetbrains", "visual studio", "visual studio code",
+     "msbuild", "nuget", "packages", ".vscode", ".idea", "node_modules", "common files",
+
+     # Antivirus / Sicurezza
+     "avast software", "avg", "kaspersky lab", "mcafee", "symantec", "norton",
+     "eset", "malwarebytes", "windows defender advanced threat protection",
+
+     # Hardware / OEM
+     "dell", "hp", "lenovo", "asus", "acer", "msi", "realtek", "logitech",
+     "corsair", "razer",
+
+     # Launcher / Store Giochi (le cartelle principali, non le librerie giochi)
+     "steam", "epic games", "epicgameslauncher", "ubisoft game launcher", "uplay",
+     "battle.net", "blizzard entertainment", # A volte usato anche per saves, ma spesso separato
+     "origin", "ea desktop", "gog galaxy", "itch", "xboxgames", "gamingservices",
+
+     # Modding / Utility Giochi
+     "vortex", "modorganizer", "nexus mod manager", "reshade", "flawless widescreen",
+     "steam-tweaks", "steamgriddb", "nexus mods",
+
+     # Cartelle Temporanee / Cache / Log Comuni
+     "temp", "tmp", "cache", "shadercache", "gpucache", "webcache", "appcache",
+     "log", "logs", "crash", "crashes", "crashdumps", "minidumps", "diagtrack",
+     "installer", "installshield installation information", "package cache",
+
+     # Multimedia / Altro
+     "adobe", "discord", "spotify", "dropbox", "obs-studio", "zoom", "twitch",
+     "nvidia broadcast", "wallpaper_engine", "soundtrack", "artbook", "extras",
+     "dlc", "ost", "digital content", "common", # 'common' di Steam è escluso perché cerchiamo *dentro*
+
+     # Aggiunte specifiche da log precedenti
+     "pipelinecaches", "thirdparty", "platforms", "plugins", "binaries", "content",
+     "programs", "runtime", "slatedebug", "nvidia", "crashreportclient",
+     "movies", "paks", "splash", "config", # Se trovate come cartelle *genitore*
+     "__pycache__", # Comune in progetti Python
+     ".git", # Comune in progetti Git
+     ".svn", # Comune in progetti SVN
+}
+
+# Set di parole (minuscole) da ignorare durante il confronto di similarità
+# tra nomi di giochi e nomi di cartelle (fuzzy matching).
+# Aiuta a ignorare termini comuni, edizioni, articoli, ecc.
+SIMILARITY_IGNORE_WORDS = {
+    # Articoli/Preposizioni/Congiunzioni comuni (inglese/italiano)
+    'a', 'an', 'the', 'of', 'and', 'or', 'in', 'on', 'at', 'to', 'for', 'with',
+    'il', 'lo', 'la', 'i', 'gli', 'le', 'un', 'uno', 'una', 'di', 'a', 'da', 'in',
+    'con', 'su', 'per', 'tra', 'fra', 'e', 'o',
+
+    # Titoli/Edizioni Comuni
+    'game', 'edition', 'deluxe', 'ultimate', 'complete', 'collection', 'saga',
+    'chronicles', 'anthology', 'trilogy', 'remastered', 'remaster', 'remake',
+    'definitive', 'enhanced', 'extended', 'gold', 'platinum', 'standard',
+    'collectors', "collector's", 'limited', 'special', 'goty', 'game of the year',
+    'anniversary', 'legacy', 'hd', 'ultra', '4k', 'vr', 'digital',
+
+    # Demo/Versioni
+    'demo', 'trial', 'beta', 'alpha', 'preview', 'test', 'early access', 'full',
+
+    # Azioni/Termini Tecnici
+    'play', 'launch', 'launcher', 'start', 'server', 'client', 'update', 'patch',
+    'directx', 'redist', 'runtime', 'sdk', 'pack', 'tools', 'bonus', 'content',
+    'episode', 'chapter', 'part', 'book',
+
+    # Numeri Romani Comuni (come parole separate)
+    'i', 'ii', 'iii', 'iv', 'v', # Utili se "Final Fantasy VII Remake" vs "Final Fantasy 7" (7 non è qui)
+
+    # Altri termini generici
+    'official', 'soundtrack', 'artbook', 'dlc', # Anche se bannati come cartelle, meglio ignorarli anche nei nomi
+
+    # Aggiungi altre parole che ritieni opportune
 }
 # ==================================
 
