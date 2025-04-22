@@ -965,6 +965,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     ignore_words_lower = {w.lower() for w in ignore_words}
     game_title_sig_words = [w for w in re.findall(r'\b\w+\b', sanitized_name) if w.lower() not in ignore_words_lower and len(w) > 1]
     common_save_subdirs_lower = {s.lower() for s in common_save_subdirs}
+    logging.debug(f"  [DEBUG SET CHECK] common_save_subdirs_lower = {common_save_subdirs_lower}")
 
     logging.info(f"Heuristic save search for '{game_name}' (AppID: {appid})")
     logging.debug(f"Generated name abbreviations (upper): {game_abbreviations_upper}")
@@ -1322,6 +1323,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
 
         try:
             for root, dirs, files in os.walk(game_install_dir, topdown=True, onerror=lambda err: logging.warning(f"Error during install dir walk: {err}")):
+                logging.debug(f"  [DEBUG WALK] Entering root: {root}")
                 current_relative_depth = 0 # Default
                 try:
                     current_depth = root.rstrip(os.sep).count(os.sep)
@@ -1334,20 +1336,51 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                 dirs[:] = [d for d in dirs if d.lower() not in BANNED_FOLDER_NAMES_LOWER]
 
                 for dir_name in list(dirs):
-                    try: # Proteggi join e relpath
-                        potential_path = os.path.join(root, dir_name)
-                        relative_log_path = os.path.relpath(potential_path, game_install_dir)
-                    except (ValueError, TypeError):
-                         relative_log_path = dir_name # Fallback
+                    potential_path = None # Inizializza per sicurezza
+                    relative_log_path = dir_name # Inizializza fallback
+                    is_dir_actual = False # Inizializza il risultato del VERO check isdir
 
-                    # Check if potential_path is a directory before proceeding
-                    if os.path.isdir(potential_path):
-                        dir_name_lower = dir_name.lower(); dir_name_upper = dir_name.upper()
+                    # 1. Calcola path e verifica se è una directory in modo sicuro
+                    try:
+                        potential_path = os.path.join(root, dir_name)
+                        # Il check isdir è fondamentale, fallo qui dentro il try
+                        is_dir_actual = os.path.isdir(potential_path)
+                        # Calcola relpath solo se potential_path è valido
+                        relative_log_path = os.path.relpath(potential_path, game_install_dir)
+
+                    except (ValueError, TypeError, OSError) as e_path_or_dir:
+                        # Se c'è un errore nel creare il path o nel fare isdir, logga e salta
+                        logging.debug(f"    [DEBUG WALK] Error calculating path or checking isdir for dir='{dir_name}' in root='{root}': {e_path_or_dir}")
+                        continue # Salta al prossimo dir_name nel ciclo
+
+                    # 2. Log di Debug (Usa il risultato 'is_dir_actual' appena calcolato)
+                    # --- BLOCCO DEBUG ---
+                    logging.debug(f"    [DEBUG WALK] Analyzing: root='{root}', dir='{dir_name}', IsDir={is_dir_actual}")
+                    if is_dir_actual: # Logga dettagli solo se è una directory valida
+                        temp_dir_name_lower = dir_name.lower()
+                        temp_dir_name_upper = dir_name.upper()
+                        is_common_subdir_debug = temp_dir_name_lower in common_save_subdirs_lower
+                        is_game_match_debug = temp_dir_name_upper in game_abbreviations_upper or \
+                                            are_names_similar(sanitized_name, dir_name, game_title_words_for_seq=game_title_sig_words, fuzzy_threshold=85)
+                        logging.debug(f"      [DEBUG WALK] -> Check results: is_common_subdir={is_common_subdir_debug}, is_game_match={is_game_match_debug}")
+                    # --- FINE BLOCCO DEBUG ---
+
+                    # 3. Logica Principale (Usa il risultato 'is_dir_actual')
+                    if is_dir_actual:
+                        # Calcola versioni lower/upper solo se è una directory
+                        dir_name_lower = dir_name.lower()
+                        dir_name_upper = dir_name.upper()
+
+                        logging.debug(f"        [DEBUG WALK] Evaluating conditions for dir='{dir_name}'...") # Log Pre-Check
+
+                        # Controlla se è una common save subdir o un game match
                         if dir_name_lower in common_save_subdirs_lower:
+                            logging.debug(f"          [DEBUG WALK] Match Common! -> Calling add_guess for {potential_path}") # Log Pre-Add
                             add_guess(potential_path, f"InstallDirWalk/SaveSubdir/{relative_log_path}")
                         elif dir_name_upper in game_abbreviations_upper or \
-                             are_names_similar(sanitized_name, dir_name, game_title_words_for_seq=game_title_sig_words, fuzzy_threshold=85):
-                                 add_guess(potential_path, f"InstallDirWalk/GameMatch/{relative_log_path}")
+                            are_names_similar(sanitized_name, dir_name, game_title_words_for_seq=game_title_sig_words, fuzzy_threshold=85):
+                                logging.debug(f"          [DEBUG WALK] Match GameName/Abbr! -> Calling add_guess for {potential_path}") # Log Pre-Add
+                                add_guess(potential_path, f"InstallDirWalk/GameMatch/{relative_log_path}")
 
         except Exception as e_walk:
             logging.error(f"Unexpected error during os.walk in '{game_install_dir}': {e_walk}")

@@ -59,6 +59,60 @@ BACKUP_BASE_DIR = r"D:\GameSaveBackups"
 MAX_BACKUPS = 3
 MIN_FREE_SPACE_GB = 2
 
+# --- Heuristic Search Configuration ---
+# Lista di sottocartelle comuni usate per i salvataggi
+COMMON_SAVE_SUBDIRS = [
+    'Saves', 'Save', 'SaveGame', 'Saved', 'SaveGames',
+    'savegame', 'savedata', 'save_data', 'SaveData'
+    # Aggiungi altre se necessario
+]
+
+# Lista di nomi di publisher comuni usati come cartelle genitore
+COMMON_PUBLISHERS = [
+    'My Games', # Cartella genitore comune
+    # Aggiungi nomi di publisher reali se noti pattern
+    # es., 'Ubisoft', 'Rockstar Games', 'WB Games', 'DevolverDigital'
+]
+
+# Set di estensioni file comuni per i salvataggi
+COMMON_SAVE_EXTENSIONS = {
+    '.sav', '.save', '.dat', '.bin', '.slot', '.prof', '.profile', '.usr', '.sgd'
+    # Aggiungi altre se necessario
+}
+
+# Set di sottostringhe comuni trovate nei nomi dei file di salvataggio
+COMMON_SAVE_FILENAMES = {
+    'save', 'user', 'profile', 'settings', 'config', 'game', 'player', 'slot', 'progress'
+    # Aggiungi altre se necessario
+}
+
+# Set di parole da ignorare quando si confrontano nomi di giochi/cartelle per similarità
+SIMILARITY_IGNORE_WORDS = {
+    'a', 'an', 'the', 'of', 'and', 'remake', 'intergrade', 'edition', 'goty',
+    'demo', 'trial', 'play', 'launch', 'definitive', 'enhanced', 'complete',
+    'collection', 'hd', 'ultra', 'deluxe', 'game', 'year', 'server', 'client',
+    'directx', 'redist', 'sdk', 'runtime'
+    # Aggiungi altre se necessario
+}
+
+# Set di nomi di cartelle (minuscolo) da ignorare sempre durante la ricerca esplorativa
+# (Evita ricerche dentro cartelle di sistema/applicazioni irrilevanti)
+BANNED_FOLDER_NAMES_LOWER = {
+     "microsoft", "nvidia corporation", "intel", "amd", "google", "mozilla",
+     "common files", "internet explorer", "windows", "system32", "syswow64",
+     "program files", "program files (x86)", "programdata", "drivers",
+     "perflogs", "dell", "hp", "lenovo", "avast software", "avg",
+     "kaspersky lab", "mcafee", "adobe", "python", "java", "oracle", "steam",
+     "$recycle.bin", "config.msi", "system volume information",
+     "default", "all users", "public", "vortex", "soundtrack",
+     "artbook", "extras", "dlc", "ost", "digital Content",
+     # Aggiungi launcher/manager se causano problemi
+     "epic games", "ubisoft game launcher", "battle.net", "origin", "gog galaxy",
+     # Cartelle cache comuni
+     "cache", "shadercache", "gpucache", "webcache", "log", "logs", "crash", "crashes",
+     "temp", "tmp"
+}
+# ==================================
 
 # Stile QSS per il tema scuro (può essere spostato in un file .qss separato)
 DARK_THEME_QSS = """
