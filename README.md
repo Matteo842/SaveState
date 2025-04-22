@@ -116,10 +116,10 @@ Get SaveState up and running on your system.
 ## Usage
 
 1.  **Launch** `SaveState_gui.exe` or run `python SaveState_gui.py`.
-2.  **Configure Settings (Recommended on first launch):** Click the Settings button. Set your desired "Percorso Base Backup" (Base Backup Path) where all backups will be stored in subfolders named after your profiles. Adjust other settings like max backups, theme, language, etc.
+2.  **Configure Settings (Recommended on first launch):** Click the Settings button. Set your desired Base Backup Path where all backups will be stored in subfolders named after your profiles. Adjust other settings like max backups, theme, language, etc.
 3.  **Add Profiles:**
     * **Manually:** Click New Manual Profile, enter a name, and provide the full path to the game's save folder.
-    * **Steam:** Click Manage Steam Games. Select a detected game and click "Configura Profilo Selezionato" (Configure Selected Profile). The app will try to guess the save path; confirm or provide it manually.
+    * **Steam:** Click Manage Steam Games. Select a detected game and click Configure Selected Profile. The app will try to guess the save path; confirm or provide it manually.
     * **Minecraft:** Click the Minecraft button. Select a world from the list and click OK. A profile will be created using the world name and its folder path.
     * **Drag & Drop:** Drag a game's `.lnk` shortcut file from your Desktop or elsewhere onto the main application window. The app will suggest a profile name and start searching for the save path; you'll be prompted to confirm or enter it manually.
 4.  **Manage Profiles:**
@@ -127,7 +127,7 @@ Get SaveState up and running on your system.
     * Click **Run Backup** to back it up.
     * Click **Restore from Backup** to restore from a previous backup.
     * Click **Manage Backup** to view and delete specific backup archives for that profile.
-    * Click the **Desktop Icon button** ("SC") to create a shortcut on your Desktop for quick backups of that profile.
+    * Click the **Shortcut Icon button** to create a shortcut on your Desktop for quick backups of that profile.
     * Click **Delete Profile** to remove the profile entry (this does not delete existing backup files).
 5.  **Other Actions:**
     * Use **Open Backup Folder** to quickly open the base backup location in Explorer.
@@ -146,7 +146,7 @@ This project relies on the following Python packages:
 * **Optional (for enhanced features):**
     * [`vdf`](https://pypi.org/project/vdf/): Used to parse Valve's VDF/ACF files to get more accurate Steam game names and library information. If not installed, Steam detection will still work but might use less precise names.
     * [`nbtlib`](https://pypi.org/project/nbtlib/): Used to read Minecraft's `level.dat` NBT files to get the actual world names. If not installed, the world's folder name will be used as the profile name instead.
-    *  [`thefuzz`]((https://github.com/seatgeek/thefuzz)): It uses Levenshtein Distance to calculate the differences between sequences in a simple-to-use package.
+    *  [`thefuzz`]((https://github.com/seatgeek/thefuzz)): It uses Levenshtein Distance to calculate the differences between sequences.
 
 You can install all dependencies using pip. It is recommended to create a `requirements.txt` file with the following content:
 
