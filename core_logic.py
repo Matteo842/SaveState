@@ -31,10 +31,6 @@ else:
 logging.info(f"Profile file path in use: {PROFILES_FILE_PATH}")
 # --- Fine definizione ---
 
-# Setup logging base (opzionale, ma utile per debug)
-# Assicurati che sia configurato solo una volta all'avvio dell'applicazione
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 # <<< Funzione per generare abbreviazioni multiple >>>
 def generate_abbreviations(name, game_install_dir=None):
     """
@@ -461,10 +457,11 @@ def list_available_backups(profile_name, backup_base_dir):
             fpath = os.path.join(profile_backup_dir, fname)
             try:
                 mtime = os.path.getmtime(fpath)
-                date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+                backup_datetime = datetime.fromtimestamp(mtime)
+                #date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
             except Exception:
                 date_str = "Unknown date"
-            backups.append((fname, fpath, date_str))
+            backups.append((fname, fpath, backup_datetime))
     except Exception as e:
         logging.error(f"Error listing backups for '{profile_name}': {e}")
 
