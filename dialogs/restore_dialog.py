@@ -96,7 +96,13 @@ class RestoreDialog(QDialog):
             # Logga solo se non troviamo il contenitore dei pulsanti
             logging.error("RestoreDialog: QDialogButtonBox non trovato in on_selection_change!")
             return
-        ok_button = button_box.button(QDialogButtonBox.ButtonRole.AcceptRole)
+        all_buttons = button_box.buttons()
+        ok_button = None # Inizializza a None
+        # Cerca tra i pulsanti quello che ha il ruolo AcceptRole
+        for button in all_buttons:
+            if button_box.buttonRole(button) == QDialogButtonBox.ButtonRole.AcceptRole:
+                ok_button = button # Trovato!
+                break # Esci dal ciclo appena lo trovi
 
         if ok_button:
             # Recupera i dati associati all'item selezionato

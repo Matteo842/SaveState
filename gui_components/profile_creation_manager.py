@@ -112,7 +112,7 @@ class ProfileCreationManager:
 
                 if validated_path:
                     logging.debug(f"handle_new_profile - Valid path: '{validated_path}'.")
-                    mw.profiles[profile_name] = validated_path # Modifica dizionario in MainWindow
+                    mw.profiles[profile_name] = {'path': validated_path} # Salva come dizionario
                     logging.debug("handle_new_profile - Attempting to save profiles to file...")
                     save_success = core_logic.save_profiles(mw.profiles) # Salva usando core_logic
                     logging.debug(f"handle_new_profile - Result of core_logic.save_profiles: {save_success}")
@@ -224,7 +224,7 @@ class ProfileCreationManager:
                     return
 
                 # Crea e Salva Nuovo Profilo
-                mw.profiles[profile_name] = world_path
+                mw.profiles[profile_name] = {'path': world_path} # Salva come dizionario
                 if core_logic.save_profiles(mw.profiles):
                     logging.info(f"Minecraft profile '{profile_name}' created.")
                      # Aggiorna la tabella TRAMITE il manager della tabella in MainWindow
@@ -547,7 +547,7 @@ class ProfileCreationManager:
 
             if validated_path:
                 logging.debug(f"Final path validated: {validated_path}. Saving profile '{profile_name}'")
-                mw.profiles[profile_name] = validated_path # Aggiorna dizionario in MainWindow
+                mw.profiles[profile_name] = {'path': validated_path} # Salva come dizionario
                 if core_logic.save_profiles(mw.profiles):
                     # Aggiorna la tabella TRAMITE il manager della tabella in MainWindow
                     if hasattr(mw, 'profile_table_manager'):

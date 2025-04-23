@@ -229,30 +229,87 @@ def get_profile_backup_summary(profile_name, backup_base_dir):
 
 # --- Funzione per caricare i profili ---
 def load_profiles():
-    """Carica i profili da PROFILES_FILE_PATH."""
-    profiles = {}
+    """Carica i profili da PROFILES_FILE_PATH, assicurandosi che
+       i valori siano dizionari contenenti almeno la chiave 'path'.
+    """
+    profiles_data = {} # Inizializza vuoto
+    # Prima prova a caricare il contenuto grezzo del file JSON
     if os.path.exists(PROFILES_FILE_PATH):
         try:
             with open(PROFILES_FILE_PATH, 'r', encoding='utf-8') as f:
                 profiles_data = json.load(f)
-                # <<< MODIFICATO: Gestione formato vecchio/nuovo
-                if isinstance(profiles_data, dict):
-                    # Potrebbe essere il formato vecchio o nuovo con metadata
-                    if "__metadata__" in profiles_data:
-                        profiles = profiles_data.get("profiles", {}) # Nuovo formato
-                    else:
-                         profiles = profiles_data # Vecchio formato? Assumiamo sia valido
-                else:
-                    logging.warning(f"Profile file '{PROFILES_FILE_PATH}' has unexpected format (not a dictionary).")
-
-            logging.info(f"Loaded {len(profiles)} profiles from '{PROFILES_FILE_PATH}'.")
+            logging.debug(f"File '{PROFILES_FILE_PATH}' caricato.")
         except json.JSONDecodeError:
-            logging.warning(f"Profile file '{PROFILES_FILE_PATH}' corrupt or empty.")
+            logging.warning(f"File profili '{PROFILES_FILE_PATH}' corrotto o vuoto. Sarà sovrascritto al prossimo salvataggio.")
+            profiles_data = {} # Tratta come vuoto se corrotto
         except Exception as e:
-            logging.error(f"Error loading profiles from '{PROFILES_FILE_PATH}': {e}")
-    else:
-        logging.info(f"Profile file '{PROFILES_FILE_PATH}' not found, starting fresh.")
-    return profiles
+            logging.error(f"Errore imprevisto durante la lettura iniziale di '{PROFILES_FILE_PATH}': {e}")
+            profiles_data = {} # Tratta come vuoto per altri errori
+
+    # Ora processa i dati caricati (profiles_data)
+    loaded_profiles = {} # Dizionario per i profili processati e validati
+    profiles_dict_source = {} # Dizionario sorgente da cui leggere i profili effettivi
+
+    try:
+        if isinstance(profiles_data, dict):
+            # Controlla se è il nuovo formato con metadati o il vecchio formato
+            if "__metadata__" in profiles_data and "profiles" in profiles_data:
+                profiles_dict_source = profiles_data.get("profiles", {}) # Nuovo formato
+                logging.debug("Processing profiles from new format (with metadata).")
+            elif "__metadata__" not in profiles_data:
+                # Se non ci sono metadati, assumi sia il vecchio formato (dict nome->path)
+                profiles_dict_source = profiles_data
+                logging.debug("Processing profiles assuming old format (name -> path string).")
+            else:
+                # Formato con metadata ma senza chiave 'profiles'? Strano.
+                logging.warning("Profile file has '__metadata__' but missing 'profiles' key. Treating as empty.")
+                profiles_dict_source = {}
+
+            # --- Ciclo di Conversione e Validazione ---
+            for name, path_or_data in profiles_dict_source.items():
+                if isinstance(path_or_data, str):
+                    # Vecchio formato: converti in dizionario base
+                    logging.debug(f"Converting old format profile '{name}' to dict.")
+                    # Verifica validità percorso prima di aggiungere
+                    if os.path.isdir(path_or_data): # Controlla se il percorso è valido
+                        loaded_profiles[name] = {'path': path_or_data}
+                    else:
+                        logging.warning(f"Path '{path_or_data}' for profile '{name}' (old format) is invalid. Skipping.")
+                elif isinstance(path_or_data, dict):
+                    # Nuovo formato o già convertito: assicurati che 'path' esista e sia valido
+                    profile_path = path_or_data.get('path')
+                    if profile_path and isinstance(profile_path, str) and os.path.isdir(profile_path):
+                        # Se il path esiste ed è valido, copia il dizionario
+                        loaded_profiles[name] = path_or_data.copy() # Usa copy per sicurezza
+                    elif profile_path:
+                         # Se il path esiste ma non è valido
+                         logging.warning(f"Path '{profile_path}' in profile dict for '{name}' is invalid. Setting empty path.")
+                         temp_profile = path_or_data.copy()
+                         temp_profile['path'] = "" # Imposta path vuoto
+                         loaded_profiles[name] = temp_profile
+                    else:
+                        # Se manca la chiave 'path'
+                        logging.warning(f"Profile '{name}' is a dict but missing 'path' key or path is invalid. Setting empty path.")
+                        temp_profile = path_or_data.copy()
+                        temp_profile['path'] = "" # Imposta path vuoto
+                        loaded_profiles[name] = temp_profile
+                else:
+                    # Formato imprevisto per questo profilo
+                    logging.warning(f"Unrecognized profile format for '{name}'. Skipping.")
+                    continue # Salta questo profilo problematico
+
+        else:
+            # Il file JSON non conteneva un dizionario principale
+            logging.error(f"Profile file '{PROFILES_FILE_PATH}' content is not a valid JSON dictionary.")
+            loaded_profiles = {}
+
+    except Exception as e:
+        # Cattura errori durante l'elaborazione del dizionario caricato
+        logging.error(f"Error processing loaded profile data: {e}", exc_info=True)
+        loaded_profiles = {} # Reset in caso di errore nell'elaborazione
+
+    logging.info(f"Loaded and processed {len(loaded_profiles)} profiles from '{PROFILES_FILE_PATH}'.")
+    return loaded_profiles # Restituisci i profili processati
 
 # --- Funzione per salvare i profili ---
 def save_profiles(profiles):

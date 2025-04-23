@@ -992,7 +992,7 @@ class MainWindow(QMainWindow):
             if validated_path:
                 # Percorso valido, procedi con salvataggio
                 logging.info(f"Saving profile '{profile_name}' with path '{validated_path}' from MainWindow slot.")
-                self.profiles[profile_name] = validated_path # Aggiorna dizionario in memoria
+                self.profiles[profile_name] = {'path': validated_path} # Salva come dizionario
                 if core_logic.save_profiles(self.profiles): # Salva su file
                     self.status_label.setText(self.tr("Profilo '{0}' configurato.").format(profile_name))
                     self.profile_table_manager.update_profile_table() # Aggiorna tabella nella GUI
@@ -1040,10 +1040,23 @@ class MainWindow(QMainWindow):
     def handle_backup(self):
         profile_name = self.get_selected_profile_name()
         if not profile_name: return
+        profile_data = self.profiles.get(profile_name) # Ottieni il DIZIONARIO del profilo
+        if not profile_data or not isinstance(profile_data, dict):
+            # Controllo extra: se non troviamo un dizionario, c'è un problema
+            QMessageBox.critical(self, self.tr("Errore Interno"), f"Dati profilo corrotti o mancanti per '{profile_name}'.")
+            logging.error(f"Dati profilo non validi per '{profile_name}': {profile_data}")
+            return
 
-        save_path = self.profiles.get(profile_name)
-        if not save_path:
-            QMessageBox.critical(self, "Errore", f"Percorso sorgente non trovato per il profilo '{profile_name}'. Verifica profilo.")
+        save_path = profile_data.get('path') # ESTRAI la stringa 'path' dal dizionario
+
+        # Ora controlla se la stringa 'save_path' è valida
+        if not save_path: # Se è None o stringa vuota
+            QMessageBox.critical(self, self.tr("Errore"), f"Percorso sorgente non trovato nei dati del profilo '{profile_name}'. Verifica profilo.")
+            return
+
+        # Ora possiamo usare la stringa save_path con os.path.isdir
+        if not os.path.isdir(save_path):
+            QMessageBox.critical(self, self.tr("Errore Percorso Sorgente"), self.tr("La cartella sorgente dei salvataggi non esiste o non è valida:\n{0}").format(save_path))
             return
 
         # --- Recupera Impostazioni Necessarie ---
@@ -1128,28 +1141,67 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def handle_restore(self):
-        profile_name = self.get_selected_profile_name()
-        if not profile_name: return
-        save_path = self.profiles.get(profile_name)
-        if not save_path: QMessageBox.critical(self, "Errore", f"Percorso non trovato per il profilo '{profile_name}'."); return
-        dialog = RestoreDialog(profile_name, self)
-        if dialog.exec():
+        # Usa il manager per ottenere il nome profilo selezionato
+        profile_name = self.profile_table_manager.get_selected_profile_name()
+        if not profile_name: return # Esce se nessun profilo è selezionato
+
+        # --- Recupera e valida i dati del profilo ---
+        profile_data = self.profiles.get(profile_name) # Ottieni il DIZIONARIO del profilo
+        if not profile_data or not isinstance(profile_data, dict):
+            # Controllo extra: se non troviamo un dizionario valido, mostra errore ed esci
+            QMessageBox.critical(self, self.tr("Errore Interno"), f"Dati profilo corrotti o mancanti per '{profile_name}'.")
+            logging.error(f"Dati profilo non validi per '{profile_name}' durante restore: {profile_data}")
+            return
+
+        # ESTRAI la stringa 'path' dal dizionario
+        save_path_string = profile_data.get('path')
+
+        # Valida la stringa del percorso estratta
+        if not save_path_string: # Se è None o stringa vuota
+            QMessageBox.critical(self, self.tr("Errore"), f"Percorso di destinazione non definito nei dati del profilo '{profile_name}'. Impossibile ripristinare.")
+            return
+
+        # Mostra il dialogo per selezionare l'archivio da ripristinare
+        dialog = RestoreDialog(profile_name, self) # Passa self come parent
+        if dialog.exec(): # Se l'utente preme "Ripristina Selezionato" nel dialogo
             archive_to_restore = dialog.get_selected_path()
-            if archive_to_restore:
-                confirm = QMessageBox.warning(self, "Conferma Ripristino Finale",
-                                              f"ATTENZIONE!\nRipristinare '{os.path.basename(archive_to_restore)}' sovrascriverà i file in:\n'{save_path}'\n\nProcedere?",
+            if archive_to_restore: # Se un archivio è stato effettivamente selezionato
+                # Mostra messaggio di conferma finale, USANDO la stringa del percorso corretta
+                confirm = QMessageBox.warning(self,
+                                              self.tr("Conferma Ripristino Finale"), # Titolo tradotto
+                                              # Messaggio tradotto e formattato con la stringa save_path_string
+                                              self.tr("ATTENZIONE!\nRipristinare '{0}' sovrascriverà i file in:\n'{1}'\n\nProcedere?").format(os.path.basename(archive_to_restore), save_path_string),
                                               QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                              QMessageBox.StandardButton.No)
+                                              QMessageBox.StandardButton.No) # Bottone predefinito: No
+
                 if confirm == QMessageBox.StandardButton.Yes:
+                    # Se l'utente conferma, avvia il worker thread per il ripristino
                     self.status_label.setText(self.tr("Avvio ripristino per '{0}'...").format(profile_name))
-                    self.set_controls_enabled(False)
-                    self.worker_thread = WorkerThread(core_logic.perform_restore, profile_name, save_path, archive_to_restore)
+                    self.set_controls_enabled(False) # Disabilita controlli GUI
+                    
+                    # Crea il WorkerThread passando la STRINGA del percorso (save_path_string)
+                    self.worker_thread = WorkerThread(
+                        core_logic.perform_restore, # Funzione da eseguire nel thread
+                        profile_name,               # Argomento 1 per perform_restore
+                        save_path_string,           # Argomento 2 (la stringa del percorso!)
+                        archive_to_restore          # Argomento 3
+                    )
+                    # Connetti segnali del thread
                     self.worker_thread.finished.connect(self.on_operation_finished)
                     self.worker_thread.progress.connect(self.status_label.setText)
+                    # Avvia il thread
                     self.worker_thread.start()
-                else: self.status_label.setText(self.tr("Ripristino annullato."))
-            else: self.status_label.setText(self.tr("Nessun backup selezionato per il ripristino."))
-        else: self.status_label.setText(self.tr("Selezione backup annullata."))
+                    logging.info(f"Started restore worker thread for '{profile_name}'.")
+                else:
+                    # L'utente ha annullato la conferma finale
+                    self.status_label.setText(self.tr("Ripristino annullato."))
+            else:
+                # L'utente ha chiuso il dialogo RestoreDialog senza selezionare un archivio valido
+                self.status_label.setText(self.tr("Nessun backup selezionato per il ripristino."))
+        else:
+            # L'utente ha premuto "Annulla" nel dialogo RestoreDialog
+            self.status_label.setText(self.tr("Selezione backup annullata."))
+
 
     @Slot()
     def handle_manage_backups(self):

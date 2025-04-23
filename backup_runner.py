@@ -169,26 +169,36 @@ def run_silent_backup(profile_name):
         return False
 
     # 4. Recupera Dati Necessari
-    save_path = profiles[profile_name]
+    profile_data = profiles.get(profile_name) # Ottieni il DIZIONARIO del profilo
+    if not profile_data or not isinstance(profile_data, dict):
+        # Se non troviamo un dizionario valido
+        logging.error(f"Dati profilo non validi per '{profile_name}' in backup_runner. Backup annullato.")
+        show_notification(False, f"Errore: Dati profilo non validi per {profile_name}.")
+        return False
+
+    save_path = profile_data.get('path') # ESTRAI la stringa 'path' dal dizionario
+
+    # Ora valida la stringa 'save_path' estratta
+    if not save_path or not isinstance(save_path, str) or not os.path.isdir(save_path):
+        logging.error(f"Percorso salvataggi per '{profile_name}' non valido o non è una cartella: '{save_path}'")
+        show_notification(False, f"Errore: Percorso salvataggi non valido per {profile_name}.")
+        return False
+    # Ora save_path contiene la stringa del percorso valida e verificata
+
     backup_base_dir = settings.get("backup_base_dir")
     max_bk = settings.get("max_backups")
     max_src_size = settings.get("max_source_size_mb")
     compression_mode = settings.get("compression_mode", "standard")
-    # Aggiungiamo anche il check spazio qui? Forse sì per coerenza.
     check_space = settings.get("check_free_space_enabled", True)
     min_gb_required = config.MIN_FREE_SPACE_GB
 
-    # Validazione dati recuperati
+    # Validazione altre impostazioni (il check su save_path è già stato fatto sopra)
     if not backup_base_dir or max_bk is None or max_src_size is None:
-         logging.error("Required settings (base path, max backup, max source size) invalid.")
-         show_notification(False, "Error: Invalid backup settings.")
-         return False
-    if not save_path or not os.path.isdir(save_path):
-         logging.error(f"Savings path for '{profile_name}' invalid: '{save_path}'")
-         show_notification(False, f"Error: Invalid save path for {profile_name}.")
+         logging.error("Impostazioni necessarie (percorso base, max backup, max dimensione sorgente) non valide in backup_runner.")
+         show_notification(False, "Errore: Impostazioni backup non valide.")
          return False
 
-    # 5. (Opzionale ma Consigliato) Controllo Spazio Libero
+    # Controllo Spazio Libero
     if check_space:
         logging.info(f"Checking free disk space (Min: {min_gb_required} GB)...")
         min_bytes_required = min_gb_required * 1024 * 1024 * 1024
