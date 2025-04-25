@@ -419,7 +419,7 @@ class PackagingDialog(QDialog):
 
         self.radio_onefile = QRadioButton("One-File (single .exe, slower startup)")
         self.radio_onedir = QRadioButton("One-Folder (folder with .exe, faster startup)")
-        self.radio_onedir.setChecked(True) # Pre-seleziona One-Folder (spesso preferito)
+        self.radio_onefile.setChecked(True) # Pre-seleziona One-File invece di One-Folder
 
         layout.addWidget(self.radio_onefile)
         layout.addWidget(self.radio_onedir)
@@ -807,8 +807,10 @@ class TranslatorToolWindow(QMainWindow):
             self.log_output.appendHtml(html_message)
         else:
             # Messaggio normale (info e success)
-            # Non aggiungiamo il prefisso qui per non duplicarlo se già presente nel messaggio
-            self.log_output.appendPlainText(message)
+            # Usa sempre appendHtml per resettare il formato precedente.
+            # Assicura che il messaggio sia escapato per sicurezza.
+            escaped_message = message.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            self.log_output.appendHtml(escaped_message) # Modificato da appendPlainText
 
         self.log_output.moveCursor(QTextCursor.MoveOperation.End)
 

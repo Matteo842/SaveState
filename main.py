@@ -20,6 +20,13 @@ from gui_utils import resource_path, QtLogHandler # Importa QtLogHandler e resou
 from SaveState_gui import MainWindow # , ENGLISH_TRANSLATOR, CURRENT_TRANSLATOR # Importa da SaveState_gui
 from SaveState_gui import SHARED_MEM_KEY, LOCAL_SERVER_NAME # Importa costanti
 
+# --- NUOVO IMPORT ---
+try:
+    import pyi_splash  # type: ignore # Questo modulo esiste solo quando l'app è pacchettizzata con PyInstaller
+except ImportError:
+    pyi_splash = None # Imposta a None se non trovato (es. quando non si esegue da bundle)
+# --- FINE NUOVO IMPORT ---
+
 # --- Helper Function for Cleanup ---
 def cleanup_instance_lock(local_server, shared_memory):
     """Closes the local server and releases the shared memory."""
@@ -172,30 +179,30 @@ if __name__ == "__main__":
 
                 # === Splash Screen ===
                 # Only show splash screen if running as a bundled executable
-                if getattr(sys, 'frozen', False):
-                    logging.debug("Creating and showing splash screen (frozen app)...")
-                    try:
-                        splash_image_path_relative = "SplashScreen/splash.png"
-                        splash_image_path_absolute = resource_path(splash_image_path_relative)
-                        logging.info(f"Attempting to load splash image from: {splash_image_path_absolute}") # Log del percorso calcolato
+                # if getattr(sys, 'frozen', False):
+                #     logging.debug("Creating and showing splash screen (frozen app)...")
+                #     try:
+                #         splash_image_path_relative = "SplashScreen/splash.png"
+                #         splash_image_path_absolute = resource_path(splash_image_path_relative)
+                #         logging.info(f"Attempting to load splash image from: {splash_image_path_absolute}") # Log del percorso calcolato
 
-                        splash_pixmap = QPixmap(splash_image_path_absolute)
-                        if splash_pixmap.isNull():
-                            logging.warning(f"QSplashScreen: Failed to load pixmap from {splash_image_path_absolute}. Image might be missing, corrupt, or path incorrect in bundle.")
-                        else:
-                            logging.info(f"QSplashScreen: Pixmap loaded successfully from {splash_image_path_absolute}.")
-                            splash = QSplashScreen(splash_pixmap)
-                            splash.setMask(splash_pixmap.mask()) # Per trasparenza, se l'immagine ha un canale alpha
-                            splash.show()
-                            # Show initial message IMMEDIATELY after showing splash
-                            splash.showMessage("Inizializzazione applicazione...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
-                            app.processEvents() # Force display of splash screen NOW
-                            logging.debug("QSplashScreen: Splash screen shown.")
-                    except Exception as e_splash_load:
-                        logging.error(f"QSplashScreen: Error during splash screen loading/showing: {e_splash_load}", exc_info=True)
-                        # Non fatale, l'app può continuare senza splash
-                else:
-                    logging.debug("Skipping splash screen (not a frozen app).")
+                #         splash_pixmap = QPixmap(splash_image_path_absolute)
+                #         if splash_pixmap.isNull():
+                #             logging.warning(f"QSplashScreen: Failed to load pixmap from {splash_image_path_absolute}. Image might be missing, corrupt, or path incorrect in bundle.")
+                #         else:
+                #             logging.info(f"QSplashScreen: Pixmap loaded successfully from {splash_image_path_absolute}.")
+                #             # splash = QSplashScreen(splash_pixmap)
+                #             # splash.setMask(splash_pixmap.mask()) # Per trasparenza, se l'immagine ha un canale alpha
+                #             # splash.show()
+                #             # # Show initial message IMMEDIATELY after showing splash
+                #             # splash.showMessage("Inizializzazione applicazione...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
+                #             # app.processEvents() # Force display of splash screen NOW
+                #             # logging.debug("QSplashScreen: Splash screen shown.")
+                #     except Exception as e_splash_load:
+                #         logging.error(f"QSplashScreen: Error during splash screen loading/showing: {e_splash_load}", exc_info=True)
+                #         # Non fatale, l'app può continuare senza splash
+                # else:
+                #     logging.debug("Skipping splash screen (not a frozen app).")
                 # === Fine Splash Screen ===
 
             except Exception as e_app_init:
@@ -215,7 +222,7 @@ if __name__ == "__main__":
                  if not shared_memory.attach():
                       logging.critical(f"Failed to attach to own shared memory: {shared_memory.errorString()}")
                       # Non possiamo continuare senza memoria condivisa
-                      if splash: splash.close() # Close splash before exit
+                      # if splash: splash.close() # Close splash before exit
                       sys.exit(1)
 
             # Crea server locale per ricevere segnali da altre istanze
@@ -229,7 +236,7 @@ if __name__ == "__main__":
                 logging.error(f"Unable to start local server '{LOCAL_SERVER_NAME}': {local_server.errorString()}")
                 # Pulisci la memoria condivisa prima di uscire
                 cleanup_instance_lock(local_server, shared_memory)
-                if splash: splash.close() # Close splash before exit
+                # if splash: splash.close() # Close splash before exit
                 sys.exit(1) # Esci se il server non parte
             else:
                 logging.info(f"Local server listening on: {local_server.fullServerName()}")
@@ -243,18 +250,18 @@ if __name__ == "__main__":
                     app.aboutToQuit.connect(lambda: cleanup_instance_lock(local_server, shared_memory))
 
                     # --- Caricamento Impostazioni (senza applicazione traduttore qui) ---
-                    if splash: # Aggiorna messaggio se lo splash è attivo
-                        splash.showMessage("Caricamento impostazioni...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
-                        app.processEvents()
+                    # if splash: # Aggiorna messaggio se lo splash è attivo
+                    #     splash.showMessage("Caricamento impostazioni...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
+                    #     app.processEvents()
                     logging.info("Loading settings...")
                     current_settings, is_first_launch = settings_manager.load_settings()
                     logging.info("Settings loaded.")
                     # --- Fine Caricamento Impostazioni ---
 
                     # --- Creazione Finestra Principale e gestione primo avvio ---
-                    if splash: # Aggiorna messaggio
-                         splash.showMessage("Creazione interfaccia utente...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
-                         app.processEvents()
+                    # if splash: # Aggiorna messaggio
+                    #      splash.showMessage("Creazione interfaccia utente...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
+                    #      app.processEvents()
                     # Crea la finestra principale, passando gli handler log
                     # qt_log_handler è già definito sopra
                     # console_handler è definito sopra
@@ -272,9 +279,9 @@ if __name__ == "__main__":
 
 
                     if is_first_launch:
-                        if splash: # Aggiorna messaggio
-                             splash.showMessage("Configurazione iniziale...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
-                             app.processEvents()
+                        # if splash: # Aggiorna messaggio
+                        #      splash.showMessage("Configurazione iniziale...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
+                        #      app.processEvents()
                         logging.info("First launch detected, showing settings dialog.")
                         # Importa SettingsDialog qui per evitare dipendenze circolari a livello di modulo
                         from dialogs.settings_dialog import SettingsDialog
@@ -316,22 +323,23 @@ if __name__ == "__main__":
 
                     window.show()
                     logging.info("Starting Qt application event loop...")
-                    if splash: # Chiudi lo splash ora che la finestra è mostrata
-                        splash.finish(window)
-                        logging.debug("Splash screen finished.")
+                    if pyi_splash:
+                        logging.debug("Closing PyInstaller splash screen...")
+                        pyi_splash.close()
+                        logging.debug("Splash screen close command sent.")
                     exit_code = app.exec() # Avvia loop eventi GUI
                     logging.info(f"Qt application event loop finished with exit code: {exit_code}")
 
                 except ImportError as e_imp:
                      logging.critical(f"Import error during GUI setup: {e_imp}", exc_info=True)
                      # Prova a chiudere lo splash se esiste
-                     if splash: splash.close()
+                     # if splash: splash.close()
                      QMessageBox.critical(None, "Errore Import", f"Errore critico: libreria mancante.\\n{e_imp}\\nL'applicazione non può avviarsi.")
                      exit_code = 1
                 except Exception as e_gui_init: # Cattura altri errori during l'init della GUI
                     logging.critical(f"Fatal error during GUI initialization: {e_gui_init}", exc_info=True)
                     # Prova a chiudere lo splash se esiste
-                    if splash: splash.close()
+                    # if splash: splash.close()
                     # Prova a mostrare un messaggio di errore base se possibile
                     try:
                         QMessageBox.critical(None, "Errore Avvio", f"Errore fatale during l'inizializzazione della GUI:\\n{e_gui_init}")
