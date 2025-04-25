@@ -8,6 +8,7 @@ import config
 import re
 import platform
 import glob
+import settings_manager # For saving theme settings
 
 try:
     from thefuzz import fuzz
@@ -19,29 +20,29 @@ except ImportError:
     logging.warning("Libreria 'thefuzz' non trovata. Il fuzzy matching sarà disabilitato.")
     logging.warning("Installala con: pip install thefuzz[speedup]")
 
-# --- Definisci percorso file profili ---
+# --- Define profiles file path ---
 PROFILES_FILENAME = "game_save_profiles.json"
-APP_DATA_FOLDER = config.get_app_data_folder() # Ottieni cartella base
-if APP_DATA_FOLDER: # Controlla se valido
+APP_DATA_FOLDER = config.get_app_data_folder() # Get base folder
+if APP_DATA_FOLDER: # Check if valid
     PROFILES_FILE_PATH = os.path.join(APP_DATA_FOLDER, PROFILES_FILENAME)
 else:
     # Fallback
     logging.error("Unable to determine APP_DATA_FOLDER, use relative path for game_save_profiles.json.")
     PROFILES_FILE_PATH = os.path.abspath(PROFILES_FILENAME)
 logging.info(f"Profile file path in use: {PROFILES_FILE_PATH}")
-# --- Fine definizione ---
+# --- End definition ---
 
-# <<< Funzione per generare abbreviazioni multiple >>>
+# <<< Function to generate multiple abbreviations >>>
 def generate_abbreviations(name, game_install_dir=None):
     """
-    Genera una lista di possibili abbreviazioni/nomi alternativi per il gioco.
-    Include gestione colon e parsing exe migliorato.
+    Generates a list of possible abbreviations/alternative names for the game.
+    Includes colon handling and improved exe parsing.
     """
     abbreviations = set()
     if not name: return []
 
-    # Nome base pulito
-    sanitized_name = re.sub(r'[™®©:]', '', name).strip() # Rimuovi : per processing base
+    # Clean base name
+    sanitized_name = re.sub(r'[™®©:]', '', name).strip() # Remove : for base processing
     sanitized_name_nospace = re.sub(r'\s+', '', sanitized_name)
     abbreviations.add(sanitized_name)
     abbreviations.add(sanitized_name_nospace)
@@ -155,69 +156,71 @@ def generate_abbreviations(name, game_install_dir=None):
     logging.debug(f"Generated abbreviations for '{name}': {final_list}")
     return final_list
 
-# <<< Helper per check sequenza iniziali >>>
+# <<< Helper for initial sequence check >>>
 def matches_initial_sequence(folder_name, game_title_words):
     """
-    Controlla se folder_name (es. "ME") CORRISPONDE ESATTAMENTE alla sequenza
-    delle iniziali di game_title_words (es. ["Metro", "Exodus"]).
+    Checks if folder_name (e.g., "ME") EXACTLY MATCHES the sequence
+    of initials of game_title_words (e.g., ["Metro", "Exodus"]).
     """
     if not folder_name or not game_title_words:
         return False
     try:
-        # Estrai le iniziali MAIUSCOLE dalle parole significative
+        # Extract UPPERCASE initials from significant words
         word_initials = [word[0].upper() for word in game_title_words if word]
-        # Unisci le iniziali per formare la sequenza attesa (es. "ME")
+        # Join the initials to form the expected sequence (e.g., "ME")
         expected_sequence = "".join(word_initials)
-        # Confronta (case-insensitive) il nome della cartella con la sequenza attesa
+        # Compare (case-insensitive) the folder name with the expected sequence
         return folder_name.upper() == expected_sequence
     except Exception as e:
-        # Logga eventuali errori imprevisti durante l'elaborazione
+        # Log any unexpected errors during processing
         logging.error(f"Error in matches_initial_sequence ('{folder_name}', {game_title_words}): {e}")
         return False
 
+# <<< Function to sanitize folder names >>>
 def sanitize_foldername(name):
-    """Rimuove o sostituisce caratteri non validi per nomi di file/cartelle,
-       preservando i punti interni e rimuovendo quelli esterni."""
+    """Removes or replaces invalid characters for file/folder names,
+       preserving internal dots and removing external ones."""
     if not isinstance(name, str):
-        return "_invalid_profile_name_" # Gestisce input non stringa
+        return "_invalid_profile_name_" # Handle non-string input
 
-    # 1. Rimuovi caratteri universalmente non validi nei nomi file/cartella
-    #    ( <>:"/\|?* ) Manteniamo lettere, numeri, spazi, _, -, .
-    #    Usiamo un'espressione regolare per questo.
+    # 1. Remove universally invalid characters in file/folder names
+    #    ( <>:"/\|?* ) Keep letters, numbers, spaces, _, -, .
+    #    We use a regular expression for this.
     safe_name = re.sub(r'[<>:"/\\|?*]', '', name)
 
-    # 2. Rimuovi spazi bianchi iniziali/finali
+    # 2. Remove initial/final whitespace
     safe_name = safe_name.strip()
 
-    # 3. Rimuovi PUNTI iniziali/finali (DOPO aver rimosso gli spazi)
-    #    Questo ciclo rimuove multipli punti se presenti (es. "..nome..")
-    if safe_name: # Evita errori se la stringa è diventata vuota
+    # 3. Remove initial/final DOTS (AFTER removing spaces)
+    #    This loop removes multiple dots if present (e.g., "..name..")
+    if safe_name: # Avoid errors if the string has become empty
         safe_name = safe_name.strip('.')
 
-    # 4. Rimuovi di nuovo eventuali spazi bianchi che potrebbero essere
-    #    rimasti esposti dopo aver tolto i punti (es. ". nome .")
+    # 4. Remove any whitespace that might have been exposed
+    #    after removing dots (e.g., ". name .")
     safe_name = safe_name.strip()
 
-    # 5. Gestisci caso in cui il nome diventi vuoto o solo spazi dopo la pulizia
+    # 5. Handle case where name becomes empty or just spaces after cleaning
     if not safe_name or safe_name.isspace():
-        safe_name = "_invalid_profile_name_" # Nome di fallback
+        safe_name = "_invalid_profile_name_" # Fallback name
 
     return safe_name
 
- # --- Gestione Profili ---
+# --- Profile Management ---
 
+# <<< Function to get profile backup summary >>>
 def get_profile_backup_summary(profile_name, backup_base_dir):
     """
-    Restituisce un riassunto dei backup per un profilo.
+    Returns a summary of backups for a profile.
     Returns: tuple (count: int, last_backup_datetime: datetime | None)
     """
-    # Usa la funzione esistente che già ordina per data (nuovo prima)
-    backups = list_available_backups(profile_name, backup_base_dir) # Passa l'argomento
+    # Use the existing function that already sorts by date (newest first)
+    backups = list_available_backups(profile_name, backup_base_dir) # Pass the argument
     count = len(backups)
     last_backup_dt = None
 
     if count > 0:
-        most_recent_backup_path = backups[0][1] # Indice 1 è il percorso completo
+        most_recent_backup_path = backups[0][1] # Index 1 is the full path
         try:
             mtime_timestamp = os.path.getmtime(most_recent_backup_path)
             last_backup_dt = datetime.fromtimestamp(mtime_timestamp)
@@ -227,10 +230,11 @@ def get_profile_backup_summary(profile_name, backup_base_dir):
             logging.error(f"Unable to get last backup date for {profile_name} by '{most_recent_backup_path}': {e}")
     return count, last_backup_dt
 
-# --- Funzione per caricare i profili ---
+# Loads profiles from the profile file, ensuring they are valid
 def load_profiles():
-    """Carica i profili da PROFILES_FILE_PATH, assicurandosi che
-       i valori siano dizionari contenenti almeno la chiave 'path'.
+    """
+    Carica i profili da PROFILES_FILE_PATH, assicurandosi che i valori siano
+    dizionari contenenti almeno la chiave 'path'.
     """
     profiles_data = {} # Inizializza vuoto
     # Prima prova a caricare il contenuto grezzo del file JSON
@@ -311,9 +315,11 @@ def load_profiles():
     logging.info(f"Loaded and processed {len(loaded_profiles)} profiles from '{PROFILES_FILE_PATH}'.")
     return loaded_profiles # Restituisci i profili processati
 
-# --- Funzione per salvare i profili ---
+# Saves the profiles to the profile file
 def save_profiles(profiles):
-    """Salva i profili in PROFILES_FILE_PATH."""
+    """
+    Salva i profili in PROFILES_FILE_PATH.
+    """
     data_to_save = {
         "__metadata__": {
             "version": 1, # Esempio
@@ -332,9 +338,9 @@ def save_profiles(profiles):
         logging.error(f"Error saving profiles in '{PROFILES_FILE_PATH}': {e}")
         return False
 
-# --- Funzione per aggiungere un profilo ---
+# --- Function to add a profile ---
 def delete_profile(profiles, profile_name):
-    """Elimina un profilo dal dizionario. Restituisce True se eliminato, False altrimenti."""
+    """Deletes a profile from the dictionary. Returns True if deleted, False otherwise."""
     if profile_name in profiles:
         del profiles[profile_name]
         logging.info(f"Profile '{profile_name}' removed from memory.")
@@ -343,7 +349,7 @@ def delete_profile(profiles, profile_name):
         logging.warning(f"Attempt to delete non-existing profile: '{profile_name}'.")
         return False
 
-# --- Operazioni Backup/Restore ---
+# --- Backup/Restore Operations ---
 def manage_backups(profile_name, backup_base_dir, max_backups):
     """Elimina i backup .zip più vecchi se superano il limite specificato."""
     deleted_files = []
@@ -369,19 +375,19 @@ def manage_backups(profile_name, backup_base_dir, max_backups):
         for i in range(num_to_delete):
             file_to_delete = os.path.join(profile_backup_dir, backup_files[i])
             try:
-                logging.info(f"  Deleting: {backup_files[i]}")
+                logging.info(f"  Deleting: {backup_files[i]}")
                 os.remove(file_to_delete)
                 deleted_files.append(backup_files[i])
                 deleted_count += 1
             except Exception as e:
-                logging.error(f"  Error deleting {backup_files[i]}: {e}")
+                logging.error(f"  Error deleting {backup_files[i]}: {e}")
         logging.info(f"Deleted {deleted_count} outdated (.zip) backups.")
 
     except Exception as e:
         logging.error(f"Error managing outdated (.zip) backups for '{profile_name}': {e}")
     return deleted_files
 
-# --- Funzione di backup ---
+# --- Backup Function ---
 def perform_backup(profile_name, save_folder_path, backup_base_dir, max_backups, max_source_size_mb, compression_mode="standard"):
     """Esegue il backup usando zipfile. Restituisce (bool successo, str messaggio)."""
     import zipfile
@@ -461,12 +467,12 @@ def perform_backup(profile_name, save_folder_path, backup_base_dir, max_backups,
                     file_path_absolute = os.path.join(root, file)
                     arcname = os.path.relpath(file_path_absolute, save_folder_path)
                     try:
-                        logging.debug(f"  Adding: '{file_path_absolute}' as '{arcname}'")
+                        logging.debug(f"  Adding: '{file_path_absolute}' as '{arcname}'")
                         zipf.write(file_path_absolute, arcname=arcname)
                     except FileNotFoundError:
-                        logging.warning(f"  Skipped adding file (not found?): '{file_path_absolute}'")
+                        logging.warning(f"  Skipped adding file (not found?): '{file_path_absolute}'")
                     except Exception as e_write:
-                        logging.error(f"  Error adding file '{file_path_absolute}' to zip: {e_write}")
+                        logging.error(f"  Error adding file '{file_path_absolute}' to zip: {e_write}")
                         # Considera se interrompere il backup o solo loggare l'errore
 
         deleted = manage_backups(profile_name, backup_base_dir, max_backups)
@@ -491,7 +497,7 @@ def perform_backup(profile_name, save_folder_path, backup_base_dir, max_backups,
             except Exception as rem_e: logging.error(f"Unable to remove failed ZIP archive: {rem_e}")
         return False, msg
 
-# --- Funzione di supporto per calcolo dimensione cartella ---
+# --- Support Function for Folder Size Calculation ---
 def list_available_backups(profile_name, backup_base_dir):
     """Restituisce una lista di tuple (nome_file, percorso_completo, data_modifica_str) per i backup di un profilo."""
     backups = []
@@ -524,7 +530,7 @@ def list_available_backups(profile_name, backup_base_dir):
 
     return backups
 
-# --- Funzione di Ripristino ---
+# --- Restore Function ---
 def perform_restore(profile_name, save_folder_path, archive_to_restore_path):
     """Esegue il ripristino da un archivio ZIP. Restituisce (bool successo, str messaggio)."""
     import zipfile
@@ -575,9 +581,9 @@ def perform_restore(profile_name, save_folder_path, archive_to_restore_path):
         logging.exception(msg)
         return False, msg
 
-# --- Logica Rilevamento Steam ---
+# --- Steam Detection Logic ---
 
-# Cache globale interna a core_logic
+# Global internal cache in core_logic
 _steam_install_path = None
 _steam_libraries = None
 _installed_steam_games = None
@@ -586,9 +592,9 @@ _steam_id3 = None
 _cached_possible_ids = None
 _cached_id_details = None
 
-# Trova il percorso di installazione di Steam
+# Find Steam installation path
 def get_steam_install_path():
-    """Trova il percorso di installazione di Steam. Restituisce str o None."""
+    """Find Steam installation path. Returns str or None."""
     try:
         import winreg # <-- Import spostato qui
     except ImportError:
@@ -629,9 +635,9 @@ def get_steam_install_path():
         logging.error(f"Unexpected error searching for Steam: {e}")
         return None
 
-# Trova il percorso userdata di Steam
+# Find Steam userdata path
 def _parse_vdf(file_path):
-    """Helper interno per parsare VDF. Restituisce dict o None."""
+    """Helper internal for parsing VDF. Returns dict or None."""
     try:
         import vdf # <--- SPOSTATO QUI DENTRO
     except ImportError:
@@ -665,9 +671,9 @@ def _parse_vdf(file_path):
         logging.error(f"ERROR parsing VDF '{os.path.basename(file_path)}': {e}")
         return None
 
-# Trova librerie Steam
+# Find Steam libraries
 def find_steam_libraries():
-    """Trova le librerie Steam. Restituisce lista di path."""
+    """Find Steam libraries. Returns list of paths."""
     global _steam_libraries
     if _steam_libraries is not None: return _steam_libraries
 
@@ -710,9 +716,9 @@ def find_steam_libraries():
     _steam_libraries = list(dict.fromkeys(libs)) # Rimuovi duplicati se presenti
     return _steam_libraries
 
-# Trova giochi installati
+# Find installed Steam games
 def find_installed_steam_games():
-    """Trova giochi installati. Restituisce dict {appid: {'name':..., 'installdir':...}}."""
+    """Find installed Steam games. Returns dict {appid: {'name':..., 'installdir':...}}."""
     global _installed_steam_games
     if _installed_steam_games is not None: return _installed_steam_games
 
@@ -766,11 +772,12 @@ def find_installed_steam_games():
     _installed_steam_games = games
     return games
 
-# Costante per la conversione ID3 <-> ID64
+# Constant for ID3 <-> ID64 conversion
 STEAM_ID64_BASE = 76561197960265728
 
+# Find Steam userdata info
 def find_steam_userdata_info():
-    """Trova userdata path, SteamID3, lista ID possibili e dettagli ID (incluso display name)."""
+    """Find userdata path, SteamID3, list of possible IDs and ID details (including display name)."""
     try:
         import vdf
     except ImportError:
@@ -886,10 +893,10 @@ def find_steam_userdata_info():
 
     return userdata_base, likely_id, possible_ids, id_details
 
-# <<< Funzione are_names_similar usa anche check sequenza >>>
+# <<< Function are_names_similar also uses sequence check >>>
 def are_names_similar(name1, name2, min_match_words=2, fuzzy_threshold=88, game_title_words_for_seq=None):
     try:
-        # --- Pulizia Migliorata ---
+        # --- Improved Cleaning ---
         # Rimuovi TUTTO tranne lettere, numeri e spazi, poi normalizza spazi
         pattern_alphanum_space = r'[^a-zA-Z0-9\s]'
         clean_name1 = re.sub(pattern_alphanum_space, '', name1).lower()
@@ -953,7 +960,7 @@ def are_names_similar(name1, name2, min_match_words=2, fuzzy_threshold=88, game_
         logging.error(f"ARE_NAMES_SIMILAR: === Error comparing '{name1}' vs '{name2}': {e_sim} ===", exc_info=True)
         return False # Ritorna False in caso di errore
 
-# <<< Funzione per indovinare i percorsi di salvataggio >>>
+# <<< Function to guess save paths >>>
 def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path=None, steam_id3_to_use=None, is_steam_game=True, installed_steam_games_dict=None):
     """
     Tenta di indovinare i possibili percorsi di salvataggio per un gioco usando varie euristiche.
@@ -1490,13 +1497,13 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     # Restituisce la lista di tuple (path, score)
     return final_results_with_scores
 
-# <<< Funzione di pulizia per confronto >>>
+# <<< Function for detailed comparison cleaning >>>
 def clean_for_comparison(name):
     """
-    Pulisce un nome per confronti più dettagliati, mantenendo numeri e spazi.
-    Rimuove simboli comuni e normalizza i separatori.
+    Cleans a name for more detailed comparisons, keeping numbers and spaces.
+    Removes common symbols and normalizes separators.
     """
-    if not isinstance(name, str): # Gestisce input non stringa
+    if not isinstance(name, str): # Handles non-string input
         return ""
     # Rimuove simboli ™®©:, ma mantiene numeri, spazi, trattini
     name = re.sub(r'[™®©:]', '', name)
@@ -1508,10 +1515,10 @@ def clean_for_comparison(name):
     
     # <<< Funzione di ordinamento potenziata per dare priorità a match più precisi con il nome originale >>>
 
-# <<< Funzione di ordinamento finale >>>
+# <<< Final sorting function >>>
 def final_sort_key(guess_tuple, outer_scope_data):
     """
-    Assegna un punteggio a una tupla (path, source, contains_saves) trovata da guess_save_path.
+    Assigns a score to a tuple (path, source, contains_saves) found by guess_save_path.
     Punteggi più alti = più probabile. Include logica per match più precisi e cap per userdata.
     """
     # --- Estrai dati dalla tupla e dallo scope esterno ---
@@ -1610,9 +1617,9 @@ def final_sort_key(guess_tuple, outer_scope_data):
     # Restituisci la chiave di ordinamento (punteggio negativo per ordine decrescente)
     return (-score, path_lower)
 
-# --- Funzione per eliminare un file di backup ---
+# --- Function to delete a backup file ---
 def delete_single_backup_file(file_path):
-    """Elimina un singolo file di backup specificato dal percorso completo."""
+    """Deletes a single backup file specified by the full path."""
     if not file_path:
         msg = "ERROR: No file path specified for deletion."
         logging.error(msg)
@@ -1639,9 +1646,9 @@ def delete_single_backup_file(file_path):
         logging.exception(msg) # Logga traceback
         return False, msg
 
-# --- Funzione per calcolare la dimensione di una cartella ---
+# --- Function to calculate the size of a folder ---
 def get_directory_size(directory_path):
-    """Calcola ricorsivamente la dimensione totale di una cartella in bytes."""
+    """Calculates recursively the total size of a folder in bytes."""
     total_size = 0
     if not os.path.isdir(directory_path): # <<< NUOVO: Controlla se è una dir valida
          logging.error(f"ERROR get_directory_size: Path is not a valid directory: {directory_path}")
@@ -1665,11 +1672,12 @@ def get_directory_size(directory_path):
         logging.error(f"ERROR during size calculation for {directory_path}: {e}")
         return -1 # Restituisce -1 per indicare errore nel calcolo
     return total_size
- 
+
+# --- Function to get display name from backup filename ---
 def get_display_name_from_backup_filename(filename):
     """
-    Rimuove il suffisso timestamp (_YYYYMMDD_HHMMSS) da un nome file di backup
-    per una visualizzazione più pulita.
+    Removes the timestamp suffix (_YYYYMMDD_HHMMSS) from a backup file name
+    for a cleaner display.
 
     Es: "Backup_ProfiloX_20250422_030000.zip" -> "Backup_ProfiloX"
     """

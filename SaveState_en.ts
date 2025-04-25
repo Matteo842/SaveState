@@ -4,67 +4,371 @@
 <context>
     <name>MainWindow</name>
     <message>
-        <location filename="SaveState_gui.py" line="480"/>
+        <location filename="SaveState_gui.py" line="491"/>
         <source>Impostazioni</source>
         <translation>Settings</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="523"/>
         <source>Nascondi Log</source>
-        <translation>hide log</translation>
+        <translation type="vanished">hide log</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="809"/>
         <source>Operazione in Corso</source>
-        <translation>Operation in Progress</translation>
+        <translation type="vanished">Operation in Progress</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="623"/>
+        <location filename="SaveState_gui.py" line="584"/>
         <source>Errore Traduzione</source>
         <translation>Translation Error</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="374"/>
-        <location filename="SaveState_gui.py" line="501"/>
+        <location filename="SaveState_gui.py" line="378"/>
+        <location filename="SaveState_gui.py" line="512"/>
         <source>Ricerca in corso...</source>
         <translation>Searching...</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="625"/>
         <source>Impossibile caricare il file di traduzione per l&apos;inglese ({0}).
 L&apos;interfaccia rimarrà in italiano.</source>
-        <translation>Unable to upload the translation file for English ({0}).
+        <translation type="vanished">Unable to upload the translation file for English ({0}).
 The interface will remain in Italian.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="716"/>
+        <source>Profilo &apos;{0}&apos; eliminato.</source>
+        <translation type="vanished">Profile ‘{0}’ deleted.</translation>
+    </message>
+    <message>
+        <source>Errore Configurazione</source>
+        <translation type="vanished">Configuration Error</translation>
+    </message>
+    <message>
+        <source>Impostazioni necessarie (percorso base, max backup, max dimensione sorgente) non trovate o non valide!</source>
+        <translation type="vanished">Required settings (base path, max backup, max source size) not found or invalid!</translation>
+    </message>
+    <message>
+        <source>Errore Percorso Sorgente</source>
+        <translation type="vanished">Source Path Error</translation>
+    </message>
+    <message>
+        <source>La cartella sorgente dei salvataggi non esiste o non è valida:
+{0}</source>
+        <translation type="vanished">The source folder of the saves does not exist or is invalid:
+{0}</translation>
+    </message>
+    <message>
+        <source>Spazio su disco insufficiente per il backup!
+
+Spazio libero: {0:.2f} GB
+Spazio minimo richiesto: {1} GB
+
+Libera spazio sul disco di destinazione (&apos;{2}&apos;) o disabilita il controllo nelle impostazioni.</source>
+        <translation type="vanished">Insufficient disk space for backup!
+
+Free space: {0:.2f} GB
+Minimum space required: {1} GB
+
+Free up space on target disk (&apos;{2}&apos;) or disable control in settings.</translation>
+    </message>
+    <message>
+        <source>Spazio Disco Insufficiente</source>
+        <translation type="vanished">Insufficient Disk Space</translation>
+    </message>
+    <message>
+        <source>Errore nel controllo dello spazio: il percorso di backup specificato non sembra essere valido o accessibile:
+{0}</source>
+        <translation type="vanished">Error checking space: the specified backup path does not appear to be valid or accessible:
+{0}</translation>
+    </message>
+    <message>
+        <source>Errore Percorso Backup</source>
+        <translation type="vanished">Backup Path Error</translation>
+    </message>
+    <message>
+        <source>Si è verificato un errore durante il controllo dello spazio libero sul disco:
+{0}</source>
+        <translation type="vanished">An error occurred while checking the free disk space:
+{0}</translation>
+    </message>
+    <message>
+        <source>Errore Controllo Spazio</source>
+        <translation type="vanished">Space Control Error</translation>
+    </message>
+    <message>
+        <source>Un backup o ripristino è già in corso. Attendi il completamento.</source>
+        <translation type="vanished">A backup or restore is already in progress. Wait for completion.</translation>
+    </message>
+    <message>
+        <source>Avvio backup per &apos;{0}&apos;...</source>
+        <translation type="vanished">Start backup for &apos;{0}&apos;...</translation>
+    </message>
+    <message>
+        <source>Avvio ripristino per &apos;{0}&apos;...</source>
+        <translation type="vanished">Restart restoration for ‘{0}’...</translation>
+    </message>
+    <message>
+        <source>Ripristino annullato.</source>
+        <translation type="vanished">Restore cancelled.</translation>
+    </message>
+    <message>
+        <source>Nessun backup selezionato per il ripristino.</source>
+        <translation type="vanished">No backup selected for recovery.</translation>
+    </message>
+    <message>
+        <source>Selezione backup annullata.</source>
+        <translation type="vanished">Backup selection canceled.</translation>
+    </message>
+    <message>
+        <source>Operazione terminata senza messaggio.</source>
+        <translation type="vanished">Operation terminated with no message.</translation>
+    </message>
+    <message>
+        <source>Completato: {0}</source>
+        <translation type="vanished">Completed: {0}</translation>
+    </message>
+    <message>
+        <source>ERRORE: {0}</source>
+        <translation type="vanished">ERROR: {0}</translation>
+    </message>
+    <message>
+        <source>Errore Operazione</source>
+        <translation type="vanished">Operation Error</translation>
+    </message>
+    <message>
+        <source>Creazione Collegamento</source>
+        <translation type="vanished">Link Creation</translation>
+    </message>
+    <message>
+        <source>Errore Creazione Collegamento</source>
+        <translation type="vanished">Link Creation Error</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="492"/>
+        <source>Nuovo Profilo Manuale</source>
+        <translation>New Manual Profile</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="323"/>
+        <source>Console Log</source>
+        <translation>Console Log</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="493"/>
+        <source>Gestisci Giochi Steam</source>
+        <translation>Manage Steam Games</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="494"/>
+        <source>Elimina Profilo</source>
+        <translation>Delete Profile</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="193"/>
+        <location filename="SaveState_gui.py" line="495"/>
+        <source>Esegui Backup</source>
+        <translation>Run Backup</translation>
+    </message>
+    <message>
+        <source>Mostra Log</source>
+        <translation type="vanished">Show Log</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="197"/>
+        <location filename="SaveState_gui.py" line="496"/>
+        <source>Ripristina da Backup</source>
+        <translation>Restore from Backup</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="202"/>
+        <location filename="SaveState_gui.py" line="497"/>
+        <source>Gestisci Backup</source>
+        <translation>manage backup</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="206"/>
+        <location filename="SaveState_gui.py" line="498"/>
+        <source>Apri Cartella Backup</source>
+        <translation>Open Backup folder</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="229"/>
+        <source>Crea collegamento backup sul desktop</source>
+        <translation>Create desktop backup shortcut</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="247"/>
+        <location filename="SaveState_gui.py" line="501"/>
+        <source>Profili Salvati</source>
+        <translation>saved profiles</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="253"/>
+        <location filename="SaveState_gui.py" line="503"/>
+        <source>Azioni sul Profilo Selezionato</source>
+        <translation>Profile Action</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="264"/>
+        <source>Crea profilo da mondo Minecraft</source>
+        <translation>Create profile from Minecraft world</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="286"/>
+        <location filename="SaveState_gui.py" line="505"/>
+        <source>Azioni Generali</source>
+        <translation>General Action</translation>
+    </message>
+    <message>
+        <location filename="SaveState_gui.py" line="586"/>
+        <source>Impossibile caricare il file di traduzione per l&apos;inglese ({0}). L&apos;interfaccia rimarrà in italiano.</source>
+        <translation>Unable to load English translation file ({0}). Interface will remain in Italian.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="64"/>
+        <source>Profilo</source>
+        <translation>Profile</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="118"/>
+        <source>Nessun profilo creato.</source>
+        <translation>No profile created.</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="163"/>
+        <source>Ultimo</source>
+        <translation>Last</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="169"/>
+        <source>Nessun backup</source>
+        <translation>No backup</translation>
+    </message>
+</context>
+<context>
+    <name>MainWindowHandlers</name>
+    <message>
+        <location filename="gui_handlers.py" line="41"/>
+        <source>Nascondi Log</source>
+        <translation>hide log</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="43"/>
+        <source>Mostra Log</source>
+        <translation>Show Log</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="109"/>
+        <location filename="gui_handlers.py" line="167"/>
+        <location filename="gui_handlers.py" line="189"/>
+        <location filename="gui_handlers.py" line="208"/>
+        <location filename="gui_handlers.py" line="289"/>
+        <location filename="gui_handlers.py" line="329"/>
+        <source>Errore</source>
+        <translation>Error</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="109"/>
+        <source>Il percorso della cartella base dei backup non è configurato nelle impostazioni.</source>
+        <translation>The path to the backup base folder is not configured in the settings.</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="115"/>
+        <source>Cartella Non Trovata</source>
+        <translation>folder not found</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="116"/>
+        <source>La cartella dei backup specificata non esiste:
+&apos;{0}&apos;
+
+Vuoi provare a crearla?</source>
+        <translation>The specified backup folder does not exist:
+&apos;{0}&apos;
+
+Do you want to try creating it?</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="124"/>
+        <source>Errore Creazione</source>
+        <translation>Creation Error</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="124"/>
+        <source>Impossibile creare la cartella:
+{0}</source>
+        <translation>Unable to create folder:
+{0}</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="137"/>
+        <source>Errore Apertura</source>
+        <translation>Opening Error</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="137"/>
+        <source>Impossibile aprire la cartella:
+{0}</source>
+        <translation>Unable to open folder:
+{0}</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="167"/>
+        <source>Impossibile salvare il file delle impostazioni.</source>
+        <translation>Unable to save settings file.</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="178"/>
+        <source>Conferma Eliminazione</source>
+        <translation>Confirm Deletion</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="179"/>
+        <source>Sei sicuro di voler eliminare il profilo &apos;{0}&apos;?
+(Questo non elimina i file di backup già creati).</source>
+        <translation>Are you sure you want to delete the profile &apos;{0}&apos;?
+(This does not delete any backup files already created).</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="187"/>
         <source>Profilo &apos;{0}&apos; eliminato.</source>
         <translation>Profile ‘{0}’ deleted.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="760"/>
-        <source>Errore Configurazione</source>
-        <translation>Configuration Error</translation>
+        <location filename="gui_handlers.py" line="189"/>
+        <source>Profilo eliminato dalla memoria ma impossibile salvare le modifiche.</source>
+        <translation>Profile deleted from memory but unable to save changes.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="760"/>
-        <source>Impostazioni necessarie (percorso base, max backup, max dimensione sorgente) non trovate o non valide!</source>
-        <translation>Required settings (base path, max backup, max source size) not found or invalid!</translation>
+        <location filename="gui_handlers.py" line="202"/>
+        <location filename="gui_handlers.py" line="283"/>
+        <location filename="gui_handlers.py" line="394"/>
+        <location filename="gui_handlers.py" line="565"/>
+        <source>Errore Interno</source>
+        <translation>Internal Error</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="763"/>
+        <location filename="gui_handlers.py" line="211"/>
         <source>Errore Percorso Sorgente</source>
         <translation>Source Path Error</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="763"/>
+        <location filename="gui_handlers.py" line="211"/>
         <source>La cartella sorgente dei salvataggi non esiste o non è valida:
 {0}</source>
         <translation>The source folder of the saves does not exist or is invalid:
 {0}</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="785"/>
+        <location filename="gui_handlers.py" line="223"/>
+        <source>Errore Configurazione</source>
+        <translation>Configuration Error</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="223"/>
+        <source>Impostazioni necessarie (percorso base, max backup, max dimensione sorgente) non trovate o non valide!</source>
+        <translation>Required settings (base path, max backup, max source size) not found or invalid!</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="240"/>
         <source>Spazio su disco insufficiente per il backup!
 
 Spazio libero: {0:.2f} GB
@@ -79,190 +383,269 @@ Minimum space required: {1} GB
 Free up space on target disk (&apos;{2}&apos;) or disable control in settings.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="786"/>
+        <location filename="gui_handlers.py" line="241"/>
         <source>Spazio Disco Insufficiente</source>
         <translation>Insufficient Disk Space</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="791"/>
+        <location filename="gui_handlers.py" line="244"/>
         <source>Errore nel controllo dello spazio: il percorso di backup specificato non sembra essere valido o accessibile:
 {0}</source>
         <translation>Error checking space: the specified backup path does not appear to be valid or accessible:
 {0}</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="792"/>
+        <location filename="gui_handlers.py" line="245"/>
         <source>Errore Percorso Backup</source>
         <translation>Backup Path Error</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="796"/>
+        <location filename="gui_handlers.py" line="248"/>
         <source>Si è verificato un errore durante il controllo dello spazio libero sul disco:
 {0}</source>
         <translation>An error occurred while checking the free disk space:
 {0}</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="797"/>
+        <location filename="gui_handlers.py" line="249"/>
         <source>Errore Controllo Spazio</source>
         <translation>Space Control Error</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="809"/>
+        <location filename="gui_handlers.py" line="257"/>
+        <location filename="gui_handlers.py" line="305"/>
+        <source>Operazione in Corso</source>
+        <translation>Operation in Progress</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="257"/>
         <source>Un backup o ripristino è già in corso. Attendi il completamento.</source>
         <translation>A backup or restore is already in progress. Wait for completion.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="812"/>
+        <location filename="gui_handlers.py" line="261"/>
         <source>Avvio backup per &apos;{0}&apos;...</source>
         <translation>Start backup for &apos;{0}&apos;...</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="845"/>
+        <location filename="gui_handlers.py" line="297"/>
+        <source>Conferma Ripristino Finale</source>
+        <translation>Confirm Final Restore</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="298"/>
+        <source>ATTENZIONE!
+Ripristinare &apos;{0}&apos; sovrascriverà i file in:
+&apos;{1}&apos;
+
+Procedere?</source>
+        <translation>WARNING!
+Restoring &apos;{0}&apos; will overwrite files in:
+&apos;{1}&apos;
+
+Proceed?</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="305"/>
+        <source>Un&apos;altra operazione è già in corso.</source>
+        <translation>Another operation is already underway.</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="308"/>
         <source>Avvio ripristino per &apos;{0}&apos;...</source>
         <translation>Restart restoration for ‘{0}’...</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="851"/>
+        <location filename="gui_handlers.py" line="320"/>
         <source>Ripristino annullato.</source>
         <translation>Restore cancelled.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="852"/>
+        <location filename="gui_handlers.py" line="322"/>
         <source>Nessun backup selezionato per il ripristino.</source>
         <translation>No backup selected for recovery.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="853"/>
+        <location filename="gui_handlers.py" line="324"/>
         <source>Selezione backup annullata.</source>
         <translation>Backup selection canceled.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="866"/>
-        <source>Operazione terminata senza messaggio.</source>
-        <translation>Operation terminated with no message.</translation>
+        <location filename="gui_handlers.py" line="329"/>
+        <source>Nessun profilo selezionato.</source>
+        <translation>No profile selected.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="866"/>
-        <source>Completato: {0}</source>
-        <translation>Completed: {0}</translation>
+        <location filename="gui_handlers.py" line="341"/>
+        <source>Azione Fallita</source>
+        <translation>Action Failed</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="867"/>
-        <source>ERRORE: {0}</source>
-        <translation>ERROR: {0}</translation>
+        <location filename="gui_handlers.py" line="341"/>
+        <source>Nessun profilo selezionato per creare il collegamento.</source>
+        <translation>No profile selected to create the link.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="870"/>
-        <source>Errore Operazione</source>
-        <translation>Operation Error</translation>
-    </message>
-    <message>
-        <location filename="SaveState_gui.py" line="893"/>
+        <location filename="gui_handlers.py" line="348"/>
         <source>Creazione Collegamento</source>
         <translation>Link Creation</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="895"/>
+        <location filename="gui_handlers.py" line="350"/>
         <source>Errore Creazione Collegamento</source>
         <translation>Link Creation Error</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="481"/>
-        <source>Nuovo Profilo Manuale</source>
-        <translation>New Manual Profile</translation>
+        <location filename="gui_handlers.py" line="377"/>
+        <source>Errore Scansione Steam</source>
+        <translation>Steam Scan Error</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="319"/>
-        <source>Console Log</source>
-        <translation>Console Log</translation>
+        <location filename="gui_handlers.py" line="377"/>
+        <source>Impossibile leggere i dati di Steam:
+{0}</source>
+        <translation>Unable to read Steam data:
+{0}</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="482"/>
-        <source>Gestisci Giochi Steam</source>
-        <translation>Manage Steam Games</translation>
+        <location filename="gui_handlers.py" line="413"/>
+        <source>(Recente)</source>
+        <translation>(Recent)</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="483"/>
-        <source>Elimina Profilo</source>
-        <translation>Delete Profile</translation>
+        <location filename="gui_handlers.py" line="423"/>
+        <source>Trovati multipli profili Steam.
+Seleziona quello corretto (di solito il più recente):</source>
+        <translation>Found multiple Steam profiles.
+Select the correct one (usually the most recent):</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="189"/>
-        <location filename="SaveState_gui.py" line="484"/>
-        <source>Esegui Backup</source>
-        <translation>Run Backup</translation>
+        <location filename="gui_handlers.py" line="424"/>
+        <source>Selezione Profilo Steam</source>
+        <translation>Steam Profile Selection</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="525"/>
-        <source>Mostra Log</source>
-        <translation>Show Log</translation>
+        <location filename="gui_handlers.py" line="432"/>
+        <source>Configurazione annullata (nessun profilo Steam selezionato).</source>
+        <translation>Setup cancelled (no Steam profile selected).</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="193"/>
-        <location filename="SaveState_gui.py" line="485"/>
-        <source>Ripristina da Backup</source>
-        <translation>Restore from Backup</translation>
+        <location filename="gui_handlers.py" line="462"/>
+        <source>Ricerca percorso per &apos;{0}&apos; in corso...</source>
+        <translation>Path search for &apos;{0}&apos; in progress...</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="198"/>
-        <location filename="SaveState_gui.py" line="486"/>
-        <source>Gestisci Backup</source>
-        <translation>manage backup</translation>
+        <location filename="gui_handlers.py" line="509"/>
+        <source>Percorso Non Trovato</source>
+        <translation>Path Not Found</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="202"/>
-        <location filename="SaveState_gui.py" line="487"/>
-        <source>Apri Cartella Backup</source>
-        <translation>Open Backup folder</translation>
+        <location filename="gui_handlers.py" line="511"/>
+        <source>Impossibile trovare automaticamente un percorso per &apos;{0}&apos;.
+Per favore, inseriscilo manually.</source>
+        <translation>Could not automatically find a path for &apos;{0}&apos;.
+Please enter manually.</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="225"/>
-        <source>Crea collegamento backup sul desktop</source>
-        <translation>Create desktop backup shortcut</translation>
+        <location filename="gui_handlers.py" line="514"/>
+        <source>Nessun Nuovo Percorso Trovato</source>
+        <translation>No New Routes Found</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="243"/>
-        <location filename="SaveState_gui.py" line="490"/>
-        <source>Profili Salvati</source>
-        <translation>saved profiles</translation>
+        <location filename="gui_handlers.py" line="517"/>
+        <source>La ricerca automatica non ha trovato nuovi percorsi.
+Vuoi mantenere il percorso attuale?
+&apos;{0}&apos;</source>
+        <translation>Automatic search did not find any new routes.
+Do you want to keep the current route?
+&apos;{0}&apos;</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="249"/>
-        <location filename="SaveState_gui.py" line="492"/>
-        <source>Azioni sul Profilo Selezionato</source>
-        <translation>Profile Action</translation>
+        <location filename="gui_handlers.py" line="533"/>
+        <source>[ATTUALE]</source>
+        <translation>[CURRENT]</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="260"/>
-        <source>Crea profilo da mondo Minecraft</source>
-        <translation>Create profile from Minecraft world</translation>
+        <location filename="gui_handlers.py" line="546"/>
+        <source>--- Inserisci percorso manualmente ---</source>
+        <translation>--- Enter path manually ---</translation>
     </message>
     <message>
-        <location filename="SaveState_gui.py" line="282"/>
-        <location filename="SaveState_gui.py" line="494"/>
-        <source>Azioni Generali</source>
-        <translation>General Action</translation>
+        <location filename="gui_handlers.py" line="550"/>
+        <source>Sono stati trovati questi percorsi potenziali per &apos;{0}&apos;.
+Seleziona quello corretto (ordinati per probabilità) o scegli l&apos;inserimento manuale:</source>
+        <translation>These potential paths for &apos;{0}&apos; were found.
+Select the correct one (sorted by probability) or choose manual entry:</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_list_manager.py" line="40"/>
-        <source>Profilo</source>
-        <translation>Profile</translation>
+        <location filename="gui_handlers.py" line="554"/>
+        <source>Conferma Percorso Salvataggi</source>
+        <translation>Confirm Save Path</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_list_manager.py" line="83"/>
-        <source>Nessun profilo creato.</source>
-        <translation>No profile created.</translation>
+        <location filename="gui_handlers.py" line="565"/>
+        <source>Errore nella selezione del percorso.</source>
+        <translation>Error selecting path.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_list_manager.py" line="125"/>
-        <source>Ultimo</source>
-        <translation>Last</translation>
+        <location filename="gui_handlers.py" line="584"/>
+        <source>Profilo &apos;{0}&apos; configurato.</source>
+        <translation>Profile &apos;{0}&apos; configured.</translation>
     </message>
     <message>
-        <location filename="gui_components/profile_list_manager.py" line="130"/>
-        <source>Nessun backup</source>
-        <translation>No backup</translation>
+        <location filename="gui_handlers.py" line="587"/>
+        <source>Profilo Configurato</source>
+        <translation>Profile Configured</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="587"/>
+        <source>Profilo &apos;{0}&apos; salvato con successo.</source>
+        <translation>Profile &apos;{0}&apos; saved successfully.</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="589"/>
+        <source>Errore Salvataggio</source>
+        <translation>Saving Error</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="589"/>
+        <source>Impossibile salvare il file dei profili.</source>
+        <translation>Unable to save profile file.</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="593"/>
+        <source>Configurazione profilo annullata o fallita.</source>
+        <translation>Profile setup cancelled or failed.</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="597"/>
+        <source>Percorso Manuale</source>
+        <translation>Manual Path</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="598"/>
+        <source>Inserisci il percorso COMPLETO della cartella dei salvataggi per &apos;{0}&apos;:</source>
+        <translation>Enter the FULL path to the save folder for &apos;{0}&apos;:</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="615"/>
+        <source>Operazione terminata senza messaggio.</source>
+        <translation>Operation terminated with no message.</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="615"/>
+        <source>Completato: {0}</source>
+        <translation>Completed: {0}</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="616"/>
+        <source>ERRORE: {0}</source>
+        <translation>ERROR: {0}</translation>
+    </message>
+    <message>
+        <location filename="gui_handlers.py" line="621"/>
+        <source>Errore Operazione</source>
+        <translation>Operation Error</translation>
     </message>
 </context>
 <context>
@@ -288,17 +671,17 @@ Free up space on target disk (&apos;{2}&apos;) or disable control in settings.</
         <translation>Existing backups for &apos;{0}&apos;:</translation>
     </message>
     <message>
-        <location filename="dialogs/manage_backups_dialog.py" line="71"/>
+        <location filename="dialogs/manage_backups_dialog.py" line="89"/>
         <source>Nessun backup trovato.</source>
         <translation>No backups found.</translation>
     </message>
     <message>
-        <location filename="dialogs/manage_backups_dialog.py" line="90"/>
+        <location filename="dialogs/manage_backups_dialog.py" line="130"/>
         <source>Conferma Eliminazione</source>
         <translation>Confirm Deletion</translation>
     </message>
     <message>
-        <location filename="dialogs/manage_backups_dialog.py" line="94"/>
+        <location filename="dialogs/manage_backups_dialog.py" line="134"/>
         <source>Sei sicuro di voler eliminare PERMANENTEMENTE il file di backup:
 
 {0}
@@ -311,12 +694,12 @@ Questa azione non può essere annullata!</source>
 This action cannot be undone!</translation>
     </message>
     <message>
-        <location filename="dialogs/manage_backups_dialog.py" line="106"/>
+        <location filename="dialogs/manage_backups_dialog.py" line="146"/>
         <source>Successo</source>
         <translation>Success</translation>
     </message>
     <message>
-        <location filename="dialogs/manage_backups_dialog.py" line="109"/>
+        <location filename="dialogs/manage_backups_dialog.py" line="149"/>
         <source>Errore Eliminazione</source>
         <translation>Error Deleting</translation>
     </message>
@@ -354,22 +737,22 @@ Verify that Minecraft Java Edition is installed correctly.</translation>
 <context>
     <name>RestoreDialog</name>
     <message>
-        <location filename="dialogs/restore_dialog.py" line="18"/>
+        <location filename="dialogs/restore_dialog.py" line="17"/>
         <source>Ripristina Backup per {}</source>
         <translation>Restore Backup for {}</translation>
     </message>
     <message>
-        <location filename="dialogs/restore_dialog.py" line="37"/>
+        <location filename="dialogs/restore_dialog.py" line="39"/>
         <source>Nessun backup trovato per questo profilo.</source>
         <translation>No backups found for this profile.</translation>
     </message>
     <message>
-        <location filename="dialogs/restore_dialog.py" line="52"/>
+        <location filename="dialogs/restore_dialog.py" line="72"/>
         <source>Ripristina Selezionato</source>
         <translation>Restore Selected</translation>
     </message>
     <message>
-        <location filename="dialogs/restore_dialog.py" line="63"/>
+        <location filename="dialogs/restore_dialog.py" line="80"/>
         <source>Seleziona il backup da cui ripristinare:</source>
         <translation>Select the backup to restore from:</translation>
     </message>
@@ -469,151 +852,126 @@ The interface will remain in Italian.SelectCannot validate path.ona Base Folder 
 <context>
     <name>SteamDialog</name>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="24"/>
+        <location filename="dialogs/steam_dialog.py" line="26"/>
         <source>Gestione dei giochi Steam</source>
         <oldsource>Steam Games Management</oldsource>
         <translation>Steam Game Management</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="36"/>
         <source>Avvio scansione Steam...</source>
         <oldsource>Starting Steam scan...</oldsource>
-        <translation>Starting Steam Scan...</translation>
+        <translation type="vanished">Starting Steam Scan...</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="38"/>
+        <location filename="dialogs/steam_dialog.py" line="40"/>
         <source>Configura Profilo Selezionato</source>
         <translation>Configure Selected Profile</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="39"/>
+        <location filename="dialogs/steam_dialog.py" line="41"/>
         <source>Aggiorna elenco giochi</source>
         <translation>Update game list</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="40"/>
+        <location filename="dialogs/steam_dialog.py" line="42"/>
         <source>Chiudi</source>
         <translation>Close</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="46"/>
+        <location filename="dialogs/steam_dialog.py" line="47"/>
         <source>Giochi Steam installati:</source>
         <translation>Steam Games Installed:</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="72"/>
-        <source>Searching for Steam installation...</source>
-        <translation></translation>
-    </message>
-    <message>
-        <location filename="dialogs/steam_dialog.py" line="78"/>
-        <source>Error: Steam installation not found.</source>
-        <translation></translation>
-    </message>
-    <message>
-        <location filename="dialogs/steam_dialog.py" line="81"/>
-        <source>Searching for Steam libraries...</source>
-        <translation></translation>
-    </message>
-    <message>
         <location filename="dialogs/steam_dialog.py" line="85"/>
-        <source>Error: No Steam libraries found.</source>
-        <translation></translation>
-    </message>
-    <message>
-        <location filename="dialogs/steam_dialog.py" line="88"/>
-        <source>Scanning installed games...</source>
-        <translation></translation>
-    </message>
-    <message>
-        <location filename="dialogs/steam_dialog.py" line="94"/>
-        <source>Searching for Steam user data...</source>
-        <translation></translation>
-    </message>
-    <message>
-        <location filename="dialogs/steam_dialog.py" line="106"/>
-        <source>Found {0} games. Ready.</source>
-        <translation></translation>
-    </message>
-    <message>
-        <location filename="dialogs/steam_dialog.py" line="112"/>
         <source>Nessun gioco trovato.</source>
         <translation>No games found.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="119"/>
+        <location filename="dialogs/steam_dialog.py" line="92"/>
         <source>[PROFILO ESISTENTE]</source>
         <translation>[EXISTING PROFILE]</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="142"/>
-        <location filename="dialogs/steam_dialog.py" line="185"/>
-        <location filename="dialogs/steam_dialog.py" line="315"/>
-        <location filename="dialogs/steam_dialog.py" line="395"/>
+        <location filename="dialogs/steam_dialog.py" line="159"/>
+        <location filename="dialogs/steam_dialog.py" line="272"/>
         <source>Errore Interno</source>
         <translation>Internal Error</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="143"/>
         <source>Impossibile trovare i dettagli per l&apos;AppID {0}.</source>
-        <translation>Unable to find details for AppID {0}.</translation>
+        <translation type="vanished">Unable to find details for AppID {0}.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="164"/>
         <source>(Recente)</source>
-        <translation>(Recent)</translation>
+        <translation type="vanished">(Recent)</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="173"/>
         <source>Selezione Profilo Steam</source>
-        <translation>Steam Profile Selection</translation>
+        <translation type="vanished">Steam Profile Selection</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="174"/>
         <source>Trovati multipli profili Steam.
 Seleziona quello corretto (di solito il più recente):</source>
-        <translation>Found multiple Steam profiles.
+        <translation type="vanished">Found multiple Steam profiles.
 Select the correct one (usually the most recent):</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="186"/>
         <source>Errore nel recuperare l&apos;ID del profilo selezionato.</source>
-        <translation>Error retrieving selected profile ID.</translation>
+        <translation type="vanished">Error retrieving selected profile ID.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="190"/>
         <source>Configurazione annullata (nessun profilo Steam selezionato).</source>
-        <translation>Setup cancelled (no Steam profile selected).</translation>
+        <translation type="vanished">Setup cancelled (no Steam profile selected).</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="235"/>
         <source>Ricerca percorso per &apos;{0}&apos; in corso...</source>
-        <translation>Path search for &apos;{0}&apos; in progress...</translation>
+        <translation type="vanished">Path search for &apos;{0}&apos; in progress...</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="316"/>
+        <location filename="dialogs/steam_dialog.py" line="39"/>
+        <source>Seleziona un gioco e clicca Configura.</source>
+        <translation>Select a game and click Configure.</translation>
+    </message>
+    <message>
+        <location filename="dialogs/steam_dialog.py" line="79"/>
+        <source>Elenco aggiornato. {0} giochi trovati.</source>
+        <translation>List updated. {0} games found.</translation>
+    </message>
+    <message>
+        <location filename="dialogs/steam_dialog.py" line="109"/>
+        <source>Errore</source>
+        <translation>Error</translation>
+    </message>
+    <message>
+        <location filename="dialogs/steam_dialog.py" line="109"/>
+        <source>Impossibile ottenere dati del gioco selezionato.</source>
+        <translation>Unable to get data for the selected game.</translation>
+    </message>
+    <message>
+        <location filename="dialogs/steam_dialog.py" line="160"/>
         <source>Impossibile recuperare il nome del profilo in configurazione.</source>
         <translation>Unable to retrieve profile name in configuration.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="329"/>
+        <location filename="dialogs/steam_dialog.py" line="176"/>
         <source>Percorso Non Trovato</source>
         <translation>Path Not Found</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="331"/>
+        <location filename="dialogs/steam_dialog.py" line="178"/>
         <source>Impossibile trovare automaticamente un percorso per &apos;{0}&apos;.
 Per favore, inseriscilo manualmente.</source>
         <translation>Could not automatically find a path for &apos;{0}&apos;.
 Please enter it manually.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="335"/>
+        <location filename="dialogs/steam_dialog.py" line="183"/>
         <source>Nessun Nuovo Percorso Trovato</source>
         <translation>No New Routes Found</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="338"/>
+        <location filename="dialogs/steam_dialog.py" line="186"/>
         <source>La ricerca automatica non ha trovato nuovi percorsi.
 Vuoi mantenere il percorso attuale?
 &apos;{0}&apos;</source>
@@ -622,94 +980,97 @@ Do you want to keep the current route?
 &apos;{0}&apos;</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="346"/>
-        <location filename="dialogs/steam_dialog.py" line="401"/>
+        <location filename="dialogs/steam_dialog.py" line="197"/>
+        <location filename="dialogs/steam_dialog.py" line="275"/>
         <source>Configurazione annullata.</source>
         <translation>Configuration cancelled.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="364"/>
+        <location filename="dialogs/steam_dialog.py" line="227"/>
         <source>[ATTUALE]</source>
         <translation>[CURRENT]</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="375"/>
+        <location filename="dialogs/steam_dialog.py" line="251"/>
         <source>--- Inserisci percorso manualmente ---</source>
         <translation>--- Enter path manually ---</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="377"/>
-        <source>Seleziona il percorso corretto per i salvataggi di &apos;{0}&apos;:</source>
-        <translation>Please select the correct path for &apos;{0}&apos; saves:</translation>
+        <location filename="dialogs/steam_dialog.py" line="255"/>
+        <source>Sono stati trovati questi percorsi potenziali per &apos;{0}&apos;.
+Seleziona quello corretto (ordinati per probabilità) o scegli l&apos;inserimento manuale:</source>
+        <translation>These potential paths for &apos;{0}&apos; were found.
+Select the correct one (sorted by probability) or choose manual entry:</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="381"/>
+        <source>Seleziona il percorso corretto per i salvataggi di &apos;{0}&apos;:</source>
+        <translation type="vanished">Please select the correct path for &apos;{0}&apos; saves:</translation>
+    </message>
+    <message>
+        <location filename="dialogs/steam_dialog.py" line="260"/>
         <source>Conferma Percorso Salvataggi</source>
         <translation>Confirm Save Path</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="395"/>
+        <location filename="dialogs/steam_dialog.py" line="272"/>
         <source>Errore nella selezione del percorso.</source>
         <translation>Errore nella selezione del percorso.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="411"/>
+        <location filename="dialogs/steam_dialog.py" line="283"/>
         <source>Profilo &apos;{0}&apos; configurato.</source>
         <translation>Profile &apos;{0}&apos; configured.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="412"/>
         <source>Profilo Configurato</source>
-        <translation>Profile Configured</translation>
+        <translation type="vanished">Profile Configured</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="413"/>
         <source>Profilo &apos;{0}&apos; salvato con successo.</source>
-        <translation>Profile &apos;{0}&apos; saved successfully.</translation>
+        <translation type="vanished">Profile &apos;{0}&apos; saved successfully.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="419"/>
+        <location filename="dialogs/steam_dialog.py" line="288"/>
         <source>Errore Salvataggio</source>
         <translation>Saving Error</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="420"/>
+        <location filename="dialogs/steam_dialog.py" line="289"/>
         <source>Impossibile salvare il file dei profili.</source>
         <translation>Unable to save profile file.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="421"/>
+        <location filename="dialogs/steam_dialog.py" line="290"/>
         <source>Errore durante il salvataggio dei profili.</source>
         <translation>Error saving profiles.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="429"/>
         <source>Configurazione annullata o fallita.</source>
-        <translation>Setup cancelled or failed.</translation>
+        <translation type="vanished">Setup cancelled or failed.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="445"/>
-        <location filename="dialogs/steam_dialog.py" line="471"/>
+        <location filename="dialogs/steam_dialog.py" line="312"/>
+        <location filename="dialogs/steam_dialog.py" line="338"/>
         <source>Errore Percorso</source>
         <translation>Path Error</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="446"/>
+        <location filename="dialogs/steam_dialog.py" line="313"/>
         <source>Il percorso specificato non esiste o non è una cartella valida.</source>
         <translation>The specified path does not exist or is not a valid folder.</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="456"/>
+        <location filename="dialogs/steam_dialog.py" line="323"/>
         <source>Percorso Manuale</source>
         <translation>Manual Path</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="457"/>
+        <location filename="dialogs/steam_dialog.py" line="324"/>
         <source>Inserisci il percorso COMPLETO dei salvataggi per &apos;{0}&apos;:</source>
         <translation>Enter the FULL path to your saves for &apos;{0}&apos;:</translation>
     </message>
     <message>
-        <location filename="dialogs/steam_dialog.py" line="471"/>
+        <location filename="dialogs/steam_dialog.py" line="338"/>
         <source>Il percorso non può essere vuoto.</source>
         <translation>The path cannot be empty.</translation>
     </message>
@@ -1137,9 +1498,33 @@ Please enter it manually.</translation>
         <translation>Switch to light theme</translation>
     </message>
     <message>
+        <location filename="gui_components/profile_list_manager.py" line="173"/>
+        <location filename="gui_components/profile_list_manager.py" line="239"/>
+        <source>Rimuovi dai preferiti</source>
+        <translation>Remove from favorites</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="176"/>
+        <location filename="gui_components/profile_list_manager.py" line="242"/>
+        <source>Aggiungi ai preferiti</source>
+        <translation>Add to favorites</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="178"/>
+        <location filename="gui_components/profile_list_manager.py" line="245"/>
+        <source>Aggiungi/Rimuovi preferito</source>
+        <translation>Add/Remove Favorite</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="255"/>
         <location filename="gui_components/theme_manager.py" line="129"/>
         <source>Errore</source>
         <translation>Error</translation>
+    </message>
+    <message>
+        <location filename="gui_components/profile_list_manager.py" line="256"/>
+        <source>Impossibile salvare lo stato preferito per &apos;{0}&apos;.</source>
+        <translation>Unable to save preferred state for &apos;{0}&apos;.</translation>
     </message>
     <message>
         <location filename="gui_components/theme_manager.py" line="130"/>

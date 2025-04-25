@@ -6,20 +6,20 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Slot, Qt, QLocale, QCoreApplication
 
-# Importa la logica necessaria
+# Import necessary logic
 import core_logic
 import config
 import logging 
 
 
 class ManageBackupsDialog(QDialog):
-    # ... (Codice come prima, sembrava OK con correzioni caratteri) ...
+
      def __init__(self, profile_name, parent=None):
         super().__init__(parent)
         self.profile_name = profile_name
         self.setWindowTitle(self.tr("Gestisci Backup per {0}").format(self.profile_name))
         self.setMinimumWidth(500)
-        # Ottieni lo stile per le icone standard
+        # Get the style for standard icons
         style = QApplication.instance().style()
         
         # Widget
@@ -27,14 +27,14 @@ class ManageBackupsDialog(QDialog):
         self.delete_button = QPushButton(self.tr("Elimina Selezionato"))
         self.delete_button.setObjectName("DangerButton")
         
-        # Imposta icona standard per Elimina
-        delete_icon = style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon) # <-- AGGIUNGI
+        # Set standard icon for Delete
+        delete_icon = style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
         self.delete_button.setIcon(delete_icon)
         
         self.close_button = QPushButton(self.tr("Chiudi"))
         
-        # Imposta icona standard per Chiudi
-        close_icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton) # <-- AGGIUNGI
+        # Set standard icon for Close
+        close_icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton)
         self.close_button.setIcon(close_icon)
         
         self.delete_button.setEnabled(False)
@@ -53,70 +53,68 @@ class ManageBackupsDialog(QDialog):
         self.close_button.clicked.connect(self.reject)
         self.populate_backup_list()
      
-     # --- Metodo populate_backup_list CORRETTO ---
-     @Slot() # Aggiungi Slot se usi connessioni per segnali (buona pratica)
+     # --- Method populate_backup_list ---
+     @Slot()
      def populate_backup_list(self):
         self.backup_list_widget.clear()
         self.delete_button.setEnabled(False)
 
-        # --- RECUPERA IMPOSTAZIONI E LOCALE QUI (PRIMA DI USARE LE VARIABILI) ---
-        current_backup_base_dir = "" # Default vuoto
-        current_lang_code = "en"     # Default lingua
-        locale = QLocale(QLocale.Language.English) # Locale di default
+        # --- RECOVER SETTINGS AND LOCALE HERE (BEFORE USING VARIABLES) ---
+        current_backup_base_dir = "" # Default empty
+        current_lang_code = "en"     # Default language
+        locale = QLocale(QLocale.Language.English) # Default locale
 
-        parent_window = self.parent() # Ottieni il parent una sola volta
+        parent_window = self.parent() # Get the parent once
         if parent_window and hasattr(parent_window, 'current_settings'):
-            # Leggi il percorso base del backup dalle impostazioni
+            # Read the backup base path from settings
             current_backup_base_dir = parent_window.current_settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
-            # Leggi la lingua corrente dalle impostazioni
+            # Read the current language from settings
             current_lang_code = parent_window.current_settings.get("language", "en")
-            # Crea l'oggetto QLocale corretto basato sulla lingua
+            # Create the correct QLocale based on the language
             locale = QLocale(QLocale.Language.English if current_lang_code == "en" else QLocale.Language.Italian)
-            logging.debug(f"ManageBackupsDialog: Using locale for language '{current_lang_code}'") # Log utile
+            logging.debug(f"ManageBackupsDialog: Using locale for language '{current_lang_code}'") # Useful log
         else:
-            # Fallback se non troviamo le impostazioni nel parent
-            logging.warning("ManageBackupsDialog: Impossibile accedere a current_settings dal parent. Uso i default da config.")
+            # Fallback if we don't find settings in the parent
+            logging.warning("ManageBackupsDialog: Unable to access current_settings from parent. Using defaults from config.")
             current_backup_base_dir = config.BACKUP_BASE_DIR
-            # locale rimane QLocale.Language.English (già impostato come default)
-        # --- FINE RECUPERO IMPOSTAZIONI ---
+            # locale remains QLocale.Language.English (already set as default)
+        # --- END RECOVER SETTINGS ---
 
-        # Ora puoi chiamare list_available_backups perché current_backup_base_dir è definito
-        # Assicurati che list_available_backups restituisca (name, path, dt_obj)
         backups = core_logic.list_available_backups(self.profile_name, current_backup_base_dir)
 
         if not backups:
-            # Gestione nessun backup trovato
-            item = QListWidgetItem(self.tr("Nessun backup trovato.")) # Traduci testo
-            item.setData(Qt.ItemDataRole.UserRole, None) # Nessun percorso associato
+            # Handle no backups found
+            item = QListWidgetItem(self.tr("No backups found.")) # Translate text
+            item.setData(Qt.ItemDataRole.UserRole, None) # No associated path
             self.backup_list_widget.addItem(item)
-            self.backup_list_widget.setEnabled(False) # Disabilita lista
+            self.backup_list_widget.setEnabled(False) # Disable list
         else:
-            # Ci sono backup, popola la lista
-            self.backup_list_widget.setEnabled(True) # Abilita lista
+            # There are backups, populate the list
+            self.backup_list_widget.setEnabled(True) # Enable list
 
-            # Ciclo per aggiungere ogni backup con data formattata
-            for name, path, dt_obj in backups: # Itera sulla tupla (name, path, datetime_object)
-                # Formatta la data usando l'oggetto 'locale' definito sopra
-                date_str_formatted = "???" # Valore fallback
-                if dt_obj: # Controlla se l'oggetto datetime è valido
+            # Loop to add each backup with formatted date
+            for name, path, dt_obj in backups: # Iterate on the tuple (name, path, datetime_object)
+                # Format the date using the 'locale' defined above
+                date_str_formatted = "???" # Fallback value
+                if dt_obj: # Check if the datetime object is valid
                     try:
-                        # Usa QLocale per ottenere il formato breve standard
+                        # Use QLocale to get the standard short format
                         date_str_formatted = locale.toString(dt_obj, QLocale.FormatType.ShortFormat)
                     except Exception as e_fmt:
                         logging.error(f"Error formatting date ({dt_obj}) for backup {name}: {e_fmt}")
 
-                # Pulisci il nome del file di backup (rimuovi timestamp)
+                # Clean the backup file name (remove timestamp)
                 display_name = core_logic.get_display_name_from_backup_filename(name)
-                # Crea il testo dell'item con nome pulito e data formattata
+                # Create the item text with clean name and formatted date
                 item_text = f"{display_name} ({date_str_formatted})"
 
-                # Crea e aggiungi l'item
+                # Create and add the item
                 item = QListWidgetItem(item_text)
-                item.setData(Qt.ItemDataRole.UserRole, path) # Salva il percorso completo nell'item
+                item.setData(Qt.ItemDataRole.UserRole, path) # Save the full path in the item
                 self.backup_list_widget.addItem(item)
-            # Fine ciclo for backups
-        # Fine if/else not backups
-    # --- Fine populate_backup_list ---
+            # End loop for backups
+        # End if/else not backups
+    # --- End populate_backup_list ---
      
      @Slot()
      def delete_selected_backup(self):
@@ -129,9 +127,9 @@ class ManageBackupsDialog(QDialog):
         confirm_title = self.tr("Conferma Eliminazione")
         confirm_text = self.tr(
             "Sei sicuro di voler eliminare PERMANENTEMENTE il file di backup:\n\n"
-            "{0}\n\n" # Placeholder per il nome file
+            "{0}\n\n" # Placeholder for the file name
             "Questa azione non può essere annullata!"
-        ).format(backup_name) # Inserisci il nome file nel placeholder
+        ).format(backup_name) # Insert the file name in the placeholder
 
         confirm = QMessageBox.warning(self, confirm_title, confirm_text,
                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -147,4 +145,4 @@ class ManageBackupsDialog(QDialog):
                 self.populate_backup_list()
             else:
                 QMessageBox.critical(self, self.tr("Errore Eliminazione"), message)
-                self.populate_backup_list() # Aggiorna comunque
+                self.populate_backup_list() # Update anyway

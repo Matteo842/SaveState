@@ -13,43 +13,43 @@ import logging
 class RestoreDialog(QDialog):
     def __init__(self, profile_name, parent=None):
         super().__init__(parent)
-        # Titolo tradotto e formattato
-        self.setWindowTitle(self.tr("Ripristina Backup per {}").format(profile_name))
+        # Translated and formatted title
+        self.setWindowTitle(self.tr("Ripristina Backup per {}" ).format(profile_name))
         self.setMinimumWidth(450)
         self.backup_list_widget = QListWidget()
         self.selected_backup_path = None
         no_backup_label = None
 
-        # --- Recupera il percorso base CORRENTE dalle impostazioni del parent ---
-        current_backup_base_dir = "" # Default vuoto
-        if parent and hasattr(parent, 'current_settings'): # Controlla se parent e settings esistono
+        # --- Retrieve the CURRENT base path from the parent's settings ---
+        current_backup_base_dir = "" # Default empty
+        if parent and hasattr(parent, 'current_settings'): # Check if parent and settings exist
             current_backup_base_dir = parent.current_settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
         else:
-            # Fallback se non riusciamo a ottenere le impostazioni (improbabile)
-            logging.warning("RestoreDialog: Impossibile accedere a current_settings dal parent. Uso il default da config.")
+            # Fallback if we can't get the settings (unlikely)
+            logging.warning("RestoreDialog: Unable to access current_settings from parent. Using default from config.")
             current_backup_base_dir = config.BACKUP_BASE_DIR
 
-        # --- Chiama core_logic (ora restituisce lista con datetime object) ---
-        # La funzione list_available_backups deve essere già stata modificata
-        # per restituire (name, path, datetime_obj)
+        # --- Call core_logic (now returns list with datetime object) ---
+        # The function list_available_backups must already have been modified
+        # to return (name, path, datetime_obj)
         backups = core_logic.list_available_backups(profile_name, current_backup_base_dir)
 
         if not backups:
-            # Gestione nessun backup trovato
+            # Handle no backups found
             no_backup_label = QLabel(self.tr("Nessun backup trovato per questo profilo."))
             self.backup_list_widget.setEnabled(False)
         else:
-            # --- Logica per formattazione data localizzata ---
+            # --- Logic for localized date formatting ---
             current_lang_code = "en" # Default fallback
             if parent and hasattr(parent, 'current_settings'):
                 current_lang_code = parent.current_settings.get("language", "en")
             locale = QLocale(QLocale.Language.English if current_lang_code == "en" else QLocale.Language.Italian)
-            # --- Fine logica localizzazione ---
+            # --- End localization logic ---
 
-            # --- Ciclo per popolare la lista CON FORMATTAZIONE DATA ---
-            # Ora iteriamo su (name, path, dt_obj)
+            # --- Loop to populate the list WITH DATE FORMATTING ---
+            # Now we iterate over (name, path, dt_obj)
             for name, path, dt_obj in backups:
-                # Formatta la data usando QLocale
+                # Format the date using QLocale
                 date_str_formatted = "???" # Fallback
                 if dt_obj:
                     try:
@@ -57,75 +57,75 @@ class RestoreDialog(QDialog):
                     except Exception as e_fmt:
                         logging.error(f"Error formatting date ({dt_obj}) for backup {name}: {e_fmt}")
 
-                # Pulisci il nome file (usa la funzione da core_logic)
+                # Clean the file name (use the function from core_logic)
                 display_name = core_logic.get_display_name_from_backup_filename(name)
-                item_text = f"{display_name} ({date_str_formatted})" # Usa nome pulito e data formattata
+                item_text = f"{display_name} ({date_str_formatted})" # Use clean name and formatted date
 
-                # Crea e aggiungi l'item alla lista
+                # Create and add the item to the list
                 item = QListWidgetItem(item_text)
-                item.setData(Qt.ItemDataRole.UserRole, path) # Salva il percorso completo
+                item.setData(Qt.ItemDataRole.UserRole, path) # Save the full path
                 self.backup_list_widget.addItem(item)
-            # --- Fine ciclo popolamento lista ---
+            # --- End list population loop ---
 
-        # --- Pulsanti Dialogo (come prima) ---
+        # --- Dialog Buttons (as before) ---
         buttons = QDialogButtonBox()
         ok_button = buttons.addButton(self.tr("Ripristina Selezionato"), QDialogButtonBox.ButtonRole.AcceptRole)
         cancel_button = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        ok_button.setEnabled(False) # Disabilita OK all'inizio
+        ok_button.setEnabled(False) # Disable OK at the start
 
-        # --- Layout (come prima) ---
+        # --- Layout (as before) ---
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(self.tr("Seleziona il backup da cui ripristinare:")))
         if no_backup_label: layout.addWidget(no_backup_label)
         layout.addWidget(self.backup_list_widget)
         layout.addWidget(buttons)
 
-        # Connetti segnale cambio selezione (come prima)
+        # Connect selection change signal (as before)
         self.backup_list_widget.currentItemChanged.connect(self.on_selection_change)
-    # --- Fine metodo __init__ ---
+    # --- End of __init__ method ---
 
-    # Il resto della classe RestoreDialog (on_selection_change, get_selected_path) rimane invariato...
-    # ... (assicurati che il resto della classe sia presente nel tuo file)
+    # The rest of the RestoreDialog class (on_selection_change, get_selected_path) remains unchanged...
+    # ... (make sure the rest of the class is present in your file)
 
     def on_selection_change(self, current_item, previous_item):
-        # Trova il pulsante OK (AcceptRole)
+        # Find the OK button (AcceptRole)
         button_box = self.findChild(QDialogButtonBox)
         if not button_box:
-            # Logga solo se non troviamo il contenitore dei pulsanti
-            logging.error("RestoreDialog: QDialogButtonBox non trovato in on_selection_change!")
+            # Log only if we can't find the button box
+            logging.error("RestoreDialog: QDialogButtonBox not found in on_selection_change!")
             return
         all_buttons = button_box.buttons()
-        ok_button = None # Inizializza a None
-        # Cerca tra i pulsanti quello che ha il ruolo AcceptRole
+        ok_button = None # Initialize to None
+        # Search among the buttons for the one with AcceptRole
         for button in all_buttons:
             if button_box.buttonRole(button) == QDialogButtonBox.ButtonRole.AcceptRole:
-                ok_button = button # Trovato!
-                break # Esci dal ciclo appena lo trovi
+                ok_button = button # Found!
+                break # Exit the loop as soon as you find it
 
         if ok_button:
-            # Recupera i dati associati all'item selezionato
+            # Retrieve the data associated with the selected item
             item_data = None
             if current_item:
                 try:
-                    # Tentativo di recuperare il percorso salvato come UserRole
+                    # Attempt to retrieve the path saved as UserRole
                     item_data = current_item.data(Qt.ItemDataRole.UserRole)
                 except Exception as e_data:
-                    # Logga solo se c'è un errore nel recuperare i dati
-                    logging.error(f"Errore nel recuperare i dati dall'item selezionato: {e_data}")
+                    # Log only if there is an error retrieving the data
+                    logging.error(f"Error retrieving data from selected item: {e_data}")
 
-            # Abilita il pulsante SOLO se un item è selezionato E ha dati validi (non None)
+            # Enable the button ONLY if an item is selected AND has valid data (not None)
             if current_item and item_data is not None:
-                self.selected_backup_path = item_data # Salva il percorso valido
+                self.selected_backup_path = item_data # Save the valid path
                 ok_button.setEnabled(True)
             else:
-                # Altrimenti, disabilita il pulsante e resetta il percorso selezionato
+                # Otherwise, disable the button and reset the selected path
                 self.selected_backup_path = None
                 ok_button.setEnabled(False)
         else:
-            # Logga solo se non troviamo il pulsante specifico OK/Accetta
-            logging.error("Pulsante OK (AcceptRole) non trovato in RestoreDialog!")
+            # Log only if we can't find the specific OK/Accept button
+            logging.error("OK button (AcceptRole) not found in RestoreDialog!")
         
     def get_selected_path(self):
         return self.selected_backup_path

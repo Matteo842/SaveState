@@ -7,16 +7,16 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Slot, QEvent
 
-# Importa il modulo per salvare/caricare impostazioni
+# Import the module to save/load settings
 import logging
-# Import config per accedere alla costante MIN_FREE_SPACE_GB
+# Import config to access the MIN_FREE_SPACE_GB constant
 try:
     import config
 except ImportError:
-    # Fallback se config.py non è trovabile (improbabile ma sicuro)
+    # Fallback if config.py is not found (unlikely but safe)
     class config:
         MIN_FREE_SPACE_GB = 2
-    logging.warning("Modulo config.py non trovato, uso valore di default per MIN_FREE_SPACE_GB.")
+    logging.warning("Module config.py not found, using default value for MIN_FREE_SPACE_GB.")
 
 
 class SettingsDialog(QDialog):
@@ -27,16 +27,16 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(500)
         self.settings = current_settings.copy()
 
-        # Ottieni lo stile per le icone standard
+        # Get the style for standard icons
         style = QApplication.instance().style()
 
         layout = QVBoxLayout(self)
 
-        # --- Gruppo Percorso Base Backup ---
-        self.path_group = QGroupBox(self.tr("Percorso Base Backup")) # Riferimento salvato
+        # --- Backup Base Path Group ---
+        self.path_group = QGroupBox(self.tr("Percorso Base Backup")) # Saved reference
         path_layout = QHBoxLayout()
         self.path_edit = QLineEdit(self.settings.get("backup_base_dir", ""))
-        self.browse_button = QPushButton() # Riferimento salvato
+        self.browse_button = QPushButton() # Saved reference
         browse_icon = style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
         self.browse_button.setIcon(browse_icon)
         path_layout.addWidget(self.path_edit)
@@ -44,8 +44,8 @@ class SettingsDialog(QDialog):
         self.path_group.setLayout(path_layout)
         layout.addWidget(self.path_group)
 
-        # --- Gruppo Dimensione Massima Sorgente ---
-        self.max_src_group = QGroupBox() # Riferimento salvato
+        # --- Maximum Source Size Group ---
+        self.max_src_group = QGroupBox() # Saved reference
         max_src_layout = QHBoxLayout()
         self.size_options = [
             ("50 MB", 50), ("100 MB", 100), ("250 MB", 250), ("500 MB", 500),
@@ -56,12 +56,12 @@ class SettingsDialog(QDialog):
         self.max_src_combobox = QComboBox()
         for display_text, _ in self.size_options:
             self.max_src_combobox.addItem(display_text)
-        # ... (logica per selezionare valore corrente) ...
+        # ... (logic to select current value) ...
         current_mb_value = self.settings.get("max_source_size_mb", 500)
         current_index = next((i for i, (_, v) in enumerate(self.size_options) if v == current_mb_value), -1)
         if current_index != -1:
             self.max_src_combobox.setCurrentIndex(current_index)
-        else: # Fallback se valore salvato non è tra le opzioni
+        else: # Fallback if saved value is not among the options
             default_index = next((i for i, (_, v) in enumerate(self.size_options) if v == 500), 0)
             self.max_src_combobox.setCurrentIndex(default_index)
 
@@ -70,8 +70,8 @@ class SettingsDialog(QDialog):
         self.max_src_group.setLayout(max_src_layout)
         layout.addWidget(self.max_src_group)
 
-        # --- Gruppo Numero Massimo Backup ---
-        self.max_group = QGroupBox() # Riferimento salvato
+        # --- Maximum Number of Backups Group ---
+        self.max_group = QGroupBox() # Saved reference
         max_layout = QHBoxLayout()
         self.max_spinbox = QSpinBox()
         self.max_spinbox.setMinimum(1)
@@ -82,8 +82,8 @@ class SettingsDialog(QDialog):
         self.max_group.setLayout(max_layout)
         layout.addWidget(self.max_group)
 
-        # --- Gruppo Lingua ---
-        self.lang_group = QGroupBox() # Riferimento salvato
+        # --- Language Group ---
+        self.lang_group = QGroupBox() # Saved reference
         lang_layout = QHBoxLayout()
         self.lang_combobox = QComboBox()
         self.lang_combobox.addItem("Italiano", "it")
@@ -97,22 +97,22 @@ class SettingsDialog(QDialog):
         self.lang_group.setLayout(lang_layout)
         layout.addWidget(self.lang_group)
 
-        # --- Gruppo Compressione ---
-        self.comp_group = QGroupBox() # Riferimento salvato
+        # --- Compression Group ---
+        self.comp_group = QGroupBox() # Saved reference
         comp_layout = QHBoxLayout()
         self.comp_combobox = QComboBox()
-        # (La mappa self.compression_options verrà aggiornata in retranslateUi)
+        # (The self.compression_options map will be updated in retranslateUi)
         current_comp_mode = self.settings.get("compression_mode", "standard")
-        # (La selezione verrà ripristinata in retranslateUi dopo aver popolato)
+        # (Selection will be restored in retranslateUi after populating)
         comp_layout.addWidget(self.comp_combobox)
         comp_layout.addStretch()
         self.comp_group.setLayout(comp_layout)
         layout.addWidget(self.comp_group)
 
-        # --- Controllo Spazio Libero ---
-        self.space_check_group = QGroupBox() # Riferimento salvato
+        # --- Free Space Check Group ---
+        self.space_check_group = QGroupBox() # Saved reference
         space_check_layout = QHBoxLayout()
-        self.space_check_checkbox = QCheckBox() # Riferimento salvato
+        self.space_check_checkbox = QCheckBox() # Saved reference
         self.space_check_checkbox.setChecked(self.settings.get("check_free_space_enabled", True))
         space_check_layout.addWidget(self.space_check_checkbox)
         space_check_layout.addStretch()
@@ -121,75 +121,75 @@ class SettingsDialog(QDialog):
 
         layout.addStretch()
 
-        # --- Pulsanti Dialogo ---
-        self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel) # Riferimento salvato
+        # --- Dialog Buttons ---
+        self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel) # Saved reference
         self.buttons.accepted.connect(self.accept_settings)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
 
-        # Connetti segnali
+        # Connect signals
         self.browse_button.clicked.connect(self.browse_backup_dir)
 
-        # Chiama retranslateUi alla fine per impostare testi iniziali
+        # Call retranslateUi at the end to set initial texts
         self.retranslateUi()
 
     def get_settings(self):
-        """Restituisce il dizionario interno delle impostazioni modificate."""
+        """Returns the internal dictionary of modified settings."""
         return self.settings
 
     def retranslateUi(self):
-        """Aggiorna il testo dei widget traducibili nel dialogo."""
+        """Updates the text of translatable widgets in the dialog."""
         logging.debug("SettingsDialog.retranslateUi() called")
         self.setWindowTitle(self.tr("Impostazioni Applicazione"))
         self.path_group.setTitle(self.tr("Percorso Base Backup"))
         self.max_src_group.setTitle(self.tr("Dimensione Massima Sorgente per Backup"))
         self.max_group.setTitle(self.tr("Numero Massimo Backup per Profilo"))
-        self.lang_group.setTitle("Lingua / Language") # Già bilingue
+        self.lang_group.setTitle("Lingua / Language") # Already bilingual
         self.comp_group.setTitle(self.tr("Compressione Backup (.zip)"))
         self.space_check_group.setTitle(self.tr("Controllo Spazio Libero Disco"))
         self.space_check_checkbox.setText(self.tr("Abilita controllo spazio prima del backup (minimo {0} GB)").format(config.MIN_FREE_SPACE_GB))
 
-        # Aggiorna testi nella combobox compressione
-        current_key_comp = self.comp_combobox.currentData() # Salva chiave attuale
+        # Update texts in the compression combobox
+        current_key_comp = self.comp_combobox.currentData() # Save current key
         self.comp_combobox.clear()
-        self.compression_options = { # Ricrea mappa con testi tradotti
+        self.compression_options = { # Recreate map with translated texts
              "standard": self.tr("Standard (Consigliato)"),
              "maximum": self.tr("Massima (Più Lento)"),
              "stored": self.tr("Nessuna (Più Veloce)")
         }
-        for key, text in self.compression_options.items(): # Ripopola
+        for key, text in self.compression_options.items(): # Repopulate
             self.comp_combobox.addItem(text, key)
         index_to_select_comp = self.comp_combobox.findData(current_key_comp)
-        if index_to_select_comp != -1: # Riseleziona
+        if index_to_select_comp != -1: # Reselect
             self.comp_combobox.setCurrentIndex(index_to_select_comp)
 
-        # Aggiorna testo pulsanti
+        # Update button texts
         self.browse_button.setText(self.tr("Sfoglia..."))
         save_button = self.buttons.button(QDialogButtonBox.StandardButton.Save)
         if save_button: save_button.setText(self.tr("Salva"))
         cancel_button = self.buttons.button(QDialogButtonBox.StandardButton.Cancel)
         if cancel_button: cancel_button.setText(self.tr("Annulla"))
 
-    # !!! CORREZIONE: Spostato fuori da retranslateUi !!!
+    # --- Event handling ---
     def changeEvent(self, event):
-        """Gestisce eventi, incluso cambio lingua."""
+        """Handles events, including language change."""
         if event.type() == QEvent.Type.LanguageChange:
             logging.debug("SettingsDialog.changeEvent(LanguageChange) detected")
-            self.retranslateUi() # Richiama la funzione corretta
-        super().changeEvent(event) # Chiama l'implementazione base
+            self.retranslateUi() # Call the correct function
+        super().changeEvent(event) # Call the base implementation
 
     @Slot()
     def browse_backup_dir(self):
-        """Apre dialogo per selezionare cartella backup."""
+        """Opens dialog to select backup folder."""
         directory = QFileDialog.getExistingDirectory(
-            self, self.tr("Seleziona Cartella Base per i Backup"), self.path_edit.text() # Usa self.tr()
+            self, self.tr("Seleziona Cartella Base per i Backup"), self.path_edit.text() # Use self.tr()
         )
         if directory:
              self.path_edit.setText(os.path.normpath(directory))
 
     @Slot()
     def accept_settings(self):
-        """Valida e aggiorna il dizionario delle impostazioni."""
+        """Validates and updates the settings dictionary."""
         new_path = os.path.normpath(self.path_edit.text())
         new_max_backups = self.max_spinbox.value()
         selected_size_index = self.max_src_combobox.currentIndex()
@@ -201,27 +201,27 @@ class SettingsDialog(QDialog):
         if 0 <= selected_size_index < len(self.size_options):
             _, new_max_src_size_mb = self.size_options[selected_size_index]
 
-        # --- VALIDAZIONE PERCORSO (Ora usa ProfileCreationManager) ---
+        # --- PATH VALIDATION (Now uses ProfileCreationManager) ---
         main_window = self.parent()
-        # Controlla se main_window e il suo profile_creation_manager esistono,
-        # e se quest'ultimo ha il metodo validate_save_path.
+        # Check if main_window and its profile_creation_manager exist,
+        # and if the latter has the validate_save_path method.
         if not main_window or \
            not hasattr(main_window, 'profile_creation_manager') or \
            not main_window.profile_creation_manager or \
            not hasattr(main_window.profile_creation_manager, 'validate_save_path'):
-            logging.error("Impossibile validare il percorso: main_window o profile_creation_manager o metodo mancante.")
+            logging.error("Unable to validate path: main_window or profile_creation_manager or method missing.")
             QMessageBox.critical(self, self.tr("Errore Interno"), self.tr("Impossibile validare il percorso."))
             return
 
         context_name = self.tr("Impostazioni")
-        # Chiama il metodo tramite il manager
+        # Call the method via the manager
         validated_new_path = main_window.profile_creation_manager.validate_save_path(
             new_path, context_profile_name=context_name
         )
         if validated_new_path is None:
-             return # La validazione è fallita e ha già mostrato un messaggio
+             return # Validation failed and already showed a message
 
-        # Aggiorna il dizionario self.settings con i nuovi valori validati
+        # Update the self.settings dictionary with the new validated values
         self.settings["backup_base_dir"] = validated_new_path
         self.settings["max_backups"] = new_max_backups
         self.settings["max_source_size_mb"] = new_max_src_size_mb
@@ -229,5 +229,5 @@ class SettingsDialog(QDialog):
         self.settings["compression_mode"] = new_compression_mode
         self.settings["check_free_space_enabled"] = new_check_free_space
 
-        # Accetta il dialogo
+        # Accept the dialog
         super().accept()

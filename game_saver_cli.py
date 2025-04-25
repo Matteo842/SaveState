@@ -4,26 +4,26 @@
 import os
 import time
 import platform
-import sys # Aggiunto sys per exit()
+import sys # Added sys for exit()
 
-# --- Import Essenziali e Veloci ---
+# --- Essential and Fast Imports ---
 try:
     import colorama
     from colorama import Fore, Back, Style, init
-    # Inizializza SUBITO colorama per il messaggio di loading
+    # Initialize colorama immediately for the loading message
     init(autoreset=True)
     COLORAMA_AVAILABLE = True
 except ImportError:
-    # Definisci colori vuoti come fallback se colorama manca
+    # Define empty colors as fallback if colorama is missing
     class Fore:
         RED = GREEN = YELLOW = CYAN = WHITE = LIGHTBLACK_EX = MAGENTA = BLUE = ""
     class Style:
         BRIGHT = RESET_ALL = ""
     COLORAMA_AVAILABLE = False
     print("Warning: 'colorama' library not found. Output will not be colored.")
-    # Non usiamo init() se non c'è colorama
+    # We don't use init() if colorama is missing
 
-# --- Funzioni Helper per Stampa Colorata (definite prima del loading) ---
+# --- Helper Functions for Colored Printing (defined before loading) ---
 
 def print_title(text):
     """Prints a title in bright red."""
@@ -59,7 +59,7 @@ def get_input(prompt):
         return input(f"{Style.BRIGHT}{Fore.WHITE}> {prompt}{Style.RESET_ALL} ")
     except EOFError:
         print_error("\nInput stream closed unexpectedly. Exiting.")
-        sys.exit(1) # Usa sys.exit
+        sys.exit(1) # Use sys.exit
 
 def pause(message="Press Enter to continue..."):
     """Pauses execution and waits for Enter key."""
@@ -70,27 +70,27 @@ def clear_screen():
     os.system('cls' if platform.system() == "Windows" else 'clear')
 
 
-# --- === PUNTO DI INIZIO ESECUZIONE === ---
+# --- === START OF EXECUTION POINT === ---
 if __name__ == "__main__":
 
-    # 1. Pulisci lo schermo e mostra messaggio di caricamento IMMEDIATAMENTE
+    # 1. Clear the screen and show loading message immediately
     clear_screen()
     print(f"\n{Style.BRIGHT}{Fore.BLUE}Loading SaveState CLI...{Style.RESET_ALL}\n")
-    # Aggiungiamo un piccolo delay artificiale per rendere visibile il "Loading"
-    # Puoi rimuoverlo o cambiarlo se vuoi
+    # Add a small artificial delay to make the "Loading" visible
+    # You can remove it or change it if you want
     # time.sleep(0.5)
 
-    # 2. Ora esegui gli import "pesanti"
+    # 2. Now execute the "heavy" imports
     try:
         import core_logic
         import config
         import settings_manager
         import minecraft_utils
         import shortcut_utils
-        import logging # Import logging qui se lo usi nelle funzioni sotto
+        import logging # Import logging here if you use it in the functions below
         MODULES_LOADED = True
     except ImportError as e:
-        # Errore critico se i moduli principali non si caricano
+        # Critical error if the main modules don't load
         clear_screen()
         print_title("Fatal Error")
         print_error(f"Could not import required application modules ({e}).")
@@ -98,9 +98,9 @@ if __name__ == "__main__":
         print_error("and all project files are present.")
         MODULES_LOADED = False
         pause("Press Enter to exit.")
-        sys.exit(1) # Esce se mancano moduli fondamentali
+        sys.exit(1) # Exit if missing fundamental modules
     except Exception as e_load:
-        # Altri errori imprevisti durante l'import
+        # Other unexpected errors during import
         clear_screen()
         print_title("Fatal Error")
         print_error(f"An unexpected error occurred during module loading: {e_load}")
@@ -108,12 +108,10 @@ if __name__ == "__main__":
         pause("Press Enter to exit.")
         sys.exit(1)
 
-    # --- Se gli import sono andati a buon fine, prosegui ---
+    # --- If the imports went well, continue ---
     if MODULES_LOADED:
 
-        # --- Funzioni che DIPENDONO dagli import precedenti ---
-        # (Le funzioni create_profile_cli, select_profile_cli, etc.
-        #  ora devono essere definite QUI, dopo gli import)
+        # --- Functions that DEPEND on the previous imports ---
 
         def create_profile_cli(profiles_dict):
             """Handles manual creation of a new profile."""
@@ -213,7 +211,7 @@ if __name__ == "__main__":
                     choice = int(choice_str)
                     if choice == 0:
                         print_info("Cancelled.")
-                        pause() # Aggiungi pausa qui
+                        pause() # Add pause here
                         return profiles_dict
                     if 1 <= choice <= len(worlds):
                         selected_world_data = worlds[choice - 1]
@@ -446,12 +444,12 @@ if __name__ == "__main__":
             pause()
             return profiles_dict
 
-        # --- Fine Definizione Funzioni ---
+        # --- End of Function Definition ---
 
-        # 3. Carica i profili (DOPO gli import dei moduli necessari)
+        # 3. Load profiles (AFTER the necessary modules are imported)
         profiles = core_logic.load_profiles()
 
-        # 4. Pulisci lo schermo di nuovo e mostra il menu principale
+        # 4. Clear the screen again and show the main menu
         clear_screen()
         print_title("SaveState CLI - Ready")
         print_info(f"Loaded {len(profiles)} profiles.")
@@ -484,4 +482,4 @@ if __name__ == "__main__":
 
         print_success("\nExiting SaveState CLI.")
 
-# --- Fine Blocco if __name__ == "__main__": ---
+# --- End of if __name__ == "__main__": block ---

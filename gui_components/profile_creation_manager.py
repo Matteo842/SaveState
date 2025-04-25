@@ -4,46 +4,45 @@ import os
 #import sys
 import logging
 import string
-#import shutil # Per shutil.disk_usage nel futuro? Non usato qui direttamente ora.
 
 from PySide6.QtWidgets import QMessageBox, QInputDialog, QApplication
-from PySide6.QtCore import Qt, QUrl, Slot
+from PySide6.QtCore import Qt, Slot
 
 # Importa dialoghi specifici se servono (es. Minecraft)
 from dialogs.minecraft_dialog import MinecraftWorldsDialog
 
 # Importa utility e logica
-from gui_utils import DetectionWorkerThread, resource_path # Assumiamo siano qui
+from gui_utils import DetectionWorkerThread
 import minecraft_utils
 import core_logic
 from shortcut_utils import sanitize_profile_name # O importa shortcut_utils
 
 class ProfileCreationManager:
     """
-    Gestisce la creazione di nuovi profili utente tramite input manuale,
-    drag & drop di collegamenti (.lnk), o selezione di mondi Minecraft.
+    Handles user profile creation through manual input,
+    drag & drop of shortcuts (.lnk), or selection of Minecraft worlds.
     """
     def __init__(self, main_window):
         """
-        Inizializza il gestore.
+        Initializes the manager.
 
         Args:
-            main_window: Riferimento all'istanza di MainWindow per accedere
-                         a UI elements, settings, profiles, methods, etc.
+            main_window: Reference to the MainWindow instance for accessing
+                         UI elements, settings, profiles, methods, etc.
         """
         self.main_window = main_window
-        self.detection_thread = None # Gestisce il proprio worker per il rilevamento
+        self.detection_thread = None # Handles its own worker for detection
 
-    # --- METODO HELPER PER VALIDAZIONE PERCORSO (Spostato qui) ---
+    # --- HELPER METHOD FOR PATH VALIDATION (Moved here) ---
     def validate_save_path(self, path_to_check, context_profile_name="profilo"):
         """
-        Controlla se un percorso è valido come cartella di salvataggio.
-        Verifica che non sia vuoto, che non sia una radice di drive,
-        e che sia una cartella esistente.
-        Mostra un QMessageBox in caso di errore usando il parent main_window.
-        Restituisce il percorso normalizzato se valido, altrimenti None.
+        Checks if a path is valid as a save folder.
+        Verifies that it is not empty, not a drive root,
+        and that it is a valid folder.
+        Shows a QMessageBox in case of error using the parent main_window.
+        Returns the normalized path if valid, otherwise None.
         """
-        mw = self.main_window # Abbreviazione per leggibilità
+        mw = self.main_window # Abbreviation for readability
         if not path_to_check:
             QMessageBox.warning(mw, mw.tr("Errore Percorso"), mw.tr("Il percorso non può essere vuoto."))
             return None
@@ -52,9 +51,9 @@ class ProfileCreationManager:
 
         # Controllo Percorso Radice
         try:
-            # Ottieni lettere drive disponibili (solo Windows per ora)
+            # Get available drive letters (only Windows for now)
             available_drives = ['%s:' % d for d in string.ascii_uppercase if os.path.exists('%s:' % d)]
-            # Crea lista percorsi radice normalizzati (es. C:\, D:\)
+            # Create list of normalized root paths (e.g. C:\, D:\)
             known_roots = [os.path.normpath(d + os.sep) for d in available_drives]
             logging.debug(f"Path validation: Path='{norm_path}', KnownRoots='{known_roots}', IsRoot={norm_path in known_roots}")
 
@@ -74,23 +73,23 @@ class ProfileCreationManager:
             return None
 
         # Se tutti i controlli passano, restituisce il percorso normalizzato
-        logging.debug(f"Path validation: '{norm_path}' considered valid.")
+        logging.debug(f"Path validation: '{norm_path}' is considered valid.")
         return norm_path
     # --- FINE validate_save_path ---
 
-    # --- Gestione Nuovo Profilo Manuale (Spostato qui) ---
+    # --- Manual Profile Management ---
     @Slot()
     def handle_new_profile(self):
-        """Gestisce la creazione di un profilo con input manuale."""
+        """Handles the creation of a new profile with manual input."""
         mw = self.main_window
         logging.debug("ProfileCreationManager.handle_new_profile - START")
         profile_name, ok = QInputDialog.getText(mw, mw.tr("Nuovo Profilo"), mw.tr("Inserisci un nome per il nuovo profilo:"))
         logging.debug(f"ProfileCreationManager.handle_new_profile - Name entered: '{profile_name}', ok={ok}")
 
         if ok and profile_name:
-            # Pulisci il nome inserito
-            profile_name_original = profile_name # Conserva originale per messaggi
-            profile_name = sanitize_profile_name(profile_name) # Applica sanificazione
+            # Clean the entered name
+            profile_name_original = profile_name # Preserve original for messages
+            profile_name = sanitize_profile_name(profile_name) # Apply sanitization
             if not profile_name:
                  QMessageBox.warning(mw, mw.tr("Errore Nome Profilo"),
                                      mw.tr("Il nome del profilo ('{0}') contiene caratteri non validi o è vuoto dopo la pulizia.").format(profile_name_original))
@@ -107,31 +106,31 @@ class ProfileCreationManager:
             logging.debug(f"ProfileCreationManager.handle_new_profile - Path entered: '{input_path}', ok2={ok2}")
 
             if ok2:
-                # Usa la funzione di validazione (ora parte di questa classe)
+                # Use the validation function
                 validated_path = self.validate_save_path(input_path, profile_name)
 
                 if validated_path:
                     logging.debug(f"handle_new_profile - Valid path: '{validated_path}'.")
-                    mw.profiles[profile_name] = {'path': validated_path} # Salva come dizionario
+                    mw.profiles[profile_name] = {'path': validated_path} # Save as dictionary
                     logging.debug("handle_new_profile - Attempting to save profiles to file...")
-                    save_success = core_logic.save_profiles(mw.profiles) # Salva usando core_logic
+                    save_success = core_logic.save_profiles(mw.profiles) # Save using core_logic
                     logging.debug(f"handle_new_profile - Result of core_logic.save_profiles: {save_success}")
 
                     if save_success:
                         logging.info(f"Profile '{profile_name}' created manually.")
-                        # Aggiorna la tabella TRAMITE il manager della tabella in MainWindow
+                        # Update the table via the table manager in MainWindow
                         if hasattr(mw, 'profile_table_manager'):
                             mw.profile_table_manager.update_profile_table()
-                            mw.profile_table_manager.select_profile_in_table(profile_name) # Seleziona il nuovo
+                            mw.profile_table_manager.select_profile_in_table(profile_name) # Select the new
                         QMessageBox.information(mw, mw.tr("Successo"), mw.tr("Profilo '{0}' creato e salvato.").format(profile_name))
                         mw.status_label.setText(mw.tr("Profilo '{0}' creato.").format(profile_name))
                     else:
                         logging.error("handle_new_profile - core_logic.save_profiles returned False.")
                         QMessageBox.critical(mw, mw.tr("Errore"), mw.tr("Impossibile salvare il file dei profili."))
-                        # Rimuovi da memoria se salvataggio fallisce
+                        # Remove from memory if saving fails
                         if profile_name in mw.profiles:
                             del mw.profiles[profile_name]
-                # else: validate_save_path ha già mostrato l'errore
+                # else: validate_save_path has already shown the error
             else:
                  logging.debug("handle_new_profile - Path input cancelled (ok2=False).")
         else:
@@ -139,12 +138,12 @@ class ProfileCreationManager:
         logging.debug("handle_new_profile - END")
     # --- FINE handle_new_profile ---
 
-    # --- Gestione Pulsante Minecraft (Spostato qui) ---
+    # --- Minecraft Button Management ---
     @Slot()
     def handle_minecraft_button(self):
         """
-        Trova i mondi Minecraft, mostra un dialogo per la selezione
-        e crea un nuovo profilo per il mondo scelto.
+        Finds Minecraft worlds, shows a selection dialog,
+        and creates a new profile for the selected world.
         """
         mw = self.main_window
         logging.info("Starting Minecraft world search...")
@@ -190,9 +189,9 @@ class ProfileCreationManager:
             QMessageBox.critical(mw, mw.tr("Errore Interfaccia"), mw.tr("Impossibile creare la finestra di selezione dei mondi."))
             return
 
-        mw.status_label.setText(mw.tr("Pronto.")) # Resetta status
+        mw.status_label.setText(mw.tr("Ready.")) # Reset status
 
-        if dialog.exec(): # Usa exec() bloccante standard per dialoghi modali
+        if dialog.exec(): # Use standard blocking exec() for modal dialogs
             selected_world = dialog.get_selected_world_info()
             if selected_world:
                 profile_name = selected_world.get('world_name', selected_world.get('folder_name'))
@@ -203,7 +202,7 @@ class ProfileCreationManager:
                     QMessageBox.critical(mw, mw.tr("Errore Interno"), mw.tr("Nome del mondo selezionato non valido."))
                     return
 
-                # Sanifica anche il nome del mondo Minecraft
+                # Sanitize also the Minecraft world name
                 profile_name_original = profile_name
                 profile_name = sanitize_profile_name(profile_name)
                 if not profile_name:
@@ -223,14 +222,14 @@ class ProfileCreationManager:
                                         mw.tr("Un profilo chiamato '{0}' esiste già.\nScegli un altro mondo o rinomina il profilo esistente.").format(profile_name))
                     return
 
-                # Crea e Salva Nuovo Profilo
-                mw.profiles[profile_name] = {'path': world_path} # Salva come dizionario
+                # Create and save new profile
+                mw.profiles[profile_name] = {'path': world_path} # Save as dictionary
                 if core_logic.save_profiles(mw.profiles):
                     logging.info(f"Minecraft profile '{profile_name}' created.")
-                     # Aggiorna la tabella TRAMITE il manager della tabella in MainWindow
+                    # Update the table via the table manager in MainWindow
                     if hasattr(mw, 'profile_table_manager'):
                         mw.profile_table_manager.update_profile_table()
-                        mw.profile_table_manager.select_profile_in_table(profile_name) # Seleziona il nuovo
+                        mw.profile_table_manager.select_profile_in_table(profile_name) # Select the new
                     QMessageBox.information(mw, mw.tr("Profilo Creato"),
                                             mw.tr("Profilo '{0}' creato con successo per il mondo Minecraft.").format(profile_name))
                     mw.status_label.setText(mw.tr("Profilo '{0}' creato.").format(profile_name))
@@ -245,13 +244,13 @@ class ProfileCreationManager:
             mw.status_label.setText(mw.tr("Selezione mondo annullata."))
     # --- FINE handle_minecraft_button ---
 
-    # --- Gestione Drag and Drop (Spostato qui) ---
+    # --- Drag and Drop Management ---
     def dragEnterEvent(self, event):
-        """Gestisce l'ingresso di un oggetto trascinato."""
+        """Handles the drag-and-drop event."""
         mime_data = event.mimeData()
         if mime_data.hasUrls():
             urls = mime_data.urls()
-            # Accetta solo se è UN SINGOLO file .lnk
+            # Accept only if it's a SINGLE .lnk file
             if urls and len(urls) == 1 and urls[0].isLocalFile() and urls[0].toLocalFile().lower().endswith('.lnk'):
                 event.acceptProposedAction()
                 logging.debug("DragEnterEvent: Accepted .lnk file.")
@@ -262,8 +261,8 @@ class ProfileCreationManager:
              event.ignore()
 
     def dragMoveEvent(self, event):
-        """Gestisce il movimento di un oggetto trascinato sopra il widget."""
-        # La logica di accettazione è la stessa di dragEnterEvent
+        """Handles the movement of a dragged object over the widget."""
+        # The acceptance logic is the same as dragEnterEvent
         mime_data = event.mimeData()
         if mime_data.hasUrls():
             urls = mime_data.urls()
@@ -275,8 +274,8 @@ class ProfileCreationManager:
             event.ignore()
 
     def dropEvent(self, event):
-        """Gestisce il rilascio di un oggetto .lnk e avvia la ricerca del percorso."""
-        import winshell # Necessario per .lnk
+        """Handles the release of a .lnk object and starts the path search."""
+        import winshell # Necessary for .lnk
         mw = self.main_window
         if not event.mimeData().hasUrls():
             event.ignore()
@@ -291,7 +290,7 @@ class ProfileCreationManager:
         file_path = urls[0].toLocalFile()
         logging.info(f"DropEvent: Accepted .lnk file: {file_path}")
 
-        # --- Lettura .lnk ---
+        # --- Reading .lnk ---
         shortcut = None
         game_install_dir = None
         target_path = None
@@ -315,7 +314,7 @@ class ProfileCreationManager:
             QMessageBox.critical(mw, mw.tr("Errore Collegamento"), mw.tr("Impossibile leggere il file .lnk:\n{0}").format(e_lnk))
             return
 
-        # --- Ottieni e Pulisci Nome Profilo ---
+        # --- Get and Clean Profile Name ---
         base_name = os.path.basename(file_path)
         profile_name_temp, _ = os.path.splitext(base_name)
         profile_name_original = profile_name_temp.replace('™', '').replace('®', '').strip()
@@ -332,28 +331,28 @@ class ProfileCreationManager:
             QMessageBox.warning(mw, mw.tr("Profilo Esistente"), mw.tr("Profilo '{0}' esiste già.").format(profile_name))
             return
 
-        # --- AVVIO THREAD DI RICERCA ---
+        # --- Start Path Search Thread ---
         if self.detection_thread and self.detection_thread.isRunning():
             QMessageBox.information(mw, mw.tr("Operazione in Corso"), mw.tr("Un'altra ricerca di percorso è già in corso. Attendi."))
             return
 
-        mw.set_controls_enabled(False) # Disabilita controlli in MainWindow
+        mw.set_controls_enabled(False) # Disable controls in MainWindow
         mw.status_label.setText(mw.tr("Ricerca percorso per '{0}' in corso...").format(profile_name))
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor) # Cursore di attesa
 
-        # --- NUOVO: ATTIVAZIONE EFFETTO FADE/ANIMAZIONE ---
+        # --- Start Fade/Animation Effect ---
         try:
             if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
-                # Assicurati che l'overlay sia dimensionato correttamente prima di mostrarlo
+                # Ensure the overlay is sized correctly before showing it
                 mw.overlay_widget.resize(mw.centralWidget().size())
-                # Centra la label con la GIF/Placeholder
+                # Center the label with the GIF/Placeholder
                 if hasattr(mw, '_center_loading_label'):
-                    mw._center_loading_label() # Usa la funzione helper che abbiamo creato
+                    mw._center_loading_label() # Use the helper function we created
 
-                # Mostra overlay e label (la label è figlia dell'overlay)
+                # Show overlay and label (the label is a child of the overlay)
                 mw.overlay_widget.show()
 
-                # Avvia l'animazione di fade-in per l'overlay
+                # Start the fade-in animation for the overlay
                 if hasattr(mw, 'fade_in_animation'):
                     mw.fade_in_animation.start()
                 logging.debug("Fade-in animation started.")
@@ -361,45 +360,45 @@ class ProfileCreationManager:
                 logging.warning("Overlay widget or fade animation not found in MainWindow.")
         except Exception as e_fade_start:
             logging.error(f"Error starting fade/animation effect: {e_fade_start}", exc_info=True)
-        # --- FINE NUOVO ---
+        # --- FINE Start Fade/Animation Effect ---
         
-        # Crea e avvia il thread di rilevamento
+        # Create and start the path detection thread
         self.detection_thread = DetectionWorkerThread(
             game_install_dir=game_install_dir,
             profile_name_suggestion=profile_name,
             current_settings=mw.current_settings.copy(),
-            installed_steam_games_dict=None# Passa copia impostazioni
+            installed_steam_games_dict=None# Pass a copy of the settings
         )
-        # Connetti i segnali ai metodi DI QUESTA CLASSE (ProfileCreationManager)
+        # Connect the signals to the methods of THIS CLASS (ProfileCreationManager)
         self.detection_thread.progress.connect(self.on_detection_progress)
         self.detection_thread.finished.connect(self.on_detection_finished)
         self.detection_thread.start()
         logging.debug("Path detection thread started.")
     # --- FINE dropEvent ---
 
-    # --- Slot per Progresso Rilevamento (Spostato qui) ---
+    # --- Slot for Path Detection Progress ---
     @Slot(str)
     def on_detection_progress(self, message):
-        """Aggiorna la status bar della main_window con i messaggi dal thread."""
-        # Potrebbe essere utile filtrare/semplificare i messaggi qui
+        """Updates the status bar of main_window with messages from the thread."""
+        # It might be useful to filter/simplify the messages here
         self.main_window.status_label.setText(message)
     # --- FINE on_detection_progress ---
 
-    # --- Slot per Fine Rilevamento (Spostato qui) ---
+    # --- Slot for Path Detection Finished ---
     @Slot(bool, dict)
     def on_detection_finished(self, success, results):
-        """Chiamato quando il thread di rilevamento percorso ha finito."""
+        """Called when the path detection thread has finished."""
         mw = self.main_window
         logging.debug(f"Detection thread finished. Success: {success}, Results: {results}")
         
-        # --- STOP EFFETTO FADE/ANIMAZIONE ---
+        # --- Stop Fade/Animation Effect ---
         try:
-            # Avvia animazione fade-out (nasconderà overlay e label alla fine)
+            # Start fade-out animation (will hide overlay and label at the end)
             if hasattr(mw, 'fade_out_animation'):
                 mw.fade_out_animation.start()
                 logging.debug("Fade-out animation started.")
             elif hasattr(mw, 'overlay_widget'):
-                 # Fallback: nascondi subito se l'animazione non esiste
+                 # Fallback: hide immediately if the animation doesn't exist
                  mw.overlay_widget.hide()
                  if hasattr(mw, 'loading_label'): mw.loading_label.hide()
             else:
@@ -407,34 +406,34 @@ class ProfileCreationManager:
 
         except Exception as e_fade_stop:
             logging.error(f"Error stopping fade/animation effect: {e_fade_stop}", exc_info=True)
-        # --- FINE EFFETTO FADE ---
+        # --- FINE Fade/Animation Effect ---
         
-        QApplication.restoreOverrideCursor() # Ripristina cursore
-        mw.set_controls_enabled(True)      # Riabilita controlli in MainWindow
-        mw.status_label.setText(mw.tr("Ricerca percorso completata."))
+        QApplication.restoreOverrideCursor() # Restore cursor
+        mw.set_controls_enabled(True)      # Reenable controls in MainWindow
+        mw.status_label.setText(mw.tr("Path search completed."))
 
-        self.detection_thread = None # Rimuovi riferimento al thread completato
+        self.detection_thread = None # Remove reference to completed thread
 
         profile_name = results.get('profile_name_suggestion', 'profilo_sconosciuto')
 
         if not success:
             error_msg = results.get('message', mw.tr("Errore sconosciuto durante la ricerca."))
-            if "interrotta" not in error_msg.lower(): # Non mostrare popup se interrotto
+            if "interrupted" not in error_msg.lower(): # Don't show popup if interrupted
                 QMessageBox.critical(mw, mw.tr("Errore Ricerca Percorso"), error_msg)
             else:
                 mw.status_label.setText(mw.tr("Ricerca interrotta."))
             return
 
-        # --- Logica gestione risultati ---
+        # --- Results handling logic ---
         final_path_to_use = None
-        paths_found = results.get('path_data', []) # Ottiene la lista di tuple (path, score)
+        paths_found = results.get('path_data', []) # Get the list of (path, score) tuples
         status = results.get('status', 'error')
 
         if status == 'found':
-            logging.debug(f"Path data found by detection thread: {paths_found}") # Log aggiornato
+            logging.debug(f"Path data found by detection thread: {paths_found}") # Updated log
             if len(paths_found) == 1:
-                # Un solo percorso trovato (ora è una tupla)
-                single_path, single_score = paths_found[0] # Estrai path e score
+                # One path found (now a tuple)
+                single_path, single_score = paths_found[0] # Extract path and score
                 reply = QMessageBox.question(mw, mw.tr("Conferma Percorso Automatico"),
                                              # Mostra solo il percorso nel messaggio
                                              mw.tr("È stato rilevato questo percorso:\n\n{0}\n\nVuoi usarlo per il profilo '{1}'?").format(single_path, profile_name),
@@ -449,86 +448,82 @@ class ProfileCreationManager:
                     mw.status_label.setText(mw.tr("Creazione profilo annullata."))
                     return
 
-            elif len(paths_found) > 1: # Qui inizia il blocco che hai appena sostituito
-                # Multipli percorsi trovati, ora abbiamo path_data con gli score
-                # La lista path_data dovrebbe essere già ordinata per score decrescente dal thread
+            elif len(paths_found) > 1: 
 
-                # --- NUOVO: Leggi impostazione sviluppatore (verrà aggiunta dopo) ---
-                # Usiamo mw (self.main_window) per accedere alle impostazioni correnti
                 show_scores = mw.developer_mode_enabled
                 logging.debug(f"Handling multiple paths. Developer mode active (show scores): {show_scores}")
 
                 choices = []
-                # Mappa per recuperare il path originale dalla stringa visualizzata
+                # Map to retrieve the original path from the displayed string
                 display_str_to_path_map = {}
 
-                logging.debug(f"Original path_data received (sorted by score desc): {paths_found}") # Logga i dati ricevuti
+                logging.debug(f"Original path_data received (sorted by score desc): {paths_found}") # Log the received data
 
-                # Crea le stringhe per il dialogo
-                for path, score in paths_found: # Itera sulle tuple (path, score)
+                # Create the strings for the dialog
+                for path, score in paths_found: # Iterate over the (path, score) tuples
                     display_text = ""
                     if show_scores:
-                        # Mostra percorso e score
-                        # Pulisci un po' il percorso per la visualizzazione se troppo lungo? Opzionale
+                        # Show path and score
+                        # Optionally clean up the path for display if too long?
                         # display_path = path if len(path) < 60 else path[:25] + "..." + path[-30:]
-                        display_path = path # Per ora usiamo path completo
+                        display_path = path # For now we use the full path
                         display_text = f"{display_path} (Score: {score})"
                     else:
-                        # Mostra solo percorso
+                        # Show only path
                         display_text = path
 
                     choices.append(display_text)
-                    display_str_to_path_map[display_text] = path # Mappa stringa visualizzata -> path originale
+                    display_str_to_path_map[display_text] = path # Map displayed string -> original path
 
-                # Aggiungi opzione manuale
+                # Add manual option
                 manual_entry_text = mw.tr("[Inserisci Manualmente...]")
                 choices.append(manual_entry_text)
-                # Associa il testo dell'opzione manuale a None nella mappa
+                # Associate the manual option text to None in the map
                 display_str_to_path_map[manual_entry_text] = None
 
                 logging.debug(f"Choices prepared for QInputDialog: {choices}")
 
-                # Mostra il dialogo QInputDialog.getItem
+                # Show the QInputDialog.getItem dialog
                 chosen_display_str, ok = QInputDialog.getItem(
                     mw,
                     mw.tr("Conferma Percorso Salvataggi"),
                     mw.tr("Sono stati trovati questi percorsi potenziali per '{0}'.\nSeleziona quello corretto (ordinati per probabilità) o scegli l'inserimento manuale:").format(profile_name),
-                    choices, # Lista di stringhe (con o senza score)
-                    0,       # Indice iniziale (il primo, che ha score più alto)
-                    False    # Non editabile
+                    choices, # List of strings (with or without score)
+                    0,       # Initial index (the first, which has the highest score)
+                    False    # Not editable
                 )
 
-                # Gestisci la scelta dell'utente
+                # Handle the user's choice
                 if ok and chosen_display_str:
-                    # Recupera il path corrispondente alla stringa scelta usando la mappa
-                    # Questo funziona sia che lo score fosse visibile o meno
+                    # Retrieve the corresponding path using the map
+                    # This works whether the score was visible or not
                     selected_path_or_none = display_str_to_path_map.get(chosen_display_str)
 
-                    if selected_path_or_none is None: # L'utente ha scelto "[Inserisci Manualmente...]"
+                    if selected_path_or_none is None: # The user chose "[Insert Manually...]"
                         logging.info("User chose manual input from multiple paths list.")
-                        final_path_to_use = None # Forza richiesta manuale più avanti nel codice
+                        final_path_to_use = None # Force manual request later in the code
                     else:
-                        # L'utente ha scelto un percorso specifico dalla lista
-                        final_path_to_use = selected_path_or_none # Salva il path effettivo
+                        # The user chose a specific path from the list
+                        final_path_to_use = selected_path_or_none # Save the actual path
                         logging.debug(f"User selected path: {final_path_to_use}")
 
-                else: # L'utente ha premuto Annulla
+                else: # The user pressed Cancel
                     mw.status_label.setText(mw.tr("Creazione profilo annullata."))
-                    return # Esce dalla funzione on_detection_finished
+                    return # Exit the on_detection_finished function
 
         elif status == 'not_found':
-            # Nessun percorso trovato automaticamente
+            # No automatic path found
             QMessageBox.information(mw, mw.tr("Percorso Non Rilevato"), mw.tr("Impossibile rilevare automaticamente il percorso dei salvataggi per '{0}'.\nPer favore, inseriscilo manualmente.").format(profile_name))
-            final_path_to_use = None # Forza richiesta manuale
-        else: # status == 'error' o altro caso imprevisto
+            final_path_to_use = None # Force manual request
+        else: # status == 'error' or other unexpected case
             logging.error(f"Unexpected status '{status}' from detection thread with success=True")
-            mw.status_label.setText(mw.tr("Errore interno durante la gestione dei risultati."))
-            # Potremmo chiedere input manuale anche qui? Forse meglio di no.
-            return # Esci se lo stato non è 'found' o 'not_found'
+            mw.status_label.setText(mw.tr("Internal error during result handling."))
+            # We could ask for manual input here? Maybe better not.
+            return # Exit if the status is not 'found' or 'not_found'
 
-        # --- Richiesta Inserimento Manuale (se necessario) ---
+        # --- Manual Input Request (if necessary) ---
         if final_path_to_use is None:
-            path_prompt = mw.tr("Inserisci il percorso COMPLETO per i salvataggi del profilo:\n'{0}'").format(profile_name)
+            path_prompt = mw.tr("Insert the FULL path for the profile's saves:\n'{0}'").format(profile_name)
             input_path, ok_manual = QInputDialog.getText(mw, mw.tr("Percorso Salvataggi Manuale"), path_prompt)
             if ok_manual and input_path:
                 final_path_to_use = input_path
@@ -536,20 +531,20 @@ class ProfileCreationManager:
                 QMessageBox.warning(mw, mw.tr("Errore Percorso"), mw.tr("Il percorso non può essere vuoto."))
                 mw.status_label.setText(mw.tr("Creazione profilo annullata (percorso vuoto)."))
                 return
-            else: # Annullato
+            else: # Cancelled
                 mw.status_label.setText(mw.tr("Creazione profilo annullata."))
                 return
 
-        # --- Validazione Finale e Salvataggio Profilo ---
+        # --- Final Validation and Profile Saving ---
         if final_path_to_use:
-            # Usa la funzione di validazione (ora parte di questa classe)
+            # Use the validation function (now part of this class)
             validated_path = self.validate_save_path(final_path_to_use, profile_name)
 
             if validated_path:
                 logging.debug(f"Final path validated: {validated_path}. Saving profile '{profile_name}'")
                 mw.profiles[profile_name] = {'path': validated_path} # Salva come dizionario
                 if core_logic.save_profiles(mw.profiles):
-                    # Aggiorna la tabella TRAMITE il manager della tabella in MainWindow
+                    # Update the table via the table manager in MainWindow
                     if hasattr(mw, 'profile_table_manager'):
                         mw.profile_table_manager.update_profile_table()
                         mw.profile_table_manager.select_profile_in_table(profile_name)
@@ -558,5 +553,5 @@ class ProfileCreationManager:
                 else:
                     QMessageBox.critical(mw, mw.tr("Errore"), mw.tr("Impossibile salvare il file dei profili."))
                     if profile_name in mw.profiles: del mw.profiles[profile_name]
-            # else: validate_save_path ha già mostrato l'errore
+            # else: validate_save_path has already shown the error
     # --- FINE on_detection_finished ---

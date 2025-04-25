@@ -31,7 +31,7 @@ SPEC_FILE_ONEFILE = "SaveState-OneFile.spec"
 # Nome dell'eseguibile/applicazione che verrà creato
 PACKAGER_APP_NAME = "SaveState"
 # Script Python principale del tuo progetto SaveState
-PACKAGER_ENTRY_SCRIPT = "SaveState_gui.py"
+PACKAGER_ENTRY_SCRIPT = "main.py"
 # Icona per l'eseguibile (relativa allo SCRIPT_DIR)
 PACKAGER_ICON_ICO = "icon.ico" # Per Windows .exe
 PACKAGER_ICON_PNG = "icon.png" # Da includere come dato
@@ -41,17 +41,19 @@ PACKAGER_ICON_PNG = "icon.png" # Da includere come dato
 PACKAGER_ADD_DATA = [
     ("icons", "icons"),         # Cartella icone -> cartella icone in output
     ("SaveState_en.qm", "."),   # File traduzione -> root output
-    ("backup_runner.py", "."),  # Altro script -> root output
     (PACKAGER_ICON_PNG, "."),   # Icona png -> root output
 ]
 
 # Moduli nascosti necessari per PyInstaller
 PACKAGER_HIDDEN_IMPORTS = [
     "PySide6.QtSvg",
+    "PySide6.QtNetwork",
     "win32com.client", # Specifico Windows
     "winshell",        # Specifico Windows
     "vdf",
-    "nbtlib"
+    "nbtlib",
+    "pkg_resources",
+    "importlib.metadata"
 ]
 
 DARK_THEME_QSS = """

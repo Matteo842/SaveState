@@ -16,6 +16,7 @@ except ImportError:
     NBT_AVAILABLE = False
     logging.warning("Library 'nbtlib' not found or invalid. Unable to read world names from level.dat. Folder names will be used instead.")
 
+# --- Function to find Minecraft saves folder ---
 def find_minecraft_saves_folder():
     """
     Trova il percorso della cartella 'saves' standard di Minecraft Java Edition.
@@ -62,6 +63,7 @@ def find_minecraft_saves_folder():
 
     return saves_path
 
+# --- Function to list Minecraft worlds ---
 def list_minecraft_worlds(saves_folder_path):
     """
     Elenca i mondi di Minecraft presenti nella cartella saves specificata.
