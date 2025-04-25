@@ -113,4 +113,4 @@ def remove_profile(profile_name):
         logging.info(f"Removed '{profile_name}' from favorites file.")
         return save_favorites(favorites)
     #logging.debug(f"Tentativo di rimuovere profilo non preferito '{profile_name}'. Nessuna azione.")
-    return True # Considera successo anche se non c'era
+    return True # Consider success even if it wasn't there
