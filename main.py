@@ -7,25 +7,21 @@ import argparse
 
 # --- PySide6 Imports ---
 from PySide6.QtWidgets import QApplication, QMessageBox, QDialog, QSplashScreen
-from PySide6.QtCore import QSharedMemory, Qt
-from PySide6.QtGui import QPixmap
-# from PySide6.QtGui import QDesktopServices # Rimosso perché non usato qui
-# Aggiunto import per QtNetwork
+from PySide6.QtCore import QSharedMemory
+#from PySide6.QtGui import QPixmap
 from PySide6.QtNetwork import QLocalSocket, QLocalServer
 
 # --- App Imports ---
 import settings_manager
 import backup_runner
-from gui_utils import resource_path, QtLogHandler # Importa QtLogHandler e resource_path da gui_utils
+from gui_utils import QtLogHandler
 from SaveState_gui import MainWindow # , ENGLISH_TRANSLATOR, CURRENT_TRANSLATOR # Importa da SaveState_gui
 from SaveState_gui import SHARED_MEM_KEY, LOCAL_SERVER_NAME # Importa costanti
 
-# --- NUOVO IMPORT ---
 try:
-    import pyi_splash  # type: ignore # Questo modulo esiste solo quando l'app è pacchettizzata con PyInstaller
+    import pyi_splash  # type: ignore # This module only exists when the app is packaged with PyInstaller
 except ImportError:
-    pyi_splash = None # Imposta a None se non trovato (es. quando non si esegue da bundle)
-# --- FINE NUOVO IMPORT ---
+    pyi_splash = None # Set to None if not found (e.g. when not running from a bundle)
 
 # --- Helper Function for Cleanup ---
 def cleanup_instance_lock(local_server, shared_memory):
@@ -66,7 +62,7 @@ if __name__ == "__main__":
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level) # Imposta livello sul root logger prima
 
-    # Rimuovi handler esistenti se necessario (es. in PyInstaller)
+    # Remove existing handlers if necessary (e.g. in PyInstaller)
     for handler in root_logger.handlers[:]:
         try:
             root_logger.removeHandler(handler)
@@ -74,64 +70,64 @@ if __name__ == "__main__":
         except Exception as e_handler:
             logging.warning(f"Could not remove/close handler: {e_handler}") # Meno critico
 
-    # Crea e aggiungi i nuovi handler
+    # Create and add new handlers
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(log_formatter)
-    console_handler.setLevel(logging.INFO) # Livello handler console
+    console_handler.setLevel(logging.INFO) # Console handler level
     root_logger.addHandler(console_handler)
 
-    # Handler Qt (logging nella GUI) - Ora importato
+    # Qt handler (logging in the GUI) - Now imported
     qt_log_handler = QtLogHandler()
     qt_log_handler.setFormatter(log_formatter)
-    qt_log_handler.setLevel(logging.INFO) # Livello handler Qt
+    qt_log_handler.setLevel(logging.INFO) # Qt handler level
     root_logger.addHandler(qt_log_handler)
 
     logging.info("Logging configured.")
 
-    # --- Parsing Argomenti ---
+    # --- Parsing Arguments ---
     parser = argparse.ArgumentParser(description='SaveState GUI or Backup Runner.')
     parser.add_argument("--backup", help="Nome del profilo per cui eseguire un backup silenzioso.")
-    args = parser.parse_args() # Gestisci eccezioni se necessario
+    args = parser.parse_args() # Handle exceptions if necessary
 
-    # --- Controllo Modalità Esecuzione ---
+    # --- Execution Mode Check ---
     if args.backup:
-        # === Modalità Backup Silenzioso ===
+        # === Silent Backup Mode ===
         profile_to_backup = args.backup
         logging.info(f"Detected argument --backup '{profile_to_backup}'. Starting silent backup...")
-        # Esegui direttamente la logica di backup (che ora include la notifica)
+        # Execute backup logic directly (now includes notification)
         try:
             backup_success = backup_runner.run_silent_backup(profile_to_backup)
             logging.info(f"Silent backup completed successfully: {backup_success}")
-            sys.exit(0 if backup_success else 1) # Esci subito dopo il backup
+            sys.exit(0 if backup_success else 1) # Exit immediately after backup
         except Exception as e_backup:
             logging.critical(f"Error during silent backup for '{profile_to_backup}': {e_backup}", exc_info=True)
             sys.exit(1)
 
     else:
-        # === Modalità GUI Normale ===
+        # === Normal GUI Mode ===
         logging.info("No --backup argument, starting GUI mode. Checking single instance...")
 
-        # --- Logica Single Instance ---
-        shared_memory = None # Inizializza a None
+        # --- Single Instance Logic ---
+        shared_memory = None # Initialize to None
         local_socket = None
         local_server = None
-        app_should_run = True # Flag per decidere se avviare la GUI
+        app_should_run = True # Flag to decide whether to start the GUI
 
         try:
             shared_memory = QSharedMemory(SHARED_MEM_KEY)
 
-            # Tenta di creare memoria condivisa. Se fallisce perché esiste già...
+            # Tries to create shared memory. If it fails because it already exists...
             if not shared_memory.create(1, QSharedMemory.AccessMode.ReadOnly):
                 if shared_memory.error() == QSharedMemory.SharedMemoryError.AlreadyExists:
                     logging.warning("Another instance of SaveState is already running. Attempting to activate it.")
-                    app_should_run = False # Non avviare questa istanza GUI
+                    app_should_run = False # Do not start this GUI instance
 
-                    # Connettiti all'altra istanza
+                    # Connect to the other instance
                     local_socket = QLocalSocket()
                     local_socket.connectToServer(LOCAL_SERVER_NAME)
                     if local_socket.waitForConnected(500):
                         logging.info("Connected to existing instance. Sending 'show' signal.")
-                        # Invia un segnale riconoscibile, es. 'show\n'
+                        # Send a recognizable signal, e.g. 'show\n'
                         bytes_written = local_socket.write(b'show\n')
                         if bytes_written == -1:
                              logging.error(f"Failed to write to local socket: {local_socket.errorString()}")
@@ -142,38 +138,38 @@ if __name__ == "__main__":
                         local_socket.disconnectFromServer()
                         local_socket.close()
                         logging.info("Signal sent. Exiting this instance.")
-                        # Rilascia la memoria condivisa (solo attaccata implicitamente)
+                        # Release shared memory (only attached implicitly)
                         if shared_memory.isAttached(): shared_memory.detach()
-                        sys.exit(0) # Esci con successo (l'altra è stata attivata)
+                        sys.exit(0) # Exit successfully (the other instance has been activated)
                     else:
                         logging.error(f"Unable to connect to existing instance server '{LOCAL_SERVER_NAME}': {local_socket.errorString()}")
-                        # Uscire è più sicuro se non si riesce a comunicare
+                        # Exit is more secure if we can't communicate
                         if shared_memory.isAttached(): shared_memory.detach()
-                        sys.exit(1) # Esci con errore
+                        sys.exit(1) # Exit with error
                 else:
-                    # Altro errore con shared memory non recuperabile
+                    # Other recoverable shared memory error
                     logging.error(f"QSharedMemory fatal error (create): {shared_memory.errorString()}")
-                    app_should_run = False # Non avviare la GUI
-                    if shared_memory.isAttached(): shared_memory.detach() # Prova a pulire
-                    sys.exit(1) # Esci con errore
+                    app_should_run = False # Do not start the GUI
+                    if shared_memory.isAttached(): shared_memory.detach() # Try to clean up
+                    sys.exit(1) # Exit with error
 
-            # Se arriva qui, la memoria è stata creata con successo (siamo la prima istanza)
+            # If we get here, the memory was created successfully (we are the first instance)
             logging.debug(f"Shared memory segment '{SHARED_MEM_KEY}' created successfully.")
 
         except Exception as e_shmem_init:
             logging.critical(f"Unexpected error during SharedMemory initialization: {e_shmem_init}", exc_info=True)
             app_should_run = False
-            if shared_memory and shared_memory.isAttached(): shared_memory.detach() # Prova a pulire
+            if shared_memory and shared_memory.isAttached(): shared_memory.detach() # Try to clean up
             sys.exit(1)
 
 
-        # Se app_should_run è ancora True, siamo la prima istanza GUI
+        # If app_should_run is still True, we are the first GUI instance
         if app_should_run:
             logging.info("First GUI instance. Starting application...")
 
             # --- Initialize QApplication and Splash Screen EARLY ---
-            app = None # Inizializza a None
-            splash = None # Inizializza splash a None
+            app = None # Initialize to None
+            splash = None # Initialize splash to None
             try:
                 app = QApplication(sys.argv)
 
@@ -215,29 +211,29 @@ if __name__ == "__main__":
 
             # --- NOW Check Single Instance Lock and Start Local Server ---
             logging.info("Checking single instance lock and starting local server...")
-            # Assicurati che la memoria condivisa sia attaccata (anche se l'abbiamo creata)
-            # Questo è più un check di sanità.
+            # Ensure shared memory is attached (even though we created it)
+            # This is more of a sanity check.
             if not shared_memory.isAttached():
                  logging.warning("Shared memory segment was created but not attached? Trying to attach...")
                  if not shared_memory.attach():
                       logging.critical(f"Failed to attach to own shared memory: {shared_memory.errorString()}")
-                      # Non possiamo continuare senza memoria condivisa
+                      # We cannot continue without shared memory
                       # if splash: splash.close() # Close splash before exit
                       sys.exit(1)
 
-            # Crea server locale per ricevere segnali da altre istanze
+            # Create local server to receive signals from other instances
             local_server = QLocalServer()
 
-            # Rimuovi eventuali server orfani precedenti con lo stesso nome
+            # Remove any previous orphaned servers with the same name
             if QLocalServer.removeServer(LOCAL_SERVER_NAME):
                 logging.warning(f"Removed potentially orphaned local server '{LOCAL_SERVER_NAME}'")
 
             if not local_server.listen(LOCAL_SERVER_NAME):
                 logging.error(f"Unable to start local server '{LOCAL_SERVER_NAME}': {local_server.errorString()}")
-                # Pulisci la memoria condivisa prima di uscire
+                # Clean up shared memory before exiting
                 cleanup_instance_lock(local_server, shared_memory)
                 # if splash: splash.close() # Close splash before exit
-                sys.exit(1) # Esci se il server non parte
+                sys.exit(1) # Exit if the server doesn't start
             else:
                 logging.info(f"Local server listening on: {local_server.fullServerName()}")
 
@@ -246,7 +242,7 @@ if __name__ == "__main__":
                 exit_code = 1 # Default exit code in caso di errore
 
                 try:
-                    # Connetti cleanup all'uscita di QApplication (DO THIS EARLY)
+                    # Connect cleanup to QApplication exit (DO THIS EARLY)
                     app.aboutToQuit.connect(lambda: cleanup_instance_lock(local_server, shared_memory))
 
                     # --- Caricamento Impostazioni (senza applicazione traduttore qui) ---
@@ -266,7 +262,7 @@ if __name__ == "__main__":
                     # qt_log_handler è già definito sopra
                     # console_handler è definito sopra
                     logging.debug("Creating MainWindow instance...")
-                    # Passa gli handler creati qui alla MainWindow
+                    # Pass the handlers created here to MainWindow
                     window = MainWindow(current_settings, console_handler, qt_log_handler)
                     logging.debug("MainWindow instance created.")
 
@@ -279,11 +275,11 @@ if __name__ == "__main__":
 
 
                     if is_first_launch:
-                        # if splash: # Aggiorna messaggio
+                        # if splash: # Update message
                         #      splash.showMessage("Configurazione iniziale...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
                         #      app.processEvents()
                         logging.info("First launch detected, showing settings dialog.")
-                        # Importa SettingsDialog qui per evitare dipendenze circolari a livello di modulo
+                        # Import SettingsDialog here to avoid circular module dependencies
                         from dialogs.settings_dialog import SettingsDialog
                         settings_dialog = SettingsDialog(current_settings.copy(), window) # Passa copia e parent
                         if settings_dialog.exec() == QDialog.Accepted:
@@ -299,24 +295,24 @@ if __name__ == "__main__":
                                 logging.info("Initial settings configured and saved by user.")
                             else:
                                 QMessageBox.critical(window, "Errore", "Impossibile salvare le impostazioni iniziali.")
-                        else: # Utente ha annullato il dialogo primo avvio
+                        else: # User cancelled the first launch dialog
                             reply = QMessageBox.question(window, "Impostazioni Predefinite",
                                                         "Nessuna impostazione specifica salvata. Usare quelle predefinite e continuare?",
                                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
                                                         QMessageBox.StandardButton.Yes)
                             if reply != QMessageBox.StandardButton.Yes:
                                 logging.info("Exit requested by user on first launch cancel.")
-                                # Cleanup prima di uscire
+                                # Cleanup before exiting
                                 cleanup_instance_lock(local_server, shared_memory)
                                 sys.exit(0)
-                            else: # Salva i default se l'utente accetta di continuare
-                                if not settings_manager.save_settings(current_settings): # Salva i default caricati
+                            else: # Save defaults if user accepts to continue
+                                if not settings_manager.save_settings(current_settings): # Save the loaded defaults
                                      QMessageBox.warning(window, "Errore", "Impossibile salvare le impostazioni predefinite.")
-                                # Continua comunque con i default caricati in memoria
+                                # Continue with the loaded defaults in memory
 
-                    # Connetti il segnale del server locale allo slot della finestra
-                    # L'istanza 'window' ora esiste sicuramente
-                    # Lo slot `activateExistingInstance` è definito in MainWindow
+                    # Connect the local server signal to the window slot
+                    # The 'window' instance now definitely exists
+                    # The slot `activateExistingInstance` is defined in MainWindow
                     local_server.newConnection.connect(window.activateExistingInstance)
                     logging.debug("Connected local server newConnection signal to window.activateExistingInstance slot.")
 
@@ -332,30 +328,30 @@ if __name__ == "__main__":
 
                 except ImportError as e_imp:
                      logging.critical(f"Import error during GUI setup: {e_imp}", exc_info=True)
-                     # Prova a chiudere lo splash se esiste
+                     # Try to close the splash if it exists
                      # if splash: splash.close()
                      QMessageBox.critical(None, "Errore Import", f"Errore critico: libreria mancante.\\n{e_imp}\\nL'applicazione non può avviarsi.")
                      exit_code = 1
-                except Exception as e_gui_init: # Cattura altri errori during l'init della GUI
+                except Exception as e_gui_init: # Catch other errors during GUI initialization
                     logging.critical(f"Fatal error during GUI initialization: {e_gui_init}", exc_info=True)
-                    # Prova a chiudere lo splash se esiste
+                    # Try to close the splash if it exists
                     # if splash: splash.close()
-                    # Prova a mostrare un messaggio di errore base se possibile
+                    # Try to show a basic error message if possible
                     try:
-                        QMessageBox.critical(None, "Errore Avvio", f"Errore fatale during l'inizializzazione della GUI:\\n{e_gui_init}")
+                        QMessageBox.critical(None, "Errore Avvio", f"Errore fatale durante l'inizializzazione della GUI:\\n{e_gui_init}")
                     except:
-                        pass # Ignora errori nel mostrare l'errore stesso
+                        pass # Ignore errors in showing the error itself
                     exit_code = 1
                 finally:
-                    # Il cleanup viene già chiamato da app.aboutToQuit.connect
-                    # Non è necessario chiamarlo di nuovo qui a meno che app.exec() non sia mai stato raggiunto
-                    # Ma in quel caso, la connessione aboutToQuit non verrebbe attivata.
-                    # Se l'app non è stata creata o exec non è stato chiamato, esegui cleanup manualmente.
+                    # The cleanup is already called from app.aboutToQuit.connect
+                    # It's not necessary to call it again here unless app.exec() is never reached
+                    # But in that case, the aboutToQuit connection would not be triggered.
+                    # If the app was not created or exec was not called, perform cleanup manually.
                     if app is None or exit_code != 0 and not app.closingDown():
                          logging.warning("Performing manual cleanup due to early exit or error before event loop.")
                          cleanup_instance_lock(local_server, shared_memory)
-                    sys.exit(exit_code) # Esci con il codice appropriato
+                    sys.exit(exit_code) # Exit with the appropriate code
         else:
-             # Questo caso non dovrebbe essere raggiunto se la logica sopra è corretta
+             # This case should not be reached if the logic above is correct
              logging.error("Reached unexpected state where app_should_run is False but execution continued.")
              sys.exit(1)
