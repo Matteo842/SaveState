@@ -485,7 +485,7 @@ class MainWindow(QMainWindow):
     def retranslateUi(self):
         """Aggiorna il testo della finestra"""
         logging.debug(">>> retranslateUi: INIZIO ESECUZIONE <<<") # <-- LOG AGGIUNTO
-        self.setWindowTitle(QCoreApplication.translate("MainWindow", "SaveState - Gestore Backup Salvataggi"))
+        self.setWindowTitle(QCoreApplication.translate("MainWindow", "SaveState - 1.3.7"))
         #self.profile_table_widget.setHorizontalHeaderLabels([self.tr("Profilo"), self.tr("Info Backup")]) # <-- Solo 2 etichette
         self.profile_table_manager.retranslate_headers()
         self.settings_button.setText(self.tr("Impostazioni"))
