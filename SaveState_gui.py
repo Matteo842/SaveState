@@ -504,18 +504,17 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'general_group'):
             self.general_group.setTitle(self.tr("Azioni Generali"))
 
-            # --- INSERISCI QUI IL NUOVO BLOCCO ---
             # Aggiorna testo placeholder label animazione
             # Controlla se la label esiste e se NON sta mostrando la GIF (movie)
             if hasattr(self, 'loading_label') and self.loading_label and \
             (not hasattr(self, 'loading_movie') or not self.loading_movie or not self.loading_movie.isValid()):
                 self.loading_label.setText(self.tr("Ricerca in corso..."))
-            # --- FINE NUOVO BLOCCO ---
+            # --- FINE BLOCCO ---
 
             logging.debug("Aggiornamento tabella profili a seguito di retranslateUi")
             self.profile_table_manager.update_profile_table()
 
-        # --- AGGIUNTA Aggiornamento Tooltip e Titoli ---
+        # --- Aggiornamento Tooltip e Titoli ---
         if hasattr(self, 'create_shortcut_button'):
             self.create_shortcut_button.setToolTip(self.tr("Crea collegamento backup sul desktop"))
         if hasattr(self, 'minecraft_button'):
@@ -527,8 +526,7 @@ class MainWindow(QMainWindow):
              self.toggle_log_button.setToolTip(self.tr(tooltip_key))
         if hasattr(self, 'log_dock_widget'):
             self.log_dock_widget.setWindowTitle(self.tr("Console Log"))
-        # --- FINE AGGIUNTA ---
-        logging.debug(">>> retranslateUi: FINE ESECUZIONE <<<") # <-- LOG AGGIUNTO
+        logging.debug(">>> retranslateUi: FINE ESECUZIONE <<<")
 
     # Handles application-level events, specifically language changes.
     def changeEvent(self, event):
