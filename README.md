@@ -115,7 +115,7 @@ Get SaveState up and running on your system.
 
 ## Usage
 
-1.  **Launch** `SaveState_gui.exe` or run `python SaveState_gui.py`.
+1.  **Launch** `SaveState.exe` or run `python main.py`.
 2.  **Configure Settings (Recommended on first launch):** Click the Settings button. Set your desired Base Backup Path where all backups will be stored in subfolders named after your profiles. Adjust other settings like max backups, theme, language, etc.
 3.  **Add Profiles:**
     * **Manually:** Click New Manual Profile, enter a name, and provide the full path to the game's save folder.
