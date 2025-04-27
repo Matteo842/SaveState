@@ -93,7 +93,18 @@ if __name__ == "__main__":
     if args.backup:
         # === Silent Backup Mode ===
         profile_to_backup = args.backup
-        logging.info(f"Detected argument --backup '{profile_to_backup}'. Starting silent backup...")
+        logging.info(f"Detected argument --backup '{profile_to_backup}'. Closing splash and starting silent backup...")
+
+        # ---> AGGIUNTA: Chiudi lo splash di PyInstaller prima <---
+        if pyi_splash:
+            try:
+                logging.debug("Closing PyInstaller splash screen...")
+                pyi_splash.close()
+                logging.debug("PyInstaller splash screen closed.")
+            except Exception as e_splash_close:
+                logging.warning(f"Could not close PyInstaller splash screen: {e_splash_close}")
+        # ---> FINE AGGIUNTA <---
+
         # Execute backup logic directly (now includes notification)
         try:
             backup_success = backup_runner.run_silent_backup(profile_to_backup)
