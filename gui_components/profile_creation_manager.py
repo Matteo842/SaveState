@@ -10,12 +10,14 @@ from PySide6.QtCore import Qt, Slot
 
 # Importa dialoghi specifici se servono (es. Minecraft)
 from dialogs.minecraft_dialog import MinecraftWorldsDialog
+from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
 
 # Importa utility e logica
 from gui_utils import DetectionWorkerThread
 import minecraft_utils
 import core_logic
 from shortcut_utils import sanitize_profile_name # O importa shortcut_utils
+import emulator_manager # <-- ADD IMPORT
 
 class ProfileCreationManager:
     """
@@ -305,6 +307,92 @@ class ProfileCreationManager:
             else:
                 logging.warning(f"Unable to determine game folder from shortcut: {file_path}")
             logging.debug(f"Game folder detected (or assumed) from shortcut: {game_install_dir}")
+
+            # --- Check for Known Emulator --- NEW BLOCK ---
+            emulator_result = emulator_manager.detect_and_find_profiles(target_path)
+
+            # --- If Emulator Detected, handle differently ---
+            if emulator_result is not None:
+                emulator_name, emulator_profiles_data = emulator_result
+                event.acceptProposedAction() # Ensure accepted
+
+                if emulator_profiles_data:
+                    logging.info(f"Found {emulator_name} profiles: {emulator_profiles_data}")
+                    
+                    # --- Show Selection Dialog --- NEW ---
+                    selection_dialog = EmulatorGameSelectionDialog(emulator_name, emulator_profiles_data, mw)
+                    if selection_dialog.exec():
+                        selected_data = selection_dialog.get_selected_profile_data()
+                        if selected_data:
+                            selected_id = selected_data.get('id')
+                            selected_path = selected_data.get('path')
+
+                            if not selected_id or not selected_path:
+                                logging.error(f"Selected data from dialog is missing id or path: {selected_data}")
+                                QMessageBox.critical(mw, mw.tr("Errore Interno"), mw.tr("Dati del profilo selezionato non validi."))
+                                return
+
+                            # Create a profile name (prioritize game name, fallback to ID)
+                            selected_name = selected_data.get('name', selected_id)
+                            profile_name_base = f"{emulator_name} - {selected_name}" # Use name/id
+                            profile_name = sanitize_profile_name(profile_name_base)
+                            if not profile_name:
+                                QMessageBox.warning(mw, mw.tr("Errore Nome Profilo"),
+                                                    mw.tr("Impossibile generare un nome profilo valido per '{0}'.").format(profile_name_base))
+                                return
+                            
+                            # Handle potential name conflicts
+                            if profile_name in mw.profiles:
+                                reply = QMessageBox.question(mw, mw.tr("Profilo Esistente"), 
+                                                           mw.tr("Un profilo chiamato '{0}' esiste già. Sovrascriverlo?").format(profile_name),
+                                                           QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                                           QMessageBox.StandardButton.No)
+                                if reply == QMessageBox.StandardButton.No:
+                                    mw.status_label.setText(mw.tr("Creazione profilo annullata."))
+                                    return 
+                                else:
+                                    logging.warning(f"Overwriting existing profile: {profile_name}")
+                            
+                            # Validate the selected path (should be valid, but good practice)
+                            validated_path = self.validate_save_path(selected_path, profile_name)
+                            if not validated_path:
+                                # Error already shown by validate_save_path
+                                return
+
+                            # Add/update profile and save
+                            mw.profiles[profile_name] = {'path': validated_path}
+                            if core_logic.save_profiles(mw.profiles):
+                                logging.info(f"Emulator game profile '{profile_name}' created/updated.")
+                                if hasattr(mw, 'profile_table_manager'):
+                                    mw.profile_table_manager.update_profile_table()
+                                    mw.profile_table_manager.select_profile_in_table(profile_name)
+                                QMessageBox.information(mw, mw.tr("Profilo Creato"), mw.tr("Profilo '{0}' creato con successo.").format(profile_name))
+                                mw.status_label.setText(mw.tr("Profilo '{0}' creato.").format(profile_name))
+                            else:
+                                QMessageBox.critical(mw, mw.tr("Errore"), mw.tr("Impossibile salvare il file dei profili dopo aver aggiunto '{0}'.").format(profile_name))
+                                if profile_name in mw.profiles: del mw.profiles[profile_name] # Revert if save failed
+                        else:
+                             logging.warning("Emulator selection dialog accepted, but no data returned.")
+                    else:
+                        # Dialog was cancelled
+                        logging.info("Emulator game selection was cancelled by the user.")
+                        mw.status_label.setText(mw.tr("Selezione gioco annullata."))
+                    # --- End Selection Dialog Handling ---
+
+                    # --- REMOVE OLD QMESSAGEBOX --- 
+                    # profile_list_str = "\n- ".join(emulator_profiles_data)
+                    # QMessageBox.information(mw, mw.tr("Rilevato Emulatore ({0})").format(emulator_name),
+                    #                         mw.tr("Rilevato collegamento a {0}.\n\nProfili trovati (ID Titolo/Gioco):\n- {1}\n\n(Funzionalità per aggiungere giochi specifici in sviluppo.)")
+                    #                         .format(emulator_name, profile_list_str))
+                else:
+                    logging.warning(f"{emulator_name} detected, but no profiles found in its standard directory.")
+                    QMessageBox.warning(mw, mw.tr("Rilevato Emulatore ({0})").format(emulator_name),
+                                        mw.tr("Rilevato collegamento a {0}, ma nessun profilo trovato nella sua cartella standard.\nVerifica la posizione dei salvataggi dell'emulatore.").format(emulator_name))
+                return # Stop further processing for detected emulators for now
+
+            # --- If NOT a known Emulator, proceed with existing logic ---
+            logging.debug(f"Shortcut target '{target_path}' does not match known emulators, proceeding with standard path detection.")
+
         except ImportError:
             logging.error("The 'winshell' library is not installed. Cannot read .lnk files.")
             QMessageBox.critical(mw, mw.tr("Errore Dipendenza"), mw.tr("La libreria 'winshell' necessaria non è installata."))
@@ -331,7 +419,7 @@ class ProfileCreationManager:
             QMessageBox.warning(mw, mw.tr("Profilo Esistente"), mw.tr("Profilo '{0}' esiste già.").format(profile_name))
             return
 
-        # --- Start Path Search Thread ---
+        # --- Start Path Search Thread (Only if NOT Ryujinx) ---
         if self.detection_thread and self.detection_thread.isRunning():
             QMessageBox.information(mw, mw.tr("Operazione in Corso"), mw.tr("Un'altra ricerca di percorso è già in corso. Attendi."))
             return
