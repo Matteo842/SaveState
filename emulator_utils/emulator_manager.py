@@ -6,6 +6,8 @@ import logging
 import platform
 import json
 import struct # <-- per parse_imkvdb
+from collections import namedtuple
+import re
 
 # Configure basic logging for this module
 log = logging.getLogger(__name__)
@@ -21,6 +23,10 @@ EMULATOR_CONFIG = {
     'yuzu': { # <-- NUOVA AGGIUNTA PER YUZU
         'profile_finder': lambda exec_dir: find_yuzu_profiles(executable_dir=None),
         'name': 'Yuzu'
+    },
+    'rpcs3': { # <-- NUOVA AGGIUNTA PER RPCS3
+        'profile_finder': lambda exec_dir: find_rpcs3_profiles(executable_dir=exec_dir),
+        'name': 'RPCS3'
     },
     # Example for future addition:
     # 'rpcs3': {
@@ -545,6 +551,184 @@ def find_yuzu_profiles(executable_dir: str | None = None) -> list[dict]:
 # --- End Yuzu ---
 
 
+# --- RPCS3 --- <NEW SECTION>
+
+def parse_param_sfo(sfo_path: str) -> str | None:
+    """Parses a PARAM.SFO file to extract the TITLE value."""
+    try:
+        with open(sfo_path, 'rb') as f:
+            data = f.read()
+        file_size = len(data)
+
+        if file_size < 20:
+            log.warning(f"Invalid SFO file (too small): {sfo_path}")
+            return None
+
+        # Read header (first 20 bytes)
+        header_data = data[:20]
+        try:
+            header = SFOHeader(*struct.unpack('<4sIIII', header_data))
+        except struct.error:
+            log.warning(f"Invalid SFO file (header unpack error): {sfo_path}")
+            return None
+
+        # Validate header
+        if header.magic != b'\x00PSF':
+            log.warning(f"Invalid SFO file (bad magic): {sfo_path}")
+            return None
+        # Add more checks if needed (version, offsets within bounds?)
+        if header.key_table_start >= file_size or header.data_table_start >= file_size:
+             log.warning(f"Invalid SFO file (table offsets out of bounds): {sfo_path}")
+             return None
+
+        header_size = 20
+        index_entry_size = 16
+        num_entries = header.num_entries
+
+        for i in range(num_entries):
+            index_entry_offset = header_size + i * index_entry_size
+            if index_entry_offset + index_entry_size > file_size:
+                 log.warning(f"Invalid SFO file (index entry {i} out of bounds): {sfo_path}")
+                 return None # Stop processing if index goes out of bounds
+
+            entry_data = data[index_entry_offset : index_entry_offset + index_entry_size]
+
+            try:
+                 # Unpack the 16-byte index entry
+                key_offset, data_type, data_used_len, data_total_len, data_offset = struct.unpack('<HHIII', entry_data)
+            except struct.error:
+                log.warning(f"Invalid SFO file (index entry {i} unpack error): {sfo_path}")
+                continue # Try next entry
+
+            # --- Read the key name ---
+            # Key offset is relative to key_table_start
+            absolute_key_offset = header.key_table_start + key_offset
+            # Find the null terminator for the key name
+            key_end_offset = data.find(b'\x00', absolute_key_offset)
+
+            if absolute_key_offset >= file_size or key_end_offset == -1 or key_end_offset >= file_size:
+                log.warning(f"Invalid SFO file (key name bounds error for entry {i}): {sfo_path}")
+                continue # Try next entry
+
+            try:
+                key_name_bytes = data[absolute_key_offset:key_end_offset]
+                key_name = key_name_bytes.decode('utf-8', errors='ignore')
+            except Exception as e:
+                log.warning(f"Invalid SFO file (key name decoding error for entry {i}): {sfo_path} - {e}")
+                continue # Try next entry
+
+            # Check if this is the TITLE key
+            if key_name == 'TITLE':
+                try:
+                    # --- Read the data (title) ---
+                    # Data offset is relative to data_table_start
+                    absolute_data_offset = header.data_table_start + data_offset
+                    # Use data_used_len for reading, check bounds
+                    if absolute_data_offset + data_used_len > file_size:
+                         log.warning(f"Invalid SFO file (TITLE data bounds error): {sfo_path}")
+                         return None # Fatal error for TITLE read
+
+                    # Use data_used_len from index entry
+                    title_bytes = data[absolute_data_offset : absolute_data_offset + data_used_len]
+                    # Remove trailing null bytes before decoding
+                    title = title_bytes.rstrip(b'\x00').decode('utf-8', errors='replace')
+                    log.debug(f"Successfully parsed TITLE='{title}' from {sfo_path}")
+                    return title
+                except Exception as e:
+                    log.error(f"Error reading TITLE data from SFO: {sfo_path} - {e}")
+                    return None # Fatal error for TITLE read
+            #else: # If not TITLE, continue to the next entry
+            #    continue
+
+        # If loop completes without finding the TITLE key
+        log.debug(f"'TITLE' key not found in SFO: {sfo_path}")
+        return None
+
+    except FileNotFoundError:
+        log.error(f"PARAM.SFO file not found: {sfo_path}")
+        return None
+    except Exception as e:
+        log.error(f"Unexpected error parsing SFO file: {sfo_path} - {e}")
+        return None
+
+SFOHeader = namedtuple('SFOHeader', ['magic', 'version', 'key_table_start', 'data_table_start', 'num_entries'])
+
+def find_rpcs3_profiles(executable_dir: str | None = None) -> list[dict]:
+    """Finds RPCS3 game save profiles by scanning the savedata directory.
+
+    Args:
+        executable_dir: The directory containing the RPCS3 executable.
+                        Defaults to None, meaning standard paths will be checked.
+
+    Returns:
+        A list of dictionaries, each representing a unique game profile found.
+        Each dictionary contains 'id', 'path', and 'name'.
+    """
+    profiles = []
+    processed_base_ids = set()
+    potential_paths = []
+
+    # 1. Determine the RPCS3 directory
+    rpcs3_dir = None
+    if executable_dir:
+        rpcs3_dir = executable_dir
+    else:
+        # Add logic here to find RPCS3 in standard locations if needed
+        pass # Placeholder - currently requires executable_dir
+
+    if not rpcs3_dir or not os.path.isdir(rpcs3_dir):
+        log.warning(f"RPCS3 directory not found or invalid: {rpcs3_dir}")
+        return []
+
+    # 2. Construct the savedata path (adjust if needed)
+    # Assuming dev_hdd0 is in the same dir as rpcs3.exe
+    savedata_dir = os.path.join(rpcs3_dir, 'dev_hdd0', 'home', '00000001', 'savedata')
+
+    if not os.path.isdir(savedata_dir):
+        log.warning(f"RPCS3 savedata directory not found: {savedata_dir}")
+        return []
+
+    log.info(f"Scanning RPCS3 savedata directory: {savedata_dir}")
+
+    # 3. Scan for potential profile directories and deduplicate
+    try:
+        for item_name in os.listdir(savedata_dir):
+            item_path = os.path.join(savedata_dir, item_name)
+            if os.path.isdir(item_path):
+                # Extract base game ID (e.g., BCES00065 from BCES00065_NDI...)
+                # This regex assumes IDs like XXXXYYYYY...
+                match = re.match(r'^([A-Z]{4}\d{5})', item_name)
+                if not match:
+                    log.debug(f"Skipping directory with non-standard name format: {item_name}")
+                    continue
+
+                base_game_id = match.group(1)
+
+                # If we haven't processed this base game ID yet
+                if base_game_id not in processed_base_ids:
+                    sfo_path = os.path.join(item_path, 'PARAM.SFO')
+                    if os.path.isfile(sfo_path):
+                        game_title = parse_param_sfo(sfo_path)
+                        profile_name = game_title if game_title else base_game_id # Fallback to ID
+
+                        profiles.append({
+                            'id': base_game_id, # Use the base ID
+                            'path': item_path, # Path to the first found dir for this ID
+                            'name': profile_name
+                        })
+                        processed_base_ids.add(base_game_id) # Mark as processed
+                    else:
+                        log.debug(f"No PARAM.SFO found in potential profile dir: {item_path}")
+
+    except OSError as e:
+        log.error(f"Error scanning RPCS3 savedata directory '{savedata_dir}': {e}")
+        return []
+
+    log.info(f"Found {len(profiles)} unique RPCS3 profiles.") # Log unique count
+    return profiles
+
+# --- End RPCS3 ---
+
 # --- Main Detection Function (MODIFICATA) ---
 
 def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] | None:
@@ -629,5 +813,18 @@ if __name__ == "__main__":
             print("-" * 20)
     else:
         print("\nNo Yuzu profiles found or an error occurred.")
+
+    # --- Test RPCS3 ---
+    log.info("\n--- Running RPCS3 Test ---")
+    found_rpcs3 = find_rpcs3_profiles(executable_dir=None)
+    if found_rpcs3:
+        print("\n--- Found RPCS3 Profiles/Games ---")
+        for profile_info in found_rpcs3:
+            print(f"- SaveID: {profile_info['id']}")
+            print(f"  Name:   {profile_info['name']}")
+            print(f"  Path:   {profile_info['path']}")
+            print("-" * 20)
+    else:
+        print("\nNo RPCS3 profiles found or an error occurred.")
 
     log.info("\nFinished emulator_manager.py test run.")
