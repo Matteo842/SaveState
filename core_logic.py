@@ -8,7 +8,7 @@ import config
 import re
 import platform
 import glob
-import settings_manager # For saving theme settings
+#import settings_manager # For saving theme settings
 
 try:
     from thefuzz import fuzz
