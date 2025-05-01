@@ -25,7 +25,6 @@ Please note: **English localization is ongoing.**
 
 ## Features
 
-* **Manual Profile Creation:** Easily add any game by specifying a profile name and the path to its save folder.
 * **Backup & Restore:** Perform compressed `.zip` backups for selected profiles with a single click. Restore from any available backup.
 * **Automatic Backup Management:**
     * Configurable number of backups to keep per profile (automatically deletes the oldest).
@@ -39,6 +38,7 @@ Please note: **English localization is ongoing.**
     * Suggests save game paths based on Steam UserData conventions.
     * Configure backup profiles for Steam games directly from the detected list.
 * **Drag & Drop Profile Creation:** Drag a game's shortcut (`.lnk` file) onto the main window to automatically extract the game name and installation path, then initiates a background search for the save location.
+* **Manual Profile Creation:** Easily add any game by specifying a profile name and the path to its save folder.
 * **Minecraft Java Edition Support:**
     * Automatically locates the default `.minecraft/saves` folder.
     * Lists all installed worlds, reading the world name from `level.dat` if the optional `nbtlib` library is present (falls back to folder name otherwise).
@@ -68,7 +68,7 @@ SaveState includes experimental support for automatically detecting save data lo
 
 **Currently Supported:**
 
-*   **ryukinx**
+*   **Ryujinx**
 *   **yuzu**
 *   **rpcs3**
 *   **DuckStation**
