@@ -44,6 +44,8 @@ Please note: **English localization is ongoing.**
     * Lists all installed worlds, reading the world name from `level.dat` if the optional `nbtlib` library is present (falls back to folder name otherwise).
     * Create backup profiles directly from the detected world list.
 * **Desktop Shortcut Creation:** Create `.lnk` shortcuts on your desktop for specific profiles. Clicking the shortcut runs a silent backup for that profile using `backup_runner.py` and shows a desktop notification.
+* **Emulator Support (Experimental):**
+    * Automatic detection and profile creation for supported emulators' save data.
 * **User Interface:**
     * Clean and simple graphical interface built with PySide6.
     * Switchable Dark and Light themes.
@@ -58,6 +60,19 @@ Please note: **English localization is ongoing.**
 
 **Drag & Drop Shortcut for Profile Creation:**
 ![Drag and Drop GIF](images/drag_and_drop.gif)
+
+
+## Supported Emulators
+
+SaveState includes experimental support for automatically detecting save data locations for certain emulators, simplifying the profile creation process.
+
+**Currently Supported:**
+
+*   **ryukinx**
+*   **yuzu**
+*   **rpcs3**
+*   **DuckStation**
+*   **Dolphin**
 
 
 ## How Save Search Works (Heuristics)
