@@ -458,22 +458,114 @@ def perform_backup(profile_name, save_folder_path, backup_base_dir, max_backups,
 
     try:
         with zipfile.ZipFile(archive_path, 'w', compression=zip_compression, compresslevel=zip_compresslevel) as zipf:
-            for root, dirs, files in os.walk(save_folder_path):
-                # <<< NUOVO: Escludi file __pycache__ e simili se necessario
-                dirs[:] = [d for d in dirs if d != '__pycache__'] # Non scendere in pycache
-                files = [f for f in files if not f.endswith(('.pyc', '.pyo'))] # Non aggiungere file compilati
+            # --- DuckStation Specific Logic --- START
+            is_duckstation = False
+            specific_mcd_file_to_backup = None
 
-                for file in files:
-                    file_path_absolute = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path_absolute, save_folder_path)
-                    try:
-                        logging.debug(f"  Adding: '{file_path_absolute}' as '{arcname}'")
-                        zipf.write(file_path_absolute, arcname=arcname)
-                    except FileNotFoundError:
-                        logging.warning(f"  Skipped adding file (not found?): '{file_path_absolute}'")
-                    except Exception as e_write:
-                        logging.error(f"  Error adding file '{file_path_absolute}' to zip: {e_write}")
-                        # Considera se interrompere il backup o solo loggare l'errore
+            # --- DEBUG LOGS --- START ---
+            logging.debug(f"--- DuckStation Check ---")
+            logging.debug(f"  Input profile_name: '{profile_name}'")
+            logging.debug(f"  Input save_folder_path: '{save_folder_path}'")
+            # --- DEBUG LOGS --- END ---
+
+            # Check if path looks like DuckStation memcards and the specific file exists
+            normalized_save_path = os.path.normpath(save_folder_path).lower()
+            expected_suffix = os.path.join("duckstation", "memcards").lower()
+
+            # --- DEBUG LOGS --- START ---
+            logging.debug(f"  Normalized save_folder_path: '{normalized_save_path}'")
+            logging.debug(f"  Expected suffix: '{expected_suffix}'")
+            path_ends_correctly = normalized_save_path.endswith(expected_suffix)
+            logging.debug(f"  Does path end correctly? {path_ends_correctly}")
+            # --- DEBUG LOGS --- END ---
+
+            if path_ends_correctly:
+                # --- Extract actual card name from profile_name --- START
+                actual_card_name = profile_name 
+                prefix = "DuckStation - "
+                if profile_name.startswith(prefix):
+                    actual_card_name = profile_name[len(prefix):] 
+                    logging.debug(f"  Extracted actual card name: '{actual_card_name}'")
+                else:
+                    logging.warning(f"  DuckStation profile name '{profile_name}' did not start with expected prefix '{prefix}'. Using full name for filename check.")
+                # --- Extract actual card name from profile_name --- END
+
+                mcd_filename = actual_card_name + ".mcd" # Use extracted name
+                potential_mcd_path = os.path.join(save_folder_path, mcd_filename)
+
+                # --- DEBUG LOGS --- START ---
+                logging.debug(f"  Constructed mcd_filename (using extracted name): '{mcd_filename}'") # Updated log message
+                logging.debug(f"  Potential full MCD path: '{potential_mcd_path}'")
+                file_exists_and_is_file = os.path.isfile(potential_mcd_path)
+                logging.debug(f"  Does the specific file exist? {file_exists_and_is_file}")
+                # --- DEBUG LOGS --- END ---
+
+                if file_exists_and_is_file:
+                    is_duckstation = True
+                    specific_mcd_file_to_backup = potential_mcd_path
+                    logging.info(f"Detected DuckStation profile. Preparing to back up single file: {mcd_filename}")
+                else:
+                    logging.warning(f"Path '{save_folder_path}' resembles DuckStation memcards, but specific file '{mcd_filename}' not found. Performing standard directory backup.")
+                
+                mcd_filename = profile_name + ".mcd"
+                potential_mcd_path = os.path.join(save_folder_path, mcd_filename)
+
+                # --- DEBUG LOGS --- START ---
+                logging.debug(f"  Constructed mcd_filename: '{mcd_filename}'")
+                logging.debug(f"  Potential full MCD path: '{potential_mcd_path}'")
+                file_exists_and_is_file = os.path.isfile(potential_mcd_path)
+                logging.debug(f"  Does the specific file exist? {file_exists_and_is_file}")
+                # --- DEBUG LOGS --- END ---
+
+                if file_exists_and_is_file:
+                    is_duckstation = True
+                    specific_mcd_file_to_backup = potential_mcd_path
+                    logging.info(f"Detected DuckStation profile. Preparing to back up single file: {mcd_filename}")
+                else:
+                    logging.warning(f"Path '{save_folder_path}' resembles DuckStation memcards, but specific file '{mcd_filename}' not found. Performing standard directory backup.")
+            else:
+                 logging.debug(f"Path does not end with expected DuckStation suffix. Performing standard directory backup.")
+
+
+            # Perform backup based on detection
+            # --- DEBUG LOGS --- START ---
+            logging.debug(f"--- Backup Decision ---")
+            logging.debug(f"  Final is_duckstation value: {is_duckstation}")
+            logging.debug(f"  Final specific_mcd_file_to_backup: {specific_mcd_file_to_backup}")
+            # --- DEBUG LOGS --- END ---
+
+            if is_duckstation and specific_mcd_file_to_backup:
+                # Backup only the specific .mcd file for DuckStation
+                try:
+                    mcd_arcname = os.path.basename(specific_mcd_file_to_backup)
+                    logging.debug(f"  Attempting to add SINGLE DuckStation file: '{specific_mcd_file_to_backup}' as '{mcd_arcname}'")
+                    zipf.write(specific_mcd_file_to_backup, arcname=mcd_arcname)
+                    logging.info(f"Successfully added single file {mcd_arcname} to archive.")
+                except FileNotFoundError:
+                    logging.error(f"  CRITICAL ERROR: DuckStation .mcd file disappeared during backup: '{specific_mcd_file_to_backup}'")
+                    raise
+                except Exception as e_write:
+                    logging.error(f"  Error adding DuckStation file '{specific_mcd_file_to_backup}' to zip: {e_write}")
+                    raise
+            else:
+                # --- Original Logic for other emulators/folders ---
+                logging.debug(f"Executing ELSE branch: Performing standard directory backup via os.walk for: {save_folder_path}")
+                for root, dirs, files in os.walk(save_folder_path):
+                    # Exclude unwanted directories and files
+                    dirs[:] = [d for d in dirs if d != '__pycache__']
+                    files = [f for f in files if not f.endswith(('.pyc', '.pyo'))]
+
+                    for file in files:
+                        file_path_absolute = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path_absolute, save_folder_path)
+                        try:
+                            logging.debug(f"  Adding via os.walk: '{file_path_absolute}' as '{arcname}'")
+                            zipf.write(file_path_absolute, arcname=arcname)
+                        except FileNotFoundError:
+                            logging.warning(f"  Skipped adding file (not found during walk?): '{file_path_absolute}'")
+                        except Exception as e_write:
+                            logging.error(f"  Error adding file '{file_path_absolute}' to zip during walk: {e_write}")
+            # --- DuckStation Specific Logic --- END
 
         deleted = manage_backups(profile_name, backup_base_dir, max_backups)
         deleted_msg = " Deleted {0} outdated backups.".format(len(deleted)) if deleted else ""
