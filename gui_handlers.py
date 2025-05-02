@@ -226,13 +226,36 @@ class MainWindowHandlers:
             logging.error(f"Dati profilo non validi per '{profile_name}': {profile_data}")
             return
 
-        save_path = profile_data.get('path')
-        if not save_path:
-            QMessageBox.critical(self.main_window, self.tr("Errore"), f"Percorso sorgente non trovato nei dati del profilo '{profile_name}'. Verifica profilo.")
+        # --- Modified Path Handling START ---
+        source_paths = [] # Initialize empty list
+        paths_data = profile_data.get('paths')
+        path_data = profile_data.get('path')
+
+        if isinstance(paths_data, list) and paths_data and all(isinstance(p, str) for p in paths_data):
+            source_paths = paths_data
+            logging.debug(f"Using 'paths' key for profile '{profile_name}': {source_paths}")
+        elif isinstance(path_data, str) and path_data:
+            source_paths = [path_data] # Create a list from the single path
+            logging.debug(f"Using 'path' key for profile '{profile_name}': {source_paths}")
+        else:
+            QMessageBox.critical(self.main_window, self.tr("Errore Dati Profilo"),
+                                 f"Nessun percorso sorgente valido ('paths' o 'path') trovato nel profilo '{profile_name}'. Verifica profilo.")
+            logging.error(f"Invalid path data for profile '{profile_name}': paths={paths_data}, path={path_data}")
             return
-        if not os.path.isdir(save_path):
-            QMessageBox.critical(self.main_window, self.tr("Errore Percorso Sorgente"), self.tr("La cartella sorgente dei salvataggi non esiste o non è valida:\n{0}").format(save_path))
+
+        # Validate each path in the determined list
+        invalid_paths = []
+        for path in source_paths:
+            if not os.path.isdir(path):
+                invalid_paths.append(path)
+
+        if invalid_paths:
+            # Use parentheses for cleaner multi-line string concatenation
+            error_message = (self.tr("Uno o più percorsi sorgente non esistono o non sono validi:") + "\n" +
+                             "\n".join(invalid_paths))
+            QMessageBox.critical(self.main_window, self.tr("Errore Percorsi Sorgente"), error_message)
             return
+        # --- Modified Path Handling END ---
 
         # Access main_window's settings
         backup_dir = self.main_window.current_settings.get("backup_base_dir")
@@ -287,7 +310,8 @@ class MainWindowHandlers:
         # Create and assign WorkerThread to main_window
         self.main_window.worker_thread = WorkerThread(
             core_logic.perform_backup,
-            profile_name, save_path, backup_dir, max_bk, max_src_size, compression_mode
+            # Pass the list of source_paths instead of single save_path
+            profile_name, source_paths, backup_dir, max_bk, max_src_size, compression_mode
         )
         # Connect signals to slots in this handler class
         self.main_window.worker_thread.finished.connect(self.on_operation_finished)
@@ -308,18 +332,34 @@ class MainWindowHandlers:
             logging.error(f"Dati profilo non validi per '{profile_name}' durante restore: {profile_data}")
             return
 
-        save_path_string = profile_data.get('path')
-        if not save_path_string:
-            QMessageBox.critical(self.main_window, self.tr("Errore"), f"Percorso di destinazione non definito nei dati del profilo '{profile_name}'. Impossibile ripristinare.")
+        # --- Determine Destination Paths START ---
+        destination_paths = []
+        paths_data = profile_data.get('paths')
+        path_data = profile_data.get('path')
+
+        if isinstance(paths_data, list) and paths_data and all(isinstance(p, str) for p in paths_data):
+            destination_paths = paths_data
+            logging.debug(f"Restore target using 'paths': {destination_paths}")
+        elif isinstance(path_data, str) and path_data:
+            destination_paths = [path_data]
+            logging.debug(f"Restore target using 'path': {destination_paths}")
+        else:
+            QMessageBox.critical(self.main_window, self.tr("Errore Dati Profilo"),
+                                 f"Nessun percorso di destinazione valido ('paths' o 'path') trovato nel profilo '{profile_name}'. Impossibile ripristinare.")
+            logging.error(f"Invalid destination path data for profile '{profile_name}': paths={paths_data}, path={path_data}")
             return
+        # --- Determine Destination Paths END ---
 
         dialog = RestoreDialog(profile_name, self.main_window) # Pass main_window as parent
         if dialog.exec():
             archive_to_restore = dialog.get_selected_path()
             if archive_to_restore:
+                # Format destination paths for display in the message box
+                destination_paths_str = "\n".join([f"- {p}" for p in destination_paths])
                 confirm = QMessageBox.warning(self.main_window,
                                               self.tr("Conferma Ripristino Finale"),
-                                              self.tr("ATTENZIONE!\nRipristinare '{0}' sovrascriverà i file in:\n'{1}'\n\nProcedere?").format(os.path.basename(archive_to_restore), save_path_string),
+                                              # Updated message to show all destination paths
+                                              self.tr("ATTENZIONE!\nRipristinare '{0}' sovrascriverà i file nelle seguenti destinazioni:\n{1}\n\nProcedere?").format(os.path.basename(archive_to_restore), destination_paths_str),
                                               QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                               QMessageBox.StandardButton.No)
 
@@ -334,7 +374,8 @@ class MainWindowHandlers:
 
                     self.main_window.worker_thread = WorkerThread(
                         core_logic.perform_restore,
-                        profile_name, save_path_string, archive_to_restore
+                        # Pass the list of destination paths
+                        profile_name, destination_paths, archive_to_restore
                     )
                     self.main_window.worker_thread.finished.connect(self.on_operation_finished)
                     self.main_window.worker_thread.progress.connect(self.main_window.status_label.setText)
@@ -603,9 +644,9 @@ class MainWindowHandlers:
             if hasattr(self.main_window, 'profile_creation_manager') and self.main_window.profile_creation_manager and hasattr(self.main_window.profile_creation_manager, 'validate_save_path'):
                  validator_func = self.main_window.profile_creation_manager.validate_save_path
             else:
-                 logging.warning("ProfileCreationManager validator not found, using basic os.path.isdir validation.")
-                 def basic_validator(p, _name): return p if os.path.isdir(p) else None
-                 validator_func = basic_validator
+                logging.warning("ProfileCreationManager validator not found, using basic os.path.isdir validation.")
+                def basic_validator(p, _name): return p if os.path.isdir(p) else None
+                validator_func = basic_validator
 
             validated_path = validator_func(confirmed_path, profile_name)
             if validated_path:

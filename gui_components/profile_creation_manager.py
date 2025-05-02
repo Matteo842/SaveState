@@ -370,10 +370,15 @@ class ProfileCreationManager:
                     selected_data = selection_dialog.get_selected_profile_data()
                     if selected_data:
                         selected_id = selected_data.get('id')
-                        selected_path = selected_data.get('path')
+                        # --- Handle both single 'path' and multiple 'paths' --- START ---
+                        selected_paths_list = selected_data.get('paths') # For multi-path (e.g., PPSSPP)
+                        selected_path_single = selected_data.get('path')  # For single-path
+                        # --- Handle both single 'path' and multiple 'paths' --- END ---
 
-                        if not selected_id or not selected_path:
-                            logging.error(f"Selected data from dialog is missing id or path: {selected_data}")
+                        # --- Updated Check --- START ---
+                        if not selected_id or (not selected_path_single and not selected_paths_list):
+                            logging.error(f"Selected data from dialog is missing id or path(s): {selected_data}")
+                        # --- Updated Check --- END ---
                             QMessageBox.critical(mw, mw.tr("Errore Interno"), mw.tr("Dati del profilo selezionato non validi."))
                             return
 
@@ -396,27 +401,53 @@ class ProfileCreationManager:
                             else:
                                 logging.warning(f"Overwriting existing profile: {profile_name}")
 
-                        validated_path = self.validate_save_path(selected_path, profile_name)
-                        if not validated_path:
-                            return
+                                                # --- Determine path data and prepare profile dictionary --- START ---
+                        path_data_for_profile_list = None
+                        profile_data_to_save = {}
 
-                        mw.profiles[profile_name] = {'path': validated_path}
-                        if core_logic.save_profiles(mw.profiles):
-                            logging.info(f"Emulator game profile '{profile_name}' created/updated.")
+                        if emulator_name == "PPSSPP": # Specific check for multi-path emulator
+                             profile_data_to_save = {
+                                 'paths': selected_paths_list, # Use the list for PPSSPP
+                                 'emulator': emulator_name
+                             }
+                             logging.info(f"Saving profile '{profile_name}' with multiple paths (PPSSPP).")
+                        else: # For all other emulators or no emulator detected
+                             if selected_paths_list: # Ensure list is not empty
+                                 profile_data_to_save = {
+                                     'path': selected_paths_list[0], # Use single path string
+                                     'emulator': emulator_name # Still store emulator if detected
+                                 }
+                                 logging.info(f"Saving profile '{profile_name}' with single path.")
+                             else:
+                                 # This case should ideally not be reached due to earlier checks
+                                 logging.error(f"Cannot save profile '{profile_name}', path list is unexpectedly empty.")
+                                 QMessageBox.critical(mw, mw.tr("Errore Interno"), mw.tr("Impossibile salvare il profilo, nessun percorso valido disponibile."))
+                                 return
+                        # --- Determine path data and prepare profile dictionary --- END ---
+
+                        # --- Save Profile and Update UI --- START ---
+                        mw.profiles[profile_name] = profile_data_to_save # Add/Update profile in memory
+
+                        if core_logic.save_profiles(mw.profiles): # Save all profiles to file
+                            logging.info(f"Emulator game profile '{profile_name}' created/updated with emulator '{emulator_name}'.")
                             if hasattr(mw, 'profile_table_manager'):
                                 mw.profile_table_manager.update_profile_table()
-                                mw.profile_table_manager.select_profile_in_table(profile_name)
-                            QMessageBox.information(mw, mw.tr("Profilo Creato"), mw.tr("Profilo '{0}' creato con successo.").format(profile_name))
-                            mw.status_label.setText(mw.tr("Profilo '{0}' creato.").format(profile_name))
+                                mw.profile_table_manager.select_profile_in_table(profile_name) # Select the new/updated one
+                            # No success message box here, status bar is enough
+                            mw.status_label.setText(mw.tr("Profilo '{0}' creato/aggiornato.").format(profile_name))
                         else:
-                            QMessageBox.critical(mw, mw.tr("Errore"), mw.tr("Impossibile salvare il file dei profili dopo aver aggiunto '{0}'.").format(profile_name))
-                            if profile_name in mw.profiles: del mw.profiles[profile_name]
-                    else:
-                         logging.warning("Emulator selection dialog accepted, but no data returned.")
-                else:
-                    logging.info("Emulator game selection was cancelled by the user.")
-                    mw.status_label.setText(mw.tr("Selezione gioco annullata."))
-                # --- End Selection Dialog Handling ---
+                            # Error saving file
+                            QMessageBox.critical(mw, mw.tr("Errore Salvataggio"),
+                                                 mw.tr("Impossibile salvare il file dei profili dopo aver aggiunto/modificato '{0}'. "
+                                                       "Le modifiche potrebbero essere andate perse.").format(profile_name))
+                            # Attempt to revert the change in memory if save failed
+                            if profile_name in mw.profiles:
+                                # Ideally, revert to previous state, but simple removal is fallback
+                                del mw.profiles[profile_name]
+                                logging.warning(f"Reverted profile '{profile_name}' from memory due to save failure.")
+                                if hasattr(mw, 'profile_table_manager'):
+                                    mw.profile_table_manager.update_profile_table() # Update table again
+                        # --- Save Profile and Update UI --- END ---
             else:
                 logging.warning(f"{emulator_name} detected, but no profiles found in its standard directory.")
                 QMessageBox.warning(mw, mw.tr("Rilevato Emulatore ({0})").format(emulator_name),
