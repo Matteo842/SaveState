@@ -12,9 +12,10 @@ from .ryujinx_manager import find_ryujinx_profiles
 from .yuzu_manager import find_yuzu_profiles
 from .rpcs3_manager import find_rpcs3_profiles
 from .dolphin_manager import find_dolphin_profiles
-from .duckstation_manager import find_duckstation_profiles # <-- ADD THIS IMPORT
+from .duckstation_manager import find_duckstation_profiles
+from . import ppsspp_manager
 #from .pcsx2_manager import find_pcsx2_profiles
-#from .pcsx2_manager2 import list_ps2_saves # <-- RE-ADD this import
+#from .pcsx2_manager2 import list_ps2_saves
 
 # Configure basic logging for this module
 log = logging.getLogger(__name__)
@@ -27,11 +28,11 @@ EMULATOR_CONFIG = {
         'profile_finder': find_ryujinx_profiles, # Use imported function
         'name': 'Ryujinx' # Display name
     },
-    'yuzu': { # <-- NUOVA AGGIUNTA PER YUZU
+    'yuzu': {
         'profile_finder': lambda path: find_yuzu_profiles(path), # Use imported function
         'name': 'Yuzu'
     },
-    'rpcs3': { # <-- NUOVA AGGIUNTA PER RPCS3
+    'rpcs3': {
         # Use lambda to pass executable path
         'profile_finder': lambda path: find_rpcs3_profiles(path),
         'name': 'RPCS3'
@@ -40,10 +41,14 @@ EMULATOR_CONFIG = {
         'name': 'Dolphin',
         'profile_finder': lambda path: find_dolphin_profiles(path)
     },
-    'duckstation': { # <-- ADD THIS ENTRY
+    'duckstation': {
         'name': 'DuckStation',
         # Pass executable path even if unused by finder, for consistency
         'profile_finder': lambda path: find_duckstation_profiles(path)
+    },
+    'ppsspp': {  # <-- NUOVA AGGIUNTA PER PPSSPP
+        'name': 'PPSSPP',
+        'profile_finder': lambda path: ppsspp_manager.find_ppsspp_profiles(path) # Usa il modulo importato
     },
     # 'pcsx2': { # Temporarily disable PCSX2 during DuckStation dev if causing issues
     #     'name': 'PCSX2',
@@ -55,7 +60,7 @@ EMULATOR_CONFIG = {
     # },
 }
 
-# --- Main Detection Function (MODIFICATA) ---
+# --- Main Detection Function ---
 
 def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] | None:
     """
@@ -79,7 +84,7 @@ def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] 
             profile_finder = config['profile_finder']
             log.info(f"Detected known emulator '{emulator_name}' based on target path: {target_path}")
             try:
-                # --- PCSX2 Specific Logic (Re-implemented based on user request) --- 
+                # --- PCSX2 Specific Logic --- 
                 if emulator_name == 'PCSX2':
                     # 1. Find the memory card files (.ps2 paths) using the original finder
                     memcard_list = find_pcsx2_profiles(target_path)
@@ -183,7 +188,7 @@ if __name__ == "__main__":
     else:
         print("\nNo RPCS3 profiles found or an error occurred.")
 
-    # --- Test DuckStation --- ADD THIS TEST
+    # --- Test DuckStation ---
     log.info("\n--- Running DuckStation Test ---")
     # Use lambda or direct call based on how EMULATOR_CONFIG is set
     found_duckstation = find_duckstation_profiles(executable_path=None) # Test call without path

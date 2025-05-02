@@ -7,123 +7,15 @@ import platform
 import struct
 import re # Keep re import even if not used in simplified version
 from collections import namedtuple
+from .sfo_utils import parse_param_sfo # <-- Import the shared function
 
 log = logging.getLogger(__name__)
 
-# Structure definitions for PARAM.SFO parsing
+# Structure definitions for PARAM.SFO parsing - Keep these if used elsewhere, otherwise remove?
+# Let's keep them for now as get_rpcs3_saves_path might implicitly rely on their existence
+# or future code might. If they become truly unused, we can remove later.
 SFOHeader = namedtuple('SFOHeader', ['magic', 'version', 'key_table_start', 'data_table_start', 'num_entries'])
 SFOEntry = namedtuple('SFOEntry', ['key_offset', 'data_fmt', 'data_len', 'data_max_len', 'data_offset'])
-
-def parse_param_sfo(sfo_path: str) -> str | None:
-    """Parses PARAM.SFO file to find the game title."""
-    log.debug(f"Attempting to parse PARAM.SFO: {sfo_path}")
-    if not os.path.isfile(sfo_path):
-        log.warning(f"PARAM.SFO file not found: {sfo_path}")
-        return None
-
-    try:
-        # Memory from user: Read entire file first to avoid seek issues
-        with open(sfo_path, 'rb') as f:
-            data = f.read()
-        file_size = len(data)
-
-        if file_size < 20:
-            log.warning(f"PARAM.SFO file too small for header: {sfo_path}")
-            return None
-
-        # Read header (20 bytes)
-        header_data = data[:20]
-        if len(header_data) < 20:
-            log.warning(f"PARAM.SFO file too small for header: {sfo_path}") # Redundant check, but safe
-            return None
-
-        try:
-            header = SFOHeader._make(struct.unpack('<4sIIII', header_data)) # Use correct '<4sIIII' format
-        except struct.error:
-            log.warning(f"Invalid SFO file (header unpack error): {sfo_path}")
-            return None
-
-        if header.magic != b'\x00PSF':
-            log.warning(f"Invalid magic number in PARAM.SFO: {header.magic!r} in {sfo_path}")
-            return None
-
-        log.debug(f"SFO Header: {header}")
-
-        # Boundary checks for table starts
-        if header.key_table_start >= file_size or header.data_table_start >= file_size:
-             log.warning(f"Invalid SFO file (table offsets out of bounds): {sfo_path}")
-             return None
-
-        # Simplified reading based on old code logic (adapted for byte array)
-        header_size = 20 # Standard size of the header
-        index_entry_size = 16 # Standard size of an index table entry
-
-        for i in range(header.num_entries):
-            index_entry_offset = header_size + i * index_entry_size
-            # Boundary check for reading the index entry itself
-            if index_entry_offset + index_entry_size > file_size:
-                log.warning(f"Invalid SFO file (index entry {i} read out of bounds): {sfo_path}")
-                break # Stop processing if index goes out of bounds
-
-            entry_data = data[index_entry_offset : index_entry_offset + index_entry_size]
-
-            try:
-                # Unpack the 16-byte index entry (key offset, format, used len, total len, data offset)
-                entry = SFOEntry._make(struct.unpack('<HHIII', entry_data))
-            except struct.error:
-                log.warning(f"Invalid SFO file (index entry {i} unpack error): {sfo_path}")
-                continue # Try next entry
-
-            # --- Read the key name --- (relative to key_table_start)
-            absolute_key_offset = header.key_table_start + entry.key_offset
-            # Find the null terminator for the key name
-            key_end_offset = data.find(b'\x00', absolute_key_offset)
-
-            # Boundary checks for key reading
-            if absolute_key_offset >= file_size or key_end_offset == -1 or key_end_offset >= file_size:
-                log.warning(f"Invalid SFO file (key name bounds error for entry {i}): {sfo_path}")
-                continue # Try next entry
-
-            try:
-                key_name_bytes = data[absolute_key_offset:key_end_offset]
-                key_name = key_name_bytes.decode('utf-8', errors='ignore')
-            except UnicodeDecodeError:
-                log.warning(f"Invalid SFO file (key name decoding error for entry {i}): {sfo_path}")
-                continue # Try next entry
-
-            # --- Check if this is the 'TITLE' key --- 
-            if key_name == 'TITLE':
-                try:
-                    # --- Read the data (title) --- (relative to data_table_start)
-                    absolute_data_offset = header.data_table_start + entry.data_offset
-                    # Use data_len (used length) from index entry, check bounds against file size
-                    if absolute_data_offset + entry.data_len > file_size:
-                        log.warning(f"Invalid SFO file (TITLE data bounds error): {sfo_path}")
-                        return None # Fatal error for TITLE read
-
-                    title_bytes = data[absolute_data_offset : absolute_data_offset + entry.data_len]
-                    # Remove trailing null bytes before decoding
-                    title = title_bytes.rstrip(b'\x00').decode('utf-8', errors='replace')
-                    log.debug(f"Successfully parsed TITLE='{title}' from {sfo_path}")
-                    return title
-                except Exception as e:
-                    log.error(f"Error reading TITLE data from SFO: {sfo_path} - {e}")
-                    return None # Fatal error for TITLE read
-
-        # If loop completes without finding 'TITLE'
-        log.debug(f"'TITLE' key not found in SFO: {sfo_path}")
-        return None
-
-    except FileNotFoundError:
-        # This should not happen due to the initial check, but good practice
-        log.error(f"PARAM.SFO file disappeared: {sfo_path}")
-        return None
-    except MemoryError:
-        log.error(f"Memory error reading large SFO file: {sfo_path}")
-        return None
-    except Exception as e:
-        log.error(f"Unexpected error parsing SFO file {sfo_path}: {e}", exc_info=True)
-        return None
 
 # Restore the flexible version that checks portable/standard and scans user IDs
 def get_rpcs3_saves_path(executable_path: str | None = None) -> str | None:

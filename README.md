@@ -17,7 +17,7 @@ Furthermore, SaveState features automatic detection of Steam games and even lets
 
 ——————————————————————————————————————————————————
 
-⚠️ Current Status (2025-04-22): This is a personal project currently **under active development.** 
+⚠️ Current Status (2025-05-2): This is a personal project currently **under active development.** 
 
 Please note: **English localization is ongoing.**
 
@@ -53,7 +53,7 @@ Please note: **English localization is ongoing.**
     * Settings dialog to configure paths, limits, theme, language, and more.
     * Dockable Log Console displaying detailed operation status and errors.
     * Basic internationalization support (Italian/English currently included).
-* **No Administrator Privileges Required** for core functionality.
+* **No Administrator Privileges Required**
 * **Portable:** Runs directly from the `.exe` file without installation.
 
 ## Visuals
@@ -73,6 +73,7 @@ SaveState includes experimental support for automatically detecting save data lo
 *   **rpcs3**
 *   **DuckStation**
 *   **Dolphin**
+*   **PPSSPP**
 
 
 ## How Save Search Works (Heuristics)
