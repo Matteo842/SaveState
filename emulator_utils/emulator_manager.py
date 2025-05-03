@@ -14,6 +14,7 @@ from .ryujinx_manager import find_ryujinx_profiles
 from .dolphin_manager import find_dolphin_profiles
 from .duckstation_manager import find_duckstation_profiles
 from .mgba_manager import find_mgba_profiles
+from .snes9x_manager import find_snes9x_profiles
 
 # Configure basic logging for this module
 log = logging.getLogger(__name__)
@@ -59,6 +60,10 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'mgba': {
         'name': 'mGBA',
         'profile_finder': lambda path: find_mgba_profiles(path)
+    },
+    'snes9x': {
+        'name': 'Snes9x',
+        'profile_finder': lambda path: find_snes9x_profiles(path)
     },
 }
 
@@ -149,7 +154,7 @@ def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] 
         if keyword == 'azahar': # Skip azahar, already checked
             continue
             
-        # Check if the keyword (e.g., 'ryujinx', 'yuzu', 'citra') is in the target path
+        # Check if the keyword (e.g., 'ryujinx', 'yuzu', 'citra', 'snes9x') is in the target path
         if keyword in target_path_lower:
             emulator_name = config['name']
             profile_finder = config['profile_finder']
