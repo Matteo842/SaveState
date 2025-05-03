@@ -13,6 +13,7 @@ from .citra_manager import find_citra_profiles
 from .ryujinx_manager import find_ryujinx_profiles
 from .dolphin_manager import find_dolphin_profiles
 from .duckstation_manager import find_duckstation_profiles
+from .mgba_manager import find_mgba_profiles
 
 # Configure basic logging for this module
 log = logging.getLogger(__name__)
@@ -54,6 +55,10 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'duckstation': {
         'name': 'DuckStation',
         'profile_finder': lambda path: find_duckstation_profiles(path)
+    },
+    'mgba': {
+        'name': 'mGBA',
+        'profile_finder': lambda path: find_mgba_profiles(path)
     },
 }
 

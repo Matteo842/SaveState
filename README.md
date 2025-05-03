@@ -74,6 +74,9 @@ SaveState includes experimental support for automatically detecting save data lo
 *   **DuckStation**
 *   **Dolphin**
 *   **PPSSPP**
+*   **citra**
+*   **Azahar**
+*   **mGBA**
 
 
 ## How Save Search Works (Heuristics)
