@@ -66,17 +66,17 @@ Please note: **English localization is ongoing.**
 
 SaveState includes experimental support for automatically detecting save data locations for certain emulators, simplifying the profile creation process.
 
-**Currently Supported:**
+**Currently Supported in version 1.3.8:**
 
-*   **Ryujinx**-------1.3.8
-*   **yuzu**----------1.3.8
-*   **rpcs3**---------1.3.8
-*   **DuckStation**---1.3.8
-*   **Dolphin**-------1.3.8
-*   **PPSSPP**--------1.3.8
-*   **citra**---------1.3.8
-*   **Azahar**--------1.3.8
-*   **mGBA**----------1.3.8
+*   **Ryujinx**
+*   **yuzu**
+*   **rpcs3**
+*   **DuckStation**
+*   **Dolphin**
+*   **PPSSPP**
+*   **citra**
+*   **Azahar**
+*   **mGBA**
 
 
 ## How Save Search Works (Heuristics)
