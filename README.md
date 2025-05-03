@@ -68,15 +68,15 @@ SaveState includes experimental support for automatically detecting save data lo
 
 **Currently Supported:**
 
-*   **Ryujinx**
-*   **yuzu**
-*   **rpcs3**
-*   **DuckStation**
-*   **Dolphin**
-*   **PPSSPP**
-*   **citra**
-*   **Azahar**
-*   **mGBA**
+*   **Ryujinx**       1.3.8
+*   **yuzu**          1.3.8
+*   **rpcs3**         1.3.8
+*   **DuckStation**   1.3.8
+*   **Dolphin**       1.3.8
+*   **PPSSPP**        1.3.8
+*   **citra**         1.3.8
+*   **Azahar**        1.3.8
+*   **mGBA**          1.3.8
 
 
 ## How Save Search Works (Heuristics)
