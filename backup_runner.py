@@ -176,14 +176,24 @@ def run_silent_backup(profile_name):
         show_notification(False, f"Errore: Dati profilo non validi per {profile_name}.")
         return False
 
-    save_path = profile_data.get('path') # ESTRAI la stringa 'path' dal dizionario
+    # --- MODIFICA: Gestione 'paths' (lista) e 'path' (stringa) ---
+    paths_to_backup = None
+    if 'paths' in profile_data and isinstance(profile_data['paths'], list):
+        paths_to_backup = profile_data['paths']
+        logging.debug(f"Trovata chiave 'paths' (lista) per '{profile_name}': {paths_to_backup}")
+    elif 'path' in profile_data and isinstance(profile_data['path'], str):
+        paths_to_backup = [profile_data['path']] # Metti la stringa in una lista
+        logging.debug(f"Trovata chiave 'path' (stringa) per '{profile_name}': {paths_to_backup}")
 
-    # Ora valida la stringa 'save_path' estratta
-    if not save_path or not isinstance(save_path, str) or not os.path.isdir(save_path):
-        logging.error(f"Percorso salvataggi per '{profile_name}' non valido o non è una cartella: '{save_path}'")
-        show_notification(False, f"Errore: Percorso salvataggi non valido per {profile_name}.")
+    # Se nessuno dei due percorsi è valido o trovato
+    if paths_to_backup is None or not paths_to_backup: # Controlla anche se la lista è vuota
+        logging.error(f"Nessun percorso ('paths' o 'path') valido trovato per '{profile_name}'. Backup annullato.")
+        # Mostra un messaggio più specifico all'utente
+        show_notification(False, f"Errore: Nessun percorso di salvataggio valido definito per {profile_name}.")
         return False
-    # Ora save_path contiene la stringa del percorso valida e verificata
+    # A questo punto, paths_to_backup contiene una lista (potenzialmente di un solo elemento) di percorsi
+    # La validazione effettiva dell'esistenza dei percorsi avverrà dentro perform_backup
+    # --- FINE MODIFICA ---
 
     backup_base_dir = settings.get("backup_base_dir")
     max_bk = settings.get("max_backups")
@@ -224,15 +234,48 @@ def run_silent_backup(profile_name):
     # 6. Esegui Backup Effettivo
     logging.info(f"Start core_logic.perform_backup for '{profile_name}'...")
     try:
+        logging.debug(f"--->>> PRE-CALLING core_logic.perform_backup for '{profile_name}'")
+        logging.debug(f"      Arguments: paths={paths_to_backup}, max_backups={max_bk}, backup_dir={backup_base_dir}, compression={compression_mode}")
+
+        # --- MANUAL PRE-VALIDATION IN BACKUP_RUNNER --- 
+        log.debug("--- Performing manual pre-validation in backup_runner ---")
+        pre_validation_ok = True
+        if not paths_to_backup: # Check if list is empty
+             log.error(f"  MANUAL PRE-VALIDATION FAILED: paths_to_backup is empty for profile '{profile_name}'")
+             pre_validation_ok = False
+        else:
+            for p_idx, p_val in enumerate(paths_to_backup):
+                try:
+                    # Ensure p_val is a string before checking
+                    if not isinstance(p_val, str):
+                        log.error(f"  MANUAL PRE-VALIDATION ERROR: Path item {p_idx} is not a string: {p_val} ({type(p_val).__name__})")
+                        pre_validation_ok = False
+                        continue
+                        
+                    exists = os.path.exists(p_val)
+                    is_file = os.path.isfile(p_val)
+                    is_dir = os.path.isdir(p_val)
+                    log.debug(f"  Pre-check [{p_idx+1}/{len(paths_to_backup)}] '{p_val}' -> exists={exists}, is_file={is_file}, is_dir={is_dir}")
+                    if not exists:
+                        pre_validation_ok = False
+                        log.error(f"  MANUAL PRE-VALIDATION FAILED for path: {p_val}")
+                except Exception as e_preval:
+                    log.error(f"  MANUAL PRE-VALIDATION EXCEPTION for path '{p_val}': {e_preval}")
+                    pre_validation_ok = False
+        log.debug(f"--- Manual pre-validation result: {pre_validation_ok} ---")
+        # --------------------------------------------------
+
         success, message = core_logic.perform_backup(
             profile_name,
-            save_path,
+            paths_to_backup, # <<< USA LA NUOVA VARIABILE QUI
             backup_base_dir,
             max_bk,
             max_src_size,
             compression_mode
         )
-        logging.info(f"Result perform_backup: Success={success}, Message='{message}'")
+        logging.debug(f"<<<--- POST-CALL core_logic.perform_backup for '{profile_name}'")
+        logging.debug(f"      Result: success={success}, error_message='{message}'")
+
         # 7. Mostra Notifica
         show_notification(success, message)
         return success

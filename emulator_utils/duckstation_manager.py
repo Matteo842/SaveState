@@ -4,6 +4,7 @@
 import os
 import logging
 import platform
+import re
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler()) # Avoid 'No handler found' warnings
@@ -55,44 +56,38 @@ def find_duckstation_profiles(executable_path: str | None = None) -> list[dict] 
     log.info("Scanning for DuckStation memory card profiles...")
     memcard_dir = get_duckstation_memcard_path()
 
-    if not memcard_dir:
+    if not memcard_dir or not os.path.isdir(memcard_dir):
         log.error("Failed to find DuckStation memory card directory. Cannot list profiles.")
         return None # Indicate failure: directory not found
 
     profiles = []
     try:
-        for filename in os.listdir(memcard_dir):
-            if filename.lower().endswith('.mcd'):
-                full_path = os.path.join(memcard_dir, filename)
-                # Use filename without extension for ID and Name
-                profile_name = os.path.splitext(filename)[0]
-                profile_id = profile_name # Use the same for ID
-
-                if not profile_name: # Skip if filename is just '.mcd'
-                    log.warning(f"Skipping memory card file with empty name: {full_path}")
-                    continue
-
+        for item in os.listdir(memcard_dir):
+            if item.lower().endswith('.mcd'):
+                full_path = os.path.join(memcard_dir, item)
+                log.info(f"DUCKMAN: Generated path: '{full_path}' (Type: {type(full_path)}) Encoding check: {full_path.encode()[:50]}...")
+                profile_name = f"DuckStation - {os.path.splitext(item)[0]}"
+                # Use filename without extension + simple counter for ID uniqueness for now
+                # A better approach might involve hashing path or using metadata if available
+                # Let's use a simple sanitization + prefix
+                sanitized_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', os.path.splitext(item)[0]) # Basic sanitization
+                profile_id = f"duckstation_{sanitized_name.lower()}"
+                
                 profile_info = {
                     'id': profile_id,
-                    'name': profile_name, # Assumes filename is descriptive
-                    'path': memcard_dir,   # Path to the directory containing the .mcd file
+                    'name': profile_name,
+                    # Corretto: Usa 'paths' e assegna la lista con il percorso del file .mcd
+                    'paths': [full_path],
                     'emulator': 'DuckStation'
                 }
                 profiles.append(profile_info)
-                log.debug(f"Found DuckStation memory card: {profile_name} at {full_path}")
+                log.debug(f"Found DuckStation profile: {profile_info}")
+    except OSError as e:
+        log.error(f"Error accessing DuckStation memory card directory '{memcard_dir}': {e}")
+        return None
 
-        log.info(f"Found {len(profiles)} DuckStation memory card profile(s).")
-        return profiles
-
-    except FileNotFoundError:
-        log.error(f"Memory card directory not found unexpectedly during scan: {memcard_dir}")
-        return None # Indicate failure: directory disappeared?
-    except PermissionError:
-        log.error(f"Permission denied when trying to read directory: {memcard_dir}")
-        return None # Indicate failure: permissions issue
-    except Exception as e:
-        log.error(f"An error occurred while scanning for DuckStation profiles: {e}", exc_info=True)
-        return None # Indicate failure: other error
+    log.info(f"Found {len(profiles)} DuckStation memory card profile(s).")
+    return profiles if profiles else None
 
 
 # Example Usage (for testing this module directly)
@@ -109,7 +104,7 @@ if __name__ == "__main__":
             for profile in found_profiles:
                 print(f"- ID:   {profile['id']}")
                 print(f"  Name: {profile['name']}")
-                print(f"  Path: {profile['path']}")
+                print(f"  Path: {profile['paths'][0]}")
                 print("-" * 20)
         else:
              print("No .mcd files found in the detected directory.")

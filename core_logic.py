@@ -281,22 +281,28 @@ def load_profiles():
                         logging.warning(f"Path '{path_or_data}' for profile '{name}' (old format) is invalid. Skipping.")
                 elif isinstance(path_or_data, dict):
                     # Nuovo formato o già convertito: assicurati che 'path' esista e sia valido
-                    profile_path = path_or_data.get('path')
-                    if profile_path and isinstance(profile_path, str) and os.path.isdir(profile_path):
-                        # Se il path esiste ed è valido, copia il dizionario
-                        loaded_profiles[name] = path_or_data.copy() # Usa copy per sicurezza
-                    elif profile_path:
-                         # Se il path esiste ma non è valido
-                         logging.warning(f"Path '{profile_path}' in profile dict for '{name}' is invalid. Setting empty path.")
-                         temp_profile = path_or_data.copy()
-                         temp_profile['path'] = "" # Imposta path vuoto
-                         loaded_profiles[name] = temp_profile
+                    paths_key_present = 'paths' in path_or_data and isinstance(path_or_data['paths'], list) and path_or_data['paths']
+                    path_key_present = 'path' in path_or_data and isinstance(path_or_data['path'], str) and path_or_data['path']
+
+                    if paths_key_present:
+                        # Validazione 'paths': Controlla che *almeno uno* dei percorsi sia una stringa valida (non necessariamente esistente qui)
+                        # La validazione dell'esistenza avverrà dopo, al momento del backup.
+                        if any(isinstance(p, str) and p for p in path_or_data['paths']):
+                            loaded_profiles[name] = path_or_data.copy()
+                            logging.debug(f"Profile '{name}' validated with 'paths' key.")
+                        else:
+                            logging.warning(f"Profile '{name}' has 'paths' key, but the list is empty or contains invalid entries. Skipping.")
+                    elif path_key_present:
+                        # Validazione 'path': Controlla che sia una stringa valida (non necessariamente esistente qui)
+                        # La validazione dell'esistenza avverrà dopo.
+                        if os.path.basename(path_or_data['path']): # Controllo base che non sia solo \ o / o vuota
+                             loaded_profiles[name] = path_or_data.copy()
+                             logging.debug(f"Profile '{name}' validated with 'path' key.")
+                        else:
+                             logging.warning(f"Profile '{name}' has 'path' key, but the path string '{path_or_data['path']}' seems invalid. Skipping.")
                     else:
-                        # Se manca la chiave 'path'
-                        logging.warning(f"Profile '{name}' is a dict but missing 'path' key or path is invalid. Setting empty path.")
-                        temp_profile = path_or_data.copy()
-                        temp_profile['path'] = "" # Imposta path vuoto
-                        loaded_profiles[name] = temp_profile
+                        # Nessuna chiave valida trovata
+                        logging.warning(f"Profile '{name}' is a dict but missing a valid 'paths' (list) or 'path' (string) key. Skipping.")
                 else:
                     # Formato imprevisto per questo profilo
                     logging.warning(f"Unrecognized profile format for '{name}'. Skipping.")
@@ -407,34 +413,60 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
     paths_to_process = [os.path.normpath(p) for p in (source_paths if is_multiple_paths else [source_paths])]
     logging.debug(f"Paths to process after normalization: {paths_to_process}")
 
-    # --- Validazione Percorsi Sorgente ---
-    for path in paths_to_process:
-        if not os.path.exists(path):
-            msg = f"ERRORE: Il percorso sorgente non esiste: '{path}'"
-            logging.error(msg)
-            return False, msg
-        # Permetti file solo se NON è multi-percorso (es. Duckstation) E se il percorso è effettivamente un file
-        if not is_multiple_paths and os.path.isfile(path):
-            logging.debug(f"Single source path is a file: {path}. Allowed.")
-        # Se è multi-percorso, TUTTI devono essere directory
-        elif is_multiple_paths and not os.path.isdir(path):
-            msg = f"ERRORE: Quando si usano percorsi multipli, tutti devono essere directory. Trovato non valido: '{path}'"
-            logging.error(msg)
-            return False, msg
-        # Se è percorso singolo E NON è un file, DEVE essere una directory
-        elif not is_multiple_paths and not os.path.isfile(path) and not os.path.isdir(path):
-             msg = f"ERRORE: Il percorso sorgente singolo non è né un file né una directory valida: '{path}'"
-             logging.error(msg)
-             return False, msg
-        # Se è multi-percorso e tutti sono directory, va bene
-        elif is_multiple_paths and all(os.path.isdir(p) for p in paths_to_process):
-             logging.debug("All multiple paths are valid directories.")
-        # Se è percorso singolo ed è una directory, va bene
-        elif not is_multiple_paths and os.path.isdir(path):
-             logging.debug("Single source path is a valid directory.")
+    # --- Validazione Percorsi Sorgente --- REVISTA con DEBUG --- 
+    invalid_paths = []
+    paths_ok = True
+    validation_details = [] # Lista per loggare i dettagli
 
+    logging.info(">>> INIZIO VALIDAZIONE DETTAGLIATA PERCORSI <<<")
+    for i, path in enumerate(paths_to_process):
+        is_file = False
+        is_dir = False
+        exists = False
+        error_msg = None
+        detail = f"  Check [{i+1}/{len(paths_to_process)}]: '{path}'"
+        try:
+            # Controlli specifici
+            is_file = os.path.isfile(path)
+            is_dir = os.path.isdir(path)
+            # Controllo esistenza generale (potrebbe dare eccezioni)
+            exists = os.path.exists(path)
+            detail += f" -> isfile: {is_file}, isdir: {is_dir}, exists: {exists}"
+            if not exists:
+                paths_ok = False
+                invalid_paths.append(path)
+                detail += " [NON ESISTE!]"
+        except OSError as e_os:
+            error_msg = f"OSError: {e_os}"
+            paths_ok = False
+            invalid_paths.append(f"{path} (Errore: {error_msg})")
+            detail += f" [ERRORE OS: {error_msg}]"
+        except Exception as e_val:
+            error_msg = f"Exception: {type(e_val).__name__} - {e_val}"
+            paths_ok = False
+            invalid_paths.append(f"{path} (Errore: {error_msg})")
+            detail += f" [ERRORE GENERICO: {error_msg}]"
+        finally:
+             validation_details.append(detail) # Aggiungi sempre il dettaglio
 
-    # --- Controllo Dimensione Sorgente ---
+    logging.info("--- Dettaglio Validazione --- ")
+    for vd in validation_details: logging.info(vd)
+    logging.info("-----------------------------")
+
+    if not paths_ok:
+        # Costruisci un messaggio di errore chiaro per l'utente
+        error_details = "\n".join(invalid_paths)
+        # Usiamo un messaggio simile a quello già visto nell'interfaccia
+        error_message_for_ui = f"Uno o più percorsi sorgente non esistono o hanno causato errori:\n{error_details}"
+        logging.error(f"Errore backup '{profile_name}': {error_message_for_ui}")
+        logging.info(">>> FINE VALIDAZIONE (FALLITA) <<<")
+        return False, error_message_for_ui # Restituisci il messaggio dettagliato
+    
+    logging.info(">>> FINE VALIDAZIONE (SUCCESSO) - Tutti i percorsi OK <<<")
+    # --- Fine Validazione --- Nessun controllo aggiuntivo su file/directory qui ---
+
+ 
+     # --- Controllo Dimensione Sorgente ---
     logging.info(f"Controllo dimensione sorgente per {len(paths_to_process)} percorso/i (Limite: {'Nessuno' if max_source_size_mb == -1 else str(max_source_size_mb) + ' MB'})...")
     total_size_bytes = 0
     if max_source_size_mb != -1:
@@ -559,7 +591,7 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
                              for filename in filenames:
                                  file_path_absolute = os.path.join(foldername, filename)
                                  # Crea arcname: base_folder_name / percorso_relativo_interno
-                                 # Esempio: SAVEDATA/file1.txt
+                                 # Esempio: SAVEDATA/file.txt
                                  relative_path = file_path_absolute[len_source_path_parent:]
                                  arcname = relative_path # Già include la base folder nel path relativo calcolato
                                  logging.debug(f"  Aggiunta file: '{file_path_absolute}' come '{arcname}'")
@@ -570,17 +602,27 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
                                  except Exception as e_write_walk:
                                       logging.error(f"  Errore aggiunta file '{file_path_absolute}' allo zip durante walk: {e_write_walk}")
                      elif os.path.isfile(source_path):
-                         # Aggiungi il singolo file (caso non-Duckstation)
-                         arcname = os.path.basename(source_path)
-                         logging.debug(f"Aggiunta file singolo: '{source_path}' come '{arcname}'")
+                         # --- Logica Modificata per File Singoli (in lista o meno) ---
+                         # Calcola arcname per preservare la struttura relativa, come fa os.walk
+                         source_dir = os.path.dirname(source_path)
+                         # Usa la directory PARENT della directory del file come base per arcname
+                         # per includere la directory del file stesso nell'archivio.
+                         source_base_dir = os.path.dirname(source_dir)
+                         len_source_base_dir = len(source_base_dir) + len(os.sep)
+
+                         # arcname sarà: nome_cartella_file/nome_file.bin
+                         # Esempio: 00000001/GC_S00.bin
+                         arcname = source_path[len_source_base_dir:]
+
+                         logging.debug(f"Aggiunta file (da lista/singolo): '{source_path}' come '{arcname}'")
                          try:
                              zipf.write(source_path, arcname=arcname)
                          except FileNotFoundError:
-                              logging.error(f"  ERRORE CRITICO: File sorgente singolo scomparso durante il backup: '{source_path}'")
-                              raise
+                              logging.error(f"  ERRORE CRITICO: File sorgente scomparso durante il backup: '{source_path}'")
+                              raise # Propaga per annullare
                          except Exception as e_write_single:
-                              logging.error(f"  Errore aggiunta file singolo '{source_path}' allo zip: {e_write_single}", exc_info=True)
-                              raise
+                              logging.error(f"  Errore aggiunta file '{source_path}' allo zip: {e_write_single}", exc_info=True)
+                              raise # Propaga per annullare
 
         logging.info(f"Archivio di backup creato con successo: '{archive_path}'")
 
@@ -769,13 +811,13 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path):
                     if zip_base_folder in dest_map:
                         target_dest_path_base = dest_map[zip_base_folder]
                         # Ottieni il percorso relativo *all'interno* della cartella base (es. 'file.txt' da 'SAVEDATA/file.txt')
-                        relative_path_in_zip = normalized_member_path[len(zip_base_folder):].lstrip(os.sep)
+                        relative_path = normalized_member_path[len(zip_base_folder):].lstrip(os.sep)
                         # Costruisci il percorso di estrazione completo
-                        full_extract_path = os.path.join(target_dest_path_base, relative_path_in_zip)
+                        full_extract_path = os.path.join(target_dest_path_base, relative_path)
 
                         # Assicura che la directory per il file esista prima di estrarre
                         if member_path.endswith('/') or member_path.endswith('\\'): # È una directory nello zip
-                             if relative_path_in_zip: # Evita di creare '.' se la path relativa è vuota
+                             if relative_path: # Evita di creare '.' se la path relativa è vuota
                                  logging.debug(f"  Creo directory da zip: {full_extract_path}")
                                  os.makedirs(full_extract_path, exist_ok=True)
                         else: # È un file
@@ -818,7 +860,7 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path):
         msg = f"ERRORE: Il file non è un archivio ZIP valido o è corrotto: '{archive_to_restore_path}'"
         logging.error(msg)
         return False, msg
-    except (IOError, OSError) as e:
+    except (IOError, OSError) as e: # Cattura errori IO/OS
          msg = f"ERRORE IO/OS durante l'estrazione: {e}"
          logging.error(msg, exc_info=True)
          error_messages.append(msg)
@@ -1174,7 +1216,10 @@ def are_names_similar(name1, name2, min_match_words=2, fuzzy_threshold=88, game_
         clean_name2 = re.sub(r'\s+', ' ', clean_name2).strip()
 
         try:
-             ignore_words = getattr(config, 'SIMILARITY_IGNORE_WORDS', {'a', 'an', 'the', 'of', 'and', 'remake', 'intergrade', 'edition', 'goty', 'demo', 'trial', 'play', 'launch', 'definitive', 'enhanced', 'complete', 'collection', 'hd', 'ultra', 'deluxe', 'game', 'year'})
+             ignore_words = getattr(config, 'SIMILARITY_IGNORE_WORDS', {'a', 'an', 'the', 'of', 'and', 'remake', 'intergrade',
+                      'edition', 'goty', 'demo', 'trial', 'play', 'launch',
+                      'definitive', 'enhanced', 'complete', 'collection',
+                      'hd', 'ultra', 'deluxe', 'game', 'year'})
              ignore_words_lower = {w.lower() for w in ignore_words}
         except Exception as e_config:
              logging.error(f"ARE_NAMES_SIMILAR: Error getting ignore words from config: {e_config}")
@@ -1471,7 +1516,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     for name, path in common_locations.items():
         if path:
             try:
-                # Normalizza e controlla esistenza senza generare eccezioni su Windows per nomi lunghi
+                # Normalizza il percorso base per un confronto sicuro
                 norm_path = os.path.normpath(path)
                 if os.path.isdir(norm_path):
                      valid_locations[name] = norm_path
@@ -1486,6 +1531,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     if is_steam_game and appid and steam_userdata_path and steam_id3_to_use:
         logging.info(f"Checking Steam Userdata for AppID {appid} (User: {steam_id3_to_use})...")
         # Usa try-except perché os.path.join può fallire con input non validi
+        # Questo è il TRY ESTERNO (livello 1 indentazione)
         try:
             user_data_folder_for_id = os.path.join(steam_userdata_path, steam_id3_to_use)
             if os.path.isdir(user_data_folder_for_id):
@@ -1493,7 +1539,8 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                 remote_path = os.path.join(base_userdata_appid, 'remote')
                 # Chiama add_guess che gestisce controlli isdir ed errori interni
                 if add_guess(remote_path, f"Steam Userdata/{steam_id3_to_use}/{appid}/remote"):
-                    try: # Scansiona sottocartelle di remote
+                    # Questo è il TRY INTERNO (livello 2 indentazione)
+                    try: 
                         for entry in os.listdir(remote_path):
                             sub_path = os.path.join(remote_path, entry); sub_lower = entry.lower()
                             # Aggiungi check isdir qui per evitare chiamate inutili a are_names_similar
@@ -1502,17 +1549,26 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                                 any(s in sub_lower for s in ['save', 'profile', 'user', 'slot']) or
                                 are_names_similar(sanitized_name, entry, game_title_words_for_seq=game_title_sig_words) or
                                 entry.upper() in [a.upper() for a in game_abbreviations] ):
+                                    # (livello 4 indentazione)
                                     add_guess(sub_path, f"Steam Userdata/.../remote/{entry}")
+                    # Questo è l'EXCEPT INTERNO (livello 2 indentazione)
                     except Exception as e_remote_sub:
-                         if not isinstance(e_remote_sub, FileNotFoundError): # Non loggare se remote non esiste
-                              logging.warning(f"Error scanning subfolders in remote path '{remote_path}': {e_remote_sub}")
-                # Aggiungi base solo se non contiene solo remotecache (il check è in add_guess)
+                        # Logga errori durante la scansione della sottocartella 'remote'
+                        # Escludi FileNotFoundError se 'remote' stessa non esiste (già gestito da add_guess)
+                        if not isinstance(e_remote_sub, FileNotFoundError):
+                             # (livello 4 indentazione)
+                             logging.warning(f"Error scanning subfolders in Steam remote path '{remote_path}': {e_remote_sub}")
+                             
+                # Questa riga è DOPO il try/except interno (livello 3 indentazione)
+                # Si esegue se 'remote' non esiste O dopo aver scansionato 'remote'
                 add_guess(base_userdata_appid, f"Steam Userdata/{steam_id3_to_use}/{appid}/Base")
-            else:
-                 logging.warning(f"Steam user ID folder not found or invalid: '{user_data_folder_for_id}'")
+                
+        # Questo è l'EXCEPT ESTERNO (livello 1 indentazione, corrisponde al TRY ESTERNO)
         except TypeError as e_join:
-             logging.error(f"Error constructing Steam userdata path (invalid input?): {e_join}")
-    # --- FINE Steam Userdata Check ---
+            # (livello 2 indentazione)
+            logging.error(f"Error constructing Steam path (TypeError): {e_join}")
+            
+    # --- FINE Steam Userdata Check --- 
 
     # --- Generic Heuristic Search ---
     # >> Direct Path Checks

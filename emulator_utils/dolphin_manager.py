@@ -303,7 +303,7 @@ def find_dolphin_profiles(executable_path: str | None = None) -> list[dict]:
                                     profiles.append({
                                         'id': profile_id,
                                         'name': profile_name,
-                                        'path': game_id_path, # Use game_id_path here
+                                        'paths': [game_id_path], # Use list and 'paths'
                                         'type': profile_type
                                     })
                                 else:
@@ -359,10 +359,11 @@ def find_dolphin_profiles(executable_path: str | None = None) -> list[dict]:
                                         log.debug(f"          Wii banner.bin not found in {low_tid_path} or its data subdir, using ID as name.")
                                     # -------------------------------------------
 
+                                    # *** Add the profile to the list ***
                                     profiles.append({
                                         'id': profile_id,
                                         'name': profile_name,
-                                        'path': low_tid_path, # Use low_tid_path here
+                                        'paths': [low_tid_path], # Use list and 'paths'
                                         'type': profile_type
                                     })
                                 else:

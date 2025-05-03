@@ -246,7 +246,8 @@ class MainWindowHandlers:
         # Validate each path in the determined list
         invalid_paths = []
         for path in source_paths:
-            if not os.path.isdir(path):
+            # Use os.path.exists to validate both files and directories
+            if not os.path.exists(path):
                 invalid_paths.append(path)
 
         if invalid_paths:

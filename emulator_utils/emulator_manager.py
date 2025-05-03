@@ -1,70 +1,105 @@
 # emulator_manager.py
 # -*- coding: utf-8 -*-
 
-import os
 import logging
-#import platform
-#import json
-#import re
+import os
+from typing import Dict, List, Callable, Any, Optional
 
-# Import specific finder functions
-from .ryujinx_manager import find_ryujinx_profiles
-from .yuzu_manager import find_yuzu_profiles
+# Import specific emulator profile finders
 from .rpcs3_manager import find_rpcs3_profiles
+from .yuzu_manager import find_yuzu_profiles
+from . import ppsspp_manager
+from .citra_manager import find_citra_profiles
+from .ryujinx_manager import find_ryujinx_profiles
 from .dolphin_manager import find_dolphin_profiles
 from .duckstation_manager import find_duckstation_profiles
-from . import ppsspp_manager
-#from .pcsx2_manager import find_pcsx2_profiles
-#from .pcsx2_manager2 import list_ps2_saves
 
 # Configure basic logging for this module
 log = logging.getLogger(__name__)
-log.addHandler(logging.NullHandler()) # Avoid 'No handler found' warnings
 
-# --- Emulator Configuration --- 
-# Maps a keyword found in the executable path to the function that finds its profiles.
-EMULATOR_CONFIG = {
-    'ryujinx': { # Keyword to check in the target path (lowercase)
-        'profile_finder': find_ryujinx_profiles, # Use imported function
-        'name': 'Ryujinx' # Display name
+# Define a type alias for the profile finder function for clarity
+ProfileFinder = Callable[[Optional[str]], Dict[str, str]]
+
+# Dictionary mapping emulator keys (used internally) to their configuration
+# 'name' is the display name, 'profile_finder' is the function to call
+EMULATORS: Dict[str, Dict[str, Any]] = {
+    'rpcs3': {
+        'name': 'RPCS3',
+        'profile_finder': lambda path: find_rpcs3_profiles(path)
     },
     'yuzu': {
-        'profile_finder': lambda path: find_yuzu_profiles(path), # Use imported function
-        'name': 'Yuzu'
+        'name': 'Yuzu',
+        'profile_finder': lambda path: find_yuzu_profiles(path)
     },
-    'rpcs3': {
-        # Use lambda to pass executable path
-        'profile_finder': lambda path: find_rpcs3_profiles(path),
-        'name': 'RPCS3'
+    'ppsspp': {
+        'name': 'PPSSPP',
+        'profile_finder': lambda path: ppsspp_manager.find_ppsspp_profiles(path)
     },
-    'dolphin': { 
+    'citra': {
+        'name': 'Citra',
+        'profile_finder': lambda path: find_citra_profiles(path)
+    },
+    'azahar': {
+        'name': 'Azahar',
+        'profile_finder': lambda path: find_citra_profiles(path)
+    },
+    'ryujinx': {
+        'name': 'Ryujinx',
+        'profile_finder': lambda path: find_ryujinx_profiles(path)
+    },
+    'dolphin': {
         'name': 'Dolphin',
         'profile_finder': lambda path: find_dolphin_profiles(path)
     },
     'duckstation': {
         'name': 'DuckStation',
-        # Pass executable path even if unused by finder, for consistency
         'profile_finder': lambda path: find_duckstation_profiles(path)
     },
-    'ppsspp': {  # <-- NUOVA AGGIUNTA PER PPSSPP
-        'name': 'PPSSPP',
-        'profile_finder': lambda path: ppsspp_manager.find_ppsspp_profiles(path) # Usa il modulo importato
-    },
-    # 'pcsx2': { # Temporarily disable PCSX2 during DuckStation dev if causing issues
-    #     'name': 'PCSX2',
-    #     'profile_finder': lambda path: find_pcsx2_profiles(path)
-    # },
-    # 'cemu': { # Example for another emulator (Commented out)
-    #    'profile_finder': lambda: find_cemu_profiles(), # Hypothetical function
-    #    'name': 'Cemu'
-    # },
 }
 
-# --- Main Detection Function ---
+def get_emulator_display_name(emulator_key: str) -> Optional[str]:
+    """Returns the display name for a given emulator key."""
+    return EMULATORS.get(emulator_key, {}).get('name')
+
+def get_available_emulators() -> List[str]:
+    """Returns a list of keys for the configured emulators."""
+    return list(EMULATORS.keys())
+
+def find_profiles_for_emulator(emulator_key: str, custom_path: Optional[str] = None) -> Dict[str, str]:
+    """ 
+    Finds profiles for a specific emulator using its registered finder function.
+
+    Args:
+        emulator_key (str): The key identifying the emulator (e.g., 'rpcs3', 'citra').
+        custom_path (Optional[str]): An optional custom path to search for profiles.
+
+    Returns:
+        Dict[str, str]: A dictionary of profiles found {profile_id: profile_path}.
+                       Returns an empty dict if the emulator key is invalid or no profiles are found.
+    """
+    emulator_config = EMULATORS.get(emulator_key)
+    if not emulator_config:
+        log.error(f"Invalid emulator key provided: {emulator_key}")
+        return {}
+
+    profile_finder: Optional[ProfileFinder] = emulator_config.get('profile_finder')
+    if not profile_finder:
+        log.error(f"No profile finder configured for emulator: {emulator_key}")
+        return {}
+
+    try:
+        # Pass the custom_path to the finder function
+        profiles = profile_finder(custom_path)
+        log.info(f"Found {len(profiles)} profiles for {emulator_config.get('name', emulator_key)}.")
+        return profiles
+    except Exception as e:
+        log.exception(f"Error finding profiles for {emulator_config.get('name', emulator_key)}: {e}")
+        return {}
 
 def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] | None:
     """
     Detects if the target path belongs to a known emulator and finds its profiles.
+    Checks for Azahar explicitly first.
     """
     if not target_path or not isinstance(target_path, str):
         log.debug("detect_and_find_profiles: Invalid target_path provided.")
@@ -76,86 +111,64 @@ def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] 
         executable_dir = os.path.dirname(target_path)
         log.debug(f"Derived executable directory (may not be used by all finders): {executable_dir}")
 
-    # Iterate through the configured emulators
-    for keyword, config in EMULATOR_CONFIG.items():
-        # Check if the keyword (e.g., 'ryujinx', 'yuzu') is in the target path
+    # --- Explicit Check for Azahar First --- START ---
+    if 'azahar' in target_path_lower:
+        emulator_key = 'azahar'
+        config = EMULATORS.get(emulator_key)
+        if config:
+            emulator_name = config['name']
+            profile_finder = config['profile_finder']
+            log.info(f"Detected known emulator '{emulator_name}' based on target path: {target_path}")
+            try:
+                # Note: For Azahar/Citra, find_citra_profiles ignores the path argument
+                profiles = profile_finder(target_path) 
+                if profiles is not None:
+                    log.info(f"Profile finder for {emulator_name} ran. Found {len(profiles)} profiles.")
+                    # Return the DISPLAY name and profiles
+                    return emulator_name, profiles
+                else:
+                    log.warning(f"Profile finder for '{emulator_name}' failed or returned None.")
+                    # Return name and empty list to signal finder issue
+                    return emulator_name, []
+            except Exception as e:
+                log.error(f"Error calling profile finder for {emulator_name}: {e}", exc_info=True)
+                return emulator_name, []
+        else:
+            log.error(f"'azahar' found in path, but no configuration found in EMULATORS.")
+            # Fall through to the generic loop just in case
+    # --- Explicit Check for Azahar First --- END ---
+
+    # --- Generic Loop for Other Emulators --- START ---
+    # Iterate through the configured emulators (excluding azahar now)
+    for keyword, config in EMULATORS.items():
+        if keyword == 'azahar': # Skip azahar, already checked
+            continue
+            
+        # Check if the keyword (e.g., 'ryujinx', 'yuzu', 'citra') is in the target path
         if keyword in target_path_lower:
             emulator_name = config['name']
             profile_finder = config['profile_finder']
             log.info(f"Detected known emulator '{emulator_name}' based on target path: {target_path}")
             try:
-                # --- PCSX2 Specific Logic --- 
-                if emulator_name == 'PCSX2':
-                    # 1. Find the memory card files (.ps2 paths) using the original finder
-                    memcard_list = find_pcsx2_profiles(target_path)
-                    if memcard_list is None:
-                        log.warning(f"PCSX2 profile finder (find_pcsx2_profiles) returned None. Skipping.")
-                        continue # Try next emulator keyword if any
-                    
-                    all_ps2_saves = [] # List to hold combined saves from all memcards
-                    if not memcard_list:
-                         log.info("No PCSX2 memory card files (.ps2) found.")
-                    else:
-                        log.info(f"Found {len(memcard_list)} PCSX2 memory card file(s), scanning contents...")
-                        # 2. Iterate through each memory card found
-                        for memcard_info in memcard_list:
-                            actual_memcard_path = memcard_info.get('path')
-                            memcard_filename = os.path.basename(actual_memcard_path) if actual_memcard_path else 'Unknown.ps2'
-                            
-                            if not actual_memcard_path or not isinstance(actual_memcard_path, str):
-                                log.warning(f"Skipping memory card entry due to missing or invalid path: {memcard_info}")
-                                continue
-                                
-                            log.debug(f"Listing saves in memory card file: {actual_memcard_path}")
-                            # 3. Call the new function to list saves inside this memcard
-                            saves_in_memcard = list_ps2_saves(actual_memcard_path)
-                            
-                            if saves_in_memcard:
-                                # 4. Format results, appending memcard name to save name
-                                for save_entry in saves_in_memcard:
-                                    save_name = save_entry.get('name')
-                                    if not save_name or save_name in ['.', '..']:
-                                        continue # Skip invalid or navigation entries
-                                        
-                                    # Combine save name and memcard filename for display
-                                    display_name = f"{save_name} ({memcard_filename})"
-                                    
-                                    formatted_save = {
-                                        'id': save_name, # Use the actual save directory name as ID
-                                        'name': display_name, # Show combined name in UI
-                                        'path': actual_memcard_path, # Path to the memcard file
-                                        'emulator': 'PCSX2' # Ensure emulator type is set
-                                        # Optional: Add 'memcard_source': memcard_filename if needed elsewhere
-                                    }
-                                    all_ps2_saves.append(formatted_save)
-                                    log.debug(f"  Formatted save found: {formatted_save['name']} from {memcard_filename}")
-                            else:
-                                log.debug(f"No valid save directories found in {memcard_filename}.")
-                    
-                    # Return the aggregated list of individual save directories
-                    log.info(f"Returning {len(all_ps2_saves)} formatted PCSX2 save entries from all scanned memory cards.")
-                    return emulator_name, all_ps2_saves
-
-                # --- Logic for other emulators (Unchanged) --- 
-                elif emulator_name != 'PCSX2': # Check name directly
-                    profiles = profile_finder(target_path)
-                    if profiles is not None: 
-                        log.info(f"Profile finder for {config['name']} ran. Found {len(profiles)} profiles.")
-                        return config['name'], profiles
-                    else:
-                        log.warning(f"Profile finder for '{config['name']}' failed or returned None. Continuing detection...")
- 
+                profiles = profile_finder(target_path)
+                if profiles is not None:
+                    log.info(f"Profile finder for {config['name']} ran. Found {len(profiles)} profiles.")
+                    # Return the DISPLAY name and profiles
+                    return emulator_name, profiles 
+                else:
+                    log.warning(f"Profile finder for '{config['name']}' failed or returned None. Continuing detection...")
+                    # We continue here, maybe another keyword matches later?
             except Exception as e:
                 log.error(f"Error calling profile finder for {emulator_name}: {e}", exc_info=True)
                 # Return the emulator name but an empty list to indicate an error during profile finding
-                return emulator_name, []
+                return emulator_name, [] 
+    # --- Generic Loop for Other Emulators --- END ---
 
     # If no keyword matched
     log.debug(f"Target path '{target_path}' did not match any known emulator keywords.")
     return None
 
-
-# --- Example Usage (MODIFICATO per testare anche Yuzu) ---
+# Example Usage (Optional - for testing or demonstration)
 if __name__ == "__main__":
     # Setup basic logging TO CONSOLE for testing
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s', handlers=[logging.StreamHandler()])
@@ -163,13 +176,12 @@ if __name__ == "__main__":
     # --- Test Yuzu ---
     log.info("--- Running Yuzu Test ---")
     # This will now use the imported function
-    found_yuzu = find_yuzu_profiles(executable_dir=None)
+    found_yuzu = find_profiles_for_emulator('yuzu')
     if found_yuzu:
         print("\n--- Found Yuzu Profiles/Games ---")
-        for profile_info in found_yuzu:
-            print(f"- TitleID: {profile_info['id']}")
-            print(f"  Name:    {profile_info['name']} (Currently TitleID)") # Specificare limitazione
-            print(f"  Path:    {profile_info['path']}")
+        for profile_info in found_yuzu.items():
+            print(f"- TitleID: {profile_info[0]}")
+            print(f"  Name:    {profile_info[1]}") 
             print("-" * 20)
     else:
         print("\nNo Yuzu profiles found or an error occurred.")
@@ -177,13 +189,12 @@ if __name__ == "__main__":
     # --- Test RPCS3 ---
     log.info("\n--- Running RPCS3 Test ---")
     # This will now use the imported function via lambda
-    found_rpcs3 = find_rpcs3_profiles(executable_path=None) # Test call without path
+    found_rpcs3 = find_profiles_for_emulator('rpcs3') 
     if found_rpcs3:
         print("\n--- Found RPCS3 Profiles/Games ---")
-        for profile_info in found_rpcs3:
-            print(f"- SaveID: {profile_info['id']}")
-            print(f"  Name:   {profile_info['name']}")
-            print(f"  Path:   {profile_info['path']}")
+        for profile_info in found_rpcs3.items():
+            print(f"- SaveID: {profile_info[0]}")
+            print(f"  Name:   {profile_info[1]}")
             print("-" * 20)
     else:
         print("\nNo RPCS3 profiles found or an error occurred.")
@@ -191,14 +202,13 @@ if __name__ == "__main__":
     # --- Test DuckStation ---
     log.info("\n--- Running DuckStation Test ---")
     # Use lambda or direct call based on how EMULATOR_CONFIG is set
-    found_duckstation = find_duckstation_profiles(executable_path=None) # Test call without path
+    found_duckstation = find_profiles_for_emulator('duckstation') 
     if found_duckstation is not None:
         print("\n--- Found DuckStation Memory Card Profiles ---")
         if found_duckstation:
-             for profile_info in found_duckstation:
-                 print(f"- ID:   {profile_info['id']}")
-                 print(f"  Name: {profile_info['name']}")
-                 print(f"  Path: {profile_info['path']}")
+             for profile_info in found_duckstation.items():
+                 print(f"- ID:   {profile_info[0]}")
+                 print(f"  Name: {profile_info[1]}")
                  print("-" * 20)
         else:
              print("No DuckStation .mcd files found in the detected directory.")

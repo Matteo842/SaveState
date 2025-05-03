@@ -401,7 +401,7 @@ class ProfileCreationManager:
                             else:
                                 logging.warning(f"Overwriting existing profile: {profile_name}")
 
-                                                # --- Determine path data and prepare profile dictionary --- START ---
+                        # --- Determine path data and prepare profile dictionary --- START ---
                         path_data_for_profile_list = None
                         profile_data_to_save = {}
 
@@ -414,10 +414,10 @@ class ProfileCreationManager:
                         else: # For all other emulators or no emulator detected
                              if selected_paths_list: # Ensure list is not empty
                                  profile_data_to_save = {
-                                     'path': selected_paths_list[0], # Use single path string
-                                     'emulator': emulator_name # Still store emulator if detected
+                                     'paths': selected_paths_list, # Use the ENTIRE list
+                                     'emulator': emulator_name
                                  }
-                                 logging.info(f"Saving profile '{profile_name}' with single path.")
+                                 logging.info(f"Saving profile '{profile_name}' with {len(selected_paths_list)} paths.")
                              else:
                                  # This case should ideally not be reached due to earlier checks
                                  logging.error(f"Cannot save profile '{profile_name}', path list is unexpectedly empty.")

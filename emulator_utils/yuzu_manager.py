@@ -157,7 +157,7 @@ def find_yuzu_profiles(executable_dir: str | None = None):
         executable_dir: Ignored for Yuzu, kept for signature consistency.
 
     Returns:
-        List of profile dicts: [{'id': TitleID, 'path': full_path_to_titleid_folder, 'name': GameName or TitleID}, ...]
+        List of profile dicts: [{'id': TitleID, 'paths': [full_path_to_titleid_folder], 'name': GameName or TitleID}, ...]
     """
     profiles = []
     log.info("Attempting to find Yuzu profiles...")
@@ -211,7 +211,7 @@ def find_yuzu_profiles(executable_dir: str | None = None):
 
                             profile = {
                                 'id': title_id_upper,
-                                'path': title_id_path,
+                                'paths': [title_id_path], # Changed 'path' to 'paths' and made it a list
                                 'name': game_name
                             }
                             profiles.append(profile)

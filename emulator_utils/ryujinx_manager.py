@@ -220,7 +220,7 @@ def find_ryujinx_profiles(executable_dir: str | None = None):
         executable_dir: Ignored for Ryujinx, kept for signature consistency.
 
     Returns:
-        List of profile dicts: [{'id': SaveDataID, 'path': full_save_path, 'name': GameName}, ...]
+        List of profile dicts: [{'id': SaveDataID, 'paths': [full_save_path], 'name': GameName}, ...]
     """
     profiles = []
     log.info("Attempting to find Ryujinx profiles...")
@@ -272,7 +272,7 @@ def find_ryujinx_profiles(executable_dir: str | None = None):
 
                     profile = {
                         'id': save_data_id_upper, # The directory name is the unique SaveDataID
-                        'path': item_path,        # Full path to the save directory
+                        'paths': [item_path],        # Changed 'path' to 'paths' and made it a list
                         'name': game_name         # Name derived from TitleID via metadata or fallback
                     }
                     profiles.append(profile)

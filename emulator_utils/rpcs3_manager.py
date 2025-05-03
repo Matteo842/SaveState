@@ -145,7 +145,7 @@ def find_rpcs3_profiles(executable_path: str | None = None) -> list[dict]:
 
                         profiles.append({
                             'id': base_game_id, # Use the base ID
-                            'path': item_path, # Path to the first found dir for this ID
+                            'paths': [item_path], # Changed 'path' to 'paths' and made it a list
                             'name': profile_name
                         })
                         processed_base_ids.add(base_game_id) # Mark as processed
