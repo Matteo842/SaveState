@@ -123,7 +123,10 @@ def find_cemu_profiles(executable_path: str | None) -> list[dict]:
 
     log.info(f"Attempting to find Cemu profiles relative to: {executable_path}")
 
-    # Cemu's data directory is usually 'mlc01' next to the executable, but can be set in settings.xml
+    # Cemu's data directory priority:
+    # 1. <mlc_path> from settings.xml next to executable
+    # 2. %APPDATA%/Cemu/mlc01 (Standard install location)
+    # 3. mlc01 directory next to executable (Portable location)
     emulator_dir = os.path.dirname(executable_path)
     mlc_path = None
 
@@ -147,20 +150,38 @@ def find_cemu_profiles(executable_path: str | None) -> list[dict]:
             else:
                 log.info(f"  No <mlc_path> tag found or tag is empty in {settings_file}.")
         except ET.ParseError as e:
-            log.error(f"  Error parsing Cemu settings.xml: {e}. Will try default mlc01 path.")
+            log.error(f"  Error parsing Cemu settings.xml: {e}. Will try other locations.")
         except Exception as e:
-            log.error(f"  Unexpected error reading Cemu settings.xml: {e}. Will try default mlc01 path.")
+            log.error(f"  Unexpected error reading Cemu settings.xml: {e}. Will try other locations.")
 
-    # 2. If mlc_path wasn't found in settings or settings file failed, try default location
+    # 2. If not found via settings.xml, check standard AppData location
+    if mlc_path is None:
+        appdata_path = os.getenv('APPDATA')
+        if appdata_path:
+            cemu_appdata_mlc_path = os.path.join(appdata_path, "Cemu", "mlc01")
+            log.info(f"Checking standard AppData Cemu mlc01 path: {cemu_appdata_mlc_path}")
+            if os.path.isdir(cemu_appdata_mlc_path):
+                mlc_path = cemu_appdata_mlc_path
+                log.info(f"  Using mlc_path from AppData: {mlc_path}")
+            else:
+                log.info(f"  Standard AppData Cemu mlc01 path not found.")
+        else:
+            log.warning("Could not determine AppData path. Skipping check.")
+
+    # 3. If still not found, try default location next to executable (portable)
     if mlc_path is None:
         default_mlc_path = os.path.join(emulator_dir, "mlc01")
-        log.info(f"Checking default Cemu mlc01 path: {default_mlc_path}")
+        log.info(f"Checking for mlc01 directory next to executable: {default_mlc_path}")
         if os.path.isdir(default_mlc_path):
             mlc_path = default_mlc_path
-            log.info(f"  Using default mlc_path adjacent to executable: {mlc_path}")
+            log.info(f"  Using mlc_path adjacent to executable: {mlc_path}")
         else:
-            log.warning(f"Default Cemu 'mlc01' directory not found at: {default_mlc_path}. Cannot find profiles.")
-            return profiles # Cannot proceed without a valid mlc_path
+            log.warning(f"Cemu 'mlc01' directory not found next to executable.")
+
+    # If no mlc_path could be determined after all checks
+    if mlc_path is None:
+        log.error("Could not determine Cemu mlc01 path from settings.xml, AppData, or executable directory. Cannot find profiles.")
+        return profiles # Cannot proceed without a valid mlc_path
 
     log.info(f"Using Cemu mlc path: {mlc_path}")
 
