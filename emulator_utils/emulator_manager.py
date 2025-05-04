@@ -16,6 +16,7 @@ from .duckstation_manager import find_duckstation_profiles
 from .mgba_manager import find_mgba_profiles
 from .snes9x_manager import find_snes9x_profiles
 from .desmume_manager import find_desmume_profiles
+from .cemu_manager import find_cemu_profiles
 
 # Configure basic logging for this module
 log = logging.getLogger(__name__)
@@ -69,6 +70,10 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'desmume': {
         'name': 'DeSmuME',
         'profile_finder': lambda path: find_desmume_profiles(path)
+    },
+    'cemu': {
+        'name': 'Cemu',
+        'profile_finder': lambda path: find_cemu_profiles(path)
     },
 }
 
@@ -159,7 +164,7 @@ def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] 
         if keyword == 'azahar': # Skip azahar, already checked
             continue
             
-        # Check if the keyword (e.g., 'ryujinx', 'yuzu', 'citra', 'snes9x', 'desmume') is in the target path
+        # Check if the keyword (e.g., 'ryujinx', 'yuzu', 'citra', 'snes9x', 'desmume', 'cemu') is in the target path
         if keyword in target_path_lower:
             emulator_name = config['name']
             profile_finder = config['profile_finder']
