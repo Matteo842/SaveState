@@ -82,28 +82,13 @@ class SettingsDialog(QDialog):
         self.max_group.setLayout(max_layout)
         layout.addWidget(self.max_group)
 
-        # --- Language Group ---
-        self.lang_group = QGroupBox() # Saved reference
-        lang_layout = QHBoxLayout()
-        self.lang_combobox = QComboBox()
-        self.lang_combobox.addItem("Italian", "it")
-        self.lang_combobox.addItem("English", "en")
-        current_lang_code = self.settings.get("language", "it")
-        index_to_select_lang = self.lang_combobox.findData(current_lang_code)
-        if index_to_select_lang != -1:
-            self.lang_combobox.setCurrentIndex(index_to_select_lang)
-        lang_layout.addWidget(self.lang_combobox)
-        lang_layout.addStretch()
-        self.lang_group.setLayout(lang_layout)
-        layout.addWidget(self.lang_group)
-
         # --- Compression Group ---
         self.comp_group = QGroupBox() # Saved reference
         comp_layout = QHBoxLayout()
         self.comp_combobox = QComboBox()
-        # (The self.compression_options map will be updated in retranslateUi)
+        # (The self.compression_options map will be updated in updateUiText)
         current_comp_mode = self.settings.get("compression_mode", "standard")
-        # (Selection will be restored in retranslateUi after populating)
+        # (Selection will be restored in updateUiText after populating)
         comp_layout.addWidget(self.comp_combobox)
         comp_layout.addStretch()
         self.comp_group.setLayout(comp_layout)
@@ -130,21 +115,20 @@ class SettingsDialog(QDialog):
         # Connect signals
         self.browse_button.clicked.connect(self.browse_backup_dir)
 
-        # Call retranslateUi at the end to set initial texts
-        self.retranslateUi()
+        # Call updateUiText at the end to set initial texts
+        self.updateUiText()
 
     def get_settings(self):
         """Returns the internal dictionary of modified settings."""
         return self.settings
 
-    def retranslateUi(self):
+    def updateUiText(self):
         """Updates the text of translatable widgets in the dialog."""
-        logging.debug("SettingsDialog.retranslateUi() called")
+        logging.debug("SettingsDialog.updateUiText() called")
         self.setWindowTitle("Application Settings")
         self.path_group.setTitle("Backup Base Path")
         self.max_src_group.setTitle("Maximum Source Size for Backup")
         self.max_group.setTitle("Maximum Number of Backups per Profile")
-        self.lang_group.setTitle("Language / Lingua") # Keep bilingual
         self.comp_group.setTitle("Backup Compression (.zip)")
         self.space_check_group.setTitle("Free Disk Space Check")
         self.space_check_checkbox.setText(f"Enable space check before backup (minimum {config.MIN_FREE_SPACE_GB} GB)")
@@ -175,7 +159,7 @@ class SettingsDialog(QDialog):
         """Handles events, including language change."""
         if event.type() == QEvent.Type.LanguageChange:
             logging.debug("SettingsDialog.changeEvent(LanguageChange) detected")
-            self.retranslateUi() # Call the correct function
+            self.updateUiText() # Call the correct function
         super().changeEvent(event) # Call the base implementation
 
     @Slot()
@@ -193,7 +177,6 @@ class SettingsDialog(QDialog):
         new_path = os.path.normpath(self.path_edit.text())
         new_max_backups = self.max_spinbox.value()
         selected_size_index = self.max_src_combobox.currentIndex()
-        new_language = self.lang_combobox.currentData()
         new_compression_mode = self.comp_combobox.currentData()
         new_check_free_space = self.space_check_checkbox.isChecked()
 
@@ -225,7 +208,6 @@ class SettingsDialog(QDialog):
         self.settings["backup_base_dir"] = validated_new_path
         self.settings["max_backups"] = new_max_backups
         self.settings["max_source_size_mb"] = new_max_src_size_mb
-        self.settings["language"] = new_language
         self.settings["compression_mode"] = new_compression_mode
         self.settings["check_free_space_enabled"] = new_check_free_space
 

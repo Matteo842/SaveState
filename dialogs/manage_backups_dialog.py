@@ -59,25 +59,20 @@ class ManageBackupsDialog(QDialog):
         self.backup_list_widget.clear()
         self.delete_button.setEnabled(False)
 
-        # --- RECOVER SETTINGS AND LOCALE HERE (BEFORE USING VARIABLES) ---
+        # --- RECOVER SETTINGS HERE (BEFORE USING VARIABLES) ---
         current_backup_base_dir = "" # Default empty
-        current_lang_code = "en"     # Default language
-        locale = QLocale(QLocale.Language.English) # Default locale
+        # Use system locale for date formatting
+        system_locale = QLocale.system()
+        logging.debug(f"ManageBackupsDialog: Using system locale for date formatting: {system_locale.name()}")
 
         parent_window = self.parent() # Get the parent once
         if parent_window and hasattr(parent_window, 'current_settings'):
             # Read the backup base path from settings
             current_backup_base_dir = parent_window.current_settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
-            # Read the current language from settings
-            current_lang_code = parent_window.current_settings.get("language", "en")
-            # Create the correct QLocale based on the language
-            locale = QLocale(QLocale.Language.English if current_lang_code == "en" else QLocale.Language.Italian)
-            logging.debug(f"ManageBackupsDialog: Using locale for language '{current_lang_code}'") # Useful log
         else:
             # Fallback if we don't find settings in the parent
             logging.warning("ManageBackupsDialog: Unable to access current_settings from parent. Using defaults from config.")
             current_backup_base_dir = config.BACKUP_BASE_DIR
-            # locale remains QLocale.Language.English (already set as default)
         # --- END RECOVER SETTINGS ---
 
         backups = core_logic.list_available_backups(self.profile_name, current_backup_base_dir)
@@ -95,11 +90,10 @@ class ManageBackupsDialog(QDialog):
             # Loop to add each backup with formatted date
             for name, path, dt_obj in backups: # Iterate on the tuple (name, path, datetime_object)
                 # Format the date using the 'locale' defined above
-                date_str_formatted = "???" # Fallback value
-                if dt_obj: # Check if the datetime object is valid
+                date_str_formatted = "???" # Fallback
+                if dt_obj:
                     try:
-                        # Use QLocale to get the standard short format
-                        date_str_formatted = locale.toString(dt_obj, QLocale.FormatType.ShortFormat)
+                        date_str_formatted = system_locale.toString(dt_obj, QLocale.FormatType.ShortFormat)
                     except Exception as e_fmt:
                         logging.error(f"Error formatting date ({dt_obj}) for backup {name}: {e_fmt}")
 

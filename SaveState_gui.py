@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QStyle, QDockWidget, QPlainTextEdit, QTableWidget
 )
 from PySide6.QtCore import (
-    Slot, Qt, QSize, QTranslator, QCoreApplication,
+    Slot, Qt, QSize, QCoreApplication,
     QEvent,
     QTimer, Property, QPropertyAnimation, QEasingCurve
 )
@@ -82,8 +82,7 @@ class MainWindow(QMainWindow):
         self.console_log_handler = console_log_handler # Salva riferimento al gestore console
         self.qt_log_handler = qt_log_handler
 
-        # ADD Translator instance here
-        self.translator = QTranslator(self)
+        # Translator removed - application is now English-only
 
         self.setGeometry(650, 250, 720, 600)
         self.setAcceptDrops(True)
@@ -427,7 +426,7 @@ class MainWindow(QMainWindow):
         # Stato Iniziale e Tema
         self.update_action_button_states()
         self.worker_thread = None
-        self.retranslateUi()
+        self.updateUiText()
         self.setWindowIcon(QIcon(resource_path("icon.png"))) # Icona finestra principale
     
     # --- UI and Event Handling ---
@@ -482,10 +481,10 @@ class MainWindow(QMainWindow):
         else:
             super().dropEvent(event)
     
-    # Remove this
-    def retranslateUi(self):
-        """Aggiorna il testo della finestra"""
-        logging.debug(">>> retranslateUi: INIZIO ESECUZIONE <<<")
+    # Sets up the UI text for all components
+    def updateUiText(self):
+        """Updates the UI text"""
+        logging.debug(">>> updateUiText: START <<<")
         self.setWindowTitle("SaveState - 1.3.8")
         self.profile_table_manager.retranslate_headers()
         self.settings_button.setText("Settings...")
@@ -497,40 +496,39 @@ class MainWindow(QMainWindow):
         self.manage_backups_button.setText("Manage Backups")
         self.open_backup_dir_button.setText("Open Backup Folder")
 
-        if hasattr(self, 'profile_group'): # Controlla se l'attributo esiste
+        if hasattr(self, 'profile_group'): # Check if attribute exists
             self.profile_group.setTitle("Profiles")
         if hasattr(self, 'actions_group'):
             self.actions_group.setTitle("Actions")
         if hasattr(self, 'general_group'):
             self.general_group.setTitle("General")
 
-            # Aggiorna testo placeholder label animazione
-            # Controlla se la label esiste e se NON sta mostrando la GIF (movie)
+            # Update animation label placeholder text
+            # Check if the label exists and is NOT showing a GIF (movie)
             if hasattr(self, 'loading_label') and self.loading_label and \
             (not hasattr(self, 'loading_movie') or not self.loading_movie or not self.loading_movie.isValid()):
                 self.loading_label.setText("Searching...")
-            # --- FINE BLOCCO ---
 
-            logging.debug("Aggiornamento tabella profili a seguito di retranslateUi")
+            logging.debug("Updating profile table after UI text update")
             self.profile_table_manager.update_profile_table()
 
-        # --- Aggiornamento Tooltip e Titoli ---
+        # --- Update Tooltips and Titles ---
         if hasattr(self, 'create_shortcut_button'):
             self.create_shortcut_button.setToolTip("Create a desktop shortcut to launch the selected profile's game/emulator")
         if hasattr(self, 'minecraft_button'):
             self.minecraft_button.setToolTip("Create a profile from a Minecraft world")
         if hasattr(self, 'toggle_log_button'):
-            # Imposta un tooltip generico, verrà aggiornato da handle_toggle_log se necessario
+            # Set a generic tooltip, will be updated by handle_toggle_log if needed
              is_log_visible = self.log_dock_widget.isVisible() if hasattr(self, 'log_dock_widget') else False
              tooltip_key = "Hide Log" if is_log_visible else "Show Log"
              self.toggle_log_button.setToolTip(tooltip_key)
         if hasattr(self, 'log_dock_widget'):
             self.log_dock_widget.setWindowTitle("Console Log")
-        logging.debug(">>> retranslateUi: FINE ESECUZIONE <<<")
+        logging.debug(">>> updateUiText: END <<<")
 
-    # Handles application-level events, specifically language changes.
+    # Handles application-level events
     def changeEvent(self, event):
-        """Intercetta eventi di cambio stato (come cambio lingua)."""
+        """Intercetta eventi di cambio stato."""
         if event.type() == QEvent.Type.LanguageChange:
             logging.debug("MainWindow.changeEvent(LanguageChange) detected")
             # Ensure retranslateUi is NOT called here to avoid double calls
@@ -575,59 +573,6 @@ class MainWindow(QMainWindow):
         self.toggle_log_button.setEnabled(enabled)
         self.open_backup_dir_button.setEnabled(enabled)
         self.progress_bar.setVisible(not enabled)
-
-    # --- Language Handling ---
-    # Applies the specified language translator to the application.
-    def apply_translator(self, lang_code):
-        """Rimuovi il traduttore esistente, se presente"""
-
-        logging.debug(f"MainWindow.apply_translator called with lang_code='{lang_code}'")
-
-        # 1. ALWAYS remove the current translator instance first, if it's installed.
-        removed = QCoreApplication.removeTranslator(self.translator)
-        logging.debug(f"Attempted removal of existing translator instance: {removed}")
-
-        # 2. Load and install the new one if it's English
-        if lang_code == "en":
-            qm_filename = f"SaveState_{lang_code}.qm"
-            qm_file_path = resource_path(qm_filename)
-            logging.info(f"Attempting to load English translator from: {qm_file_path}")
-
-            if not os.path.exists(qm_file_path):
-                logging.error(f".qm translation file NOT FOUND: {qm_file_path}")
-                QMessageBox.warning(self, "Translation Error",
-                                    f"Could not load the translation file '{qm_filename}'. The interface will not change.")
-                # No need to retranslate here, removal already happened.
-                return
-
-            # Load the QM file into our single translator instance
-            loaded_ok = self.translator.load(qm_file_path)
-            if loaded_ok:
-                installed = QCoreApplication.installTranslator(self.translator)
-                if installed:
-                    logging.info(f"Translator for '{lang_code}' loaded and installed successfully.")
-                else:
-                    logging.error(f"Translator installation failed for '{lang_code}' after loading!")
-                    # If install fails after load, try removing again just in case.
-                    QCoreApplication.removeTranslator(self.translator)
-            else:
-                logging.warning(f"Loading QM file failed: {qm_file_path}. 'load' returned False.")
-                # Ensure translator is not installed if load failed
-                QCoreApplication.removeTranslator(self.translator)
-
-        elif lang_code == "it":
-            # For Italian, we want *no* translator active.
-            # We already removed the previous one at the start.
-            # We just need to ensure our instance self.translator is empty.
-            logging.info("Switching to 'it'. Ensuring no translator is active by unloading data.")
-            self.translator.load("") # Unload current translation data
-            # No need to call installTranslator for the "no translation" case.
-            # Removal was already done at the beginning.
-        else:
-             logging.warning(f"Unsupported language code '{lang_code}'. Defaulting to no translator.")
-             self.translator.load("") # Unload data for unsupported lang too
-             # Ensure removal just in case it was somehow installed before
-             QCoreApplication.removeTranslator(self.translator)
 
     # --- Single Instance Activation ---
     # Activates the window of an existing instance when a new instance is launched.

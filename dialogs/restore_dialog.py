@@ -39,11 +39,9 @@ class RestoreDialog(QDialog):
             no_backup_label = QLabel("No backups found for this profile.")
             self.backup_list_widget.setEnabled(False)
         else:
-            # --- Logic for localized date formatting ---
-            current_lang_code = "en" # Default fallback
-            if parent and hasattr(parent, 'current_settings'):
-                current_lang_code = parent.current_settings.get("language", "en")
-            locale = QLocale(QLocale.Language.English if current_lang_code == "en" else QLocale.Language.Italian)
+            # --- Use system locale for date formatting ---
+            system_locale = QLocale.system()
+            logging.debug(f"Using system locale for date formatting in RestoreDialog: {system_locale.name()}")
             # --- End localization logic ---
 
             # --- Loop to populate the list WITH DATE FORMATTING ---
@@ -53,7 +51,7 @@ class RestoreDialog(QDialog):
                 date_str_formatted = "???" # Fallback
                 if dt_obj:
                     try:
-                        date_str_formatted = locale.toString(dt_obj, QLocale.FormatType.ShortFormat)
+                        date_str_formatted = system_locale.toString(dt_obj, QLocale.FormatType.ShortFormat)
                     except Exception as e_fmt:
                         logging.error(f"Error formatting date ({dt_obj}) for backup {name}: {e_fmt}")
 

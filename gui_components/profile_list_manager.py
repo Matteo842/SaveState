@@ -153,9 +153,10 @@ class ProfileListManager:
                     date_str = "N/D"
                     if last_backup_dt:
                         try:
-                            lang_code = self.main_window.current_settings.get("language", "en")
-                            locale = QLocale(QLocale.Language.English if lang_code == "en" else QLocale.Language.Italian)
-                            date_str = locale.toString(last_backup_dt, QLocale.FormatType.ShortFormat)
+                            # Use system locale for date formatting instead of app language setting
+                            system_locale = QLocale.system()
+                            date_str = system_locale.toString(last_backup_dt, QLocale.FormatType.ShortFormat)
+                            logging.debug(f"Using system locale for date formatting: {system_locale.name()}")
                         except Exception as e:
                             logging.error(f"Error formatting last backup date for {profile_name}: {e}", exc_info=True)
                             date_str = "???"

@@ -277,13 +277,7 @@ if __name__ == "__main__":
                     window = MainWindow(current_settings, console_handler, qt_log_handler)
                     logging.debug("MainWindow instance created.")
 
-                    # --- Apply language from loaded settings ---
-                    initial_lang_code = current_settings.get("language", "en") # Use 'en' as fallback
-                    logging.info(f"Applying initial language: {initial_lang_code}")
-                    window.apply_translator(initial_lang_code)
-                    window.retranslateUi() # <<< ADDED: Force UI update with the new translator
-                    # --- END Apply language ---
-
+                    # Language handling removed - application is now English-only
 
                     if is_first_launch:
                         # if splash: # Update message
@@ -297,11 +291,9 @@ if __name__ == "__main__":
                             new_settings = settings_dialog.get_settings()
                             if settings_manager.save_settings(new_settings):
                                 window.current_settings = new_settings # Aggiorna finestra
-                                # Apply translator is now called *after* dialog on first launch as well,
-                                # ensuring consistency if user changed lang in first dialog.
-                                window.apply_translator(new_settings.get("language", "en")) # Applica lingua (use 'en' fallback)
+                                # Language handling removed - application is now English-only
                                 window.theme_manager.update_theme() # Applica tema
-                                window.retranslateUi() # Ri-traduce UI
+                                window.updateUiText() # Aggiorna UI
                                 window.profile_table_manager.update_profile_table() # Aggiorna tabella
                                 logging.info("Initial settings configured and saved by user.")
                             else:
@@ -329,6 +321,25 @@ if __name__ == "__main__":
 
 
                     window.show()
+
+                    # Log system locale information for date formatting
+                    from PySide6.QtCore import QLocale, QDateTime
+                    system_locale = QLocale.system()
+                    locale_name = system_locale.name()
+                    
+                    # Get date format string and determine format type
+                    date_format_str = system_locale.dateFormat(QLocale.FormatType.ShortFormat)
+                    date_format_type = "Unknown"
+                    if date_format_str.startswith("d"):  
+                        date_format_type = "European (day first)"
+                    elif date_format_str.startswith("M"):
+                        date_format_type = "American (month first)"
+                    elif date_format_str.startswith("y"):
+                        date_format_type = "ISO (year first)"
+                    
+                    # Log concise information
+                    logging.info(f"System locale: {locale_name} - Using {date_format_type} date format")
+                    
                     logging.info("Starting Qt application event loop...")
                     if pyi_splash:
                         logging.debug("Closing PyInstaller splash screen...")

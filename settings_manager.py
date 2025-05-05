@@ -26,7 +26,6 @@ def load_settings():
         "max_backups": config.MAX_BACKUPS,
         "max_source_size_mb": 200, # Default limit 500 MB for the source
         "theme": "dark", # Possible values: 'dark', 'light'
-        "language": "en", # Default language code (ISO 639-1)
         "compression_mode": "standard",
         "check_free_space_enabled": True,
         "ini_whitelist": [ # Files to check for paths
@@ -78,11 +77,6 @@ def load_settings():
         if settings.get("theme") not in ["light", "dark"]:
             logging.warning(f"Invalid theme value ('{settings.get('theme')}'), using default '{defaults['theme']}'.")
             settings["theme"] = defaults["theme"]
-
-        # --- VALIDATION LANGUAGE ---
-        if settings.get("language") not in ["it", "en"]:
-            logging.warning(f"Invalid language value ('{settings.get('language')}'), using default '{defaults['language']}'.")
-            settings["language"] = defaults["language"]
 
         # --- VALIDATION COMPRESSION MODE ---
         valid_modes = ["standard", "maximum", "stored"]

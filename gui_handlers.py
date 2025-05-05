@@ -39,9 +39,9 @@ class MainWindowHandlers:
             self.main_window.log_dock_widget.setVisible(is_visible)
             # Update tooltip on the main window's button
             if is_visible:
-                self.main_window.toggle_log_button.setToolTip(self.tr("Hide Log"))
+                self.main_window.toggle_log_button.setToolTip("Hide Log")
             else:
-                self.main_window.toggle_log_button.setToolTip(self.tr("Show Log"))
+                self.main_window.toggle_log_button.setToolTip("Show Log")
 
     # Starts the timer when the log button is pressed (for long press detection).
     @Slot()
@@ -107,14 +107,14 @@ class MainWindowHandlers:
         backup_dir = self.main_window.current_settings.get("backup_base_dir")
 
         if not backup_dir:
-            QMessageBox.warning(self.main_window, self.tr("Error"), self.tr("Backup base directory not configured in settings."))
+            QMessageBox.warning(self.main_window, "Error", "Backup base directory not configured in settings.")
             return
 
         backup_dir = os.path.normpath(backup_dir)
 
         if not os.path.isdir(backup_dir):
-            reply = QMessageBox.question(self.main_window, self.tr("Folder Not Found"),
-                                         self.tr("The specified backup folder does not exist:\n'{0}'\n\nDo you want to try to create it?").format(backup_dir),
+            reply = QMessageBox.question(self.main_window, "Folder Not Found",
+                                         "The specified backup folder does not exist:\n'{0}'\n\nDo you want to try to create it?".format(backup_dir),
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                          QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.Yes:
@@ -122,7 +122,7 @@ class MainWindowHandlers:
                     os.makedirs(backup_dir, exist_ok=True)
                     logging.info(f"Backup folder created: {backup_dir}")
                 except Exception as e:
-                    QMessageBox.critical(self.main_window, self.tr("Error Creation"), self.tr("Unable to create folder:\n{0}").format(e))
+                    QMessageBox.critical(self.main_window, "Error Creation", "Unable to create folder:\n{0}".format(e))
                     return
             else:
                 return
@@ -135,57 +135,41 @@ class MainWindowHandlers:
             try:
                 os.startfile(backup_dir)
             except Exception as e_start:
-                QMessageBox.critical(self.main_window, self.tr("Error Opening"), self.tr("Unable to open folder:\n{0}").format(e_start))
+                QMessageBox.critical(self.main_window, "Error Opening", "Unable to open folder:\n{0}".format(e_start))
 
     # Opens the settings dialog and applies changes if confirmed.
     @Slot()
     def handle_settings(self):
-        old_language = self.main_window.current_settings.get("language", "it")
+        # Language handling removed - application is now English-only
         # Pass a copy and the main window as parent
         dialog = SettingsDialog(self.main_window.current_settings.copy(), self.main_window)
         try:
-            logging.debug("Forcing dialog retranslate before exec()...")
-            dialog.retranslateUi() # Force update text
-        except Exception as e_retrans:
-            logging.error(f"Error forcing retranslate: {e_retrans}", exc_info=True)
+            logging.debug("Updating dialog UI text before showing...")
+            dialog.updateUiText() # Force update text
+        except Exception as e_update:
+            logging.error(f"Error updating dialog UI text: {e_update}", exc_info=True)
 
         if dialog.exec() == QDialog.Accepted:
             new_settings = dialog.get_settings()
             logging.debug(f"New settings received from dialog: {new_settings}")
 
-            # Determine if the language has changed
-            language_changed = ('language' in new_settings and
-                                new_settings['language'] != old_language)
-
             # Settings Application Flow:
 
             # 1. Update the main_window's internal settings object immediately.
-            #    (Important for apply_translator to read the new language)
             self.main_window.current_settings = new_settings
 
-            # 2. Apply the translator if the language has changed.
-            if language_changed:
-                new_lang_code = new_settings.get('language', 'it')
-                logging.info(f"Language change detected ({old_language} -> {new_lang_code}). Applying translator...")
-                # Call apply_translator directly, ensuring it doesn't use QTimer.singleShot.
-                self.main_window.apply_translator(new_lang_code)
-            else:
-                 logging.debug("Language did not change.")
+            # 2. Apply theme and update UI
+            self.main_window.theme_manager.update_theme()
+            self.main_window.updateUiText() # Update UI text
 
-            # 3. Schedule the UI update (retranslate + theme) via a zero-delay timer.
-            #    (Allows the event loop to process the translation change before UI redraw)
-            logging.debug("Scheduling _apply_ui_updates_after_settings via QTimer.singleShot(0).")
-            QTimer.singleShot(0, self._apply_ui_updates_after_settings)
-
-            # 4. Save the updated settings to the configuration file.
+            # 3. Save the updated settings to the configuration file.
             if settings_manager.save_settings(self.main_window.current_settings):
                 logging.info("Settings saved successfully after dialog confirmation.")
-                self.main_window.status_label.setText(self.main_window.tr("Settings saved."))
+                self.main_window.status_label.setText("Settings saved.")
             else:
                 logging.error("Failed to save settings after dialog confirmation.")
-                QMessageBox.warning(self.main_window, self.main_window.tr("Save Error"),
-                                    self.main_window.tr("Unable to save settings."))
-
+                QMessageBox.warning(self.main_window, "Save Error",
+                                   "Failed to save settings to file.")
         else:
             logging.debug("Settings dialog cancelled.")
 
@@ -197,8 +181,8 @@ class MainWindowHandlers:
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
         if not profile_name: return
 
-        reply = QMessageBox.warning(self.main_window, self.tr("Confirm Deletion"),
-                                    self.tr("Are you sure you want to delete the profile '{0}'?\n(This does not delete already created backup files).").format(profile_name),
+        reply = QMessageBox.warning(self.main_window, "Confirm Deletion",
+                                    "Are you sure you want to delete the profile '{0}'?\n(This does not delete already created backup files).".format(profile_name),
                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                     QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
@@ -206,9 +190,9 @@ class MainWindowHandlers:
             if core_logic.delete_profile(self.main_window.profiles, profile_name):
                 if core_logic.save_profiles(self.main_window.profiles):
                     self.main_window.profile_table_manager.update_profile_table()
-                    self.main_window.status_label.setText(self.tr("Profile '{0}' deleted.").format(profile_name))
+                    self.main_window.status_label.setText("Profile '{0}' deleted.".format(profile_name))
                 else:
-                    QMessageBox.critical(self.main_window, self.tr("Error"), self.tr("Profile deleted from memory but unable to save changes."))
+                    QMessageBox.critical(self.main_window, "Error", "Profile deleted from memory but unable to save changes.")
                     # Reload profiles in main_window
                     self.main_window.profiles = core_logic.load_profiles()
                     self.main_window.profile_table_manager.update_profile_table()
@@ -222,8 +206,8 @@ class MainWindowHandlers:
 
         profile_data = self.main_window.profiles.get(profile_name)
         if not profile_data or not isinstance(profile_data, dict):
-            QMessageBox.critical(self.main_window, self.tr("Errore Interno"), f"Dati profilo corrotti o mancanti per '{profile_name}'.")
-            logging.error(f"Dati profilo non validi per '{profile_name}': {profile_data}")
+            QMessageBox.critical(self.main_window, "Internal Error", "Corrupted or missing profile data for '{0}'.".format(profile_name))
+            logging.error(f"Invalid profile data for '{profile_name}': {profile_data}")
             return
 
         # --- Modified Path Handling START ---
@@ -238,8 +222,8 @@ class MainWindowHandlers:
             source_paths = [path_data] # Create a list from the single path
             logging.debug(f"Using 'path' key for profile '{profile_name}': {source_paths}")
         else:
-            QMessageBox.critical(self.main_window, self.tr("Errore Dati Profilo"),
-                                 f"Nessun percorso sorgente valido ('paths' o 'path') trovato nel profilo '{profile_name}'. Verifica profilo.")
+            QMessageBox.critical(self.main_window, "Profile Data Error",
+                                 "No valid source path ('paths' or 'path') found in profile '{0}'. Check profile.".format(profile_name))
             logging.error(f"Invalid path data for profile '{profile_name}': paths={paths_data}, path={path_data}")
             return
 
@@ -252,9 +236,9 @@ class MainWindowHandlers:
 
         if invalid_paths:
             # Use parentheses for cleaner multi-line string concatenation
-            error_message = (self.tr("Uno o più percorsi sorgente non esistono o non sono validi:") + "\n" +
+            error_message = ("One or more source paths do not exist or are invalid:" + "\n" +
                              "\n".join(invalid_paths))
-            QMessageBox.critical(self.main_window, self.tr("Errore Percorsi Sorgente"), error_message)
+            QMessageBox.critical(self.main_window, "Source Path Error", error_message)
             return
         # --- Modified Path Handling END ---
 
@@ -267,7 +251,7 @@ class MainWindowHandlers:
         min_gb_required = config.MIN_FREE_SPACE_GB
 
         if not backup_dir or max_bk is None or max_src_size is None:
-            QMessageBox.critical(self.main_window, self.tr("Errore Configurazione"), self.tr("Impostazioni necessarie (percorso base, max backup, max dimensione sorgente) non trovate o non valide!"))
+            QMessageBox.critical(self.main_window, "Configuration Error", "Required settings (backup base dir, max backup, max source size) not found or invalid!")
             return
 
         # Free space check
@@ -281,19 +265,19 @@ class MainWindowHandlers:
                 free_gb = free_bytes / (1024 * 1024 * 1024)
                 logging.debug(f"Free space detected on disk for '{backup_dir}': {free_gb:.2f} GB")
                 if free_bytes < min_bytes_required:
-                    msg = self.tr("Spazio su disco insufficiente per il backup!\n\n" +
-                                  "Spazio libero: {0:.2f} GB\n" +
-                                  "Spazio minimo richiesto: {1} GB\n\n" +
-                                  "Libera spazio sul disco di destinazione ('{2}') o disabilita il controllo nelle impostazioni.").format(free_gb, min_gb_required, backup_dir)
-                    QMessageBox.warning(self.main_window, self.tr("Spazio Disco Insufficiente"), msg)
+                    msg = ("Insufficient disk space for backup!\n\n" +
+                           "Free space: {0:.2f} GB\n" +
+                           "Minimum required space: {1} GB\n\n" +
+                           "Free up space on the destination disk ('{2}') or disable the check in settings.").format(free_gb, min_gb_required, backup_dir)
+                    QMessageBox.warning(self.main_window, "Insufficient Disk Space", msg)
                     return
             except FileNotFoundError:
-                 msg = self.tr("Errore nel controllo dello spazio: il percorso di backup specificato non sembra essere valido o accessibile:\n{0}").format(backup_dir)
-                 QMessageBox.critical(self.main_window, self.tr("Errore Percorso Backup"), msg)
+                 msg = "Error checking space: the specified backup path does not seem to be valid or accessible:\n{0}".format(backup_dir)
+                 QMessageBox.critical(self.main_window, "Backup Path Error", msg)
                  return
             except Exception as e_space:
-                 msg = self.tr("Si è verificato un errore durante il controllo dello spazio libero sul disco:\n{0}").format(e_space)
-                 QMessageBox.critical(self.main_window, self.tr("Errore Controllo Spazio"), msg)
+                 msg = "An error occurred while checking free disk space:\n{0}".format(e_space)
+                 QMessageBox.critical(self.main_window, "Error Checking Space", msg)
                  logging.error("Error while checking free disk space.", exc_info=True)
                  return
         else:
@@ -301,11 +285,11 @@ class MainWindowHandlers:
 
         # Check for existing worker thread on main_window
         if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
-             QMessageBox.information(self.main_window, self.tr("Operazione in Corso"), self.tr("Un backup o ripristino è già in corso. Attendi il completamento."))
+             QMessageBox.information(self.main_window, "Operation in Progress", "A backup or restore is already in progress. Wait for completion.")
              return
 
         # Set status and controls on main_window
-        self.main_window.status_label.setText(self.tr("Avvio backup per '{0}'...").format(profile_name))
+        self.main_window.status_label.setText("Starting backup for '{0}'...".format(profile_name))
         self.main_window.set_controls_enabled(False)
 
         # Create and assign WorkerThread to main_window
@@ -329,8 +313,8 @@ class MainWindowHandlers:
 
         profile_data = self.main_window.profiles.get(profile_name)
         if not profile_data or not isinstance(profile_data, dict):
-            QMessageBox.critical(self.main_window, self.tr("Errore Interno"), f"Dati profilo corrotti o mancanti per '{profile_name}'.")
-            logging.error(f"Dati profilo non validi per '{profile_name}' durante restore: {profile_data}")
+            QMessageBox.critical(self.main_window, "Internal Error", "Corrupted or missing profile data for '{0}'.".format(profile_name))
+            logging.error(f"Invalid profile data for '{profile_name}' during restore: {profile_data}")
             return
 
         # --- Determine Destination Paths START ---
@@ -345,8 +329,8 @@ class MainWindowHandlers:
             destination_paths = [path_data]
             logging.debug(f"Restore target using 'path': {destination_paths}")
         else:
-            QMessageBox.critical(self.main_window, self.tr("Errore Dati Profilo"),
-                                 f"Nessun percorso di destinazione valido ('paths' o 'path') trovato nel profilo '{profile_name}'. Impossibile ripristinare.")
+            QMessageBox.critical(self.main_window, "Profile Data Error",
+                                 "No valid destination path ('paths' or 'path') found in profile '{0}'. Unable to restore.".format(profile_name))
             logging.error(f"Invalid destination path data for profile '{profile_name}': paths={paths_data}, path={path_data}")
             return
         # --- Determine Destination Paths END ---
@@ -358,19 +342,19 @@ class MainWindowHandlers:
                 # Format destination paths for display in the message box
                 destination_paths_str = "\n".join([f"- {p}" for p in destination_paths])
                 confirm = QMessageBox.warning(self.main_window,
-                                              self.tr("Conferma Ripristino Finale"),
+                                              "Confirm Final Restore",
                                               # Updated message to show all destination paths
-                                              self.tr("ATTENZIONE!\nRipristinare '{0}' sovrascriverà i file nelle seguenti destinazioni:\n{1}\n\nProcedere?").format(os.path.basename(archive_to_restore), destination_paths_str),
+                                              "WARNING!\nRestoring '{0}' will overwrite files in the following destinations:\n{1}\n\nProceed?".format(os.path.basename(archive_to_restore), destination_paths_str),
                                               QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                               QMessageBox.StandardButton.No)
 
                 if confirm == QMessageBox.StandardButton.Yes:
                     # Check for existing worker thread
                     if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
-                        QMessageBox.information(self.main_window, self.tr("Operazione in Corso"), self.tr("Un'altra operazione è già in corso."))
+                        QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
                         return
 
-                    self.main_window.status_label.setText(self.tr("Avvio ripristino per '{0}'...").format(profile_name))
+                    self.main_window.status_label.setText("Starting restore for '{0}'...".format(profile_name))
                     self.main_window.set_controls_enabled(False)
 
                     self.main_window.worker_thread = WorkerThread(
@@ -383,17 +367,17 @@ class MainWindowHandlers:
                     self.main_window.worker_thread.start()
                     logging.info(f"Started restore worker thread for '{profile_name}'.")
                 else:
-                    self.main_window.status_label.setText(self.tr("Ripristino annullato."))
+                    self.main_window.status_label.setText("Restore cancelled.")
             else:
-                self.main_window.status_label.setText(self.tr("Nessun backup selezionato per il ripristino."))
+                self.main_window.status_label.setText("No backup selected for restore.")
         else:
-            self.main_window.status_label.setText(self.tr("Selezione backup annullata."))
+            self.main_window.status_label.setText("Backup selection cancelled.")
 
     # Opens the manage backups dialog for the selected profile.
     @Slot()
     def handle_manage_backups(self):
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
-        if not profile_name: QMessageBox.warning(self.main_window, self.tr("Error"), self.tr("No profile selected.")); return
+        if not profile_name: QMessageBox.warning(self.main_window, "Error", "No profile selected."); return
         dialog = ManageBackupsDialog(profile_name, self.main_window) # Pass main_window as parent
         dialog.exec()
         # Update table in main window after dialog closes
@@ -405,16 +389,16 @@ class MainWindowHandlers:
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
         if not profile_name:
              logging.warning("handle_create_shortcut called without selected profile.")
-             QMessageBox.warning(self.main_window, self.tr("Azione Fallita"), self.tr("Nessun profilo selezionato per creare il collegamento."))
+             QMessageBox.warning(self.main_window, "Failed Action", "No profile selected to create shortcut.")
              return
 
         logging.info(f"Request to create shortcut for profile: '{profile_name}'")
         # Call utility function
         success, message = shortcut_utils.create_backup_shortcut(profile_name=profile_name)
         if success:
-            QMessageBox.information(self.main_window, self.tr("Creazione Collegamento"), message)
+            QMessageBox.information(self.main_window, "Shortcut Creation", message)
         else:
-            QMessageBox.warning(self.main_window, self.tr("Errore Creazione Collegamento"), message)
+            QMessageBox.warning(self.main_window, "Error Creating Shortcut", message)
 
     # --- Steam Handling ---
     # Scans Steam data and opens the Steam configuration dialog.
@@ -442,7 +426,7 @@ class MainWindowHandlers:
 
         except Exception as e_scan:
             logging.error(f"Error scanning Steam data: {e_scan}", exc_info=True)
-            QMessageBox.critical(self.main_window, self.tr("Errore Scansione Steam"), self.tr("Impossibile leggere i dati di Steam:\n{0}").format(e_scan))
+            QMessageBox.critical(self.main_window, "Steam Scan Error", "Unable to read Steam data:\n{0}".format(e_scan))
             return
 
         # Pass main_window reference and parent
@@ -460,7 +444,7 @@ class MainWindowHandlers:
         game_data = self.main_window.steam_games_data.get(appid)
         if not game_data:
             logging.error(f"Game data for {appid} not found in main_window.steam_games_data.")
-            QMessageBox.critical(self.main_window, self.tr("Errore Interno"), f"Dati gioco mancanti per AppID {appid}.")
+            QMessageBox.critical(self.main_window, "Internal Error", f"Game data missing for AppID {appid}.")
             return
         install_dir = game_data.get('installdir')
 
@@ -480,26 +464,26 @@ class MainWindowHandlers:
                 display_name = user_details.get('display_name', uid)
                 last_mod_str = user_details.get('last_mod_str', 'N/D')
                 # Mark the likely (most recent) Steam ID
-                is_likely_marker = self.tr("(Recent)") if uid == likely_id3 else ""
+                is_likely_marker = "(Recent)" if uid == likely_id3 else ""
                 choice_str = f"{display_name} {is_likely_marker} [{last_mod_str}]".strip().replace("  ", " ")
                 id_choices_display.append(choice_str)
                 display_to_id_map[choice_str] = uid
                 if uid == likely_id3: index_to_select = i
 
-            dialog_label_text = self.tr(
-                "Trovati multipli profili Steam.\n"
-                "Seleziona quello corretto (di solito il più recente):"
+            dialog_label_text = (
+                "Multiple Steam profiles found.\n"
+                "Select the correct one (usually the most recent):"
             )
             chosen_display_str, ok = QInputDialog.getItem(
-                 self.main_window, self.tr("Selezione Profilo Steam"), dialog_label_text,
+                 self.main_window, "Select Steam Profile", dialog_label_text,
                  id_choices_display, index_to_select, False
             )
             if ok and chosen_display_str:
                 selected_id3 = display_to_id_map.get(chosen_display_str)
                 if selected_id3: steam_id_to_use = selected_id3
-                else: logging.error("Error mapping choice back to Steam ID"); QMessageBox.warning(self.main_window, "Errore", "ID Steam selezionato non valido."); return
+                else: logging.error("Error mapping choice back to Steam ID"); QMessageBox.warning(self.main_window, "Error", "Selected Steam ID is invalid."); return
             else:
-                self.main_window.status_label.setText(self.tr("Configurazione annullata (nessun profilo Steam selezionato)."))
+                self.main_window.status_label.setText("Configuration cancelled (no Steam profile selected).")
                 return
         elif not steam_id_to_use and len(possible_ids) == 1: steam_id_to_use = possible_ids[0]
         elif not possible_ids: logging.warning("No Steam user IDs found.")
@@ -529,7 +513,7 @@ class MainWindowHandlers:
             logging.error("Cannot show fade effect (components missing or check failed).")
 
         # Start Search Thread
-        self.main_window.status_label.setText(self.tr("Ricerca percorso per '{0}' in corso...").format(profile_name))
+        self.main_window.status_label.setText("Searching for path for '{0}'...".format(profile_name))
         QApplication.processEvents()
 
         logging.info("Starting SteamSearchWorkerThread from handler...")
@@ -578,16 +562,15 @@ class MainWindowHandlers:
             logging.info(f"No paths guessed by search thread for '{profile_name}'.")
             if not existing_path:
                 # Ask user to input path manually if none found and none exists
-                QMessageBox.information(self.main_window, self.tr("Path Not Found"),
-                                        self.tr("Could not automatically find a path for '{0}'.\n" +
-                                                "Please enter it manually.").format(profile_name))
+                QMessageBox.information(self.main_window, "Path Not Found",
+                                        "Could not automatically find a path for '{0}'.\n" +
+                                        "Please enter it manually.".format(profile_name))
                 confirmed_path = self._ask_user_for_path_manually(profile_name, existing_path)
             else:
                 # Ask user if they want to keep the existing path or enter manually
-                reply = QMessageBox.question(self.main_window, self.tr("No New Path Found"),
-                                             self.tr("Automatic search did not find new paths.\n" +
-                                                     "Do you want to keep the current path?\n'{0}'")
-                                             .format(existing_path),
+                reply = QMessageBox.question(self.main_window, "No New Path Found",
+                                             "Automatic search did not find new paths.\n" +
+                                             "Do you want to keep the current path?\n'{0}'".format(existing_path),
                                              QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
                                              QMessageBox.StandardButton.Yes)
                 if reply == QMessageBox.StandardButton.Yes: confirmed_path = existing_path
@@ -603,7 +586,7 @@ class MainWindowHandlers:
             norm_existing = os.path.normpath(existing_path) if existing_path else None
             for i, (p, score) in enumerate(guesses_with_scores):
                 norm_p = os.path.normpath(p)
-                is_current_marker = self.tr("[ATTUALE]") if norm_existing and norm_p == norm_existing else ""
+                is_current_marker = "[CURRENT]" if norm_existing and norm_p == norm_existing else ""
                 score_str = f"(Score: {score})" if show_scores else ""
                 display_text = f"{p} {score_str} {is_current_marker}".strip().replace("  ", " ")
                 path_choices.append(display_text)
@@ -615,16 +598,16 @@ class MainWindowHandlers:
             if existing_path and not existing_path_found_in_list:
                 logging.warning(f"Existing path '{existing_path}' was not found in the suggested paths list.")
 
-            manual_option_str = self.tr("--- Inserisci percorso manualmente ---")
+            manual_option_str = "--- Enter path manually ---"
             path_choices.append(manual_option_str)
-            dialog_label_text = self.tr(
-                "Sono stati trovati questi percorsi potenziali per '{0}'.\n"
-                "Seleziona quello corretto (ordinati per probabilità) o scegli l'inserimento manuale:"
+            dialog_label_text = (
+                "These potential paths were found for '{0}'.\n"
+                "Select the correct one (ordered by probability) or choose manual entry:"
             ).format(profile_name)
 
             logging.debug(f"Showing QInputDialog.getItem with {len(path_choices)} choices, pre-selected index: {current_selection_index}")
             chosen_display_str, ok = QInputDialog.getItem(
-                self.main_window, self.tr("Conferma Percorso Salvataggi"), dialog_label_text,
+                self.main_window, "Confirm Save Path", dialog_label_text,
                 path_choices, current_selection_index, False
             )
 
@@ -635,7 +618,7 @@ class MainWindowHandlers:
                     confirmed_path = display_text_to_original_path.get(chosen_display_str)
                     if confirmed_path is None:
                         logging.error(f"Error mapping selected choice '{chosen_display_str}' back to path.")
-                        QMessageBox.critical(self.main_window, self.tr("Errore Interno"), self.tr("Errore nella selezione del percorso."))
+                        QMessageBox.critical(self.main_window, "Internal Error", "Error in path selection.")
                         confirmed_path = None
 
         # Save profile if path confirmed
@@ -655,22 +638,22 @@ class MainWindowHandlers:
                 # Update the profile dictionary and save all profiles
                 self.main_window.profiles[profile_name] = {'path': validated_path}
                 if core_logic.save_profiles(self.main_window.profiles):
-                    self.main_window.status_label.setText(self.tr("Profilo '{0}' configurato.").format(profile_name))
+                    self.main_window.status_label.setText("Profile '{0}' configured.".format(profile_name))
                     self.main_window.profile_table_manager.update_profile_table()
                     self.main_window.profile_table_manager.select_profile_in_table(profile_name)
-                    QMessageBox.information(self.main_window, self.tr("Profilo Configurato"), self.tr("Profilo '{0}' salvato con successo.").format(profile_name))
+                    QMessageBox.information(self.main_window, "Profile Configured", "Profile '{0}' saved successfully.".format(profile_name))
                 else:
-                    QMessageBox.critical(self.main_window, self.tr("Errore Salvataggio"), self.tr("Impossibile salvare il file dei profili."))
+                    QMessageBox.critical(self.main_window, "Save Error", "Unable to save profiles file.")
                     if profile_name in self.main_window.profiles: del self.main_window.profiles[profile_name]
             # else: Validator already showed error message
         else:
-             self.main_window.status_label.setText(self.tr("Configurazione profilo annullata o fallita."))
+             self.main_window.status_label.setText("Profile configuration cancelled or failed.")
 
     # Prompts the user to manually enter the save path for a profile.
     # Helper for manual path input (used by steam search results)
     def _ask_user_for_path_manually(self, profile_name, existing_path):
-        input_path, ok = QInputDialog.getText(self.main_window, self.tr("Manual Path"),
-                                            self.tr("Enter the FULL path to the save game folder for '{0}':").format(profile_name),
+        input_path, ok = QInputDialog.getText(self.main_window, "Manual Path",
+                                            "Enter the FULL path to the save game folder for '{0}':".format(profile_name),
                                             text=existing_path or "")
         if ok and input_path:
              # Use validation from the main window's profile creation manager
@@ -686,40 +669,20 @@ class MainWindowHandlers:
     # Callback slot for when the backup/restore worker thread finishes.
     @Slot(bool, str)
     def on_operation_finished(self, success, message):
-        main_message = message.splitlines()[0] if message else self.tr("Operation finished without message.")
-        status_text = self.tr("Completed: {0}") if success else self.tr("ERROR: {0}")
+        main_message = message.splitlines()[0] if message else "Operation finished without message."
+        status_text = "Completed: {0}" if success else "ERROR: {0}"
         self.main_window.status_label.setText(status_text.format(main_message))
         self.main_window.set_controls_enabled(True)
         self.main_window.worker_thread = None # Clear worker thread reference on main window
 
         if not success:
-            QMessageBox.critical(self.main_window, self.tr("Errore Operazione"), message)
+            QMessageBox.critical(self.main_window, "Operation Error", message)
         else:
             logging.debug("Operation thread worker successful, updating profile table view.")
 
         # Always update the table to reflect changes (e.g., backup info)
         self.main_window.profile_table_manager.update_profile_table()
 
-    # Applies UI updates (retranslation, theme) after settings are changed.
-    @Slot()
-    def _apply_ui_updates_after_settings(self):
-        logging.debug("Applying post-settings UI updates (retranslate + theme)...")
-
-        # 1. Retranslate the UI
-        if hasattr(self.main_window, 'retranslateUi'):
-            logging.debug("Calling retranslateUi from _apply_ui_updates_after_settings")
-            self.main_window.retranslateUi()
-        else:
-            logging.error("Cannot call retranslateUi: method not found in main_window.")
-
-        # 2. Update the theme
-        if hasattr(self.main_window, 'theme_manager') and \
-           hasattr(self.main_window.theme_manager, 'update_theme'):
-            logging.debug("Calling update_theme from _apply_ui_updates_after_settings")
-            self.main_window.theme_manager.update_theme()
-        else:
-            logging.error("Cannot call update_theme: theme_manager or method not found.")
-
-        logging.debug("Finished post-settings UI updates.")
+# --- FINE METODI HANDLERS ---
 
 # --- End of MainWindowHandlers class --- 
