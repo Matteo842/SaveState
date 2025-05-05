@@ -79,6 +79,7 @@ SaveState includes experimental support for automatically detecting save data lo
 *   **mGBA**
 *   **snes9x**
 *   **DeSmuME**
+*   **Cemu**
 
 
 ## How Save Search Works (Heuristics)
