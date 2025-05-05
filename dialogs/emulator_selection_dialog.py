@@ -4,7 +4,7 @@
 import logging
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QListWidget, QDialogButtonBox, QAbstractItemView,
-    QListWidgetItem
+    QListWidgetItem, QMessageBox
 )
 from PySide6.QtCore import Qt, Slot
 
@@ -26,7 +26,7 @@ class EmulatorGameSelectionDialog(QDialog):
             parent (QWidget, optional): The parent widget. Defaults to None.
         """
         super().__init__(parent)
-        self.setWindowTitle(self.tr("Seleziona Gioco {0}").format(emulator_name))
+        self.setWindowTitle(f"Select {emulator_name} Game")
         self.setMinimumWidth(400)
 
         self.profile_data_list = profile_data_list
@@ -36,7 +36,7 @@ class EmulatorGameSelectionDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # --- Label ---
-        label = QLabel(self.tr("Sono stati trovati i seguenti profili/giochi per {0}.\nSeleziona quello da aggiungere:").format(emulator_name))
+        label = QLabel(f"The following profiles/games have been found for {emulator_name}.\nSelect the one to add:")
         label.setWordWrap(True)
         layout.addWidget(label)
 
@@ -47,12 +47,12 @@ class EmulatorGameSelectionDialog(QDialog):
         # Populate the list widget
         if not self.profile_data_list:
              # Should not happen if called correctly, but handle gracefully
-             item = QListWidgetItem(self.tr("(Nessun profilo trovato)"))
+             item = QListWidgetItem("(No profiles found)")
              item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable) # Make it unselectable
              self.profile_list_widget.addItem(item)
         else:
             for profile_data in self.profile_data_list:
-                profile_id = profile_data.get('id', 'ID Sconosciuto') # Get the ID to display
+                profile_id = profile_data.get('id', 'Unknown ID') # Get the ID to display
                 display_name = profile_data.get('name', profile_id) # Use name, fallback to ID
                 item = QListWidgetItem(display_name) # Display the name (or ID)
                 # Store the whole dictionary in the item's data
@@ -106,7 +106,7 @@ class EmulatorGameSelectionDialog(QDialog):
                 # Should not happen if UserRole is set correctly
                 log.error("Selected item in EmulatorGameSelectionDialog has no UserRole data!")
                 # Optionally show a message?
-                # QMessageBox.warning(self, self.tr("Errore Selezione"), self.tr("Impossibile recuperare i dati del profilo selezionato."))
+                QMessageBox.warning(self, "Selection Error", "Unable to retrieve data for the selected profile.")
                 super().reject() # Reject if data is missing
         # else: No item selected (should not happen if OK button logic is correct)
 

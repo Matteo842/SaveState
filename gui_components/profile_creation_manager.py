@@ -38,7 +38,7 @@ class ProfileCreationManager:
         self.detection_thread = None # Handles its own worker for detection
 
     # --- HELPER METHOD FOR PATH VALIDATION (Moved here) ---
-    def validate_save_path(self, path_to_check, context_profile_name="profilo"):
+    def validate_save_path(self, path_to_check, context_profile_name="profile"):
         """
         Checks if a path is valid as a save folder.
         Verifies that it is not empty, not a drive root,
@@ -48,7 +48,7 @@ class ProfileCreationManager:
         """
         mw = self.main_window # Abbreviation for readability
         if not path_to_check:
-            QMessageBox.warning(mw, mw.tr("Errore Percorso"), mw.tr("Il percorso non può essere vuoto."))
+            QMessageBox.warning(mw, "Path Error", f"The path cannot be empty.")
             return None
 
         norm_path = os.path.normpath(path_to_check)
@@ -62,9 +62,9 @@ class ProfileCreationManager:
             logging.debug(f"Path validation: Path='{norm_path}', KnownRoots='{known_roots}', IsRoot={norm_path in known_roots}")
 
             if norm_path in known_roots:
-                QMessageBox.warning(mw, mw.tr("Errore Percorso"),
-                                    mw.tr("Non è possibile usare una radice del drive ('{0}') come cartella dei salvataggi per '{1}'.\n"
-                                        "Per favore, scegli o crea una sottocartella specifica.").format(norm_path, context_profile_name))
+                QMessageBox.warning(mw, "Path Error",
+                                    f"Cannot use a drive root ('{norm_path}') as the save folder for '{context_profile_name}'.\n"
+                                        "Please choose or create a specific subfolder.")
                 return None
         except Exception as e_root:
             logging.warning(f"Root path check failed during validation: {e_root}", exc_info=True)
@@ -72,8 +72,8 @@ class ProfileCreationManager:
 
         # Controllo Esistenza e Tipo (Directory)
         if not os.path.isdir(norm_path):
-            QMessageBox.warning(mw, mw.tr("Errore Percorso"),
-                                mw.tr("Il percorso specificato non esiste o non è una cartella valida:\n'{0}'").format(norm_path))
+            QMessageBox.warning(mw, "Path Error",
+                                f"The specified path does not exist or is not a valid folder:\n'{norm_path}'")
             return None
 
         # Se tutti i controlli passano, restituisce il percorso normalizzato
@@ -87,7 +87,7 @@ class ProfileCreationManager:
         """Handles the creation of a new profile with manual input."""
         mw = self.main_window
         logging.debug("ProfileCreationManager.handle_new_profile - START")
-        profile_name, ok = QInputDialog.getText(mw, mw.tr("Nuovo Profilo"), mw.tr("Inserisci un nome per il nuovo profilo:"))
+        profile_name, ok = QInputDialog.getText(mw, "New Profile", "Enter a name for the new profile:")
         logging.debug(f"ProfileCreationManager.handle_new_profile - Name entered: '{profile_name}', ok={ok}")
 
         if ok and profile_name:
@@ -95,18 +95,18 @@ class ProfileCreationManager:
             profile_name_original = profile_name # Preserve original for messages
             profile_name = sanitize_profile_name(profile_name) # Apply sanitization
             if not profile_name:
-                 QMessageBox.warning(mw, mw.tr("Errore Nome Profilo"),
-                                     mw.tr("Il nome del profilo ('{0}') contiene caratteri non validi o è vuoto dopo la pulizia.").format(profile_name_original))
+                 QMessageBox.warning(mw, "Profile Name Error",
+                                     f"The profile name ('{profile_name_original}') contains invalid characters or is empty after cleaning.")
                  return
 
             if profile_name in mw.profiles:
                 logging.warning(f"Profile '{profile_name}' already exists.")
-                QMessageBox.warning(mw, mw.tr("Errore"), mw.tr("Un profilo chiamato '{0}' esiste già.").format(profile_name))
+                QMessageBox.warning(mw, "Error", f"A profile named '{profile_name}' already exists.")
                 return
 
             logging.debug(f"ProfileCreationManager.handle_new_profile - Requesting path for '{profile_name}'...")
-            path_prompt = mw.tr("Ora inserisci il percorso COMPLETO per i salvataggi del profilo:\n'{0}'").format(profile_name)
-            input_path, ok2 = QInputDialog.getText(mw, mw.tr("Percorso Salvataggi"), path_prompt)
+            path_prompt = f"Now enter the FULL path for the profile's saves:\n'{profile_name}'"
+            input_path, ok2 = QInputDialog.getText(mw, "Save Path", path_prompt)
             logging.debug(f"ProfileCreationManager.handle_new_profile - Path entered: '{input_path}', ok2={ok2}")
 
             if ok2:
@@ -126,11 +126,11 @@ class ProfileCreationManager:
                         if hasattr(mw, 'profile_table_manager'):
                             mw.profile_table_manager.update_profile_table()
                             mw.profile_table_manager.select_profile_in_table(profile_name) # Select the new
-                        QMessageBox.information(mw, mw.tr("Successo"), mw.tr("Profilo '{0}' creato e salvato.").format(profile_name))
-                        mw.status_label.setText(mw.tr("Profilo '{0}' creato.").format(profile_name))
+                        QMessageBox.information(mw, "Success", f"Profile '{profile_name}' created and saved.")
+                        mw.status_label.setText(f"Profile '{profile_name}' created.")
                     else:
                         logging.error("handle_new_profile - core_logic.save_profiles returned False.")
-                        QMessageBox.critical(mw, mw.tr("Errore"), mw.tr("Impossibile salvare il file dei profili."))
+                        QMessageBox.critical(mw, "Error", "Unable to save the profiles file.")
                         # Remove from memory if saving fails
                         if profile_name in mw.profiles:
                             del mw.profiles[profile_name]
@@ -151,49 +151,49 @@ class ProfileCreationManager:
         """
         mw = self.main_window
         logging.info("Starting Minecraft world search...")
-        mw.status_label.setText(mw.tr("Ricerca cartella salvataggi Minecraft..."))
+        mw.status_label.setText("Searching for Minecraft saves folder...")
         QApplication.processEvents()
 
         try:
             saves_folder = minecraft_utils.find_minecraft_saves_folder()
         except Exception as e_find:
             logging.error(f"Unexpected error during find_minecraft_saves_folder: {e_find}", exc_info=True)
-            QMessageBox.critical(mw, mw.tr("Errore Minecraft"), mw.tr("Errore imprevisto durante la ricerca della cartella Minecraft."))
-            mw.status_label.setText(mw.tr("Errore ricerca Minecraft."))
+            QMessageBox.critical(mw, "Minecraft Error", "Unexpected error while searching for the Minecraft folder.")
+            mw.status_label.setText("Error searching for Minecraft.")
             return
 
         if not saves_folder:
             logging.warning("Minecraft saves folder not found.")
-            QMessageBox.warning(mw, mw.tr("Cartella Non Trovata"),
-                                mw.tr("Impossibile trovare la cartella dei salvataggi standard di Minecraft (.minecraft/saves).\nAssicurati che Minecraft Java Edition sia installato."))
-            mw.status_label.setText(mw.tr("Cartella Minecraft non trovata."))
+            QMessageBox.warning(mw, "Folder Not Found",
+                                "Could not find the standard Minecraft saves folder (.minecraft/saves).\nMake sure that Minecraft Java Edition is installed.")
+            mw.status_label.setText("Minecraft folder not found.")
             return
 
-        mw.status_label.setText(mw.tr("Lettura mondi Minecraft..."))
+        mw.status_label.setText("Reading Minecraft worlds...")
         QApplication.processEvents()
         try:
             worlds_data = minecraft_utils.list_minecraft_worlds(saves_folder)
         except Exception as e_list:
             logging.error(f"Unexpected error during list_minecraft_worlds: {e_list}", exc_info=True)
-            QMessageBox.critical(mw, mw.tr("Errore Minecraft"), mw.tr("Errore imprevisto durante la lettura dei mondi Minecraft."))
-            mw.status_label.setText(mw.tr("Errore lettura mondi Minecraft."))
+            QMessageBox.critical(mw, "Minecraft Error", "Unexpected error while reading Minecraft worlds.")
+            mw.status_label.setText("Error reading Minecraft worlds.")
             return
 
         if not worlds_data:
             logging.warning("No worlds found in: %s", saves_folder)
-            QMessageBox.information(mw, mw.tr("Nessun Mondo Trovato"),
-                                    mw.tr("Nessun mondo trovato nella cartella:\n{0}").format(saves_folder))
-            mw.status_label.setText(mw.tr("Nessun mondo Minecraft trovato."))
+            QMessageBox.information(mw, "No Worlds Found",
+                                    f"No worlds found in folder:\n{saves_folder}")
+            mw.status_label.setText("No Minecraft worlds found.")
             return
 
         try:
             dialog = MinecraftWorldsDialog(worlds_data, mw) # Usa mw come parent
         except Exception as e_dialog_create:
             logging.error(f"Creation error MinecraftWorldsDialog: {e_dialog_create}", exc_info=True)
-            QMessageBox.critical(mw, mw.tr("Errore Interfaccia"), mw.tr("Impossibile creare la finestra di selezione dei mondi."))
+            QMessageBox.critical(mw, "Interface Error", "Unable to create the world selection window.")
             return
 
-        mw.status_label.setText(mw.tr("Ready.")) # Reset status
+        mw.status_label.setText("Ready.") # Reset status
 
         if dialog.exec(): # Use standard blocking exec() for modal dialogs
             selected_world = dialog.get_selected_world_info()
@@ -203,27 +203,27 @@ class ProfileCreationManager:
 
                 if not profile_name:
                     logging.error("Name of selected Minecraft world invalid or missing.")
-                    QMessageBox.critical(mw, mw.tr("Errore Interno"), mw.tr("Nome del mondo selezionato non valido."))
+                    QMessageBox.critical(mw, "Internal Error", "Invalid selected world name.")
                     return
 
                 # Sanitize also the Minecraft world name
                 profile_name_original = profile_name
                 profile_name = sanitize_profile_name(profile_name)
                 if not profile_name:
-                    QMessageBox.warning(mw, mw.tr("Errore Nome Profilo"),
-                                        mw.tr("Il nome del mondo ('{0}') contiene caratteri non validi o è vuoto dopo la pulizia.").format(profile_name_original))
+                    QMessageBox.warning(mw, "Profile Name Error",
+                                        f"The world name ('{profile_name_original}') contains invalid characters or is empty after cleaning.")
                     return
 
                 if not world_path or not os.path.isdir(world_path):
                     logging.error(f"World path '{world_path}' invalid for profile '{profile_name}'.")
-                    QMessageBox.critical(mw, mw.tr("Errore Percorso"), mw.tr("Il percorso del mondo selezionato ('{0}') non è valido.").format(world_path))
+                    QMessageBox.critical(mw, "Path Error", f"The path of the selected world ('{world_path}') is not valid.")
                     return
 
                 logging.info(f"Minecraft world selected: '{profile_name}' - Path: {world_path}")
 
                 if profile_name in mw.profiles:
-                    QMessageBox.warning(mw, mw.tr("Profilo Esistente"),
-                                        mw.tr("Un profilo chiamato '{0}' esiste già.\nScegli un altro mondo o rinomina il profilo esistente.").format(profile_name))
+                    QMessageBox.warning(mw, "Existing Profile",
+                                        f"A profile named '{profile_name}' already exists.\nChoose another world or rename the existing profile.")
                     return
 
                 # Create and save new profile
@@ -234,18 +234,18 @@ class ProfileCreationManager:
                     if hasattr(mw, 'profile_table_manager'):
                         mw.profile_table_manager.update_profile_table()
                         mw.profile_table_manager.select_profile_in_table(profile_name) # Select the new
-                    QMessageBox.information(mw, mw.tr("Profilo Creato"),
-                                            mw.tr("Profilo '{0}' creato con successo per il mondo Minecraft.").format(profile_name))
-                    mw.status_label.setText(mw.tr("Profilo '{0}' creato.").format(profile_name))
+                    QMessageBox.information(mw, "Profile Created",
+                                            f"Profile '{profile_name}' successfully created for the Minecraft world.")
+                    mw.status_label.setText(f"Profile '{profile_name}' created.")
                 else:
-                    QMessageBox.critical(mw, mw.tr("Errore"), mw.tr("Impossibile salvare il file dei profili dopo aver aggiunto '{0}'.").format(profile_name))
+                    QMessageBox.critical(mw, "Error", f"Unable to save the profiles file after adding '{profile_name}'.")
                     if profile_name in mw.profiles: del mw.profiles[profile_name]
             else:
                 logging.warning("Minecraft dialog accepted but no selected world data returned.")
-                mw.status_label.setText(mw.tr("Selezione mondo annullata o fallita."))
+                mw.status_label.setText("World selection cancelled or failed.")
         else:
             logging.info("Minecraft world selection cancelled by user.")
-            mw.status_label.setText(mw.tr("Selezione mondo annullata."))
+            mw.status_label.setText("World selection cancelled.")
     # --- FINE handle_minecraft_button ---
 
     # --- Drag and Drop Management ---
@@ -287,8 +287,8 @@ class ProfileCreationManager:
                 from win32com.client import Dispatch # Needed by winshell
             except ImportError:
                 logging.error("The 'winshell' or 'pywin32' library is not installed. Cannot read .lnk files.")
-                QMessageBox.critical(self.main_window, self.tr("Errore Dipendenza"),
-                                     self.tr("Le librerie 'winshell' e 'pywin32' sono necessarie per leggere i collegamenti (.lnk) su Windows."))
+                QMessageBox.critical(self.main_window, "Dependency Error",
+                                     "The 'winshell' and 'pywin32' libraries are required to read shortcuts (.lnk) on Windows.")
                 event.ignore()
                 return
         # --- End Conditional Import ---
@@ -320,8 +320,8 @@ class ProfileCreationManager:
 
                 if not resolved_target or not os.path.exists(resolved_target):
                      logging.error(f"Could not resolve .lnk target or target does not exist: {resolved_target}")
-                     QMessageBox.critical(mw, mw.tr("Errore Collegamento"),
-                                          mw.tr("Impossibile risolvere il percorso del collegamento o il file/cartella di destinazione non esiste:\n'{0}'").format(resolved_target or 'N/A'))
+                     QMessageBox.critical(mw, "Shortcut Error",
+                                          f"Unable to resolve the shortcut path or the target file/folder does not exist:\n'{resolved_target or 'N/A'}'")
                      event.ignore()
                      return
 
@@ -341,7 +341,7 @@ class ProfileCreationManager:
 
             except Exception as e_lnk:
                 logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
-                QMessageBox.critical(mw, mw.tr("Errore Collegamento"), mw.tr("Impossibile leggere il file .lnk:\n{0}").format(e_lnk))
+                QMessageBox.critical(mw, "Shortcut Error", f"Unable to read the .lnk file:\n{e_lnk}")
                 event.ignore()
                 return
         else:
@@ -379,24 +379,24 @@ class ProfileCreationManager:
                         if not selected_id or (not selected_path_single and not selected_paths_list):
                             logging.error(f"Selected data from dialog is missing id or path(s): {selected_data}")
                         # --- Updated Check --- END ---
-                            QMessageBox.critical(mw, mw.tr("Errore Interno"), mw.tr("Dati del profilo selezionato non validi."))
+                            QMessageBox.critical(mw, "Internal Error", "Invalid selected profile data.")
                             return
 
                         selected_name = selected_data.get('name', selected_id)
                         profile_name_base = f"{emulator_name} - {selected_name}"
                         profile_name = sanitize_profile_name(profile_name_base)
                         if not profile_name:
-                            QMessageBox.warning(mw, mw.tr("Errore Nome Profilo"),
-                                                mw.tr("Impossibile generare un nome profilo valido per '{0}'.").format(profile_name_base))
+                            QMessageBox.warning(mw, "Profile Name Error",
+                                                f"Unable to generate a valid profile name for '{profile_name_base}'.")
                             return
 
                         if profile_name in mw.profiles:
-                            reply = QMessageBox.question(mw, mw.tr("Profilo Esistente"),
-                                                       mw.tr("Un profilo chiamato '{0}' esiste già. Sovrascriverlo?").format(profile_name),
+                            reply = QMessageBox.question(mw, "Existing Profile",
+                                                       f"A profile named '{profile_name}' already exists. Overwrite it?",
                                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                                        QMessageBox.StandardButton.No)
                             if reply == QMessageBox.StandardButton.No:
-                                mw.status_label.setText(mw.tr("Creazione profilo annullata."))
+                                mw.status_label.setText("Profile creation cancelled.")
                                 return
                             else:
                                 logging.warning(f"Overwriting existing profile: {profile_name}")
@@ -421,7 +421,7 @@ class ProfileCreationManager:
                              else:
                                  # This case should ideally not be reached due to earlier checks
                                  logging.error(f"Cannot save profile '{profile_name}', path list is unexpectedly empty.")
-                                 QMessageBox.critical(mw, mw.tr("Errore Interno"), mw.tr("Impossibile salvare il profilo, nessun percorso valido disponibile."))
+                                 QMessageBox.critical(mw, "Internal Error", "Unable to save the profile, no valid paths available.")
                                  return
                         # --- Determine path data and prepare profile dictionary --- END ---
 
@@ -434,12 +434,12 @@ class ProfileCreationManager:
                                 mw.profile_table_manager.update_profile_table()
                                 mw.profile_table_manager.select_profile_in_table(profile_name) # Select the new/updated one
                             # No success message box here, status bar is enough
-                            mw.status_label.setText(mw.tr("Profilo '{0}' creato/aggiornato.").format(profile_name))
+                            mw.status_label.setText(f"Profile '{profile_name}' created/updated.")
                         else:
                             # Error saving file
-                            QMessageBox.critical(mw, mw.tr("Errore Salvataggio"),
-                                                 mw.tr("Impossibile salvare il file dei profili dopo aver aggiunto/modificato '{0}'. "
-                                                       "Le modifiche potrebbero essere andate perse.").format(profile_name))
+                            QMessageBox.critical(mw, "Save Error",
+                                                 f"Unable to save the profiles file after adding/modifying '{profile_name}'. "
+                                                       "The changes may have been lost.")
                             # Attempt to revert the change in memory if save failed
                             if profile_name in mw.profiles:
                                 # Ideally, revert to previous state, but simple removal is fallback
@@ -450,8 +450,8 @@ class ProfileCreationManager:
                         # --- Save Profile and Update UI --- END ---
             else:
                 logging.warning(f"{emulator_name} detected, but no profiles found in its standard directory.")
-                QMessageBox.warning(mw, mw.tr("Rilevato Emulatore ({0})").format(emulator_name),
-                                    mw.tr("Rilevato collegamento a {0}, ma nessun profilo trovato nella sua cartella standard.\nVerifica la posizione dei salvataggi dell'emulatore.").format(emulator_name))
+                QMessageBox.warning(mw, f"Emulator Detected ({emulator_name})",
+                                    f"Detected link to {emulator_name}, but no profiles found in its standard folder.\nCheck the emulator's save location.")
             return # IMPORTANT: Stop further processing if an emulator was detected
 
         # --- If NOT a known Emulator, proceed with heuristic search ---
@@ -467,21 +467,21 @@ class ProfileCreationManager:
 
         if not profile_name:
             logging.error(f"Sanitized profile name for '{profile_name_original}' became empty!")
-            QMessageBox.warning(mw, mw.tr("Errore Nome Profilo"),
-                                mw.tr("Impossibile generare un nome profilo valido dal collegamento trascinato."))
+            QMessageBox.warning(mw, "Profile Name Error",
+                                "Unable to generate a valid profile name from the dragged shortcut.")
             return
 
         if profile_name in mw.profiles:
-            QMessageBox.warning(mw, mw.tr("Profilo Esistente"), mw.tr("Profilo '{0}' esiste già.").format(profile_name))
+            QMessageBox.warning(mw, "Existing Profile", f"Profile '{profile_name}' already exists.")
             return
 
         # --- Start Heuristic Path Search Thread ---
         if self.detection_thread and self.detection_thread.isRunning():
-            QMessageBox.information(mw, mw.tr("Operazione in Corso"), mw.tr("Un'altra ricerca di percorso è già in corso. Attendi."))
+            QMessageBox.information(mw, "Operation in Progress", "Another path search is already in progress. Please wait.")
             return
 
         mw.set_controls_enabled(False)
-        mw.status_label.setText(mw.tr("Ricerca percorso per '{0}' in corso...").format(profile_name))
+        mw.status_label.setText(f"Searching path for '{profile_name}'...")
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
 
         # --- Start Fade/Animation Effect ---
@@ -546,18 +546,18 @@ class ProfileCreationManager:
         
         QApplication.restoreOverrideCursor() # Restore cursor
         mw.set_controls_enabled(True)      # Reenable controls in MainWindow
-        mw.status_label.setText(mw.tr("Path search completed."))
+        mw.status_label.setText("Path search completed.")
 
         self.detection_thread = None # Remove reference to completed thread
 
-        profile_name = results.get('profile_name_suggestion', 'profilo_sconosciuto')
+        profile_name = results.get('profile_name_suggestion', 'unknown_profile')
 
         if not success:
-            error_msg = results.get('message', mw.tr("Errore sconosciuto durante la ricerca."))
+            error_msg = results.get('message', "Unknown error during search.")
             if "interrupted" not in error_msg.lower(): # Don't show popup if interrupted
-                QMessageBox.critical(mw, mw.tr("Errore Ricerca Percorso"), error_msg)
+                QMessageBox.critical(mw, "Path Search Error", error_msg)
             else:
-                mw.status_label.setText(mw.tr("Ricerca interrotta."))
+                mw.status_label.setText("Search interrupted.")
             return
 
         # --- Results handling logic ---
@@ -570,18 +570,18 @@ class ProfileCreationManager:
             if len(paths_found) == 1:
                 # One path found (now a tuple)
                 single_path, single_score = paths_found[0] # Extract path and score
-                reply = QMessageBox.question(mw, mw.tr("Conferma Percorso Automatico"),
-                                             # Mostra solo il percorso nel messaggio
-                                             mw.tr("È stato rilevato questo percorso:\n\n{0}\n\nVuoi usarlo per il profilo '{1}'?").format(single_path, profile_name),
-                                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
-                                             QMessageBox.StandardButton.Yes)
+                reply = QMessageBox.question(mw, "Confirm Automatic Path",
+                                              # Mostra solo il percorso nel messaggio
+                                              f"This path has been detected:\n\n{single_path}\n\nDo you want to use it for the profile '{profile_name}'?",
+                                              QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
+                                              QMessageBox.StandardButton.Yes)
                 if reply == QMessageBox.StandardButton.Yes:
                     final_path_to_use = single_path # Usa solo il percorso
                 elif reply == QMessageBox.StandardButton.No:
                     logging.info("User rejected single automatic path. Requesting manual input.")
                     final_path_to_use = None # Forza richiesta manuale
                 else: # Cancel
-                    mw.status_label.setText(mw.tr("Creazione profilo annullata."))
+                    mw.status_label.setText("Profile creation cancelled.")
                     return
 
             elif len(paths_found) > 1: 
@@ -612,7 +612,7 @@ class ProfileCreationManager:
                     display_str_to_path_map[display_text] = path # Map displayed string -> original path
 
                 # Add manual option
-                manual_entry_text = mw.tr("[Inserisci Manualmente...]")
+                manual_entry_text = "[Enter Manually...]"
                 choices.append(manual_entry_text)
                 # Associate the manual option text to None in the map
                 display_str_to_path_map[manual_entry_text] = None
@@ -622,8 +622,8 @@ class ProfileCreationManager:
                 # Show the QInputDialog.getItem dialog
                 chosen_display_str, ok = QInputDialog.getItem(
                     mw,
-                    mw.tr("Conferma Percorso Salvataggi"),
-                    mw.tr("Sono stati trovati questi percorsi potenziali per '{0}'.\nSeleziona quello corretto (ordinati per probabilità) o scegli l'inserimento manuale:").format(profile_name),
+                    "Confirm Save Path",
+                    f"These potential paths have been found for '{profile_name}'.\nSelect the correct one (sorted by probability) or choose manual input:",
                     choices, # List of strings (with or without score)
                     0,       # Initial index (the first, which has the highest score)
                     False    # Not editable
@@ -644,31 +644,31 @@ class ProfileCreationManager:
                         logging.debug(f"User selected path: {final_path_to_use}")
 
                 else: # The user pressed Cancel
-                    mw.status_label.setText(mw.tr("Creazione profilo annullata."))
+                    mw.status_label.setText("Profile creation cancelled.")
                     return # Exit the on_detection_finished function
 
         elif status == 'not_found':
             # No automatic path found
-            QMessageBox.information(mw, mw.tr("Percorso Non Rilevato"), mw.tr("Impossibile rilevare automaticamente il percorso dei salvataggi per '{0}'.\nPer favore, inseriscilo manualmente.").format(profile_name))
+            QMessageBox.information(mw, "Path Not Detected", f"Unable to automatically detect the save path for '{profile_name}'.\nPlease enter it manually.")
             final_path_to_use = None # Force manual request
         else: # status == 'error' or other unexpected case
             logging.error(f"Unexpected status '{status}' from detection thread with success=True")
-            mw.status_label.setText(mw.tr("Internal error during result handling."))
+            mw.status_label.setText("Internal error during result handling.")
             # We could ask for manual input here? Maybe better not.
             return # Exit if the status is not 'found' or 'not_found'
 
         # --- Manual Input Request (if necessary) ---
         if final_path_to_use is None:
-            path_prompt = mw.tr("Insert the FULL path for the profile's saves:\n'{0}'").format(profile_name)
-            input_path, ok_manual = QInputDialog.getText(mw, mw.tr("Percorso Salvataggi Manuale"), path_prompt)
+            path_prompt = f"Insert the FULL path for the profile's saves:\n'{profile_name}'"
+            input_path, ok_manual = QInputDialog.getText(mw, "Manual Save Path", path_prompt)
             if ok_manual and input_path:
                 final_path_to_use = input_path
             elif ok_manual and not input_path:
-                QMessageBox.warning(mw, mw.tr("Errore Percorso"), mw.tr("Il percorso non può essere vuoto."))
-                mw.status_label.setText(mw.tr("Creazione profilo annullata (percorso vuoto)."))
+                QMessageBox.warning(mw, "Path Error", "The path cannot be empty.")
+                mw.status_label.setText("Profile creation cancelled (empty path).")
                 return
             else: # Cancelled
-                mw.status_label.setText(mw.tr("Creazione profilo annullata."))
+                mw.status_label.setText("Profile creation cancelled.")
                 return
 
         # --- Final Validation and Profile Saving ---
@@ -684,10 +684,10 @@ class ProfileCreationManager:
                     if hasattr(mw, 'profile_table_manager'):
                         mw.profile_table_manager.update_profile_table()
                         mw.profile_table_manager.select_profile_in_table(profile_name)
-                    QMessageBox.information(mw, mw.tr("Profilo Creato"), mw.tr("Profilo '{0}' creato con successo.").format(profile_name))
-                    mw.status_label.setText(mw.tr("Profilo '{0}' creato.").format(profile_name))
+                    QMessageBox.information(mw, "Profile Created", f"Profile '{profile_name}' successfully created.")
+                    mw.status_label.setText(f"Profile '{profile_name}' created.")
                 else:
-                    QMessageBox.critical(mw, mw.tr("Errore"), mw.tr("Impossibile salvare il file dei profili."))
+                    QMessageBox.critical(mw, "Error", "Unable to save the profiles file.")
                     if profile_name in mw.profiles: del mw.profiles[profile_name]
             # else: validate_save_path has already shown the error
     # --- FINE on_detection_finished ---

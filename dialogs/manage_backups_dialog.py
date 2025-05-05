@@ -17,21 +17,21 @@ class ManageBackupsDialog(QDialog):
      def __init__(self, profile_name, parent=None):
         super().__init__(parent)
         self.profile_name = profile_name
-        self.setWindowTitle(self.tr("Gestisci Backup per {0}").format(self.profile_name))
+        self.setWindowTitle(f"Manage Backups for {self.profile_name}")
         self.setMinimumWidth(500)
         # Get the style for standard icons
         style = QApplication.instance().style()
         
         # Widget
         self.backup_list_widget = QListWidget()
-        self.delete_button = QPushButton(self.tr("Elimina Selezionato"))
+        self.delete_button = QPushButton("Delete Selected")
         self.delete_button.setObjectName("DangerButton")
         
         # Set standard icon for Delete
         delete_icon = style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
         self.delete_button.setIcon(delete_icon)
         
-        self.close_button = QPushButton(self.tr("Chiudi"))
+        self.close_button = QPushButton("Close")
         
         # Set standard icon for Close
         close_icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton)
@@ -39,7 +39,7 @@ class ManageBackupsDialog(QDialog):
         
         self.delete_button.setEnabled(False)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(self.tr("Backup esistenti per '{0}':").format(self.profile_name)))
+        layout.addWidget(QLabel(f"Existing backups for '{self.profile_name}':"))
         layout.addWidget(self.backup_list_widget)
         button_layout = QHBoxLayout()
         button_layout.addStretch()
@@ -84,7 +84,7 @@ class ManageBackupsDialog(QDialog):
 
         if not backups:
             # Handle no backups found
-            item = QListWidgetItem(self.tr("No backups found.")) # Translate text
+            item = QListWidgetItem("No backups found.") # Translate text
             item.setData(Qt.ItemDataRole.UserRole, None) # No associated path
             self.backup_list_widget.addItem(item)
             self.backup_list_widget.setEnabled(False) # Disable list
@@ -124,12 +124,12 @@ class ManageBackupsDialog(QDialog):
         if not backup_path: return
         backup_name = os.path.basename(backup_path)
         
-        confirm_title = self.tr("Conferma Eliminazione")
-        confirm_text = self.tr(
-            "Sei sicuro di voler eliminare PERMANENTEMENTE il file di backup:\n\n"
-            "{0}\n\n" # Placeholder for the file name
-            "Questa azione non può essere annullata!"
-        ).format(backup_name) # Insert the file name in the placeholder
+        confirm_title = "Confirm Deletion"
+        confirm_text = (
+            "Are you sure you want to PERMANENTLY delete the backup file:\n\n"
+            f"{backup_name}\n\n" # Placeholder for the file name
+            "This action cannot be undone!"
+        )
 
         confirm = QMessageBox.warning(self, confirm_title, confirm_text,
                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -141,8 +141,8 @@ class ManageBackupsDialog(QDialog):
             success, message = core_logic.delete_single_backup_file(backup_path)
             self.setEnabled(True)
             if success:
-                QMessageBox.information(self, self.tr("Successo"), message)
+                QMessageBox.information(self, "Success", message)
                 self.populate_backup_list()
             else:
-                QMessageBox.critical(self, self.tr("Errore Eliminazione"), message)
+                QMessageBox.critical(self, "Deletion Error", message)
                 self.populate_backup_list() # Update anyway

@@ -14,15 +14,14 @@ import os
 class SteamDialog(QDialog):
     """
     Dialog for displaying installed Steam games, selecting one to configure its save path.
-    e configurare il percorso dei salvataggi associato.
     """
-    #profile_configured = Signal(str, str) # Segnale emesso quando un profilo è configurato (nome, percorso)
+    #profile_configured = Signal(str, str) # Signal emitted when a profile is configured (name, path)
     game_selected_for_config = Signal(str, str)
 
     def __init__(self, main_window_ref, parent=None):
         super().__init__(parent)
         self.main_window_ref = main_window_ref
-        self.setWindowTitle(self.tr("Gestione dei giochi Steam")) # Traduci titolo
+        self.setWindowTitle("Steam Games Management")
         self.setMinimumWidth(600)
         self.setMinimumHeight(400)
 
@@ -30,20 +29,20 @@ class SteamDialog(QDialog):
         self.steam_search_thread = None # Not used here anymore
         # Get profiles and steam_games_data from parent to populate the list
         self.profiles = parent.profiles if parent and hasattr(parent, 'profiles') else {}
-        self.steam_games_data = parent.steam_games_data if parent and hasattr(parent, 'steam_games_data') else {} # Assumi che MainWindow lo abbia
-        self.steam_userdata_info = parent.steam_userdata_info if parent and hasattr(parent, 'steam_userdata_info') else {} # Assumi che MainWindow lo abbia
+        self.steam_games_data = parent.steam_games_data if parent and hasattr(parent, 'steam_games_data') else {} # Assume MainWindow has it
+        self.steam_userdata_info = parent.steam_userdata_info if parent and hasattr(parent, 'steam_userdata_info') else {} # Assume MainWindow has it
 
         # --- Create UI Widgets ---
         self.game_list_widget = QListWidget()
-        self.status_label = QLabel(self.tr("Seleziona un gioco e clicca Configura."))
-        self.configure_button = QPushButton(self.tr("Configura Profilo Selezionato"))
-        self.refresh_button = QPushButton(self.tr("Aggiorna elenco giochi"))
-        self.close_button = QPushButton(self.tr("Chiudi"))
+        self.status_label = QLabel("Select a game and click Configure.")
+        self.configure_button = QPushButton("Configure Selected Profile")
+        self.refresh_button = QPushButton("Refresh Games List")
+        self.close_button = QPushButton("Close")
         self.configure_button.setEnabled(False)
 
        # --- Layout ---
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(self.tr("Giochi Steam installati:")))
+        layout.addWidget(QLabel("Installed Steam Games:"))
         layout.addWidget(self.game_list_widget)
         layout.addWidget(self.status_label)
         h_layout = QHBoxLayout()
@@ -74,20 +73,20 @@ class SteamDialog(QDialog):
              parent_window.steam_games_data = self.steam_games_data
              parent_window.steam_userdata_info = self.steam_userdata_info
          self.populate_game_list() # Update the list in this dialog
-         self.status_label.setText(self.tr("Elenco aggiornato. {0} giochi trovati.").format(len(self.steam_games_data)))
+         self.status_label.setText(f"List updated. {len(self.steam_games_data)} games found.")
 
 
     def populate_game_list(self):
         self.game_list_widget.clear()
         if not self.steam_games_data:
-             self.game_list_widget.addItem(self.tr("Nessun gioco trovato."))
+             self.game_list_widget.addItem("No games found.")
              self.configure_button.setEnabled(False) # Disable if no games
              return
 
         self.configure_button.setEnabled(self.game_list_widget.currentItem() is not None) # Enable if there is a selection
         sorted_games = sorted(self.steam_games_data.items(), key=lambda item: item[1]['name'])
         for appid, game_data in sorted_games:
-            profile_exists_marker = self.tr("[PROFILO ESISTENTE]") if game_data['name'] in self.profiles else ""
+            profile_exists_marker = "[EXISTING PROFILE]" if game_data['name'] in self.profiles else ""
             item_text = f"{game_data['name']} (AppID: {appid}) {profile_exists_marker}".strip()
             item = QListWidgetItem(item_text)
             item.setData(Qt.ItemDataRole.UserRole, appid)
@@ -104,7 +103,7 @@ class SteamDialog(QDialog):
         game_data = self.steam_games_data.get(appid)
 
         if not game_data or not appid:
-             QMessageBox.warning(self, self.tr("Errore"), self.tr("Impossibile ottenere dati del gioco selezionato."))
+             QMessageBox.warning(self, "Error", "Unable to get data for the selected game.")
              return
 
         profile_name = game_data['name']
@@ -154,12 +153,12 @@ class SteamDialog(QDialog):
         profile_name = getattr(self, 'current_configuring_profile_name', None)
         if not profile_name:
             logging.error("[SteamDialog] Could not retrieve profile name in on_steam_search_finished. Aborting config.")
-            QMessageBox.critical(self, self.tr("Errore Interno"),
-                                 self.tr("Impossibile recuperare il nome del profilo in configurazione."))
+            QMessageBox.critical(self, "Internal Error",
+                                 "Unable to retrieve the profile name being configured.")
             self.reject() # Close the Steam dialog with 'reject'
             return
 
-        confirmed_path = None # Percorso finale che verrà salvato
+        confirmed_path = None # Final path that will be saved
         existing_path = self.profiles.get(profile_name)
         logging.debug(f"ON_SEARCH_FINISHED: Existing path for '{profile_name}' is '{existing_path}'")
 
@@ -169,17 +168,16 @@ class SteamDialog(QDialog):
             if not existing_path:
                 # No suggestions and no existing profile -> Force manual input
                 logging.debug("  No existing path found. Forcing manual input.")
-                QMessageBox.information(self, self.tr("Percorso Non Trovato"),
-                                        self.tr("Impossibile trovare automaticamente un percorso per '{0}'.\n"
-                                                "Per favore, inseriscilo manualmente.").format(profile_name))
-                confirmed_path = self._ask_for_manual_path(profile_name, existing_path) # Chiamiamo helper per input manuale
+                QMessageBox.information(self, "Path Not Found",
+                                        f"Unable to automatically find a path for '{profile_name}'.\n"
+                                        "Please enter it manually.")
+                confirmed_path = self._ask_for_manual_path(profile_name, existing_path) # Call helper for manual input
             else:
                 # No suggestions, but profile exists -> Ask if to keep or enter manually
                 logging.debug(f"  Existing path '{existing_path}' found. Asking user.")
-                reply = QMessageBox.question(self, self.tr("Nessun Nuovo Percorso Trovato"),
-                                             self.tr("La ricerca automatica non ha trovato nuovi percorsi.\n"
-                                                     "Vuoi mantenere il percorso attuale?\n'{0}'")
-                                             .format(existing_path),
+                reply = QMessageBox.question(self, "No New Path Found",
+                                             f"The automatic search did not find any new paths.\n"
+                                             f"Do you want to keep the current path?\n'{existing_path}'",
                                              QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
                                              QMessageBox.StandardButton.Yes)
                 if reply == QMessageBox.StandardButton.Yes:
@@ -187,10 +185,10 @@ class SteamDialog(QDialog):
                     confirmed_path = existing_path
                 elif reply == QMessageBox.StandardButton.No:
                      logging.debug("  User chose to enter path manually.")
-                     confirmed_path = self._ask_for_manual_path(profile_name, existing_path) # Chiamiamo helper
+                     confirmed_path = self._ask_for_manual_path(profile_name, existing_path) # Call helper
                 else: # Cancel
                     logging.debug("  User cancelled.")
-                    self.status_label.setText(self.tr("Configurazione annullata."))
+                    self.status_label.setText("Configuration cancelled.")
                     self.reject()
                     return # Exit the function
         # --- END RESTORED BLOCK ---
@@ -220,7 +218,7 @@ class SteamDialog(QDialog):
                 if normalized_path_check not in added_normalized_paths_for_display:
                     logging.debug(f"  Path '{normalized_path_check}' is NEW for display list.")
                     added_normalized_paths_for_display.add(normalized_path_check)
-                    is_current_marker = self.tr("[ATTUALE]") if p == existing_path else ""
+                    is_current_marker = "[CURRENT]" if p == existing_path else ""
                     score_str = f"(Score: {score})" if show_scores else ""
                     display_text = f"{p} {score_str} {is_current_marker}".strip().replace("  ", " ")
                     path_choices.append(display_text)
@@ -243,17 +241,16 @@ class SteamDialog(QDialog):
                  else: logging.debug(f"  Existing path was likely deduplicated, not preselecting.")
 
             # Add manual option
-            manual_option_str = self.tr("--- Inserisci percorso manualmente ---")
+            manual_option_str = "--- Enter path manually ---"
             path_choices.append(manual_option_str)
 
-            dialog_text = self.tr("Sono stati trovati questi percorsi potenziali per '{0}'.\n"
-                                 "Seleziona quello corretto (ordinati per probabilità) o scegli l'inserimento manuale:") \
-                                 .format(profile_name)
+            dialog_text = f"These potential paths have been found for '{profile_name}'.\n" \
+                          "Select the correct one (sorted by probability) or choose manual entry:"
 
             # Show choice dialog
             logging.debug(f"ON_SEARCH_FINISHED: Showing QInputDialog with {len(path_choices)} choices.")
             chosen_display_str, ok = QInputDialog.getItem(
-                self, self.tr("Conferma Percorso Salvataggi"), dialog_text,
+                self, "Confirm Save Path", dialog_text,
                 path_choices, current_selection_index, False
             )
 
@@ -265,10 +262,10 @@ class SteamDialog(QDialog):
                     confirmed_path = display_text_to_original_path.get(chosen_display_str)
                     if confirmed_path is None:
                         logging.error(f"Error mapping selected choice '{chosen_display_str}' back to path.")
-                        QMessageBox.critical(self, self.tr("Errore Interno"), self.tr("Errore nella selezione del percorso."))
+                        QMessageBox.critical(self, "Internal Error", "Error in path selection.")
                         self.reject(); return
             else: # User cancelled
-                self.status_label.setText(self.tr("Configuration cancelled."))
+                self.status_label.setText("Configuration cancelled.")
                 self.reject(); return
 
         # --- Save Profile  ---
@@ -276,14 +273,14 @@ class SteamDialog(QDialog):
              logging.info(f"Saving profile '{profile_name}' with path '{confirmed_path}'")
              self.profiles[profile_name] = confirmed_path
              if core_logic.save_profiles(self.profiles):
-                  self.status_label.setText(self.tr("Profilo '{0}' configurato.").format(profile_name))
+                  self.status_label.setText(f"Profile '{profile_name}' configured.")
                   self.profile_configured.emit(profile_name, confirmed_path)
                   self.accept() # Close this dialog with success
              else:
-                  QMessageBox.critical(self, self.tr("Errore Salvataggio"),
-                                         self.tr("Impossibile salvare il file dei profili."))
-                  self.status_label.setText(self.tr("Errore durante il salvataggio dei profili."))
-                  self.reject() # Chiudi se fallisce
+                  QMessageBox.critical(self, "Save Error",
+                                         "Unable to save the profiles file.")
+                  self.status_label.setText("Error while saving profiles.")
+                  self.reject() # Close if it fails
         else:
              # confirmed_path è None (manuale annullato o errore validazione nel blocco 'if not guesses')
              logging.warning(f"Configuration cancelled or failed for profile '{profile_name}' (confirmed_path is empty/None).")
@@ -304,8 +301,8 @@ class SteamDialog(QDialog):
             logging.warning("[SteamDialog] MainWindow validator not found, using basic os.path.isdir validation.")
             def basic_validator(path_to_validate, _profile_name):
                 if not path_to_validate or not os.path.isdir(path_to_validate):
-                     QMessageBox.warning(self, self.tr("Errore Percorso"), # Translate
-                                         self.tr("Il percorso specificato non esiste o non è una cartella valida.")) # Translate
+                     QMessageBox.warning(self, "Path Error", # Translate
+                                         "The specified path does not exist or is not a valid folder.") # Translate
                      return None
                 return path_to_validate # Return the path if valid
             validator_func = basic_validator
@@ -315,8 +312,8 @@ class SteamDialog(QDialog):
         """Ask the user to enter a path manually and validate it."""
         validator_func = self._get_validator_func()
         manual_path, ok = QInputDialog.getText(
-            self, self.tr("Percorso Manuale"), # Translate
-            self.tr("Inserisci il percorso COMPLETO dei salvataggi per '{0}':").format(profile_name), # Translate
+            self, "Manual Path", # Translate
+            f"Enter the COMPLETE save path for '{profile_name}':", # Translate
             text=existing_path if existing_path else "" # Precompile with the current path if it exists
         )
 
@@ -329,7 +326,7 @@ class SteamDialog(QDialog):
                 # The validator has failed (and should have shown a message)
                 return None
         elif ok and not manual_path: # Empty input
-             QMessageBox.warning(self, self.tr("Errore Percorso"), self.tr("Il percorso non può essere vuoto.")) # Translate
+             QMessageBox.warning(self, "Path Error", "The path cannot be empty.") # Translate
              return None # Indicate failure/cancellation
         else: # User pressed Cancel on QInputDialog
             return None # Indicate cancellation
@@ -355,7 +352,7 @@ if __name__ == '__main__':
     # Simulate some data that the MainWindow would pass
     class MockMainWindow:
         def __init__(self):
-            self.profiles = {"Gioco Esistente": "C:/Saves/GiocoEsistente"}
+            self.profiles = {"Existing Game": "C:/Saves/ExistingGame"}
             # Simulate components for fade effect (but not the effect itself)
             self.overlay_widget = None # QLabel("Overlay") # You could create fake widgets if needed
             self.loading_label = None # QLabel("Loading...")
@@ -392,9 +389,9 @@ if __name__ == '__main__':
             def find_steam_libraries(self): return ["C:/FakeSteam"]
             def find_installed_steam_games(self):
                 return {
-                    "12345": {"name": "Gioco di Prova 1", "installdir": "C:/FakeSteam/steamapps/common/GiocoProva1"},
-                    "67890": {"name": "Un Altro Gioco", "installdir": "C:/FakeSteam/steamapps/common/AltroGioco"},
-                    "11111": {"name": "Gioco Esistente", "installdir": "C:/FakeSteam/steamapps/common/GiocoEsistente"}
+                    "12345": {"name": "Test Game 1", "installdir": "C:/FakeSteam/steamapps/common/GiocoProva1"},
+                    "67890": {"name": "Another Game", "installdir": "C:/FakeSteam/steamapps/common/AltroGioco"},
+                    "11111": {"name": "Existing Game", "installdir": "C:/FakeSteam/steamapps/common/GiocoEsistente"}
                 }
             def find_steam_userdata_info(self):
                 # Simula 2 possibili ID utente
@@ -403,8 +400,8 @@ if __name__ == '__main__':
                     "12345678", # likely_id
                     ["12345678", "87654321"], # possible_ids
                     { # id_details
-                        "12345678": {"display_name": "Utente Principale", "last_mod_str": "2025-04-19"},
-                        "87654321": {"display_name": "Utente Secondario", "last_mod_str": "2024-11-01"}
+                        "12345678": {"display_name": "Main User", "last_mod_str": "2025-04-19"},
+                        "87654321": {"display_name": "Secondary User", "last_mod_str": "2024-11-01"}
                     }
                 )
             def save_profiles(self, profiles_dict):
@@ -435,8 +432,8 @@ if __name__ == '__main__':
                      (f"C:/Users/Test/AppData/Local/{self.game_name}", 75),
                  ]
                  # If the game is the existing one, add the real path as an option
-                 if self.game_name == "Gioco Esistente":
-                     mock_results.insert(0, ("C:/Saves/GiocoEsistente", 100)) # Simulate high score for the correct one
+                 if self.game_name == "Existing Game":
+                     mock_results.insert(0, ("C:/Saves/ExistingGame", 100)) # Simulate high score for the correct one
 
                  print(f"MockThread: Search finished for {self.game_name}. Emitting results.")
                  self.finished.emit(mock_results)

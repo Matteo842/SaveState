@@ -14,20 +14,20 @@ except ImportError:
     def resource_path(relative_path):
         return os.path.join(os.path.abspath("."), relative_path)
 
-import config # Per accedere a LIGHT_THEME_QSS e DARK_THEME_QSS
-import settings_manager # Per salvare le impostazioni del tema
+import config # To access LIGHT_THEME_QSS and DARK_THEME_QSS
+import settings_manager # To save theme settings
 
 class ThemeManager:
     # Manages the light/dark theme and the toggle button.
-    """Gestisce il tema chiaro/scuro e il pulsante di toggle."""
+    """Manages the light/dark theme and the toggle button."""
 
     # Initializes the theme manager.
     def __init__(self, theme_button: QPushButton, main_window):
         """
-        Inizializza il gestore del tema.
+        Initializes the theme manager.
         """
         self.theme_button = theme_button
-        self.main_window = main_window # For accessing self.tr, self.current_settings
+        self.main_window = main_window # For accessing self.current_settings
         self.sun_icon = None
         self.moon_icon = None
 
@@ -61,8 +61,8 @@ class ThemeManager:
 
     # Applies the current theme (read from main_window.current_settings) and updates the button icon/tooltip.
     def update_theme(self):
-        """Applica il tema corrente (letto da main_window.current_settings)
-           e aggiorna l'icona/tooltip del pulsante del tema."""
+        """Applies the current theme (read from main_window.current_settings)
+           and updates the theme button icon/tooltip."""
         try:
             theme_name = self.main_window.current_settings.get('theme', 'dark') # Read setting from MainWindow
             logging.debug(f"ThemeManager: Applying theme '{theme_name}'")
@@ -81,11 +81,11 @@ class ThemeManager:
             # Update the theme button icon and tooltip
             icon_size = QSize(16, 16) # Keep consistency with other icons
             if theme_name == 'light':
-                tooltip_text = self.main_window.tr("Passa al tema scuro")
+                tooltip_text = "Switch to dark theme"
                 if self.moon_icon:
                     self.theme_button.setIcon(self.moon_icon)
                     self.theme_button.setIconSize(icon_size)
-                    self.theme_button.setText("") # Assicura che non ci sia testo se l'icona c'è
+                    self.theme_button.setText("") # Ensure there's no text if the icon is present
                 else:
                     # Fallback to text if moon icon is missing
                     self.theme_button.setText("D") # D for Dark
@@ -93,7 +93,7 @@ class ThemeManager:
                 self.theme_button.setToolTip(tooltip_text)
                 self.theme_button.update()
             else: # 'dark' or default theme
-                tooltip_text = self.main_window.tr("Passa al tema chiaro")
+                tooltip_text = "Switch to light theme"
                 if self.sun_icon:
                     self.theme_button.setIcon(self.sun_icon)
                     self.theme_button.setIconSize(icon_size)
@@ -111,7 +111,7 @@ class ThemeManager:
 
     # Inverts the theme in settings, saves it, and applies the new theme.
     def handle_theme_toggle(self):
-        """Inverte il tema nelle impostazioni, lo salva e lo applica."""
+        """Inverts the theme in settings, saves it, and applies the new theme."""
         current_theme = self.main_window.current_settings.get('theme', 'dark')
         new_theme = 'light' if current_theme == 'dark' else 'dark'
         logging.debug(f"ThemeManager: Theme toggle requested from '{current_theme}' to '{new_theme}'.")
@@ -125,8 +125,8 @@ class ThemeManager:
             # Error in saving
             logging.error(f"ThemeManager: Failed to save theme setting '{new_theme}' to file.")
             QMessageBox.warning(self.main_window, # Use main_window as parent for the dialog
-                                self.main_window.tr("Errore"),
-                                self.main_window.tr("Impossibile salvare l'impostazione del tema."))
+                                "Error",
+                                "Unable to save theme setting.")
             # Restore the previous value in the main_window settings for consistency
             self.main_window.current_settings['theme'] = current_theme
             # Don't call update_theme() here because the theme hasn't actually changed

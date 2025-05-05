@@ -183,20 +183,20 @@ class MainWindow(QMainWindow):
         delete_prof_icon = style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon) # Icona Cestino
         self.delete_profile_button.setIcon(delete_prof_icon)
         
-        self.backup_button = QPushButton(self.tr("Esegui Backup"))
+        self.backup_button = QPushButton("Backup")
         backup_icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton) # Icona Salva (Floppy)
         self.backup_button.setIcon(backup_icon)
         
-        self.restore_button = QPushButton(self.tr("Ripristina da Backup"))
+        self.restore_button = QPushButton("Restore...")
         self.restore_button.setObjectName("DangerButton")
         restore_icon = style.standardIcon(QStyle.StandardPixmap.SP_ArrowDown) # Icona Freccia Giù (Download/Load?)
         self.restore_button.setIcon(restore_icon)
         
-        self.manage_backups_button = QPushButton(self.tr("Gestisci Backup"))
+        self.manage_backups_button = QPushButton("Manage Backups")
         manage_icon = style.standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView) # Icona Vista Dettagliata?
         self.manage_backups_button.setIcon(manage_icon)
         
-        self.open_backup_dir_button = QPushButton(self.tr("Apri Cartella Backup"))
+        self.open_backup_dir_button = QPushButton("Open Backup Folder")
         open_folder_icon = style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon) # Icona Apri Cartella
         self.open_backup_dir_button.setIcon(open_folder_icon)
         
@@ -219,7 +219,7 @@ class MainWindow(QMainWindow):
         self.create_shortcut_button.setIconSize(QSize(24, 24)) # <-- Dimensione icona 24x24
 
         # Tooltip (Importante perché non c'è testo)
-        self.create_shortcut_button.setToolTip(self.tr("Crea collegamento backup sul desktop"))
+        self.create_shortcut_button.setToolTip("Create a desktop shortcut to launch the selected profile's game/emulator.")
         # --- FINE NUOVO PULSANTE (Stile Minecraft) ---
         
         # Imposta dimensione icone (opzionale, regola i px se necessario)
@@ -237,13 +237,13 @@ class MainWindow(QMainWindow):
 
         # --- Layout ---
         main_layout = QVBoxLayout()
-        profile_group = QGroupBox(self.tr("Profili Salvati"))
+        profile_group = QGroupBox("Profiles")
         self.profile_group = profile_group
         profile_layout = QVBoxLayout()
         profile_layout.addWidget(self.profile_table_widget)
         profile_group.setLayout(profile_layout)
         main_layout.addWidget(profile_group, stretch=1)
-        actions_group = QGroupBox(self.tr("Azioni sul Profilo Selezionato"))
+        actions_group = QGroupBox("Actions")
         self.actions_group = actions_group
         actions_layout = QHBoxLayout()
         actions_layout.setSpacing(8)
@@ -254,7 +254,7 @@ class MainWindow(QMainWindow):
         # --- Pulsante Minecraft ---
         self.minecraft_button = QPushButton() # Vuoto, senza testo
         self.minecraft_button.setObjectName("MinecraftButton")
-        self.minecraft_button.setToolTip(self.tr("Crea profilo da mondo Minecraft")) # Tooltip è importante
+        self.minecraft_button.setToolTip("Create a profile from a Minecraft world") # Tooltip è importante
 
         # Carica icona Minecraft
         mc_icon_path = resource_path("icons/minecraft.png")
@@ -276,14 +276,15 @@ class MainWindow(QMainWindow):
         actions_layout.addWidget(self.delete_profile_button)
         actions_group.setLayout(actions_layout)
         main_layout.addWidget(actions_group)
-        general_group = QGroupBox(self.tr("Azioni Generali"))
+        general_group = QGroupBox("General")
         self.general_group = general_group
         general_layout = QHBoxLayout()
         general_layout.addWidget(self.new_profile_button)
         general_layout.addWidget(self.steam_button)
-        general_layout.addStretch()
-        general_layout.addWidget(self.open_backup_dir_button)
+        general_layout.addWidget(self.open_backup_dir_button) # Moved back here
         general_layout.addWidget(self.settings_button)
+
+        # Theme button setup
         general_layout.addWidget(self.theme_button)
         general_group.setLayout(general_layout)
         main_layout.addWidget(general_group)
@@ -313,7 +314,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(status_bar)
         
         # --- CREAZIONE DOCK WIDGET PER IL LOG ---
-        self.log_dock_widget = QDockWidget(self.tr("Console Log"), self)
+        self.log_dock_widget = QDockWidget("Console Log", self)
         self.log_dock_widget.setObjectName("LogDockWidget") # Utile per QSS
         self.log_dock_widget.setMinimumHeight(150)
 
@@ -368,7 +369,7 @@ class MainWindow(QMainWindow):
 
         loading_indicator_size = QSize(200, 200) 
         self.loading_label.setFixedSize(loading_indicator_size)
-        self.loading_label.setText(self.tr("Ricerca in corso..."))
+        self.loading_label.setText("Searching...")
         # Stile per il testo caricamento
         self.loading_label.setStyleSheet("QLabel#LoadingIndicatorLabel { color: white; font-size: 17pt; background-color: transparent; }")
         # Nascondi la label all'inizio (verrà mostrata dal set_overlay_opacity)
@@ -376,7 +377,7 @@ class MainWindow(QMainWindow):
         # --- FINE Label Animazione ---
 
 
-        # --- NUOVO: Creazione Animazioni Opacità ---
+        # --- Creazione Animazioni Opacità ---
         fade_duration = 250 # Durata animazione in ms
 
         self.fade_in_animation = QPropertyAnimation(self, b"_overlay_opacity", self)
@@ -481,34 +482,33 @@ class MainWindow(QMainWindow):
         else:
             super().dropEvent(event)
     
-    # Retranslates all user-visible text elements in the UI.
+    # Remove this
     def retranslateUi(self):
         """Aggiorna il testo della finestra"""
-        logging.debug(">>> retranslateUi: INIZIO ESECUZIONE <<<") # <-- LOG AGGIUNTO
-        self.setWindowTitle(QCoreApplication.translate("MainWindow", "SaveState - 1.3.8"))
-        #self.profile_table_widget.setHorizontalHeaderLabels([self.tr("Profilo"), self.tr("Info Backup")]) # <-- Solo 2 etichette
+        logging.debug(">>> retranslateUi: INIZIO ESECUZIONE <<<")
+        self.setWindowTitle("SaveState - 1.3.8")
         self.profile_table_manager.retranslate_headers()
-        self.settings_button.setText(self.tr("Impostazioni"))
-        self.new_profile_button.setText(self.tr("Nuovo Profilo Manuale"))
-        self.steam_button.setText(self.tr("Gestisci Giochi Steam"))
-        self.delete_profile_button.setText(self.tr("Elimina Profilo"))
-        self.backup_button.setText(self.tr("Esegui Backup"))
-        self.restore_button.setText(self.tr("Ripristina da Backup"))
-        self.manage_backups_button.setText(self.tr("Gestisci Backup"))
-        self.open_backup_dir_button.setText(self.tr("Apri Cartella Backup"))
+        self.settings_button.setText("Settings...")
+        self.new_profile_button.setText("New Profile...")
+        self.steam_button.setText("Manage Steam")
+        self.delete_profile_button.setText("Delete Profile")
+        self.backup_button.setText("Backup")
+        self.restore_button.setText("Restore...")
+        self.manage_backups_button.setText("Manage Backups")
+        self.open_backup_dir_button.setText("Open Backup Folder")
 
         if hasattr(self, 'profile_group'): # Controlla se l'attributo esiste
-            self.profile_group.setTitle(self.tr("Profili Salvati"))
+            self.profile_group.setTitle("Profiles")
         if hasattr(self, 'actions_group'):
-            self.actions_group.setTitle(self.tr("Azioni sul Profilo Selezionato"))
+            self.actions_group.setTitle("Actions")
         if hasattr(self, 'general_group'):
-            self.general_group.setTitle(self.tr("Azioni Generali"))
+            self.general_group.setTitle("General")
 
             # Aggiorna testo placeholder label animazione
             # Controlla se la label esiste e se NON sta mostrando la GIF (movie)
             if hasattr(self, 'loading_label') and self.loading_label and \
             (not hasattr(self, 'loading_movie') or not self.loading_movie or not self.loading_movie.isValid()):
-                self.loading_label.setText(self.tr("Ricerca in corso..."))
+                self.loading_label.setText("Searching...")
             # --- FINE BLOCCO ---
 
             logging.debug("Aggiornamento tabella profili a seguito di retranslateUi")
@@ -516,16 +516,16 @@ class MainWindow(QMainWindow):
 
         # --- Aggiornamento Tooltip e Titoli ---
         if hasattr(self, 'create_shortcut_button'):
-            self.create_shortcut_button.setToolTip(self.tr("Crea collegamento backup sul desktop"))
+            self.create_shortcut_button.setToolTip("Create a desktop shortcut to launch the selected profile's game/emulator")
         if hasattr(self, 'minecraft_button'):
-            self.minecraft_button.setToolTip(self.tr("Crea profilo da mondo Minecraft"))
+            self.minecraft_button.setToolTip("Create a profile from a Minecraft world")
         if hasattr(self, 'toggle_log_button'):
             # Imposta un tooltip generico, verrà aggiornato da handle_toggle_log se necessario
              is_log_visible = self.log_dock_widget.isVisible() if hasattr(self, 'log_dock_widget') else False
-             tooltip_key = "Nascondi Log" if is_log_visible else "Mostra Log"
-             self.toggle_log_button.setToolTip(self.tr(tooltip_key))
+             tooltip_key = "Hide Log" if is_log_visible else "Show Log"
+             self.toggle_log_button.setToolTip(tooltip_key)
         if hasattr(self, 'log_dock_widget'):
-            self.log_dock_widget.setWindowTitle(self.tr("Console Log"))
+            self.log_dock_widget.setWindowTitle("Console Log")
         logging.debug(">>> retranslateUi: FINE ESECUZIONE <<<")
 
     # Handles application-level events, specifically language changes.
@@ -580,6 +580,7 @@ class MainWindow(QMainWindow):
     # Applies the specified language translator to the application.
     def apply_translator(self, lang_code):
         """Rimuovi il traduttore esistente, se presente"""
+
         logging.debug(f"MainWindow.apply_translator called with lang_code='{lang_code}'")
 
         # 1. ALWAYS remove the current translator instance first, if it's installed.
@@ -594,8 +595,8 @@ class MainWindow(QMainWindow):
 
             if not os.path.exists(qm_file_path):
                 logging.error(f".qm translation file NOT FOUND: {qm_file_path}")
-                QMessageBox.warning(self, self.tr("Errore Traduzione"),
-                                    self.tr("Impossibile caricare il file di traduzione '{0}'. L'interfaccia non cambierà.").format(qm_filename))
+                QMessageBox.warning(self, "Translation Error",
+                                    f"Could not load the translation file '{qm_filename}'. The interface will not change.")
                 # No need to retranslate here, removal already happened.
                 return
 
@@ -639,6 +640,3 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
 # --- End of MainWindow class definition ---
-
-# --- Avvio Applicazione GUI ---
-# if __name__ == "__main__": <-- Moved to main.py

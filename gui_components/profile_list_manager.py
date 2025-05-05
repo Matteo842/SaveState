@@ -26,9 +26,9 @@ class ProfileListManager:
         self.star_icon = QIcon(star_icon_path) if os.path.exists(star_icon_path) else None
         self.empty_star_icon = QIcon(empty_star_icon_path) if os.path.exists(empty_star_icon_path) else None
         if not self.star_icon:
-            logging.warning(f"Icona preferiti 'star.png' non trovata in {star_icon_path}")
+            logging.warning(f"Favorite icon 'star.png' not found in {star_icon_path}")
         if not self.empty_star_icon:
-            logging.warning(f"Icona non-preferiti 'emptystar.png' non trovata in {empty_star_icon_path}")
+            logging.warning(f"Non-favorite icon 'emptystar.png' not found in {empty_star_icon_path}")
         # --- End Loading Icons ---
 
         # Configure the table
@@ -61,8 +61,8 @@ class ProfileListManager:
         """Update the table header labels."""
         self.table_widget.setHorizontalHeaderLabels([
             "", # Empty header for favorite column
-            QCoreApplication.translate("MainWindow", "Profilo"),
-            "Info Backup"
+            "Profile",
+            "Backup Info"
         ])
 
     def get_selected_profile_name(self):
@@ -118,7 +118,7 @@ class ProfileListManager:
             self.table_widget.setRowCount(1)
             item_fav_placeholder = QTableWidgetItem("")
             item_nome = QTableWidgetItem(
-                QCoreApplication.translate("MainWindow", "Nessun profilo creato.")
+                "No profiles created."
             )
             item_info = QTableWidgetItem("")
             # Don't set UserRole for placeholder fav or set it to None
@@ -140,13 +140,13 @@ class ProfileListManager:
             for row_index, profile_name in enumerate(sorted_profiles):
                 profile_data = self.profiles.get(profile_name, {})
                 is_favorite = favorites_status.get(profile_name, False)
-                save_path = profile_data.get('path', '') # Recupera percorso
+                save_path = profile_data.get('path', '') # Get path
 
                 # Retrieve backup info
                 current_backup_base_dir = self.main_window.current_settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
                 # Pass save_path to get_profile_backup_summary (ensure the function accepts it)
                 # If get_profile_backup_summary doesn't accept save_path, you'll need to use a different logic here
-                count, last_backup_dt = core_logic.get_profile_backup_summary(profile_name, current_backup_base_dir) # Rimuovi save_path se non serve
+                count, last_backup_dt = core_logic.get_profile_backup_summary(profile_name, current_backup_base_dir) # Remove save_path if not needed
 
                 info_str = ""
                 if count > 0:
@@ -162,23 +162,23 @@ class ProfileListManager:
 
                     backup_label_singular = "Backup"
                     backup_label_plural = "Backups"
-                    last_label = QCoreApplication.translate("MainWindow", "Ultimo")
+                    last_label = "Last"
                     backup_label = backup_label_singular if count == 1 else backup_label_plural
                     info_str = f"{backup_label}: {count} | {last_label}: {date_str}"
                 else:
-                     info_str = QCoreApplication.translate("MainWindow", "Nessun backup")
+                     info_str = "No backups"
 
                 # --- Create Favorite Item (Column 0) ---
                 fav_item = QTableWidgetItem()
                 fav_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if is_favorite and self.star_icon:
                     fav_item.setIcon(self.star_icon)
-                    fav_item.setToolTip(self.main_window.tr("Rimuovi dai preferiti"))
-                elif self.empty_star_icon:
+                    fav_item.setToolTip("Remove from favorites")
+                elif self.empty_star_icon: # Use empty star if available
                     fav_item.setIcon(self.empty_star_icon)
-                    fav_item.setToolTip(self.main_window.tr("Aggiungi ai preferiti"))
-                else:
-                     fav_item.setToolTip(self.main_window.tr("Aggiungi/Rimuovi preferito")) # Fallback
+                    fav_item.setToolTip("Add to favorites")
+                else: # Fallback without empty star icon
+                    fav_item.setToolTip("Add/Remove favorite") # Fallback
 
                 fav_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
                 fav_item.setData(Qt.ItemDataRole.UserRole, profile_name) # Save name for toggle
@@ -227,7 +227,7 @@ class ProfileListManager:
                  logging.warning(f"Favorite toggle requested for invalid or non-existent profile: row {row}, name '{profile_name}'")
                  return
 
-            logging.debug(f"Click su colonna Preferiti per: '{profile_name}'")
+            logging.debug(f"Click on Favorites column for: '{profile_name}'")
 
             # Invert the status using the manager and check the success
             success = favorites_manager.toggle_favorite(profile_name)
@@ -239,13 +239,13 @@ class ProfileListManager:
                 # Update the icon and tooltip in the clicked cell
                 if new_status and self.star_icon:
                     item.setIcon(self.star_icon)
-                    item.setToolTip(self.main_window.tr("Rimuovi dai preferiti"))
+                    item.setToolTip("Remove from favorites")
                 elif self.empty_star_icon: # Use empty star if available
                     item.setIcon(self.empty_star_icon)
-                    item.setToolTip(self.main_window.tr("Aggiungi ai preferiti"))
+                    item.setToolTip("Add to favorites")
                 else: # Fallback without empty star icon
                     item.setIcon(QIcon()) # Remove icon
-                    item.setToolTip(self.main_window.tr("Aggiungi/Rimuovi preferito"))
+                    item.setToolTip("Add/Remove favorite")
 
                 # --- Update the table to apply favorites sorting ---
                 logging.debug("Update table to apply favorites sorting...")
@@ -255,6 +255,6 @@ class ProfileListManager:
             else:
                 # The saving failed (manager has already logged the error)
                 QMessageBox.warning(self.main_window,
-                                    self.main_window.tr("Errore"),
-                                    self.main_window.tr("Impossibile salvare lo stato preferito per '{0}'.").format(profile_name))
+                                    "Error",
+                                    f"Unable to save favorite status for '{profile_name}'.")
                 # We don't update the icon in the GUI if the saving fails

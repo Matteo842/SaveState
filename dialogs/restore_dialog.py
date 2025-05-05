@@ -14,7 +14,7 @@ class RestoreDialog(QDialog):
     def __init__(self, profile_name, parent=None):
         super().__init__(parent)
         # Translated and formatted title
-        self.setWindowTitle(self.tr("Ripristina Backup per {}" ).format(profile_name))
+        self.setWindowTitle(f"Restore Backup for {profile_name}")
         self.setMinimumWidth(450)
         self.backup_list_widget = QListWidget()
         self.selected_backup_path = None
@@ -36,7 +36,7 @@ class RestoreDialog(QDialog):
 
         if not backups:
             # Handle no backups found
-            no_backup_label = QLabel(self.tr("Nessun backup trovato per questo profilo."))
+            no_backup_label = QLabel("No backups found for this profile.")
             self.backup_list_widget.setEnabled(False)
         else:
             # --- Logic for localized date formatting ---
@@ -69,7 +69,7 @@ class RestoreDialog(QDialog):
 
         # --- Dialog Buttons (as before) ---
         buttons = QDialogButtonBox()
-        ok_button = buttons.addButton(self.tr("Ripristina Selezionato"), QDialogButtonBox.ButtonRole.AcceptRole)
+        ok_button = buttons.addButton("Restore Selected", QDialogButtonBox.ButtonRole.AcceptRole)
         cancel_button = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -77,7 +77,7 @@ class RestoreDialog(QDialog):
 
         # --- Layout (as before) ---
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(self.tr("Seleziona il backup da cui ripristinare:")))
+        layout.addWidget(QLabel("Select the backup to restore from:"))
         if no_backup_label: layout.addWidget(no_backup_label)
         layout.addWidget(self.backup_list_widget)
         layout.addWidget(buttons)
