@@ -22,20 +22,20 @@ class MinecraftWorldsDialog(QDialog):
             parent (QWidget, optional): Parent widget. Default None.
         """
         super().__init__(parent)
-        self.setWindowTitle(self.tr("Select Minecraft World"))
+        self.setWindowTitle("Select Minecraft World")
         self.setMinimumWidth(400)
         self.selected_world = None # Stores the selected world's info
 
         layout = QVBoxLayout(self)
 
-        label = QLabel(self.tr("Select the world to create a profile for:"))
+        label = QLabel("Select the world to create a profile for:")
         layout.addWidget(label)
 
         self.worlds_list_widget = QListWidget()
 
         if not worlds_data:
             # Case when no worlds are found
-            info_label = QLabel(self.tr("No worlds found in the Minecraft 'saves' folder.\nCheck that Minecraft Java Edition is installed correctly."))
+            info_label = QLabel("No worlds found in the Minecraft 'saves' folder.\nCheck that Minecraft Java Edition is installed correctly.")
             info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(info_label)
             self.worlds_list_widget.setVisible(False) # Hide the empty list
@@ -84,7 +84,7 @@ class MinecraftWorldsDialog(QDialog):
                  super().accept() # Call the original QDialog accept
             else:
                  # Should not happen if UserRole is set correctly
-                 QMessageBox.warning(self, self.tr("Selection Error"), self.tr("Unable to retrieve the selected world's data."))
+                 QMessageBox.warning(self, "Selection Error", "Unable to retrieve the selected world's data.")
         # else: No item selected (should not happen if the OK button was enabled)
 
     def get_selected_world_info(self):
