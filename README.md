@@ -130,7 +130,7 @@ Get SaveState up and running on your system.
     *(Note: You need to create the `requirements.txt` file first!)*
 6.  Run the application:
     ```bash
-    python SaveState.py
+    python main.py
     ```
 
 ## Usage
