@@ -209,6 +209,7 @@ COMMON_PUBLISHERS = [
     'MachineGames', # wolfenstein
     'Moon Studios', # no rest for the wicked, Ori saga
     'ShooterGame', # ARK saga
+    'Bloober Team', # Layer of Fear
 
     # Altri comuni trovati in AppData/Documents
     '11 bit studios',
@@ -240,6 +241,17 @@ COMMON_PUBLISHERS = [
     'Noble Muffins', # thief simulator
     'Ocellus', # MARSUPILAMI
     'Steel Crate Games', # keep talking and nobody explode
+    'AVGame', # vampyr
+    'Flying Wild Hog', # Shadow Warrior series, Evil West
+    'TSCGame', # The Sinking City
+    'IronGate', # Valheim
+    'Microids', # Syberia series
+    'Phobia', # Carrion
+    'Playdead', # Limbo, Inside
+    'Atlas', # Little Nightmares
+    'TheGameKitchen', # Blasphemous
+    'DevolverDigital.WeirdWest', # Weird West
+    
 
     # Aggiungi qui altri nomi che ti vengono in mente o che noti mancare!
 ]
