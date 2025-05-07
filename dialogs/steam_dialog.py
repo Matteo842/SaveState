@@ -61,6 +61,8 @@ class SteamDialog(QDialog):
         self.game_list_widget.currentItemChanged.connect(
             lambda item: self.configure_button.setEnabled(item is not None)
         )
+        # Add double-click handler for automatic selection
+        self.game_list_widget.itemDoubleClicked.connect(self._handle_double_click)
 
         # Populate the list immediately with the data passed from the parent
         self.populate_game_list()
@@ -108,6 +110,29 @@ class SteamDialog(QDialog):
 
         profile_name = game_data['name']
         logging.info(f"[SteamDialog] Game selected: '{profile_name}' (AppID: {appid}). Emitting signal and closing.")
+        self.game_selected_for_config.emit(appid, profile_name)
+        self.accept() # Close the dialog immediately
+        
+    # --- METHOD to handle double-click on game list ---
+    @Slot(QListWidgetItem)
+    def _handle_double_click(self, item):
+        """Handle double-click on a game in the list to automatically select it."""
+        if not item:
+            return
+            
+        # Get the AppID from the item's user data
+        appid = item.data(Qt.ItemDataRole.UserRole)
+        game_data = self.steam_games_data.get(appid)
+        
+        if not game_data or not appid:
+            QMessageBox.warning(self, "Error", "Unable to get data for the selected game.")
+            return
+            
+        profile_name = game_data['name']
+        logging.info(f"[SteamDialog] Game double-clicked: '{profile_name}' (AppID: {appid}). Emitting signal and closing.")
+        self.status_label.setText(f"Selected: {profile_name}")
+        
+        # Emit the signal and close the dialog, just like clicking the Configure button
         self.game_selected_for_config.emit(appid, profile_name)
         self.accept() # Close the dialog immediately
 

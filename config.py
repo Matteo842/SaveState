@@ -202,6 +202,13 @@ COMMON_PUBLISHERS = [
     'Yacht Club Games',
     'Ys Net',
     'Zen Studios',
+    'KojimaProductions', # Death Stranding
+    'Respawn', # Starwars
+    'BioWare', # Mass Effect
+    'id Software', # Doom
+    'MachineGames', # wolfenstein
+    'Moon Studios', # no rest for the wicked, Ori saga
+    'ShooterGame', # ARK saga
 
     # Altri comuni trovati in AppData/Documents
     '11 bit studios',
@@ -213,6 +220,7 @@ COMMON_PUBLISHERS = [
     'Gaslamp Games', # Dungeons of Dredmor
     'Introversion Software', # Prison Architect
     'Klei Entertainment', # Don't Starve, Oxygen Not Included
+    'klei'
     'Larian Studios', # Divinity, Baldur's Gate 3
     'Motion Twin', # Dead Cells
     'Ninja Kiwi', # Bloons
@@ -223,6 +231,15 @@ COMMON_PUBLISHERS = [
     'Subset Games', # FTL, Into the Breach
     'Supergiant Games', # Bastion, Hades
     'ZAUM', # Disco Elysium
+    'sandfall', # Expedition 33
+    'RedCandleGames' # Nine Souls
+    'Studio MDHR', # Cuphead
+    'Dogubomb', # BluePrince
+    'Pineapple', # Spongebob
+    'Stunlock Studios', # V rinsing
+    'Noble Muffins', # thief simulator
+    'Ocellus', # MARSUPILAMI
+    'Steel Crate Games', # keep talking and nobody explode
 
     # Aggiungi qui altri nomi che ti vengono in mente o che noti mancare!
 ]

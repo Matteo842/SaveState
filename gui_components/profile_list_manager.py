@@ -52,6 +52,8 @@ class ProfileListManager:
         self.table_widget.itemSelectionChanged.connect(self.main_window.update_action_button_states)
         # Cell click (to handle favorite toggle)
         self.table_widget.cellClicked.connect(self.handle_favorite_toggle)
+        # Double-click to open save folder
+        self.table_widget.cellDoubleClicked.connect(self.handle_double_click)
 
         self.retranslate_headers() # Set initial headers
         # self.update_profile_table() # Will be called by MainWindow after __init__
@@ -259,3 +261,85 @@ class ProfileListManager:
                                     "Error",
                                     f"Unable to save favorite status for '{profile_name}'.")
                 # We don't update the icon in the GUI if the saving fails
+                
+    @Slot(int, int)
+    def handle_double_click(self, row, column):
+        """Handles double-click on a profile row to open the save folder."""
+        # Skip if clicking on the favorite column (column 0)
+        if column == 0:
+            return
+            
+        # Get the profile name from the clicked row
+        profile_name = None
+        item = self.table_widget.item(row, 1)  # Get item from name column (index 1)
+        if item:
+            profile_name = item.data(Qt.ItemDataRole.UserRole)
+        
+        if not profile_name or profile_name not in self.profiles:
+            logging.warning(f"Double-click on invalid or non-existent profile: row {row}, name '{profile_name}'")
+            return
+            
+        # Get the profile data
+        profile_data = self.profiles.get(profile_name, {})
+        
+        # Check if profile has a path or paths
+        save_path = None
+        if 'paths' in profile_data and isinstance(profile_data['paths'], list) and profile_data['paths']:
+            # Use the first valid path from the paths list
+            for path in profile_data['paths']:
+                if isinstance(path, str) and os.path.exists(path):
+                    save_path = path
+                    break
+        elif 'path' in profile_data and isinstance(profile_data['path'], str):
+            save_path = profile_data['path']
+        
+        if not save_path or not os.path.exists(save_path):
+            logging.warning(f"Cannot open save folder for profile '{profile_name}': path does not exist")
+            self.main_window.status_label.setText(f"Save folder for '{profile_name}' does not exist")
+            return
+        
+        # Check if the path is a file or directory
+        folder_to_open = save_path
+        if os.path.isfile(save_path):
+            # If it's a file, get its parent directory
+            folder_to_open = os.path.dirname(save_path)
+            logging.info(f"Save path is a file, opening its parent directory: {folder_to_open}")
+            
+        # Open the save folder using the system's file explorer
+        logging.info(f"Opening save folder for profile '{profile_name}': {folder_to_open}")
+        try:
+            import subprocess
+            import platform
+            
+            if platform.system() == "Windows":
+                # On Windows, use explorer.exe
+                subprocess.Popen(f'explorer "{folder_to_open}"')
+            elif platform.system() == "Darwin":
+                # On macOS, use open
+                subprocess.Popen(["open", folder_to_open])
+            else:
+                # On Linux, use xdg-open
+                subprocess.Popen(["xdg-open", folder_to_open])
+                
+            self.main_window.status_label.setText(f"Opened save folder for '{profile_name}'")
+        except Exception as e:
+            logging.error(f"Error opening save folder for profile '{profile_name}': {e}")
+            self.main_window.status_label.setText(f"Error opening save folder: {str(e)}")
+            
+            # In case of error, try to open the parent directory if the path is a file
+            if os.path.isfile(save_path):
+                try:
+                    parent_dir = os.path.dirname(save_path)
+                    logging.info(f"Retrying with parent directory: {parent_dir}")
+                    
+                    if platform.system() == "Windows":
+                        subprocess.Popen(f'explorer "{parent_dir}"')
+                    elif platform.system() == "Darwin":
+                        subprocess.Popen(["open", parent_dir])
+                    else:
+                        subprocess.Popen(["xdg-open", parent_dir])
+                        
+                    self.main_window.status_label.setText(f"Opened parent folder for '{profile_name}'")
+                except Exception as e2:
+                    logging.error(f"Error opening parent folder: {e2}")
+                    self.main_window.status_label.setText(f"Error opening parent folder: {str(e2)}")
