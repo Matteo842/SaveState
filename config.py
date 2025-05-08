@@ -251,6 +251,22 @@ COMMON_PUBLISHERS = [
     'Atlas', # Little Nightmares
     'TheGameKitchen', # Blasphemous
     'DevolverDigital.WeirdWest', # Weird West
+    'Acid Wizard Studios', # Darkwood
+    'SunBorn', # Reverse Collapse
+    'Hinterland', # The Long Dark
+    'ProjectSnowfall', # Ghostwire Tokyo
+    'Acid Nerve', # Death's Door
+    'Coffee Stain Publishing', # Huntdown
+    'DeadToast Entertainment', # My Friend Pedro
+    'Doublefine', # Full Throttle Remastered
+    'Kani', # Kill It with Fire
+    'MonkeyGame', # Enslaved: Odyssey to the West
+    'UnrealEngine3',
+    'RedHook', # Darkest Dungeon
+    'tinyBuild Games',
+    'ZAUM Studio', # Disco Elysium
+    
+    
     
 
     # Aggiungi qui altri nomi che ti vengono in mente o che noti mancare!
