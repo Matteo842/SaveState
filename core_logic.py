@@ -453,14 +453,12 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
     total_size_bytes = 0
     if max_source_size_mb != -1:
         max_source_size_bytes = max_source_size_mb * 1024 * 1024
-        for path in paths_to_process:
-            # Calculate size correctly for file or directory
-            size = get_directory_size(path) if os.path.isdir(path) else os.path.getsize(path)
-            if size == -1: # Error from get_directory_size
-                msg = f"ERROR: Unable to calculate source size for '{path}'."
-                logging.error(msg)
-                return False, msg
-            total_size_bytes += size
+        total_size_bytes = _get_actual_total_source_size(paths_to_process)
+
+        if total_size_bytes == -1: # Indicates a critical error in size calculation by helper
+            msg = "ERROR: Critical error while calculating total source size."
+            logging.error(msg)
+            return False, msg
 
         current_size_mb = total_size_bytes / (1024*1024)
         logging.info(f"Total source size: {current_size_mb:.2f} MB")
@@ -754,11 +752,6 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path):
 
     try:
         with zipfile.ZipFile(archive_to_restore_path, 'r') as zipf:
-            members = zipf.namelist()
-            if not members:
-                msg = "ERROR: The ZIP archive is empty."
-                logging.error(msg)
-                return False, msg
 
             # --- Differentiated extraction logic ---
             if is_multiple_paths:
@@ -769,18 +762,18 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path):
                 logging.debug(f"Destination map created: {dest_map}")
 
                 # Check if the zip contains base folders (e.g. 'SAVEDATA/', 'SYSTEM/')
-                zip_contains_base_folders = any(m.replace('/', os.sep).split(os.sep, 1)[0] in dest_map for m in members if os.sep in m.replace('/', os.sep))
+                zip_contains_base_folders = any(m.replace('/', os.sep).split(os.sep, 1)[0] in dest_map for m in zipf.namelist() if os.sep in m.replace('/', os.sep))
                 logging.debug(f"Does the zip contain base folders matching the destinations? {zip_contains_base_folders}")
 
                 if not zip_contains_base_folders:
                     msg = "ERROR: Multi-path restore failed. The ZIP archive doesn't seem to contain the expected base folders (e.g. SAVEDATA/, SYSTEM/). Backup potentially corrupted or created incorrectly."
                     logging.error(msg)
-                    logging.error(f"Archive members (example): {members[:10]}")
+                    logging.error(f"Archive members (example): {zipf.namelist()[:10]}")
                     logging.error(f"Expected destination map: {dest_map}")
                     return False, msg
 
                 # Extract member by member to the correct destination
-                for member_path in members:
+                for member_path in zipf.namelist():
                     normalized_member_path = member_path.replace('/', os.sep)
                     try:
                         # Get the base part of the path in the zip (e.g. 'SAVEDATA')
@@ -1999,3 +1992,66 @@ def get_display_name_from_backup_filename(filename):
              logging.warning(f"Timestamp pattern not found in backup filename: {filename}")
              return filename[:-4] if filename.endswith('.zip') else filename
     return filename # Restituisci l'input originale se non è una stringa o non finisce per .zip
+
+def _get_actual_total_source_size(source_paths_list):
+    """Calculates the total actual size of source paths, resolving .lnk shortcuts on Windows."""
+    total_size = 0
+    logging.debug(f"Calculating actual total source size for paths: {source_paths_list}")
+
+    for single_path_str in source_paths_list:
+        actual_path_to_measure = single_path_str
+        is_shortcut = False
+        original_shortcut_path = None
+
+        if platform.system() == "Windows" and \
+           single_path_str.lower().endswith(".lnk") and \
+           os.path.isfile(single_path_str):
+            is_shortcut = True
+            original_shortcut_path = single_path_str
+            try:
+                shortcut = winshell.shortcut(single_path_str)
+                target_path = shortcut.path
+                if target_path and os.path.exists(target_path):
+                    actual_path_to_measure = target_path
+                    logging.debug(f"Resolved shortcut '{single_path_str}' to '{actual_path_to_measure}'")
+                elif target_path:
+                    logging.warning(f"Shortcut '{single_path_str}' target '{target_path}' does not exist. Skipping for size calculation.")
+                    continue
+                else:
+                    logging.warning(f"Shortcut '{single_path_str}' has an empty or invalid target path. Skipping for size calculation.")
+                    continue
+            except Exception as e_lnk:
+                logging.warning(f"Could not resolve shortcut '{single_path_str}': {e_lnk}. Skipping for size calculation.")
+                continue
+        
+        if not os.path.exists(actual_path_to_measure):
+            log_msg = f"Source path '{actual_path_to_measure}'"
+            if is_shortcut:
+                log_msg += f" (from shortcut '{original_shortcut_path}')"
+            log_msg += " does not exist. Skipping for size calculation."
+            logging.warning(log_msg)
+            continue
+
+        try:
+            current_item_size = 0
+            if os.path.isfile(actual_path_to_measure):
+                current_item_size = os.path.getsize(actual_path_to_measure)
+                logging.debug(f"Size of file '{actual_path_to_measure}': {current_item_size} bytes")
+            elif os.path.isdir(actual_path_to_measure):
+                dir_size = get_directory_size(actual_path_to_measure) # Assumes get_directory_size exists and is robust
+                if dir_size != -1:
+                    current_item_size = dir_size
+                    logging.debug(f"Size of directory '{actual_path_to_measure}': {current_item_size} bytes")
+                else:
+                    logging.warning(f"Could not get size of directory '{actual_path_to_measure}'. Skipping.")
+                    continue
+            else:
+                logging.warning(f"Path '{actual_path_to_measure}' (from '{original_shortcut_path}' if shortcut) is not a file or directory. Skipping.")
+                continue
+            total_size += current_item_size
+        except OSError as e_size:
+            logging.warning(f"OS error getting size for '{actual_path_to_measure}': {e_size}. Skipping.")
+            continue
+            
+    logging.info(f"Total actual calculated source size: {total_size} bytes ({total_size / (1024*1024):.2f} MB).")
+    return total_size

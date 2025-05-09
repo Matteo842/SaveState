@@ -66,7 +66,7 @@ def find_duckstation_profiles(executable_path: str | None = None) -> list[dict] 
             if item.lower().endswith('.mcd'):
                 full_path = os.path.join(memcard_dir, item)
                 log.info(f"DUCKMAN: Generated path: '{full_path}' (Type: {type(full_path)}) Encoding check: {full_path.encode()[:50]}...")
-                profile_name = f"DuckStation - {os.path.splitext(item)[0]}"
+                profile_name = os.path.splitext(item)[0]
                 # Use filename without extension + simple counter for ID uniqueness for now
                 # A better approach might involve hashing path or using metadata if available
                 # Let's use a simple sanitization + prefix

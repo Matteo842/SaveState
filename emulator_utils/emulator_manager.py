@@ -17,6 +17,7 @@ from .mgba_manager import find_mgba_profiles
 from .snes9x_manager import find_snes9x_profiles
 from .desmume_manager import find_desmume_profiles
 from .cemu_manager import find_cemu_profiles
+from .flycast_manager import find_flycast_profiles
 
 # Configure basic logging for this module
 log = logging.getLogger(__name__)
@@ -74,6 +75,10 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'cemu': {
         'name': 'Cemu',
         'profile_finder': lambda path: find_cemu_profiles(path)
+    },
+    'flycast': {
+        'name': 'Flycast',
+        'profile_finder': lambda path: find_flycast_profiles(path)
     },
 }
 

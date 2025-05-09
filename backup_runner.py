@@ -6,6 +6,8 @@ import sys
 import os
 import logging
 import re
+import platform
+import winshell
 
 # Import necessary modules for loading data and performing backups
 # Assume these files are findable (in the same folder or in the python path)
@@ -206,6 +208,17 @@ def run_silent_backup(profile_name):
          logging.error("Necessary settings (backup base directory, max backups, max source size) are invalid in backup_runner.")
          show_notification(False, "Error: Invalid backup settings.")
          return False
+
+    # 5. Calculate Total Source Size (using core_logic helper)
+    logging.debug(f"Requesting actual total source size calculation from core_logic for profile '{profile_name}'...")
+    total_source_size = core_logic._get_actual_total_source_size(paths_to_backup)
+
+    if total_source_size == -1: # Check if core_logic signaled a critical error
+        msg = f"Backup cancelled for '{profile_name}': Critical error calculating source size (see core_logic logs)."
+        logging.error(msg)
+        show_notification(False, "Error calculating source size. Backup cancelled.") # Generic to user
+        return False
+    # Logging of the size itself is handled by _get_actual_total_source_size in core_logic
 
     # Check Free Space
     if check_space:
