@@ -167,7 +167,7 @@ This project relies on the following Python packages:
 * **Optional (for enhanced features):**
     * [`vdf`](https://pypi.org/project/vdf/): Used to parse Valve's VDF/ACF files to get more accurate Steam game names and library information. If not installed, Steam detection will still work but might use less precise names.
     * [`nbtlib`](https://pypi.org/project/nbtlib/): Used to read Minecraft's `level.dat` NBT files to get the actual world names. If not installed, the world's folder name will be used as the profile name instead.
-    * [`thefuzz`]((https://pypi.org/project/thefuzz/)): It uses Levenshtein Distance to calculate the differences between sequences.
+    * [`thefuzz`](https://pypi.org/project/thefuzz/): It uses Levenshtein Distance to calculate the differences between sequences.
 
 You can install all dependencies using pip. It is recommended to create a `requirements.txt` file with the following content:
 
