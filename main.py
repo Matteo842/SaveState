@@ -1,20 +1,21 @@
 # main.py
 # -*- coding: utf-8 -*-
 import sys
-#import os
+import os
 import logging
 import argparse
-
+import config # <--- Added import here
 # --- PySide6 Imports ---
 from PySide6.QtWidgets import QApplication, QMessageBox, QDialog, QSplashScreen
 from PySide6.QtCore import QSharedMemory
-#from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtNetwork import QLocalSocket, QLocalServer
 
 # --- App Imports ---
 import settings_manager
 import backup_runner
 from gui_utils import QtLogHandler
+from utils import resource_path # <--- Import from utils
 from SaveState_gui import MainWindow # , ENGLISH_TRANSLATOR, CURRENT_TRANSLATOR # Importa da SaveState_gui
 from SaveState_gui import SHARED_MEM_KEY, LOCAL_SERVER_NAME # Importa costanti
 
@@ -182,42 +183,33 @@ if __name__ == "__main__":
             app = None # Initialize to None
             splash = None # Initialize splash to None
             try:
-                app = QApplication(sys.argv)
-
-                # === Splash Screen ===
-                # Only show splash screen if running as a bundled executable
-                # if getattr(sys, 'frozen', False):
-                #     logging.debug("Creating and showing splash screen (frozen app)...")
-                #     try:
-                #         splash_image_path_relative = "SplashScreen/splash.png"
-                #         splash_image_path_absolute = resource_path(splash_image_path_relative)
-                #         logging.info(f"Attempting to load splash image from: {splash_image_path_absolute}") # Log del percorso calcolato
-
-                #         splash_pixmap = QPixmap(splash_image_path_absolute)
-                #         if splash_pixmap.isNull():
-                #             logging.warning(f"QSplashScreen: Failed to load pixmap from {splash_image_path_absolute}. Image might be missing, corrupt, or path incorrect in bundle.")
-                #         else:
-                #             logging.info(f"QSplashScreen: Pixmap loaded successfully from {splash_image_path_absolute}.")
-                #             # splash = QSplashScreen(splash_pixmap)
-                #             # splash.setMask(splash_pixmap.mask()) # Per trasparenza, se l'immagine ha un canale alpha
-                #             # splash.show()
-                #             # # Show initial message IMMEDIATELY after showing splash
-                #             # splash.showMessage("Inizializzazione applicazione...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
-                #             # app.processEvents() # Force display of splash screen NOW
-                #             # logging.debug("QSplashScreen: Splash screen shown.")
-                #     except Exception as e_splash_load:
-                #         logging.error(f"QSplashScreen: Error during splash screen loading/showing: {e_splash_load}", exc_info=True)
-                #         # Non fatale, l'app può continuare senza splash
-                # else:
-                #     logging.debug("Skipping splash screen (not a frozen app).")
-                # === Fine Splash Screen ===
+                # QApplication initialization
+                app = QApplication.instance() # Check if it already exists (e.g. from backup_runner)
+                if not app:
+                    logging.debug("No existing QApplication, creating one for SaveState GUI.")
+                    # Pass sys.argv, or a default if not available (e.g. when frozen)
+                    app_args = sys.argv if hasattr(sys, 'argv') and sys.argv else ['SaveStateGUI']
+                    app = QApplication(app_args)
+                    QApplication.setApplicationName("SaveState"); QApplication.setApplicationVersion(config.APP_VERSION); QApplication.setOrganizationName("Matteo")
+                    # Set window icon for the app globally (effective for dialogs like QMessageBox)
+                    app_icon_path = resource_path(os.path.join("icons", "SaveStateIconBK.ico")) # Corrected filename
+                    if not os.path.exists(app_icon_path):
+                        logging.warning(f"Application icon not found at {app_icon_path}. Using default icon.")
+                    else:
+                        app.setWindowIcon(QIcon(app_icon_path))
+                    created_main_app_instance = True
+                else:
+                    logging.debug("Existing QApplication instance found.")
+                    created_main_app_instance = False
 
             except Exception as e_app_init:
                  # Critical error during QApplication init, cannot proceed
-                 logging.critical(f"Fatal error initializing QApplication: {e_app_init}", exc_info=True)
-                 # Try basic message box if possible, but might fail
-                 try: QMessageBox.critical(None, "Errore Avvio Critico", f"Impossibile inizializzare l'ambiente grafico.\\n{e_app_init}")
-                 except: pass
+                 logging.critical(f"Critical application init error: {e_app_init}", exc_info=True)
+                 # Try to show a Qt message box
+                 try: 
+                     QMessageBox.critical(None, "Errore Avvio Critico", f"Impossibile inizializzare l'ambiente grafico.\n{e_app_init}")
+                 except Exception as e_msgbox:
+                     logging.error(f"Failed to show critical error QMessageBox: {e_msgbox}")
                  sys.exit(1) # Exit immediately
 
             # --- NOW Check Single Instance Lock and Start Local Server ---
@@ -349,21 +341,17 @@ if __name__ == "__main__":
                     logging.info(f"Qt application event loop finished with exit code: {exit_code}")
 
                 except ImportError as e_imp:
-                     logging.critical(f"Import error during GUI setup: {e_imp}", exc_info=True)
-                     # Try to close the splash if it exists
-                     # if splash: splash.close()
-                     QMessageBox.critical(None, "Errore Import", f"Errore critico: libreria mancante.\\n{e_imp}\\nL'applicazione non può avviarsi.")
-                     exit_code = 1
-                except Exception as e_gui_init: # Catch other errors during GUI initialization
-                    logging.critical(f"Fatal error during GUI initialization: {e_gui_init}", exc_info=True)
-                    # Try to close the splash if it exists
-                    # if splash: splash.close()
-                    # Try to show a basic error message if possible
-                    try:
-                        QMessageBox.critical(None, "Errore Avvio", f"Errore fatale durante l'inizializzazione della GUI:\\n{e_gui_init}")
-                    except:
-                        pass # Ignore errors in showing the error itself
-                    exit_code = 1
+                     # CRITICAL: Library import error, application cannot start.
+                     logging.critical(f"Missing library: {e_imp}. Application cannot start.", exc_info=True)
+                     QMessageBox.critical(None, "Errore Import", f"Errore critico: libreria mancante.\n{e_imp}\nL'applicazione non può avviarsi.")
+                     sys.exit(1)
+                except Exception as e_gui_init:
+                     logging.critical(f"Fatal GUI initialization error: {e_gui_init}", exc_info=True)
+                     try:
+                        QMessageBox.critical(None, "Errore Avvio", f"Errore fatale durante l'inizializzazione della GUI:\n{e_gui_init}")
+                     except Exception as e_final_msgbox:
+                         logging.error(f"Failed to show fatal GUI error QMessageBox: {e_final_msgbox}")
+                     sys.exit(1)
                 finally:
                     # The cleanup is already called from app.aboutToQuit.connect
                     # It's not necessary to call it again here unless app.exec() is never reached

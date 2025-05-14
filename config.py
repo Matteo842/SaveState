@@ -6,6 +6,7 @@ import platform # Aggiunto per system detection
 
 # --- Nome Applicazione (per cartella AppData) ---
 APP_NAME = "SaveState"
+APP_VERSION = "1.3.9" # Restored APP_VERSION
 
 # --- Funzione per Trovare/Creare Cartella Dati App ---
 def get_app_data_folder():
@@ -100,8 +101,78 @@ COMMON_SAVE_SUBDIRS = [
     'remote', # Specifico per Steam Userdata, ma a volte replicato altrove
     'GameData', # Simile a SaveData
 
+    # Linux / Wine / Proton specific additions
+    'pfx', # Subdir in Steam compatdata for Proton prefix
+    'drive_c', # Common in Wine/Proton prefixes
+    'steamuser', # Common user name in Wine/Proton prefixes drive_c/users/
+    'LocalLow', # Subfolder of AppData, often used by Unity games
+
     # Aggiungi qui altri nomi specifici che potresti incontrare
 ]
+
+# <<< NUOVE LISTE PER LINUX >>>
+LINUX_COMMON_SAVE_SUBDIRS = [
+    # Comuni sotto .local/share/<GameName>/ o .config/<GameName>/ o direttamente in ~/.<gamename>
+    'saves', 'Saves', 'save', 'Save', # Case variations
+    'savegame', 'SaveGame', 'savegames', 'SaveGames',
+    'data', 'Data', # Generico ma comune
+    'gamedata', 'GameData',
+    'userdata', 'UserData', 'user_data',
+    'playerdata', 'PlayerData', 'player_data',
+    'profile', 'Profile', 'profiles', 'Profiles',
+    'slot', 'Slot', 'slots', 'Slots',
+    'config', 'Config', # A volte i salvataggi sono qui
+    'Saved', 'saved',
+    # Specifici per alcuni engine/giochi su Linux
+    'Godot', # Godot engine user data often in ~/.local/share/godot/app_userdata/[ProjectName]
+    'unity3d', # Unity games often use ~/.config/[CompanyName]/[ProductName]
+    'UnrealEngine',
+    # Per Wine/Proton, molte delle voci di COMMON_SAVE_SUBDIRS sono valide, verranno unite dinamicamente
+]
+
+_COMMON_USER_FOLDERS_LINUX = [
+    # Percorsi relativi alla home dell'utente o radici comuni
+    ".local/share",      # XDG_DATA_HOME standard
+    ".config",           # XDG_CONFIG_HOME standard
+    ".var/app",          # Flatpak user data base (all'interno ci saranno ID app)
+    ".steam/steam/steamapps/compatdata", # Steam Play (Proton) prefixes base
+    ".steam/root/steamapps/compatdata",  # Variante comune per la base di Steam Play
+    ".local/share/Steam/steamapps/compatdata", # Altra possibile locazione per Steam Play
+    ".wine",             # Default Wine prefix (se non gestito da Proton/Lutris)
+    "Games",             # Cartella comune per installazioni Lutris, Heroic etc.
+    "snap",              # Base per Snap packages (all'interno ID app/common, etc)
+    # Alcuni giochi più vecchi o indie potrebbero creare cartelle direttamente in home:
+    # ".Ketchapp", ".StardewValley", etc. La home dir stessa ("~") viene aggiunta dinamicamente.
+]
+
+LINUX_KNOWN_SAVE_LOCATIONS = [
+    # Percorsi XDG (più comuni, espansi da ~/.local/share o ~/.config)
+    # Questi sono spesso le *basi* e il nome del gioco/publisher viene aggiunto dopo.
+    "~/.local/share",
+    "~/.config",
+    # Steam / Proton (molto comune, la cartella appid sarà cercata all'interno)
+    "~/.steam/steam/steamapps/compatdata",
+    "~/.steam/root/steamapps/compatdata",
+    "~/.local/share/Steam/steamapps/compatdata",
+    # Lutris (comune per giochi non-Steam o GOG via Wine)
+    "~/Games", # La struttura interna varia in base a come Lutris è configurato
+    # Wine generico (se non gestito da Proton/Lutris)
+    "~/.wine/drive_c/users/steamuser/Documents/My Games",
+    "~/.wine/drive_c/users/steamuser/Saved Games",
+    "~/.wine/drive_c/users/steamuser/AppData/Roaming",
+    "~/.wine/drive_c/users/steamuser/AppData/Local",
+    "~/.wine/drive_c/users/steamuser/Documents", # Documenti generici in Wine
+    # Flatpak (la struttura interna è app_id/config o app_id/data)
+    "~/.var/app",
+    # Snap (la struttura interna varia, spesso ~/snap/game-name/common/ o current/)
+    "~/snap",
+    # Alcuni giochi potrebbero usare direttamente la home o sottocartelle dirette
+    "~", # Home directory stessa, per giochi che creano cartelle come ~/.gamename
+    # Esempi specifici noti (possono essere molti)
+    "~/.godot/app_userdata", # Base per giochi Godot non Flatpak
+    "~/.renpy", # Base per giochi Ren'Py
+]
+# <<< FINE NUOVE LISTE PER LINUX >>>
 
 # Lista di nomi di publisher comuni usati come cartelle genitore
 COMMON_PUBLISHERS = [
@@ -265,6 +336,8 @@ COMMON_PUBLISHERS = [
     'RedHook', # Darkest Dungeon
     'tinyBuild Games',
     'ZAUM Studio', # Disco Elysium
+    'Nerial',
+    'Two and Thirty Software'
     
     
     
@@ -272,7 +345,130 @@ COMMON_PUBLISHERS = [
     # Aggiungi qui altri nomi che ti vengono in mente o che noti mancare!
 ]
 
-# Set di estensioni file comuni (minuscolo, con punto iniziale)
+# Lista di aziende di sviluppo di giochi note
+# Usata per identificare percorsi di salvataggio rilevanti
+KNOWN_COMPANIES = [
+    # Grandi publisher che sono anche sviluppatori
+    'Ubisoft', 'UbisoftConnect', 'Ubi', 
+    'EA', 'Electronic Arts', 'EA Games', 'Origin', 'EADesktop',
+    'Rockstar', 'Rockstar Games', 'RockstarGames', 'R*',
+    'Valve', 'Steam', 'SteamApps', 'Steamworks',
+    'Bethesda', 'BethesdaSoftworks', 'BethesdaGameStudios', 'ZeniMax',
+    'Blizzard', 'BlizzardEntertainment', 'Battle.net', 'Battlenet',
+    'Epic', 'EpicGames', 'EpicGamesLauncher',
+    'Microsoft', 'MicrosoftStudios', 'MicrosoftGames', 'XboxGame',
+    'Sony', 'SonyInteractiveEntertainment', 'SIE', 'PlayStation',
+    'Nintendo', 'NintendoEntertainment',
+    'Square', 'SquareEnix', 'SquareSoft', 'Enix',
+    'Capcom', 'CapcomGames', 'CapcomEntertainment',
+    'Activision', 'ActivisionBlizzard',
+    'Bandai', 'BandaiNamco', 'Namco',
+    'Sega', 'SegaGames', 'SegaEntertainment',
+    'Konami', 'KonamiDigitalEntertainment',
+    'THQ', 'THQNordic', 'DeepSilver',
+    'Paradox', 'ParadoxInteractive', 'PDX',
+    'CD Projekt', 'CDProjekt', 'CDPR', 'CDProjektRed', 'GOG',
+    'Take-Two', 'Take2', 'TakeTwo', 'Take-TwoInteractive', '2K', '2KGames', 'PrivateDivision',
+    'Riot', 'RiotGames',
+    'Devolver', 'DevolverDigital',
+    'Focus', 'FocusHome', 'FocusHomeInteractive', 'FocusEntertainment',
+    'Codemasters', 'CodemastersGames',
+    'Frontier', 'FrontierDevelopments',
+    'Obsidian', 'ObsidianEntertainment',
+    'inXile', 'inXileEntertainment',
+    'BioWare', 'BiowareGames', 'BiowareStudios',
+    'DICE', 'DICEGames', 'DICEStudios',
+    'Respawn', 'RespawnEntertainment',
+    'Bungie', 'BungieStudios',
+    'FromSoftware', 'From', 'FromSoft',
+    'Remedy', 'RemedyEntertainment',
+    'Naughty', 'NaughtyDog',
+    'Guerrilla', 'GuerrillaGames',
+    'Insomniac', 'InsomniacGames',
+    'Sucker', 'SuckerPunch',
+    'Santa', 'SantaMonicaStudio', 'SantaMonica',
+    'Polyphony', 'PolyphonyDigital',
+    'Kojima', 'KojimaProductions',
+    'Platinum', 'PlatinumGames',
+    'Atlus', 'AtlusGames',
+    'Falcom', 'NihonFalcom',
+    'Gearbox', 'GearboxSoftware', 'GearboxPublishing',
+    'id', 'idSoftware',
+    'Arkane', 'ArkaneStudios',
+    'MachineGames',
+    'Tango', 'TangoGameworks',
+    'Larian', 'LarianStudios',
+    'Firaxis', 'FiraxisGames',
+    'Relic', 'RelicEntertainment',
+    'Creative', 'CreativeAssembly',
+    'Fatshark',
+    'Crytek',
+    'Techland',
+    'Bohemia', 'BohemiaInteractive',
+    'Warhorse', 'WarhorseStudios',
+    'Klei', 'KleiEntertainment',
+    'Supergiant', 'SupergiantGames',
+    'Mojang', 'MojangStudios',
+    'ConcernedApe',
+    'Re-Logic', 'ReLogic',
+    'Subset', 'SubsetGames',
+    'Facepunch', 'FacepunchStudios',
+    'Coffee', 'CoffeeStain', 'CoffeeStainStudios',
+    'Ghost', 'GhostShip', 'GhostShipGames',
+    'Wube', 'WubeSoftware',
+    'Ludeon', 'LudeonStudios',
+    'Chucklefish',
+    'Nicalis',
+    'Team17',
+    'Playdead',
+    'Yacht', 'YachtClub', 'YachtClubGames',
+    'Motion', 'MotionTwin',
+    'Spike', 'SpikeChunsoft',
+    'Frictional', 'FrictionalGames',
+    'Asobo', 'AsoboStudio',
+    'Ninja', 'NinjaTheory',
+    'Rare', 'RareStudios',
+    'Playground', 'PlaygroundGames',
+    'Tarsier', 'TarsierStudios',
+    'Hazelight', 'HazelightStudios',
+    'Moon', 'MoonStudios',
+    'Bloober', 'BlooberTeam',
+    'Deck13', 'Deck13Interactive',
+    'Dontnod', 'DontNodEntertainment',
+    'Quantic', 'QuanticDream',
+    'Supermassive', 'SupermassiveGames',
+    'Telltale', 'TelltaleGames',
+    'Annapurna', 'AnnapurnaInteractive',
+    'Devolver', 'DevolverDigital',
+    'Raw', 'RawFury',
+    'Dotemu',
+    'Night', 'NightSchool', 'NightSchoolStudio',
+    'Fullbright',
+    'Giant', 'GiantSparrow',
+    'Mobius', 'MobiusDigital',
+    'Nomada', 'NomadaStudio',
+    'Toby', 'TobyFox',
+    'ZA/UM', 'ZAUM', 'ZA/UMStudio',
+    'Acid', 'AcidWizard', 'AcidWizardStudios',
+    'Hinterland', 'HinterlandStudio',
+    'RedHook', 'RedHookStudios',
+    'Nerial',
+    'Two', 'TwoAndThirty', 'TwoAndThirtySoftware',
+    'Irongate', 'IronGateStudio',
+    'Microids',
+    'Phobia', 'PhobiaStudio',
+    'Atlas', 'AtlasStudio',
+    'TheGameKitchen',
+    'SunBorn', 'SunBornGames',
+    'ProjectSnowfall',
+    'AcidNerve',
+    'tinyBuild', 'tinyBuildGames',
+    'UnrealEngine', 'UE4', 'UE5', 'Unity', 'Unity3D', 'Godot', 'CryEngine', 'GameMaker',
+    
+    # Aggiungi altre aziende rilevanti
+]
+
+# Lista di estensioni file comuni (minuscolo, con punto iniziale)
 # usate per i file di salvataggio dei giochi.
 COMMON_SAVE_EXTENSIONS = {
     '.sav',        # La più classica (Save)
@@ -332,50 +528,6 @@ COMMON_SAVE_FILENAMES = {
 
     # Aggiungi altre parti comuni che noti
 }
-
-# Lista di sottocartelle comuni usate SPECIFICAMENTE per contenere i file di salvataggio
-# all'interno della cartella principale del gioco o del publisher.
-COMMON_SAVE_SUBDIRS = [
-    # I più comuni (con variazioni maiuscolo/minuscolo/spazi)
-    'Save',
-    'Saves',
-    'save',
-    'saves',
-    'Saved',
-    'saved',
-    'SaveGame',
-    'SaveGames',
-    'savegame',
-    'savegames',
-    'GameSave', # Invertito
-    'GameSaves', # Invertito
-    'Saved Games', # Meno comune come sottocartella, più come genitore, ma includiamolo
-    'saved games',
-    'SaveData',
-    'Save Data', # Con spazio
-    'savedata',
-    'save_data', # Con underscore
-
-    # Legati a profili/slot
-    'Profiles',
-    'Profile',
-    'profiles',
-    'profile',
-    'User', # A volte usato
-    'Users',
-    'Player', # Meno comune, ma possibile
-    'Slots',
-    'slots',
-
-    # Usati da alcuni giochi specifici / engine
-    'data', # A volte contiene salvataggi, ma può essere ambiguo
-    'UserData', # Comune in alcuni contesti Steam/Source engine?
-    'PlayerProfiles',
-    'remote', # Specifico per Steam Userdata, ma a volte replicato altrove
-    'GameData', # Simile a SaveData
-
-    # Aggiungi qui altri nomi specifici che potresti incontrare
-]
 
 # Set di nomi di cartelle (minuscolo) da ignorare sempre durante la ricerca esplorativa
 # (Evita ricerche dentro cartelle di sistema/applicazioni/cache irrilevanti)
@@ -468,7 +620,252 @@ SIMILARITY_IGNORE_WORDS = {
 
     # Aggiungi altre parole che ritieni opportune
 }
-# ==================================
+
+# <<< INIZIO COSTANTI LINUX SCORING & DEPTH >>>
+# Punteggi per la logica di Linux
+SCORE_LINUX_GAME_NAME_MATCH = 500       # Corrispondenza (fuzzy) del nome del gioco nel percorso
+SCORE_LINUX_COMPANY_NAME_MATCH = 200    # Corrispondenza nome azienda/publisher
+SCORE_LINUX_SAVE_DIR_MATCH = 150        # Trovata una sottocartella comune per i salvataggi (es. 'saves')
+SCORE_LINUX_HAS_SAVE_FILES = 300        # Rilevati file con estensioni/nomi di salvataggio comuni
+SCORE_LINUX_PERFECT_MATCH_BONUS = 250   # Bonus addizionale se nome gioco + save dir + (opz.) azienda combaciano
+SCORE_LINUX_STEAM_USERDATA_BONUS = 50   # Bonus specifico per percorsi in Steam userdata
+SCORE_LINUX_PROTON_PATH_BONUS = 75      # Bonus specifico per percorsi Proton (compatdata)
+SCORE_LINUX_WINE_GENERIC_BONUS = 25     # Bonus leggero per percorsi che sembrano WINE generici
+
+PENALTY_LINUX_GENERIC_ENGINE_DIR = -100 # Penalità per cartelle generiche di engine (es. unity3d) se vuote o senza match nome gioco
+PENALTY_LINUX_UNRELATED_GAME_IN_PATH = -300 # Penalità se il percorso sembra di un altro gioco specifico
+PENALTY_LINUX_DEPTH_BASE = -5           # Penalità base per ogni livello di profondità (moltiplicata per la profondità)
+PENALTY_LINUX_BANNED_PATH_SEGMENT = -1000 # Penalità forte se un segmento del percorso è in BANNED_FOLDER_NAMES_LOWER
+
+# Profondità massime di ricerca per Linux
+MAX_DEPTH_STEAM_USERDATA_LINUX = 3      # Dentro Steam/userdata/<id3>/<appid>/remote/ (non troppo a fondo)
+MAX_DEPTH_PROTON_COMPATDATA_LINUX = 5   # Dentro compatdata/<appid>/pfx/drive_c/ (può essere più profondo)
+MAX_DEPTH_COMMON_LINUX_LOCATIONS = 3    # Dentro ~/.local/share, ~/.config, ~/.wine etc.
+MAX_DEPTH_GAME_INSTALL_DIR_LINUX = 4    # Dentro la cartella di installazione del gioco (se fornita)
+
+# Maximum number of files to scan within a directory when initially checking 
+# if it's a potential save directory (for hints of save files).
+# A lower number improves performance during broad searches.
+MAX_FILES_TO_SCAN_IN_DIR_LINUX_HINT = 25
+
+# Minimum number of files matching common save patterns (extensions/filenames)
+# found within a directory to grant it the SCORE_LINUX_HAS_SAVE_FILES bonus.
+MIN_SAVE_FILES_FOR_BONUS_LINUX = 1
+
+# Maximum number of sub-items (files/directories) to scan within any given 
+# directory during recursive search. Helps prevent excessive processing in very large directories.
+MAX_SUB_ITEMS_TO_SCAN_LINUX = 50
+
+# Maximum depth for 'shallow exploration' in recursive search. This allows the search 
+# to go a few levels deeper into non-matching directory structures, potentially finding 
+# saves in paths like ~/.local/share/SomeContainerFolder/GameName.
+MAX_SHALLOW_EXPLORE_DEPTH_LINUX = 1
+
+# <<< FINE COSTANTI LINUX SCORING & DEPTH >>>
+
+# Lista di estensioni file comuni (minuscolo, con punto iniziale)
+# usate per i file di salvataggio dei giochi.
+COMMON_SAVE_EXTENSIONS = {
+    '.sav',        # La più classica (Save)
+    '.save',       # Variante comune
+    '.dat',        # Generica, ma usatissima (Data)
+    '.bin',        # Generica binaria, a volte usata
+    '.slot',       # Per salvataggi basati su slot
+    '.prof',       # Profile
+    '.profile',    # Profile
+    '.usr',        # User data
+    '.sgd',        # Steam Game Data? (Specifico a volte)
+    '.json',       # Usata da alcuni giochi moderni/indie (es. Minecraft per alcuni dati)
+    '.xml',        # Meno comune per salvataggi binari, ma usata per dati strutturati
+    '.bak',        # A volte usato come estensione per backup automatici interni
+    '.tmp',        # Raramente, ma alcuni giochi salvano temporanei che diventano save
+    '.gam',        # Usato da alcuni giochi più vecchi (Game)
+    '.ess',        # Skyrim Special Edition Save
+    '.fos',        # Fallout Save
+    '.lsf',        # Larian Studios Format (Divinity: Original Sin 2)
+    '.lsb',        # Larian Studios Format (Baldur's Gate 3?)
+    '.db',         # Alcuni giochi usano database SQLite o simili
+    '.ark',        # Usato da Ark: Survival Evolved
+
+    # Estensioni Emulazione (se vuoi includerle, altrimenti rimuovile)
+    '.srm',        # Save RAM (SNES, GBA, etc.)
+    '.state',      # Save State (comune in molti emulatori)
+    '.eep',        # EEPROM save (N64, GBA)
+    '.fla',        # Flash RAM save (GBA)
+    '.mc', '.mcr', # Memory Card (PS1/PS2)
+    '.gci',        # GameCube Memory Card Image
+
+    # Aggiungi altre estensioni specifiche che conosci o trovi
+}
+
+# Set di sottostringhe comuni (minuscole) trovate nei nomi dei file di salvataggio
+# Usato per il check euristico del contenuto di una cartella
+COMMON_SAVE_FILENAMES = {
+    'save',        # save01.dat, gamesave.sav, quicksave
+    'user',        # user.dat, user_profile.bin
+    'profile',     # profile.sav, playerprofile
+    'settings',    # settings.ini (a volte contiene progressi)
+    'config',      # config.sav (raro ma possibile)
+    'game',        # gamedata.bin
+    'player',      # player.dat
+    'slot',        # slot0.sav, save_slot_1
+    'data',        # gamedata, savedata
+    'progress',    # progress.dat
+    'meta',        # save_meta.dat (file metadati)
+    'header',      # saveheader.bin
+    'info',        # gameinfo.sav
+    'stats',       # playerstats.sav
+    'world',       # world.sav (giochi sandbox/survival)
+    'character',   # character1.sav
+    'persistent',  # persistent.sfs (es. KSP)
+    'quicksave',   # quicksave.sav
+    'autosave',    # autosave.dat
+
+    # Aggiungi altre parti comuni che noti
+}
+
+# Thresholds and settings for similarity checks
+SIMILARITY_THRESHOLD = 88  # General fuzzy match threshold
+SIMILARITY_THRESHOLD_ABBREVIATION = 80 # Lower threshold for abbreviations
+SIMILARITY_MIN_MATCH_WORDS = 2 # Min common words for are_names_similar
+SIMILARITY_PATH_THRESHOLD = 80 # For checking if path contains game name
+SIMILARITY_IGNORE_WORDS = {'a', 'an', 'the', 'of', 'and', 'remake', 'intergrade',
+                         'edition', 'goty', 'demo', 'trial', 'play', 'launch',
+                         'definitive', 'enhanced', 'complete', 'collection', 'original',
+                         'hd', 'ultra', 'deluxe', 'game', 'year', 'cut', 'final'}
+
+# --- Windows Specific Scoring & Behavior ---
+PENALTY_UNRELATED_GAME_WINDOWS = -550 # Penalty for paths matching other installed games (Windows)
+MAX_EXPLORATORY_SUBDIRS_WINDOWS = 300 # Max subdirs to check in exploratory search (Windows)
+MAX_FILES_TO_SCAN_IN_DIR_WINDOWS = 200 # Max files to check for save extensions in a dir (Windows)
+EXPLORATORY_SCAN_MAX_DEPTH_WINDOWS = 3 # Max depth for recursive exploratory scan (Windows)
+
+# --- Linux Specific Scoring & Behavior ---
+# Questi sono i valori di default, verranno sovrascritti se presenti in un file di config utente
+# Punteggi per la logica di Linux
+SCORE_LINUX_GAME_NAME_MATCH = 500       # Corrispondenza (fuzzy) del nome del gioco nel percorso
+SCORE_LINUX_COMPANY_NAME_MATCH = 200    # Corrispondenza nome azienda/publisher
+SCORE_LINUX_SAVE_DIR_MATCH = 150        # Trovata una sottocartella comune per i salvataggi (es. 'saves')
+SCORE_LINUX_HAS_SAVE_FILES = 300        # Rilevati file con estensioni/nomi di salvataggio comuni
+SCORE_LINUX_PERFECT_MATCH_BONUS = 250   # Bonus addizionale se nome gioco + save dir + (opz.) azienda combaciano
+SCORE_LINUX_STEAM_USERDATA_BONUS = 50   # Bonus specifico per percorsi in Steam userdata
+SCORE_LINUX_PROTON_PATH_BONUS = 75      # Bonus specifico per percorsi Proton (compatdata)
+SCORE_LINUX_WINE_GENERIC_BONUS = 25     # Bonus leggero per percorsi che sembrano WINE generici
+
+PENALTY_LINUX_GENERIC_ENGINE_DIR = -100 # Penalità per cartelle generiche di engine (es. unity3d) se vuote o senza match nome gioco
+PENALTY_LINUX_UNRELATED_GAME_IN_PATH = -300 # Penalità se il percorso sembra di un altro gioco specifico
+PENALTY_LINUX_DEPTH_BASE = -5           # Penalità base per ogni livello di profondità (moltiplicata per la profondità)
+PENALTY_LINUX_BANNED_PATH_SEGMENT = -1000 # Penalità forte se un segmento del percorso è in BANNED_FOLDER_NAMES_LOWER
+
+# Profondità massime di ricerca per Linux
+MAX_DEPTH_STEAM_USERDATA_LINUX = 3      # Dentro Steam/userdata/<id3>/<appid>/remote/ (non troppo a fondo)
+MAX_DEPTH_PROTON_COMPATDATA_LINUX = 5   # Dentro compatdata/<appid>/pfx/drive_c/ (può essere più profondo)
+MAX_DEPTH_COMMON_LINUX_LOCATIONS = 3    # Dentro ~/.local/share, ~/.config, ~/.wine etc.
+MAX_DEPTH_GAME_INSTALL_DIR_LINUX = 4    # Dentro la cartella di installazione del gioco (se fornita)
+
+# Maximum number of files to scan within a directory when initially checking 
+# if it's a potential save directory (for hints of save files).
+# A lower number improves performance during broad searches.
+MAX_FILES_TO_SCAN_IN_DIR_LINUX_HINT = 25
+
+# Minimum number of files matching common save patterns (extensions/filenames)
+# found within a directory to grant it the SCORE_LINUX_HAS_SAVE_FILES bonus.
+MIN_SAVE_FILES_FOR_BONUS_LINUX = 1
+
+# Maximum number of sub-items (files/directories) to scan within any given 
+# directory during recursive search. Helps prevent excessive processing in very large directories.
+MAX_SUB_ITEMS_TO_SCAN_LINUX = 50
+
+# Maximum depth for 'shallow exploration' in recursive search. This allows the search 
+# to go a few levels deeper into non-matching directory structures, potentially finding 
+# saves in paths like ~/.local/share/SomeContainerFolder/GameName.
+MAX_SHALLOW_EXPLORE_DEPTH_LINUX = 1
+
+# Penalità specifiche per Linux Path Scoring (da aggiungere se non presenti o da aggiornare)
+# Assicurati che queste costanti siano definite PRIMA del loro utilizzo in save_path_finder_linux.py
+# Idealmente, raggruppale con altre costanti di scoring.
+PENALTY_UNRELATED_GAME_IN_PATH = -800 # (Verifica se già definita, altrimenti aggiungi)
+PENALTY_KNOWN_IRRELEVANT_COMPANY = -250
+PENALTY_NO_GAME_NAME_IN_PATH = -600
+
+# Lista di tutti i nomi dei giochi conosciuti (da popolare per una migliore penalizzazione di giochi non correlati)
+# Esempio: ALL_KNOWN_GAME_NAMES_RAW = ["Factorio", "Celeste", "Cyberpunk 2077", "The Witcher 3"]
+ALL_KNOWN_GAME_NAMES_RAW = []
+
+# Verifica percorsi base all'import
+if not os.path.exists(os.path.dirname(BACKUP_BASE_DIR)) and BACKUP_BASE_DIR.count(os.sep) > 1:
+    logging.warning(f"La cartella parente di BACKUP_BASE_DIR ('{os.path.dirname(BACKUP_BASE_DIR)}') non sembra esistere.")
+
+# Segmenti di percorso specifici per Linux da bannare
+LINUX_BANNED_PATH_FRAGMENTS = [
+    # Simili a BANNED_FOLDER_NAMES_LOWER ma specifici o più comuni su Linux
+    "/usr/share/games", # Giochi di sistema, non salvataggi utente
+    "/var/games",       # Vecchia locazione per giochi di sistema
+    "/opt/",            # Spesso usato per software di terze parti, ma raramente per salvataggi dinamici
+    "steamapps/common", # Da aggiungere alla lista principale se manca.
+    "steamapps/shadercache",
+    "steamapps/temp",
+    "steamapps/downloading",
+    "/.steam/root/config/htmlcache",
+    "/.steam/root/config/overlay日誌", # Esempio con caratteri non ASCII, se necessario
+    "/.steam/steam/logs",
+    "/.local/share/Steam/logs",
+    "/.local/share/vulkan",
+    "/.cache/mesa_shader_cache",
+    "/.cache/nvidia",
+    "/.config/pulse",
+    "/.config/dconf",
+    "/.config/ibus",
+    "/.config/fontconfig",
+    "/.config/enchant",
+    "/.config/goa-1.0",
+    "/.config/gtk-2.0",
+    "/.config/gtk-3.0",
+    "/.config/gtk-4.0",
+    "/.config/KDE",
+    "/.config/kdedefaults",
+    "/.config/kdeconnect",
+    "/.config/kde.org",
+    "/.config/KDE/UserFeedback.org",
+    "/.config/kscreen",
+    "/.config/kwinrc",
+    "/.config/krunnercs",
+    "/.config/plasma",
+    "/.config/plasmashellrc",
+    "/.config/powermanagementprofilesrc",
+    "/.config/QtProject.conf",
+    "/.config/Trolltech.conf",
+    "/.config/xsettingsd",
+    "/.config/procps",
+    "/.config/user-dirs.dirs",
+    "/.config/user-dirs.locale",
+    "/.dbus",
+    "/.gvfs",
+    "/.local/share/applications",
+    "/.local/share/Trash",
+    "/.local/share/RecentDocuments",
+    "/.local/share/fonts",
+    "/.local/share/icons",
+    "/.local/share/zeitgeist",
+    "/.local/share/flatpak/repo", # Repository Flatpak, non contiene salvataggi
+    "/.wine/drive_c/windows",
+    "/.wine/drive_c/Program Files",
+    "/.wine/drive_c/Program Files (x86)",
+    "/.wine/drive_c/users/steamuser/Documents/My Games",
+    "/.wine/drive_c/users/steamuser/Saved Games",
+    "/.wine/drive_c/users/steamuser/AppData/Roaming",
+    "/.wine/drive_c/users/steamuser/AppData/Local",
+    "/.wine/drive_c/users/steamuser/Documents", # Documenti generici in Wine
+    # Flatpak (la struttura interna è app_id/config o app_id/data)
+    "~/.var/app",
+    # Snap (la struttura interna varia, spesso ~/snap/game-name/common/ o current/)
+    "~/snap",
+    # Alcuni giochi potrebbero usare direttamente la home o sottocartelle dirette
+    "~", # Home directory stessa, per giochi che creano cartelle come ~/.gamename
+    # Esempi specifici noti (possono essere molti)
+    "~/.godot/app_userdata", # Base per giochi Godot non Flatpak
+    "~/.renpy", # Base per giochi Ren'Py
+]
 
 # Stile QSS per il tema scuro (può essere spostato in un file .qss separato)
 DARK_THEME_QSS = """
@@ -684,7 +1081,7 @@ QPushButton#ShortcutButton {
     padding: 1px;               /* Padding minimo per icona */
     margin: 1px;                /* Margine piccolo */
     min-width: none;            /* Ignora larghezza minima generale */
-    /* La dimensione 24x24 è impostata da Python */
+    /* La dimensione è gestita da Python */
 }
 QPushButton#ShortcutButton:hover {
     background-color: #5A5A5A; /* Grigio scuro al passaggio */
@@ -877,7 +1274,3 @@ QPushButton#ShortcutButton:pressed {
 """
 # --- FINE NUOVE REGOLE ---
 # --- FINE CONFIGURAZIONE ---
-
-# Verifica percorsi base all'import
-if not os.path.exists(os.path.dirname(BACKUP_BASE_DIR)) and BACKUP_BASE_DIR.count(os.sep) > 1:
-    logging.warning(f"La cartella parente di BACKUP_BASE_DIR ('{os.path.dirname(BACKUP_BASE_DIR)}') non sembra esistere.")

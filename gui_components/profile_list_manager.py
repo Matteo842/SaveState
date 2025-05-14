@@ -10,7 +10,7 @@ import config
 
 # Import the new manager and utils
 from gui_components import favorites_manager # Assuming it's in gui_components
-from gui_utils import resource_path
+from utils import resource_path # <--- Import from utils
 
 class ProfileListManager:
     """Handles the QTableWidget of profiles and related action buttons."""

@@ -172,3 +172,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+/react_frontend
+electron_bridge.py
+package-lock.json
+save_path_finder_linux_old.py
+core_logicOLD.py

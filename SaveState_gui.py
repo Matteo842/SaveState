@@ -19,7 +19,8 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QIcon, QPalette, QColor
 
-from gui_utils import QtLogHandler, resource_path
+from gui_utils import QtLogHandler
+from utils import resource_path
 from gui_components.profile_list_manager import ProfileListManager
 from gui_components.theme_manager import ThemeManager
 from gui_components.profile_creation_manager import ProfileCreationManager

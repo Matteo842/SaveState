@@ -7,9 +7,9 @@ from PySide6.QtGui import QIcon
 from PySide6.QtCore import QSize
 
 try:
-    from gui_utils import resource_path
+    from utils import resource_path
 except ImportError:
-    logging.error("ThemeManager: Failed to import resource_path from gui_utils. Fallback might be needed.")
+    logging.error("ThemeManager: Failed to import resource_path from utils. Fallback might be needed.")
 
     def resource_path(relative_path):
         return os.path.join(os.path.abspath("."), relative_path)

@@ -679,6 +679,7 @@ class MainWindowHandlers:
             QMessageBox.critical(self.main_window, "Operation Error", message)
         else:
             logging.debug("Operation thread worker successful, updating profile table view.")
+            QMessageBox.information(self.main_window, "Backup Complete", message)
 
         # Always update the table to reflect changes (e.g., backup info)
         self.main_window.profile_table_manager.update_profile_table()

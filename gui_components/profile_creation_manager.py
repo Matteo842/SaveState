@@ -17,7 +17,7 @@ from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
 from gui_utils import DetectionWorkerThread
 import minecraft_utils
 import core_logic
-from shortcut_utils import sanitize_profile_name # O importa shortcut_utils
+import shortcut_utils # Importa l'intero modulo
 from emulator_utils import emulator_manager # Updated import path
 import config # Import the config module
 
@@ -93,7 +93,7 @@ class ProfileCreationManager:
         if ok and profile_name:
             # Clean the entered name
             profile_name_original = profile_name # Preserve original for messages
-            profile_name = sanitize_profile_name(profile_name) # Apply sanitization
+            profile_name = shortcut_utils.sanitize_profile_name(profile_name) # Apply sanitization
             if not profile_name:
                  QMessageBox.warning(mw, "Profile Name Error",
                                      f"The profile name ('{profile_name_original}') contains invalid characters or is empty after cleaning.")
@@ -208,7 +208,7 @@ class ProfileCreationManager:
 
                 # Sanitize also the Minecraft world name
                 profile_name_original = profile_name
-                profile_name = sanitize_profile_name(profile_name)
+                profile_name = shortcut_utils.sanitize_profile_name(profile_name)
                 if not profile_name:
                     QMessageBox.warning(mw, "Profile Name Error",
                                         f"The world name ('{profile_name_original}') contains invalid characters or is empty after cleaning.")
@@ -254,15 +254,26 @@ class ProfileCreationManager:
         mime_data = event.mimeData()
         if mime_data.hasUrls():
             urls = mime_data.urls()
-            # Accept only if it's a SINGLE .lnk file
-            if urls and len(urls) == 1 and urls[0].isLocalFile() and urls[0].toLocalFile().lower().endswith('.lnk'):
-                event.acceptProposedAction()
-                logging.debug("DragEnterEvent: Accepted .lnk file.")
+            # Accept only if it's a SINGLE file
+            if urls and len(urls) == 1 and urls[0].isLocalFile():
+                file_path = urls[0].toLocalFile()
+                # Windows: Accept .lnk files
+                # Linux: Accept .desktop files and executables
+                if platform.system() == "Windows" and file_path.lower().endswith('.lnk'):
+                    event.acceptProposedAction()
+                    logging.debug("DragEnterEvent: Accepted Windows .lnk file.")
+                elif platform.system() == "Linux" and (file_path.lower().endswith('.desktop') or 
+                                                     os.access(file_path, os.X_OK)):
+                    event.acceptProposedAction()
+                    logging.debug(f"DragEnterEvent: Accepted Linux file: {file_path}")
+                else:
+                    logging.debug(f"DragEnterEvent: Rejected file: {file_path}")
+                    event.ignore()
             else:
-                 logging.debug("DragEnterEvent: Rejected (not a single .lnk file).")
-                 event.ignore()
+                logging.debug("DragEnterEvent: Rejected (not a single file).")
+                event.ignore()
         else:
-             event.ignore()
+            event.ignore()
 
     def dragMoveEvent(self, event):
         """Handles the movement of a dragged object over the widget."""
@@ -270,15 +281,24 @@ class ProfileCreationManager:
         mime_data = event.mimeData()
         if mime_data.hasUrls():
             urls = mime_data.urls()
-            if urls and len(urls) == 1 and urls[0].isLocalFile() and urls[0].toLocalFile().lower().endswith('.lnk'):
-                event.acceptProposedAction()
+            if urls and len(urls) == 1 and urls[0].isLocalFile():
+                file_path = urls[0].toLocalFile()
+                # Windows: Accept .lnk files
+                # Linux: Accept .desktop files and executables
+                if platform.system() == "Windows" and file_path.lower().endswith('.lnk'):
+                    event.acceptProposedAction()
+                elif platform.system() == "Linux" and (file_path.lower().endswith('.desktop') or 
+                                                     os.access(file_path, os.X_OK)):
+                    event.acceptProposedAction()
+                else:
+                    event.ignore()
             else:
-                 event.ignore()
+                event.ignore()
         else:
             event.ignore()
 
     def dropEvent(self, event):
-        """Handles the release of a .lnk object and starts the path search."""
+        """Handles the release of a dragged object and starts the path search."""
         # Import winshell ONLY if on Windows and needed
         winshell = None
         if platform.system() == "Windows":
@@ -310,9 +330,12 @@ class ProfileCreationManager:
         game_install_dir = None # Initialize install dir
 
         # --- Resolve .lnk if applicable (Windows only) ---
-        is_link = file_path.lower().endswith('.lnk') and platform.system() == "Windows" and winshell is not None
-        if is_link:
-            logging.debug("Detected .lnk file, attempting to resolve target...")
+        is_windows_link = file_path.lower().endswith('.lnk') and platform.system() == "Windows" and winshell is not None
+        is_linux_desktop = file_path.lower().endswith('.desktop') and platform.system() == "Linux"
+        is_linux_executable = platform.system() == "Linux" and os.access(file_path, os.X_OK)
+        
+        if is_windows_link:
+            logging.debug("Detected Windows .lnk file, attempting to resolve target...")
             try:
                 shortcut = winshell.shortcut(file_path)
                 resolved_target = shortcut.path
@@ -338,19 +361,92 @@ class ProfileCreationManager:
                 else:
                     logging.warning(f"Unable to determine game folder from resolved shortcut: {file_path}")
                 logging.debug(f"Game folder derived from resolved shortcut: {game_install_dir}")
-
             except Exception as e_lnk:
                 logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
                 QMessageBox.critical(mw, "Shortcut Error", f"Unable to read the .lnk file:\n{e_lnk}")
                 event.ignore()
                 return
+                
+        # --- Parse .desktop file if applicable (Linux only) ---
+        elif is_linux_desktop:
+            logging.debug("Detected Linux .desktop file, parsing for executable path...")
+            try:
+                # Parse .desktop file to extract Exec and Path fields
+                exec_path = None
+                working_dir = None
+                
+                with open(file_path, 'r', encoding='utf-8') as desktop_file:
+                    for line in desktop_file:
+                        line = line.strip()
+                        if line.startswith('Exec='):
+                            # Extract the executable path, removing parameters
+                            exec_cmd = line[5:].strip()
+                            # Remove parameters (anything after space that starts with %)
+                            exec_parts = exec_cmd.split()
+                            exec_path = exec_parts[0]
+                            # Handle quoted paths
+                            if exec_path.startswith('"') and exec_path.endswith('"'):
+                                exec_path = exec_path[1:-1]
+                        elif line.startswith('Path='):
+                            working_dir = line[5:].strip()
+                            # Handle quoted paths
+                            if working_dir.startswith('"') and working_dir.endswith('"'):
+                                working_dir = working_dir[1:-1]
+                
+                if exec_path:
+                    # If exec_path is not absolute, try to find it in PATH
+                    if not os.path.isabs(exec_path):
+                        # Try to find the executable in PATH
+                        for path_dir in os.environ.get('PATH', '').split(os.pathsep):
+                            full_path = os.path.join(path_dir, exec_path)
+                            if os.path.isfile(full_path) and os.access(full_path, os.X_OK):
+                                exec_path = full_path
+                                break
+                    
+                    target_path = exec_path
+                    logging.info(f"Parsed .desktop file, found executable: {target_path}")
+                    
+                    # Determine game_install_dir
+                    if working_dir and os.path.isdir(working_dir):
+                        game_install_dir = os.path.normpath(working_dir)
+                    elif os.path.isfile(target_path):
+                        game_install_dir = os.path.normpath(os.path.dirname(target_path))
+                    
+                    logging.debug(f"Game folder derived from .desktop file: {game_install_dir}")
+                else:
+                    logging.error("Could not find Exec= line in .desktop file")
+                    QMessageBox.critical(mw, "Desktop File Error", 
+                                        f"Could not find executable path in .desktop file:\n{file_path}")
+                    event.ignore()
+                    return
+                    
+            except Exception as e_desktop:
+                logging.error(f"Error parsing .desktop file: {e_desktop}", exc_info=True)
+                QMessageBox.critical(mw, "Desktop File Error", 
+                                    f"Error parsing .desktop file:\n{e_desktop}")
+                event.ignore()
+                return
+                
+        # --- Handle Linux executable ---
+        elif is_linux_executable:
+            logging.debug(f"Detected Linux executable: {file_path}")
+            target_path = file_path
+            
+            # For executables, use the parent directory as the game install directory
+            if os.path.isfile(target_path):
+                game_install_dir = os.path.normpath(os.path.dirname(target_path))
+            elif os.path.isdir(target_path):
+                game_install_dir = os.path.normpath(target_path)
+                
+            logging.debug(f"Game folder derived from executable: {game_install_dir}")
+            
         else:
-            # If not a link, determine game_install_dir from the dropped path itself
+            # If not a special file type, determine game_install_dir from the dropped path itself
             if os.path.isfile(target_path):
                 game_install_dir = os.path.normpath(os.path.dirname(target_path))
             elif os.path.isdir(target_path):
                  game_install_dir = os.path.normpath(target_path)
-            logging.debug(f"Dropped item is not a link. Using path: {target_path}, Derived install dir: {game_install_dir}")
+            logging.debug(f"Dropped item is a regular file/folder. Using path: {target_path}, Derived install dir: {game_install_dir}")
         # --- End Link Resolution ---
 
         # --- NOW, call emulator detection using the RESOLVED target_path ---
@@ -384,7 +480,7 @@ class ProfileCreationManager:
 
                         selected_name = selected_data.get('name', selected_id)
                         profile_name_base = f"{emulator_name} - {selected_name}"
-                        profile_name = sanitize_profile_name(profile_name_base)
+                        profile_name = shortcut_utils.sanitize_profile_name(profile_name_base)
                         if not profile_name:
                             QMessageBox.warning(mw, "Profile Name Error",
                                                 f"Unable to generate a valid profile name for '{profile_name_base}'.")
@@ -462,7 +558,7 @@ class ProfileCreationManager:
         base_name = os.path.basename(file_path) # Use original file_path for name
         profile_name_temp, _ = os.path.splitext(base_name)
         profile_name_original = profile_name_temp.replace('™', '').replace('®', '').strip()
-        profile_name = sanitize_profile_name(profile_name_original)
+        profile_name = shortcut_utils.sanitize_profile_name(profile_name_original)
         logging.info(f"Original Name (basic clean): '{profile_name_original}', Sanitized Name: '{profile_name}'")
 
         if not profile_name:

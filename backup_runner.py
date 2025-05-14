@@ -6,9 +6,6 @@ import sys
 import os
 import logging
 import re
-import platform
-import winshell
-
 # Import necessary modules for loading data and performing backups
 # Assume these files are findable (in the same folder or in the python path)
 # Specific imports for Qt notification
@@ -21,12 +18,22 @@ except ImportError as e_qt:
      QT_AVAILABLE = False
      logging.error(f"PySide6 not found, unable to show GUI notifications: {e_qt}")
 
+# Try to import notify_py for native Linux notifications
+try:
+    import notify_py
+    NATIVE_NOTIFY_AVAILABLE = True
+    logging.info("notify_py imported successfully. Native Linux notifications are available.")
+except ImportError:
+    NATIVE_NOTIFY_AVAILABLE = False
+    logging.info("notify_py not found. Native Linux notifications will not be used. Will fallback to Qt notifications on Linux if Qt is available.")
+
 # Import our modules
 try:
     import core_logic
     import settings_manager
     import config # Needed to load the correct QSS
     from gui_utils import NotificationPopup 
+    from utils import resource_path
 except ImportError as e_mod:
     logging.error(f"Error importing modules ({e_mod}).")
     sys.exit(1)
@@ -36,10 +43,36 @@ except ImportError as e_mod:
 # --- Notification Function ---
 def show_notification(success, message):
     """
-    Shows a custom popup notification using Qt.
+    Shows a custom popup notification. Uses native Linux notifications if available,
+    otherwise falls back to Qt.
     """
     logging.debug(">>> Entered show_notification <<<")
-    # If PySide6 is not available, just log
+    title = "Backup Complete" if success else "Backup Error"
+    clean_message = re.sub(r'\n+', '\n', message).strip()
+
+    # Attempt Linux native notification first
+    if sys.platform.startswith('linux') and NATIVE_NOTIFY_AVAILABLE:
+        try:
+            notification = notify_py.Notify()
+            notification.title = title
+            notification.message = clean_message
+            if success:
+                icon_path_native = resource_path(os.path.join("icons", "SaveStateIconBK.ico"))
+                if os.path.exists(icon_path_native):
+                    notification.icon = icon_path_native
+                else:
+                    logging.warning(f"Success icon not found for native notification: {icon_path_native}")
+            # For errors, notify-py will use a default system error icon if not specified
+            notification.send(block=False) # Send non-blocking
+            log_level = logging.INFO if success else logging.ERROR
+            logging.log(log_level, f"BACKUP RESULT (Native Linux Notification): {title} - {clean_message}")
+            logging.debug("<<< Exiting show_notification after native Linux notification >>>")
+            return # Notification sent, exit
+        except Exception as e_native:
+            logging.warning(f"Failed to send native Linux notification: {e_native}. Falling back to Qt notification if available.")
+            # Fall through to Qt notification
+
+    # Fallback to Qt notification (existing logic)
     if not QT_AVAILABLE:
          log_level = logging.INFO if success else logging.ERROR
          logging.log(log_level, f"BACKUP RESULT (GUI Notification Unavailable): {message}")
@@ -75,8 +108,18 @@ def show_notification(success, message):
         title = "Backup Complete" if success else "Backup Error" 
         clean_message = re.sub(r'\n+', '\n', message).strip()
 
+        icon_path_qt = None
+        if success:
+            icon_path_qt_success = resource_path(os.path.join("icons", "SaveStateIconBK.ico"))
+            if os.path.exists(icon_path_qt_success):
+                icon_path_qt = icon_path_qt_success
+            else:
+                logging.warning(f"Success icon not found for Qt notification: {icon_path_qt_success}")
+        # For errors with Qt, NotificationPopup currently doesn't have specific error icon logic
+        # We'll pass None, it might default to no icon or its own default. Future enhancement: add error icon to NotificationPopup.
+
         try:
-            popup = NotificationPopup(title, clean_message, success)
+            popup = NotificationPopup(title, clean_message, success, icon_path=icon_path_qt)
             # Apply QSS *before* adjustSize and show for consistency
             logging.debug("Applying QSS...")
             try:

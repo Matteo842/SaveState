@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from PySide6.QtCore import QThread, Signal, QObject, Qt, QTimer # Aggiungi Qt, QTimer, QPoint
 from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout, QApplication, QStyle # Aggiungi QWidget, QLabel, QHBoxLayout, QApplication, QStyle
+from PySide6.QtGui import QPixmap # Aggiungi QPixmap
 
 # Importa core_logic e logging SOLO per la gestione delle eccezioni nel blocco 'except'
 # Se non esistessero quel blocco 'except' specifico, questi import non servirebbero qui.
@@ -12,22 +13,6 @@ import sys
 #import tempfile
 #from datetime import datetime
 
-def resource_path(relative_path):
-    """ Trova il percorso assoluto della risorsa, funziona sia in sviluppo che con PyInstaller """
-    base_path = None # Inizializza per sicurezza
-    try:
-        # Metodo standard per PyInstaller (_MEIPASS) o sviluppo (directory script)
-        base_path = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(sys.argv[0])))  
-    except Exception as e:
-        logging.error(f"Error calculating base_path for resource_path: {e}", exc_info=True)
-        base_path = os.path.abspath(".")
-
-    path = os.path.join(base_path, relative_path)
-
-    # Controllo opzionale se il percorso generato esiste
-    if not os.path.exists(path):
-        logging.warning(f"resource_path: Calculated path DOES NOT EXIST: {path}")
-    return path
 # --- Thread Worker per Operazioni Lunghe ---
 
 class WorkerThread(QThread):
@@ -411,7 +396,7 @@ class QtLogHandler(logging.Handler, QObject):
 
 # --- Widget per Notifiche Personalizzate ---
 class NotificationPopup(QWidget):
-    def __init__(self, title, message, success, parent=None):
+    def __init__(self, title, message, success, parent=None, icon_path=None): 
         super().__init__(parent)
 
         # --- Imposta Stile Finestra ---
@@ -434,14 +419,25 @@ class NotificationPopup(QWidget):
         icon_label = QLabel()
         style = QApplication.instance().style() # Ottieni stile per icone standard
         icon_size = 32 # Dimensione icona
-        if success:
-             icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton) # O SP_MessageBoxInformation
-             # Potresti impostare un objectName per stile QSS specifico: icon_label.setObjectName("SuccessIcon")
-        else:
-             icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical) # O SP_MessageBoxWarning
-             # Potresti impostare un objectName per stile QSS specifico: icon_label.setObjectName("ErrorIcon")
-        if not icon.isNull():
-             icon_label.setPixmap(icon.pixmap(icon_size, icon_size))
+
+        custom_icon_loaded = False
+        if icon_path and os.path.exists(icon_path):
+            pixmap = QPixmap(icon_path)
+            if not pixmap.isNull():
+                icon_label.setPixmap(pixmap.scaled(icon_size, icon_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                custom_icon_loaded = True
+            else:
+                logging.warning(f"NotificationPopup: Failed to load custom icon from {icon_path}")
+
+        if not custom_icon_loaded:
+            if success:
+                 icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton) # O SP_MessageBoxInformation
+                 # Potresti impostare un objectName per stile QSS specifico: icon_label.setObjectName("SuccessIcon")
+            else:
+                 icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical) # O SP_MessageBoxWarning
+                 # Potresti impostare un objectName per stile QSS specifico: icon_label.setObjectName("ErrorIcon")
+            if not icon.isNull():
+                 icon_label.setPixmap(icon.pixmap(icon_size, icon_size))
         layout.addWidget(icon_label)
 
         # Testo Messaggio
