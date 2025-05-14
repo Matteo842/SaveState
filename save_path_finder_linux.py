@@ -909,224 +909,178 @@ def _search_recursive(current_path, current_depth, max_search_depth, source_pref
 # Funzione principale di ordinamento per i percorsi trovati
 def _final_sort_key_linux(item_tuple):
     """
-    Genera una chiave di ordinamento per i percorsi trovati.
+    Genera una chiave di ordinamento per i percorsi trovati, ispirata alla logica Windows,
+    CON MAGGIORE ENFASI SU BASENAME ESPLICITAMENTE DI SALVATAGGIO e HAS_SAVES_HINT.
     Un punteggio più alto significa una maggiore probabilità.
     """
-    # item_tuple is (normalized_path_key, data_dict)
-    # where data_dict is {'sources': {source_description_set}, 'has_saves_hint': has_saves_hint_bool}
-    normalized_path_key, data_dict = item_tuple
+    global _game_name_cleaned, _game_abbreviations_lower, _game_title_original_sig_words_for_seq
+    global _linux_common_save_subdirs_lower, _known_companies_lower # Aggiunto _known_companies_lower
+    global THEFUZZ_AVAILABLE, fuzz
 
-    original_path = normalized_path_key # This is the path string itself
-    
-    # For source_description, pick one from the set for scoring.
-    # If set is empty (should not happen if _add_guess works correctly), use a default.
+    normalized_path_key, data_dict = item_tuple
+    original_path = normalized_path_key 
     source_description_set = data_dict.get('sources', set())
     source_description = next(iter(source_description_set)) if source_description_set else "UnknownSource"
-    
-    has_saves_hint = data_dict.get('has_saves_hint', False)
-    
-    path_lower_for_sorting = original_path.lower() # for the secondary sort key return
+    has_saves_hint_from_scan = data_dict.get('has_saves_hint', False)
 
     score = 0
-    # Usa original_path (che è già normalizzato e in minuscolo per i componenti) per path_components
-    path_components = set(c.lower() for c in original_path.split(os.sep) if c)
+    path_lower_for_sorting = original_path.lower()
+    
+    try:
+        basename = os.path.basename(original_path)
+        basename_lower = basename.lower()
+        parent_dir_path = os.path.dirname(original_path)
+        parent_basename_lower = os.path.basename(parent_dir_path.lower())
+    except Exception as e:
+        logging.error(f"Error getting basename/dirname for '{original_path}' in _final_sort_key_linux: {e}")
+        return (0, path_lower_for_sorting)
 
-    game_name_found = False
-    save_dir_found = False
-    company_name_found = False # Flag generico se un'azienda è stata processata
-    target_company_name_found_bool = False # Flag specifico se l'azienda CORRETTA è stata trovata
+    home_dir = os.path.expanduser("~")
+    xdg_config_home = os.getenv('XDG_CONFIG_HOME', os.path.join(home_dir, ".config"))
+    xdg_data_home = os.getenv('XDG_DATA_HOME', os.path.join(home_dir, ".local", "share"))
+    steam_compatdata_generic_part = os.path.join("steamapps", "compatdata") 
+    steam_userdata_generic_part = "userdata"
 
-    # Penalità per segmenti bannati
-    for component in path_components:
-        if component in _linux_banned_path_fragments_lower:
-            score += _penalty_banned_path_segment
-            logging.debug(f"SCORE_LINUX: '{original_path}' got PENALTY_BANNED_PATH_SEGMENT for '{component}' -> {score}")
-            # Se il punteggio diventa estremamente basso, potremmo considerare di non procedere oltre con questo path
-            if score < -500: # Soglia arbitraria per dire 'troppo negativo'
-                 return (-score, path_lower_for_sorting)
+    # --- 1. PUNTEGGIO BASE PER LOCAZIONE ---
+    if xdg_config_home.lower() in path_lower_for_sorting:
+        score += 800 
+        # logging.debug(f"SCORE_LINUX ('{original_path}'): +800 (in XDG_CONFIG_HOME)")
+    elif xdg_data_home.lower() in path_lower_for_sorting:
+        score += 700 
+        # logging.debug(f"SCORE_LINUX ('{original_path}'): +700 (in XDG_DATA_HOME)")
+    elif steam_compatdata_generic_part in path_lower_for_sorting and "pfx" in path_lower_for_sorting:
+        score += 600 
+        # logging.debug(f"SCORE_LINUX ('{original_path}'): +600 (Proton compatdata path)")
+    elif steam_userdata_generic_part in path_lower_for_sorting:
+        score += 500
+        # logging.debug(f"SCORE_LINUX ('{original_path}'): +500 (Steam userdata path)")
+    elif "documents" in path_lower_for_sorting: 
+        score += 200
+        # logging.debug(f"SCORE_LINUX ('{original_path}'): +200 (in Documents-like path)")
+    elif "InstallDir" in source_description: 
+        score += 50 
+        # logging.debug(f"SCORE_LINUX ('{original_path}'): +50 (InstallDir source)")
+    else:
+        score += 100 
+        # logging.debug(f"SCORE_LINUX ('{original_path}'): +100 (Generic base)")
 
-    # Bonus per corrispondenza nome gioco/abbreviazione nel percorso
-    for abbr in _game_abbreviations_lower:
-        if any(abbr in comp for comp in path_components) or \
-           any(comp in abbr for comp in path_components if len(comp) > 3) or \
-           abbr in original_path.lower():
-            score += _score_game_name_match
-            game_name_found = True
-            logging.debug(f"SCORE_LINUX: '{original_path}' got +{_score_game_name_match} (game name/abbr '{abbr}') -> {score}")
-            break 
+    # --- 2. BONUS PER CONTENUTO DI SALVATAGGIO (has_saves_hint_from_scan) ---
+    # AUMENTATO SIGNIFICATIVAMENTE QUESTO BONUS
+    if has_saves_hint_from_scan: 
+        score += 800 # Era 600. Un percorso con file di salvataggio è un forte indicatore.
+        logging.debug(f"SCORE_LINUX ('{original_path}'): +800 (has_saves_hint_from_scan)")
 
-    # --- PENALITA' SE NOME GIOCO CORRENTE ASSENTE ---
-    if not game_name_found:
-        score += _penalty_no_game_name_in_path
-        logging.debug(f"SCORE_LINUX: '{original_path}' got PENALTY {_penalty_no_game_name_in_path} (NO CURRENT game name found) -> {score}")
-
-    # --- PENALITA' PER NOMI DI ALTRI GIOCHI (SOLO SE IL GIOCO CORRENTE NON C'È GIÀ) ---
-    # Questo aiuta a penalizzare /home/user/.factorio/saves quando si cerca Cyberpunk
-    if not game_name_found: # Applica solo se il gioco corrente non è stato trovato
-        found_other_game_in_path = False
-        for other_game_name_clean in _other_cleaned_game_names:
-            # Controlla se il nome pulito dell'altro gioco è in uno dei componenti del percorso
-            # o se è una sottostringa del percorso originale (per casi come nomi composti non splittati bene)
-            if any(other_game_name_clean in comp for comp in path_components) or \
-               other_game_name_clean in original_path.lower(): # original_path è già lower qui
-                score += _penalty_unrelated_game_in_path
-                logging.debug(f"SCORE_LINUX: '{original_path}' got PENALTY {_penalty_unrelated_game_in_path} (UNRELATED game name '{other_game_name_clean}') -> {score}")
-                found_other_game_in_path = True
-                break
+    # --- 3. BONUS PER NOMI DI CARTELLE RILEVANTI (BASENAME) ---
+    is_common_save_subdir_basename = basename_lower in _linux_common_save_subdirs_lower
+    if is_common_save_subdir_basename:
+        # AUMENTATO SIGNIFICATIVAMENTE QUESTO BONUS se il basename è una cartella di salvataggio esplicita
+        score += 600 # Era 350. Priorità alta se il nome stesso della cartella è "saves", "profile", ecc.
+        logging.debug(f"SCORE_LINUX ('{original_path}'): +600 (basename '{basename_lower}' IS common save subdir)")
         
-        if not found_other_game_in_path: # Se non ha trovato un nome pulito, controlla le abbreviazioni
-            for other_game_abbr in _other_game_abbreviations:
-                if any(other_game_abbr in comp for comp in path_components) or \
-                   other_game_abbr in original_path.lower(): # original_path è già lower qui
-                    score += _penalty_unrelated_game_in_path
-                    logging.debug(f"SCORE_LINUX: '{original_path}' got PENALTY {_penalty_unrelated_game_in_path} (UNRELATED game abbr '{other_game_abbr}') -> {score}")
-                    break # Applica penalità per la prima altra abbreviazione trovata
-    
-    
-    # Bonus per sottocartelle di salvataggio comuni
-    for save_subdir in _linux_common_save_subdirs_lower:
-        if save_subdir in path_components:
-            score += _score_save_dir_match
-            save_dir_found = True
-            logging.debug(f"SCORE_LINUX: '{original_path}' got +{_score_save_dir_match} (save subdir '{save_subdir}') -> {score}")
-            break
-    
-    # Logica di punteggio per aziende
-    # Cerca se una qualsiasi azienda nota è nel percorso
-    found_known_company_in_path_str = None
-    for known_comp in _known_companies_lower:
-        if known_comp in path_components or \
-           any(known_comp in comp_part for comp_part in path_components) or \
-           known_comp in original_path.lower():
-            company_name_found = True # Imposta il flag generico
-            found_known_company_in_path_str = known_comp
-            break
+        # Bonus aggiuntivo se il genitore è il nome del gioco/azienda
+        # (Manteniamo questo bonus, ma quello sopra è più importante per il caso Factorio)
+        parent_matches_game_or_company = False
+        if parent_basename_lower in _game_abbreviations_lower:
+             parent_matches_game_or_company = True
+        elif parent_basename_lower in _known_companies_lower: # Assicurati che _known_companies_lower sia accessibile
+             parent_matches_game_or_company = True
+        # Potresti anche usare are_names_similar qui per il parent, se necessario, ma aumenta la complessità
+        # elif are_names_similar(_game_name_cleaned, parent_basename_lower, fuzzy_threshold=80, game_title_sig_words_for_seq=_game_title_original_sig_words_for_seq ):
+        #      parent_matches_game_or_company = True
 
-    if company_name_found: # Se un'azienda nota è stata trovata nel percorso
-        if game_name_found: # E ANCHE il nome del gioco corrente è nel percorso
-            score += _score_company_name_match
-            target_company_name_found_bool = True # Considera questa azienda come 'target' o rilevante
-            logging.debug(f"SCORE_LINUX: '{original_path}' got +{_score_company_name_match} (company '{found_known_company_in_path_str}' WITH current game name) -> {score}")
-        else: # Il nome del gioco corrente NON è nel percorso, ma un'azienda nota SÌ
-            # Questo implica che il percorso potrebbe essere per un ALTRO gioco di quell'azienda
-            score += _penalty_known_irrelevant_company
-            logging.debug(f"SCORE_LINUX: '{original_path}' got PENALTY {_penalty_known_irrelevant_company} (company '{found_known_company_in_path_str}' WITHOUT current game name) -> {score}")
- 
-    # Bonus se il controllo iniziale ha trovato file di salvataggio
-    if has_saves_hint:
-        score += _score_has_save_files
-        logging.debug(f"SCORE_LINUX: '{original_path}' got +{_score_has_save_files} (has_saves_hint) -> {score}")
 
-    # Perfect Match Bonus (combinazione di fattori)
-    if game_name_found and save_dir_found:
-        score += _score_perfect_match_bonus
-        logging.debug(f"SCORE_LINUX: '{original_path}' got +{_score_perfect_match_bonus} (Perfect Match: Game+SaveDir) -> {score}")
-        if target_company_name_found_bool: # Se l'azienda rilevante è stata trovata (insieme al nome del gioco)
-            score += _score_company_name_match // 2 
-            logging.debug(f"SCORE_LINUX: '{original_path}' got +{_score_company_name_match // 2} (Perfect Match Ext: Game+SaveDir+TargetCompany) -> {score}")
- 
+        if parent_matches_game_or_company:
+            score += 150 
+            logging.debug(f"SCORE_LINUX ('{original_path}'): +150 (parent '{parent_basename_lower}' matches game/company AND basename is common save subdir)")
 
-    # Bonus/Malus basati sulla fonte
-    source_lower = source_description.lower()
-    if "steam userdata" in source_lower: 
-        score += _score_steam_userdata_bonus
-        logging.debug(f"SCORE_LINUX: '{original_path}' got +{_score_steam_userdata_bonus} (Source: Steam Userdata) -> {score}")
-    elif "proton prefix" in source_lower or ("proton" in source_lower and "compatdata" in source_lower): 
-        score += _score_proton_path_bonus
-        logging.debug(f"SCORE_LINUX: '{original_path}' got +{_score_proton_path_bonus} (Source: Proton) -> {score}")
-    elif "installdir" in source_lower: 
-        score += _score_installdir_bonus
-        logging.debug(f"SCORE_LINUX: '{original_path}' got +{_score_installdir_bonus} (Source: InstallDir) -> {score}")
-    elif "xdg_data_home" in source_lower or ".local/share" in source_lower and "steam" not in source_lower : 
-        score += _score_xdg_data_home_bonus
-        logging.debug(f"SCORE_LINUX: '{original_path}' got +{_score_xdg_data_home_bonus} (Source: XDG Data) -> {score}")
-    elif "xdg_config_home" in source_lower or ".config" in source_lower and "unity3d" not in source_lower and "godot" not in source_lower : 
-        score += _score_xdg_config_home_bonus
-        logging.debug(f"SCORE_LINUX: '{original_path}' got +{_score_xdg_config_home_bonus} (Source: XDG Config) -> {score}")
-    elif "genericwineprefix" in source_lower or (os.path.join("drive_c", "users") in path_lower_for_sorting and "proton" not in source_lower and "steam userdata" not in source_lower):
-        score += _score_wine_prefix_generic_bonus
-        logging.debug(f"SCORE_LINUX: '{original_path}' got +{_score_wine_prefix_generic_bonus} (Source: Generic Wine Prefix) -> {score}")
-    elif source_lower.endswith("(publishermatch)") and company_name_found: # Bonus solo se l'azienda è stata effettivamente trovata
-        score += _score_publisher_match_bonus
-        logging.debug(f"SCORE_LINUX: '{original_path}' got +{_score_publisher_match_bonus} (Source: PublisherMatch) -> {score}")
+    # --- 4. BONUS PER SIMILARITÀ NOME GIOCO (SUL BASENAME) ---
+    cleaned_folder_basename = clean_for_comparison(basename)
+    exact_match_bonus = 0
+    fuzzy_bonus = 0
 
-    # Penalizza percorsi molto generici di engine SE il nome del gioco NON è stato trovato E non ci sono salvataggi evidenti
-    generic_engine_terms = ["unity3d", "unrealengine", "godot", "cryengine", "gamemaker", ".config/unity3d", ".config/godot"]
-    if not game_name_found and not has_saves_hint: 
-        for term in generic_engine_terms:
-            if term in path_lower_for_sorting:
-                score += _penalty_generic_engine_dir
-                logging.debug(f"SCORE_LINUX: '{original_path}' got PENALTY_GENERIC_ENGINE_DIR for '{term}' (no game name/saves) -> {score}")
-                break 
-    
-    # Penalizza se il percorso sembra un prefisso WINE molto generico e non ha altri forti indicatori
-    if (".wine" in path_lower_for_sorting or "drive_c" in path_components) and \
-       "proton" not in source_lower and \
-       "steam userdata" not in source_lower and \
-       not game_name_found and \
-       not has_saves_hint and \
-       score < (_score_game_name_match / 3): # Se il punteggio è già basso
-        score += _score_wine_generic_bonus # Ricorda: _score_wine_generic_bonus è stato reso negativo in init
-        logging.debug(f"SCORE_LINUX: '{original_path}' got WINE_GENERIC_PENALTY of {_score_wine_generic_bonus} -> {score}")
-
-    # Profondità del percorso
-    depth = len(path_components)
-    score += _penalty_depth_base * depth 
-    logging.debug(f"SCORE_LINUX: '{original_path}' depth penalty {_penalty_depth_base*depth} -> {score}")
-
-    # Penalty for paths that seem to belong to OTHER installed games
-    path_list_components_ordered = [c for c in original_path.lower().split(os.sep) if c] # non-empty, ordered
-    segment_to_check_for_other_games = ""
-
-    if path_list_components_ordered:
-        last_segment = path_list_components_ordered[-1]
-        if last_segment in _linux_common_save_subdirs_lower or last_segment in _common_save_filenames_lower:
-            if len(path_list_components_ordered) > 1:
-                # If last is 'saves', 'data', etc., the game name is likely the parent directory
-                segment_to_check_for_other_games = path_list_components_ordered[-2]
-        else:
-            # Last segment is not a common save subdir/file, so it might be the game's own directory name
-            segment_to_check_for_other_games = last_segment
-
-    if segment_to_check_for_other_games and len(segment_to_check_for_other_games) > 2: # Min length for a name
-        is_segment_for_current_game = False
-        if segment_to_check_for_other_games in _game_abbreviations_lower:
-            is_segment_for_current_game = True
-        else:
-            current_game_names_to_check_similarity = {_game_name_cleaned} # Check against main cleaned name
-            for name_variant in current_game_names_to_check_similarity:
-                 if are_names_similar(segment_to_check_for_other_games, 
-                                      name_variant, 
-                                      fuzzy_threshold=_fuzzy_threshold_path_match - 15, 
-                                      game_title_sig_words_for_seq=_game_title_original_sig_words_for_seq): # Relaxed threshold for current game check
-                    is_segment_for_current_game = True
-                    break
+    if _game_name_cleaned and cleaned_folder_basename:
+        if cleaned_folder_basename == _game_name_cleaned:
+            exact_match_bonus = 500 
+            # logging.debug(f"SCORE_LINUX ('{original_path}'): +{exact_match_bonus} (basename exact match to game name '{_game_name_cleaned}')")
+        # Non applicare il bonus fuzzy del basename se è GIA' una common save subdir e ha già ricevuto quel forte bonus,
+        # per evitare di gonfiare troppo il punteggio di cartelle come "~/.config/saves" se il gioco si chiama "Saves".
+        # O meglio, il bonus per il nome del gioco dovrebbe essere indipendente dal fatto che sia una common save subdir.
+        # La logica di Windows li applica entrambi. Manteniamolo.
+        elif THEFUZZ_AVAILABLE:
+            set_ratio = fuzz.token_set_ratio(_game_name_cleaned, cleaned_folder_basename)
+            # logging.debug(f"SCORE_LINUX ('{original_path}'): Fuzzy basename check: game='{_game_name_cleaned}', folder_basename='{cleaned_folder_basename}', Ratio={set_ratio}")
+            if set_ratio > 88: 
+                fuzzy_bonus = int(((set_ratio - 88) / 12) * 350) 
+                # logging.debug(f"SCORE_LINUX ('{original_path}'): +{fuzzy_bonus} (basename fuzzy match, ratio {set_ratio})")
         
-        if not is_segment_for_current_game and _other_cleaned_game_names: # Only proceed if not current game and we have other game names
-            for other_game_name in _other_cleaned_game_names:
-                if are_names_similar(segment_to_check_for_other_games, 
-                                     other_game_name, 
-                                     fuzzy_threshold=_fuzzy_threshold_path_match - 5, 
-                                     game_title_sig_words_for_seq=None): # Moderately high threshold for matching other games
-                    # Double check: ensure this 'other_game_name' (or the segment) isn't actually a variant of the *current* game
-                    # that was missed by the initial, more relaxed check for is_segment_for_current_game.
-                    is_actually_current_game_strict = False
-                    strict_current_game_variants = _game_abbreviations_lower.union({_game_name_cleaned})
-                    for current_variant_strict in strict_current_game_variants:
-                        if are_names_similar(segment_to_check_for_other_games, 
-                                             current_variant_strict, 
-                                             fuzzy_threshold=_fuzzy_threshold_path_match,
-                                             game_title_sig_words_for_seq=_game_title_original_sig_words_for_seq): # Stricter check
-                            is_actually_current_game_strict = True
-                            break
-                    
-                    if not is_actually_current_game_strict:
-                        score += _penalty_unrelated_game_in_path
-                        logging.debug(f"SCORE_LINUX: '{original_path}' got PENALTY_UNRELATED_GAME_IN_PATH for segment '{segment_to_check_for_other_games}' (matches other game '{other_game_name}') -> {score}")
-                        break # Penalized for one other game match is enough
+        if basename_lower in _game_abbreviations_lower and not exact_match_bonus: # Solo se non è già un exact match del nome completo
+            fuzzy_bonus += 200 
+            # logging.debug(f"SCORE_LINUX ('{original_path}'): +200 (basename is known abbreviation '{basename_lower}')")
+            
+        if _game_title_original_sig_words_for_seq and len(basename) <= 5 and matches_initial_sequence(basename, _game_title_original_sig_words_for_seq):
+            fuzzy_bonus += 150 
+            # logging.debug(f"SCORE_LINUX ('{original_path}'): +150 (basename matches initial sequence)")
+            
+    score += exact_match_bonus + fuzzy_bonus
+    if exact_match_bonus > 0 or fuzzy_bonus > 0:
+         logging.debug(f"SCORE_LINUX ('{original_path}'): Total from basename game name match: +{exact_match_bonus + fuzzy_bonus}")
 
-    logging.info(f"SCORE_LINUX: Final score for '{original_path}' (Source: {source_description}) = {score}")
-    return (-score, path_lower_for_sorting) # Negativo per ordinamento decrescente
+
+    # --- 5. PENALITÀ SPECIFICHE (SUL BASENAME PRINCIPALMENTE) ---
+    generic_folder_names_to_penalize = {"data", "config", "settings", "cache", "logs", "common", "default", "user", "users"} 
+    # "profile" e "profiles" sono spesso cartelle di salvataggio valide, quindi rimosse da qui.
+    # "unity3d", "unrealengine", ecc., sono gestite da common_save_subdir se presenti lì.
+    
+    if basename_lower in generic_folder_names_to_penalize and \
+       not has_saves_hint_from_scan and \
+       exact_match_bonus == 0 and fuzzy_bonus < 100 and \
+       not is_common_save_subdir_basename: # Non penalizzare se è già stata identificata come common save subdir (es. config)
+        score -= 200
+        logging.debug(f"SCORE_LINUX ('{original_path}'): -200 (generic basename '{basename_lower}' with no strong game match/saves/common_subdir_match)")
+
+    if len(basename_lower) <= 2 and not is_common_save_subdir_basename and not has_saves_hint_from_scan and not (exact_match_bonus > 0 or fuzzy_bonus > 0):
+        score -= 100 
+        # logging.debug(f"SCORE_LINUX ('{original_path}'): -100 (basename too short and not otherwise significant)")
+
+    depth = len(original_path.split(os.sep)) - len(home_dir.split(os.sep)) 
+    if depth > 4: # Penalizza solo per profondità > 4 relativa a home (era > 3)
+        # Se il basename è una cartella di salvataggio esplicita o ha salvataggi, la penalità per profondità è meno rilevante
+        depth_penalty_multiplier = 1
+        if is_common_save_subdir_basename or has_saves_hint_from_scan:
+            depth_penalty_multiplier = 0.5 # Riduci la penalità per profondità se il target è buono
+        
+        applied_depth_penalty = getattr(config, 'PENALTY_LINUX_DEPTH_BASE', -5) * (depth - 4) * depth_penalty_multiplier
+        score += applied_depth_penalty
+        # logging.debug(f"SCORE_LINUX ('{original_path}'): Depth penalty {applied_depth_penalty} for depth {depth}")
+
+    # Logica per il ban di segmenti (se ancora necessaria dopo il ban in _search_recursive)
+    # Se un percorso bannato passa, dovrebbe avere un punteggio molto basso.
+    # Potremmo aggiungere una penalità forte qui se BANNED_PATH_CHECK in _search_recursive viene rimosso
+    # o se vogliamo un doppio controllo. Per ora, assumiamo che _search_recursive gestisca i ban diretti.
+
+    # Penalità se il percorso contiene "engine" o nomi simili ma NON è la cartella del gioco
+    # e non è una common_save_subdir esplicita e non ha salvataggi.
+    # Questo è il blocco che hai evidenziato tu.
+    generic_engine_terms_in_path = ["unity3d", "unrealengine", "godot", "cryengine", "gamemaker"] # Rimuovi ".config/unity3d" da qui perché troppo specifico per un check 'in path'
+    # Il nome base 'basename_lower' è già stato controllato da is_common_save_subdir_basename
+    # Questa penalità si applica se questi termini sono in parti *superiori* del percorso,
+    # e il percorso finale non è chiaramente il gioco o una cartella di salvataggi.
+    if not (exact_match_bonus > 0 or fuzzy_bonus > 150) and not has_saves_hint_from_scan and not is_common_save_subdir_basename:
+        for term in generic_engine_terms_in_path:
+            # Controlla se il termine è un componente del percorso, escludendo il basename stesso
+            path_components_for_engine_check = original_path.lower().split(os.sep)
+            if basename_lower in path_components_for_engine_check: # Non dovrebbe succedere, ma per sicurezza
+                path_components_for_engine_check.remove(basename_lower)
+
+            if term in path_components_for_engine_check:
+                score += getattr(config, 'PENALTY_LINUX_GENERIC_ENGINE_DIR', -100) # Era _penalty_generic_engine_dir
+                logging.debug(f"SCORE_LINUX ('{original_path}'): PENALTY_GENERIC_ENGINE_DIR for term '{term}' in parent path (final basename '{basename_lower}' not strong game match/saves/common_subdir) -> {score}")
+                break # Applica solo una volta
+
+
+    logging.info(f"SCORE_LINUX_FINAL_CALC: Path='{original_path}', Final Score={score}, Source='{source_description}', HasSavesHint={has_saves_hint_from_scan}, Basename='{basename_lower}', isCommonSubdir={is_common_save_subdir_basename}")
+    return (-score, path_lower_for_sorting)
+
 
 def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path=None, steam_id3_to_use=None, is_steam_game=True, installed_steam_games_dict=None):
     """
