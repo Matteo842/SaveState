@@ -832,42 +832,49 @@ def _search_recursive(current_path, current_depth, max_search_depth, source_pref
             item_is_company_match = False
             item_is_common_save_dir = item_name_lower in _linux_common_save_subdirs_lower
 
+            # --- Calcolo di item_is_game_match ---
             for abbr in _game_abbreviations_lower:
                 if are_names_similar(abbr, item_name, 
                                      game_title_sig_words_for_seq=_game_title_original_sig_words_for_seq,
                                      fuzzy_threshold=_fuzzy_threshold_path_match):
                     item_is_game_match = True
                     break
-            if not item_is_game_match:
-                    for company_name_clean in _known_companies_lower:
-                        # <--- NUOVO LOG (Inizio) --->
-                        # Logghiamo solo se stiamo per controllare un item_name di interesse (es. "Team Cherry")
-                        # o puoi loggare per ogni company_name_clean per vedere tutti i tentativi.
-                        # Per un debug mirato, mettiamo una condizione:
-                        if item_name_lower == "team cherry": # O il nome della cartella che vuoi tracciare
-                            logging.debug(f"DEBUG_ARE_NAMES_SIMILAR (Company Pre-Call): For item_name='{item_name}', company_clean='{company_name_clean}', fuzzy_thresh={_fuzzy_threshold_path_match}")
-                        # <--- NUOVO LOG (Fine) --->
-                        
-                        is_similar_result_company = are_names_similar(
-                                         company_name_clean, 
-                                         item_name, # Passa item_name con case originale
-                                         min_match_words=2, # Esplicito per sicurezza
-                                         game_title_sig_words_for_seq=None, 
-                                         fuzzy_threshold=_fuzzy_threshold_path_match 
-                    )
-                        
-                        # <--- NUOVO LOG (Inizio) --->
-                        if item_name_lower == "team cherry": # Logga il risultato specificamente per "Team Cherry"
-                             logging.debug(f"DEBUG_ARE_NAMES_SIMILAR (Company Post-Call): For item_name='{item_name}', company_clean='{company_name_clean}', Result={is_similar_result_company}")
-                        # <--- NUOVO LOG (Fine) --->
-
-                        if is_similar_result_company:
-                            item_is_company_match = True
-                            # <--- NUOVO LOG (Inizio) --->
-                            logging.debug(f"COMPANY_MATCH_FOUND: Item '{item_name}' matched company '{company_name_clean}'. Setting item_is_company_match=True.")
-                            # <--- NUOVO LOG (Fine) --->
-                            break 
             
+            # Calcolo di item_is_company_match (NUOVA VERSIONE)
+            if not item_is_game_match: # Esegui solo se non abbiamo già un game_match
+                item_is_company_match = False # Assicurati che sia False all'inizio di questo check
+
+                # Pulisci item_name (nome della sottocartella attuale, es. "Team Cherry") una volta
+                cleaned_item_name_for_company_check = clean_for_comparison(item_name) 
+
+                # Log per debug mirato a "Team Cherry"
+                if item_name_lower == "team cherry": 
+                    logging.debug(f"COMPANY_MATCH_LOOP_START: Iterating _known_companies_lower for item_name_lower='{item_name_lower}' (original item_name='{item_name}', cleaned_item_name_for_company_check='{cleaned_item_name_for_company_check}')")
+
+                for company_name_in_list in _known_companies_lower: # _known_companies_lower è già minuscola e pulita
+                    # Log per ogni comparazione se stiamo tracciando "Team Cherry"
+                    if item_name_lower == "team cherry": # item_name_lower è item_name.lower()
+                        logging.debug(f"COMPANY_MATCH_LOOP_ITERATION: Comparing cleaned_item_name='{cleaned_item_name_for_company_check}' with company_in_list='{company_name_in_list}')")
+
+                    # Tentativo 1: Confronto diretto dei nomi puliti
+                    if company_name_in_list == cleaned_item_name_for_company_check:
+                        item_is_company_match = True
+                        logging.debug(f"COMPANY_MATCH_DIRECT: Item '{item_name}' (cleaned: '{cleaned_item_name_for_company_check}') matched known company '{company_name_in_list}'. Setting item_is_company_match=True.")
+                        break  # Trovato un match, esci dal loop delle aziende
+
+                    # Tentativo 2 (Fallback): Usa are_names_similar (se il match diretto fallisce)
+                    # Questo è opzionale, ma potrebbe aiutare per nomi di aziende con lievi variazioni
+                    # che clean_for_comparison non normalizza completamente.
+                    # Assicurati che are_names_similar abbia i log interni attivati se usi questo.
+                    elif are_names_similar(company_name_in_list, item_name, # item_name originale con case
+                                         min_match_words=2, # O il valore che ritieni più opportuno
+                                         game_title_sig_words_for_seq=None,
+                                         fuzzy_threshold=_fuzzy_threshold_path_match - 10): # Soglia leggermente più bassa
+                        item_is_company_match = True
+                        logging.debug(f"COMPANY_MATCH_FUZZY: Item '{item_name}' fuzzy matched company '{company_name_in_list}'. Setting item_is_company_match=True.")
+                        break
+            # Dopo questo, item_is_company_match sarà True o False.
+
             sub_is_potential, sub_has_saves_hint = _is_potential_save_dir(item_path, item_name_lower, current_depth + 1)
 
             logging.debug(f"PATH_ITEM_EVAL FOR RECURSION: Current Depth: {current_depth}, Item: '{item_path}'")
