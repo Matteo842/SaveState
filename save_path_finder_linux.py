@@ -146,7 +146,39 @@ def generate_abbreviations(game_name_raw, game_install_dir_raw=None):
         abbreviations.add(significant_words[0])
 
 
-    # 5. Filtro finale e ordinamento (come in Windows)
+    # 5. Aggiungi variante CamelCase (senza spazi, mantenendo maiuscole iniziali)
+    # Questo aiuta con casi come "FTL__Faster_Than_Light" -> "FasterThanLight"
+    name_for_camel_case = re.sub(r'[™®©:]', '', game_name_raw)  # Rimuovi simboli
+    name_for_camel_case = re.sub(r'[-_]', ' ', name_for_camel_case)  # Normalizza separatori
+    name_for_camel_case = re.sub(r'\s+', ' ', name_for_camel_case).strip()  # Normalizza spazi
+    
+    # Dividi in parole e mantieni solo quelle significative
+    camel_case_words = [w for w in name_for_camel_case.split(' ') 
+                       if w and w.lower() not in ignore_words_lower and len(w) > 1]
+    
+    # Crea versione CamelCase: prima lettera maiuscola di ogni parola, resto minuscolo
+    if camel_case_words:
+        # Versione 1: Con tutte le parole (es. "FtlFasterThanLight")
+        camel_case_variant = ''.join(w[0].upper() + w[1:].lower() for w in camel_case_words)
+        if len(camel_case_variant) >= 2:
+            abbreviations.add(camel_case_variant)
+            # Aggiungi anche una versione tutta minuscola
+            abbreviations.add(camel_case_variant.lower())
+            
+        # Versione 2: Senza la prima parola se sembra un acronimo (es. "FasterThanLight" senza "Ftl")
+        # Questo aiuta con giochi come "FTL__Faster_Than_Light" dove il salvataggio è in "FasterThanLight"
+        if len(camel_case_words) > 1 and len(camel_case_words[0]) <= 4:  # Potenziale acronimo
+            # Controlla se la prima parola è un acronimo (tutte maiuscole o 2-4 caratteri)
+            first_word = camel_case_words[0]
+            if first_word.isupper() or len(first_word) <= 4:
+                # Crea versione senza la prima parola
+                camel_case_no_prefix = ''.join(w[0].upper() + w[1:].lower() for w in camel_case_words[1:])
+                if len(camel_case_no_prefix) >= 2:
+                    abbreviations.add(camel_case_no_prefix)
+                    # Aggiungi anche una versione tutta minuscola
+                    abbreviations.add(camel_case_no_prefix.lower())
+    
+    # 6. Filtro finale e ordinamento (come in Windows)
     # Rimuovi None/stringhe vuote e abbreviazioni troppo corte (es. < 2 caratteri)
     final_abbreviations = {abbr for abbr in abbreviations if abbr and len(abbr) >= 2}
     
@@ -505,7 +537,7 @@ def _initialize_globals_from_config(game_name_raw, game_install_dir_raw, install
     _game_abbreviations_lower = {clean_for_comparison(abbr) for abbr in _game_abbreviations}
     _game_abbreviations_upper = {abbr.upper() for abbr in _game_abbreviations}
 
-    _known_companies_lower = [kc.lower() for kc in getattr(config, 'KNOWN_COMPANIES', [])]
+    _known_companies_lower = [kc.lower() for kc in getattr(config, 'COMMON_PUBLISHERS', [])]
     _linux_common_save_subdirs_lower = {csd.lower() for csd in getattr(config, 'LINUX_COMMON_SAVE_SUBDIRS', [])}
     _linux_banned_path_fragments_lower = {bps.lower() for bps in getattr(config, 'LINUX_BANNED_PATH_FRAGMENTS', getattr(config, 'BANNED_FOLDER_NAMES_LOWER', []))}
     _common_save_extensions = {e.lower() for e in getattr(config, 'COMMON_SAVE_EXTENSIONS', set())}
