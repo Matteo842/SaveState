@@ -33,9 +33,23 @@ def get_duckstation_memcard_path() -> str | None:
         except Exception as e:
             log.error(f"Error trying to determine Documents path: {e}")
 
-    # Add elif for Linux/macOS if needed later
     elif system == "Linux":
-        log.debug("DuckStation path detection for Linux not implemented yet.")
+        user_home = os.path.expanduser("~")
+        # 1. Check Flatpak path first
+        flatpak_path = os.path.join(user_home, ".var", "app", "org.duckstation.DuckStation", "config", "duckstation", "memcards")
+        if os.path.isdir(flatpak_path):
+            memcard_path = flatpak_path
+            log.debug(f"Found DuckStation memcards via Flatpak path: {memcard_path}")
+        else:
+            log.debug(f"Flatpak path not found: {flatpak_path}")
+            # 2. Check standard XDG config path
+            xdg_config_path = os.path.join(user_home, ".config", "duckstation", "memcards")
+            if os.path.isdir(xdg_config_path):
+                memcard_path = xdg_config_path
+                log.debug(f"Found DuckStation memcards via XDG config path: {memcard_path}")
+            else:
+                log.debug(f"XDG config path not found: {xdg_config_path}. No standard Linux path found.")
+
     elif system == "Darwin": # macOS
         log.debug("DuckStation path detection for macOS not implemented yet.")
 
