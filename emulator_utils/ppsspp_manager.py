@@ -1,6 +1,7 @@
 # ppsspp_manager.py
 import os
 import logging
+import platform # Added platform import
 import re # Import re for potential future use, though simple check used now
 from .sfo_utils import parse_param_sfo
 
@@ -30,19 +31,66 @@ def find_ppsspp_profiles(executable_path=None):
 
     save_data_base_path = None 
     profiles_dict = {} # Use a dictionary to group paths by base ID
+    
+    system = platform.system() # Get OS once
+    user_home = os.path.expanduser('~') # Get user_home once
+
+    potential_paths_to_check = []
+
+    # 1. Check for portable mode first if executable_path is provided
+    if executable_path:
+        # Ensure executable_path is a file, then get its directory
+        if os.path.isfile(executable_path):
+            exe_dir = os.path.dirname(executable_path)
+            portable_save_path = os.path.join(exe_dir, "memstick", "PSP", "SAVEDATA")
+            potential_paths_to_check.append(portable_save_path)
+            log.debug(f"Added portable path to check: {portable_save_path}")
+        else:
+            log.warning(f"Provided executable_path '{executable_path}' is not a valid file. Skipping portable check.")
+
+    # 2. Add OS-specific standard paths
+    if system == "Windows":
+        documents_path = os.path.join(user_home, 'Documents')
+        # CORRECT_STANDARD_SUBPATH is "PPSSPP/PSP/SAVEDATA"
+        win_standard_path = os.path.join(documents_path, CORRECT_STANDARD_SUBPATH)
+        potential_paths_to_check.append(win_standard_path)
+        log.debug(f"Added Windows standard path to check: {win_standard_path}")
+    
+    elif system == "Linux":
+        # Flatpak path
+        flatpak_config_path = os.path.join(user_home, ".var", "app", "org.ppsspp.PPSSPP", "config", "ppsspp", "PSP", "SAVEDATA")
+        potential_paths_to_check.append(flatpak_config_path)
+        log.debug(f"Added Linux Flatpak path to check: {flatpak_config_path}")
+        
+        # Standard XDG config path
+        xdg_config_path = os.path.join(user_home, ".config", "ppsspp", "PSP", "SAVEDATA")
+        potential_paths_to_check.append(xdg_config_path)
+        log.debug(f"Added Linux XDG config path to check: {xdg_config_path}")
+
+    elif system == "Darwin": # macOS
+        # Standard macOS path (often similar to Linux XDG or in Application Support)
+        mac_app_support_path = os.path.join(user_home, "Library", "Application Support", "PPSSPP", "PSP", "SAVEDATA")
+        potential_paths_to_check.append(mac_app_support_path)
+        log.debug(f"Added macOS Application Support path to check: {mac_app_support_path}")
+        
+        # macOS can also use .config/ppsspp for newer builds
+        mac_xdg_config_path = os.path.join(user_home, ".config", "ppsspp", "PSP", "SAVEDATA")
+        potential_paths_to_check.append(mac_xdg_config_path)
+        log.debug(f"Added macOS XDG-like path to check: {mac_xdg_config_path}")
+
+    # 3. Iterate and find the first valid path
+    for path_to_try in potential_paths_to_check:
+        log.info(f"Checking PPSSPP SAVEDATA location: {path_to_try}")
+        if os.path.isdir(path_to_try):
+            log.info(f"Found valid PPSSPP SAVEDATA at: {path_to_try}")
+            save_data_base_path = path_to_try
+            break # Use the first one found
+    
+    if not save_data_base_path:
+        log.warning(f"Could not find any valid PPSSPP SAVEDATA directory after checking: {potential_paths_to_check}")
+        return [] # Exit if no valid path is found
 
     try:
-        # ONLY Check Standard Location (using path from screenshot)
-        documents_path = os.path.join(os.path.expanduser('~'), 'Documents')
-        standard_path = os.path.join(documents_path, CORRECT_STANDARD_SUBPATH) # Use corrected path
-        log.info(f"Checking specific standard PPSSPP SAVEDATA location: {standard_path}")
-        if os.path.isdir(standard_path):
-            log.info("Found PPSSPP SAVEDATA in specific standard location.")
-            save_data_base_path = standard_path
-        else:
-            log.warning(f"Specific standard PPSSPP SAVEDATA directory NOT FOUND at: {standard_path}")
-            return [] # Exit if not found here
-
         # --- Proceed with listing profiles using the found save_data_base_path ---
         log.info(f"Scanning directory for game IDs: {save_data_base_path}")
         # Elenca le sottocartelle (ID dei giochi) dentro SAVEDATA
