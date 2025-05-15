@@ -18,6 +18,7 @@ from .snes9x_manager import find_snes9x_profiles
 from .desmume_manager import find_desmume_profiles
 from .cemu_manager import find_cemu_profiles
 from .flycast_manager import find_flycast_profiles
+from .shadps4_manager import find_shadps4_profiles
 
 # Configure basic logging for this module
 log = logging.getLogger(__name__)
@@ -79,6 +80,10 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'flycast': {
         'name': 'Flycast',
         'profile_finder': lambda path: find_flycast_profiles(path)
+    },
+    'shadps4': {
+        'name': 'ShadPS4',
+        'profile_finder': lambda path: find_shadps4_profiles(path)
     },
 }
 
@@ -174,12 +179,47 @@ def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] 
             emulator_name = config['name']
             profile_finder = config['profile_finder']
             log.info(f"Detected known emulator '{emulator_name}' based on target path: {target_path}")
+
+            # Determine the actual path to pass to the profile finder
+            # If target_path is a file (e.g. an .exe), use its directory.
+            # Otherwise (if it's already a dir or None), use target_path as is.
+            path_to_scan = target_path 
+            if target_path and os.path.isfile(target_path):
+                path_to_scan = os.path.dirname(target_path)
+                log.debug(f"Target path '{target_path}' is a file. Using its directory '{path_to_scan}' for profile finding for {emulator_name}.")
+
             try:
-                profiles = profile_finder(target_path)
+                # Pass the (potentially modified) path_to_scan to the finder
+                profiles = profile_finder(path_to_scan) 
                 if profiles is not None:
                     log.info(f"Profile finder for {config['name']} ran. Found {len(profiles)} profiles.")
-                    # Return the DISPLAY name and profiles
-                    return emulator_name, profiles 
+                    
+                    # Convert profiles from dict to list if needed
+                    # This ensures compatibility with EmulatorGameSelectionDialog
+                    # which expects a list of dictionaries
+                    profiles_list = []
+                    if isinstance(profiles, dict):
+                        for profile_id, profile_data in profiles.items():
+                            # If profile_data is already a dict with 'id', use it as is
+                            if isinstance(profile_data, dict) and 'id' in profile_data:
+                                profiles_list.append(profile_data)
+                            # If profile_data is a string or dict without 'id', create a new dict
+                            else:
+                                profile_dict = {'id': profile_id}
+                                if isinstance(profile_data, dict):
+                                    # Merge the existing dict with our new one
+                                    profile_dict.update(profile_data)
+                                else:
+                                    # profile_data is a string (or other non-dict), use it as 'name'
+                                    profile_dict['name'] = str(profile_data)
+                                    profile_dict['path'] = str(profile_data)  # Default path to the same value
+                                profiles_list.append(profile_dict)
+                    else:
+                        # If profiles is already a list, use it as is
+                        profiles_list = profiles
+                    
+                    # Return the DISPLAY name and profiles list
+                    return emulator_name, profiles_list
                 else:
                     log.warning(f"Profile finder for '{config['name']}' failed or returned None. Continuing detection...")
                     # We continue here, maybe another keyword matches later?
