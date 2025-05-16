@@ -486,7 +486,7 @@ class MainWindow(QMainWindow):
     def updateUiText(self):
         """Updates the UI text"""
         logging.debug(">>> updateUiText: START <<<")
-        self.setWindowTitle("SaveState - 1.3.9")
+        self.setWindowTitle("SaveState - 1.4.0")
         self.profile_table_manager.retranslate_headers()
         self.settings_button.setText("Settings...")
         self.new_profile_button.setText("New Profile...")

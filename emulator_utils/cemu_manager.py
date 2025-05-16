@@ -5,6 +5,8 @@ import os
 import logging
 import glob
 import xml.etree.ElementTree as ET
+import platform
+import getpass
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
@@ -104,102 +106,173 @@ def _parse_cemu_title_txt(file_path: str) -> str | None:
     return None
 
 
-def find_cemu_profiles(executable_path: str | None) -> list[dict]:
-    """
-    Finds Cemu save data directories located within the 'mlc01' folder,
-    typically relative to the emulator's executable. Reads game titles
-    from the corresponding title metadata.
-
-    Args:
-        executable_path: The full path to the Cemu executable (e.g., Cemu.exe).
-
-    Returns:
-        List of profile dicts: [{'id': 'title_id', 'name': 'game_title', 'paths': [save_dir_path]}, ...]
-    """
+def find_cemu_profiles(executable_path: str | None):
+    log.info(f"Attempting to find Cemu profiles. Executable hint: {executable_path}")
     profiles = []
-    if not executable_path or not os.path.isfile(executable_path):
-        log.warning("find_cemu_profiles: Valid executable_path is required.")
-        return profiles
-
-    log.info(f"Attempting to find Cemu profiles relative to: {executable_path}")
-
-    # Cemu's data directory priority:
-    # 1. <mlc_path> from settings.xml next to executable
-    # 2. %APPDATA%/Cemu/mlc01 (Standard install location)
-    # 3. mlc01 directory next to executable (Portable location)
-    emulator_dir = os.path.dirname(executable_path)
     mlc_path = None
+    user_home = os.path.expanduser('~')
+    system = platform.system()
+    cemu_base_dir_candidate = None
+    executable_was_file = False
 
-    # 1. Try reading mlc_path from settings.xml
-    settings_file = os.path.join(emulator_dir, "settings.xml")
-    if os.path.isfile(settings_file):
-        log.info(f"Found Cemu settings file: {settings_file}")
-        try:
-            tree = ET.parse(settings_file)
-            root = tree.getroot()
-            # Find <mlc_path> within <General> section (adjust path if needed based on actual XML structure)
-            mlc_path_element = root.find('.//mlc_path') # More robust find
-            if mlc_path_element is not None and mlc_path_element.text:
-                potential_path = mlc_path_element.text.strip()
-                # Basic validation: Check if the potential path exists and is a directory
-                if os.path.isdir(potential_path):
-                    mlc_path = potential_path
-                    log.info(f"  Using mlc_path from settings.xml: {mlc_path}")
+    if executable_path:
+        if os.path.isfile(executable_path):
+            cemu_base_dir_candidate = os.path.dirname(executable_path)
+            executable_was_file = True
+            log.debug(f"Executable path is a file. Base dir candidate: {cemu_base_dir_candidate}")
+        elif os.path.isdir(executable_path):
+            cemu_base_dir_candidate = executable_path
+            log.debug(f"Executable path is a directory. Base dir candidate: {cemu_base_dir_candidate}")
+        else:
+            log.warning(f"Provided executable_path '{executable_path}' is not a valid file or directory.")
+
+    # Priority 1: settings.xml (if cemu_base_dir_candidate is valid)
+    if not mlc_path and cemu_base_dir_candidate:
+        settings_file_path = os.path.join(cemu_base_dir_candidate, "settings.xml")
+        if os.path.isfile(settings_file_path):
+            log.info(f"Found Cemu settings file: {settings_file_path}")
+            try:
+                tree = ET.parse(settings_file_path)
+                root = tree.getroot()
+                mlc_path_element = root.find('.//mlc_path') # More robust find
+                if mlc_path_element is not None and mlc_path_element.text:
+                    potential_mlc_from_settings = mlc_path_element.text.strip()
+                    if os.path.isdir(potential_mlc_from_settings):
+                        mlc_path = potential_mlc_from_settings
+                        log.info(f"  Using mlc_path from settings.xml: {mlc_path}")
+                    else:
+                        log.warning(f"  Path '{potential_mlc_from_settings}' from settings.xml <mlc_path> is not a valid directory. Ignoring.")
                 else:
-                    log.warning(f"  Path '{potential_path}' from settings.xml <mlc_path> is not a valid directory. Ignoring.")
-            else:
-                log.info(f"  No <mlc_path> tag found or tag is empty in {settings_file}.")
-        except ET.ParseError as e:
-            log.error(f"  Error parsing Cemu settings.xml: {e}. Will try other locations.")
-        except Exception as e:
-            log.error(f"  Unexpected error reading Cemu settings.xml: {e}. Will try other locations.")
-
-    # 2. If not found via settings.xml, check standard AppData location
-    if mlc_path is None:
-        appdata_path = os.getenv('APPDATA')
-        if appdata_path:
-            cemu_appdata_mlc_path = os.path.join(appdata_path, "Cemu", "mlc01")
-            log.info(f"Checking standard AppData Cemu mlc01 path: {cemu_appdata_mlc_path}")
-            if os.path.isdir(cemu_appdata_mlc_path):
-                mlc_path = cemu_appdata_mlc_path
-                log.info(f"  Using mlc_path from AppData: {mlc_path}")
-            else:
-                log.info(f"  Standard AppData Cemu mlc01 path not found.")
+                    log.info(f"  No <mlc_path> tag found or tag is empty in {settings_file_path}.")
+            except ET.ParseError as e:
+                log.error(f"  Error parsing Cemu settings.xml: {e}. Will try other locations.")
+            except Exception as e:
+                log.error(f"  Unexpected error reading Cemu settings.xml: {e}. Will try other locations.")
         else:
-            log.warning("Could not determine AppData path. Skipping check.")
+            log.debug(f"Cemu settings.xml not found at: {settings_file_path}")
 
-    # 3. If still not found, try default location next to executable (portable)
-    if mlc_path is None:
-        default_mlc_path = os.path.join(emulator_dir, "mlc01")
-        log.info(f"Checking for mlc01 directory next to executable: {default_mlc_path}")
-        if os.path.isdir(default_mlc_path):
-            mlc_path = default_mlc_path
-            log.info(f"  Using mlc_path adjacent to executable: {mlc_path}")
-        else:
-            log.warning(f"Cemu 'mlc01' directory not found next to executable.")
+    # Priority 2: mlc01 next to cemu_base_dir_candidate (if valid)
+    if not mlc_path and cemu_base_dir_candidate:
+        potential_mlc_location = os.path.join(cemu_base_dir_candidate, "mlc01")
+        if os.path.isdir(potential_mlc_location):
+            mlc_path = potential_mlc_location
+            log.info(f"Found mlc01 in the candidate base directory: {mlc_path}")
 
-    # If no mlc_path could be determined after all checks
-    if mlc_path is None:
-        log.error("Could not determine Cemu mlc01 path from settings.xml, AppData, or executable directory. Cannot find profiles.")
-        return profiles # Cannot proceed without a valid mlc_path
+    # Priority 3: mlc01 in parent of cemu_base_dir_candidate (if executable_path was a file)
+    if not mlc_path and cemu_base_dir_candidate and executable_was_file:
+        parent_of_base_dir = os.path.dirname(cemu_base_dir_candidate)
+        potential_mlc_location = os.path.join(parent_of_base_dir, "mlc01")
+        if os.path.isdir(potential_mlc_location):
+            mlc_path = potential_mlc_location
+            log.info(f"Found mlc01 in parent of executable's dir: {mlc_path}")
 
-    log.info(f"Using Cemu mlc path: {mlc_path}")
+    # Priority 4: More advanced Wine prefix path deduction (if system is Linux and executable_path was a file)
+    if not mlc_path and system == "Linux" and cemu_base_dir_candidate and executable_was_file:
+        # Original exe_dir for Wine deduction is cemu_base_dir_candidate if executable_was_file
+        current_path_segment = cemu_base_dir_candidate 
+        drive_c_path = None
+        for _ in range(10): # Limit depth
+            parent_segment, folder_name = os.path.split(current_path_segment)
+            if folder_name.lower() == "drive_c":
+                drive_c_path = current_path_segment
+                break
+            if parent_segment == current_path_segment: break
+            current_path_segment = parent_segment
+        
+        if drive_c_path:
+            try:
+                wine_user = getpass.getuser()
+                wine_appdata_paths = [
+                    os.path.join(drive_c_path, "users", wine_user, "AppData", "Roaming", "Cemu", "mlc01"),
+                    os.path.join(drive_c_path, "users", "Public", "AppData", "Roaming", "Cemu", "mlc01"),
+                    os.path.join(drive_c_path, "users", wine_user, "AppData", "Local", "Cemu", "mlc01"),
+                    os.path.join(drive_c_path, "users", "Public", "AppData", "Local", "Cemu", "mlc01")
+                ]
+                for p_path in wine_appdata_paths:
+                    if os.path.isdir(p_path):
+                        mlc_path = p_path
+                        log.info(f"Found mlc01 in deduced Wine AppData path: {mlc_path}")
+                        break
+            except Exception as e:
+                log.debug(f"Error or incomplete info for deducing Wine AppData path: {e}")
 
-    # Base path where game saves are stored by Title ID
+    # Priority 5: Standard OS-specific locations (if not found by other means)
+    if not mlc_path:
+        log.info("mlc01 not found via executable-relative paths or settings.xml. Checking OS standard locations.")
+        if system == "Windows":
+            appdata = os.getenv('APPDATA')
+            local_appdata = os.getenv('LOCALAPPDATA')
+            paths_to_check_windows = []
+            if appdata: paths_to_check_windows.append(os.path.join(appdata, "Cemu", "mlc01"))
+            if local_appdata: paths_to_check_windows.append(os.path.join(local_appdata, "Cemu", "mlc01"))
+            
+            for p_path in paths_to_check_windows:
+                if os.path.isdir(p_path):
+                    mlc_path = p_path
+                    log.info(f"Found mlc01 in Windows standard path: {mlc_path}")
+                    break
+
+        elif system == "Linux":
+            linux_paths_to_check = [
+                os.path.join(user_home, ".local", "share", "Cemu", "mlc01"),
+                os.path.join(user_home, ".local", "share", "cemu", "mlc01"),
+                os.path.join(user_home, ".config", "Cemu", "mlc01"),
+                os.path.join(user_home, ".config", "cemu", "mlc01"),
+                os.path.join(user_home, ".cemu", "mlc01")
+            ]
+            for p_path in linux_paths_to_check:
+                if os.path.isdir(p_path):
+                    mlc_path = p_path
+                    log.info(f"Found mlc01 in Linux standard path: {mlc_path}")
+                    break
+        
+        elif system == "Darwin": # macOS
+            mac_paths_to_check = [
+                os.path.join(user_home, "Library", "Application Support", "Cemu", "mlc01"),
+                os.path.join(user_home, ".config", "Cemu", "mlc01"), # Less common but possible
+                os.path.join(user_home, ".cemu", "mlc01")
+            ]
+            for p_path in mac_paths_to_check:
+                if os.path.isdir(p_path):
+                    mlc_path = p_path
+                    log.info(f"Found mlc01 in macOS standard path: {mlc_path}")
+                    break
+
+    if not mlc_path:
+        log.warning("Could not determine Cemu mlc01 path. Cemu profiles cannot be found.")
+        return []
+
+    log.info(f"Using Cemu mlc01 path: {mlc_path}")
+
+    # Determine saves_base_path (typically for retail games: usr/save/00050000)
+    # For simplicity, focusing on the primary retail save location.
+    # Cemu save structure can be complex with updates, DLCs in other similar folders (0005000C, 0005000E)
+    # but game saves are predominantly under 00050000.
     saves_base_path = os.path.join(mlc_path, "usr", "save", "00050000")
 
     if not os.path.isdir(saves_base_path):
-        log.warning(f"Cemu saves base directory not found: {saves_base_path}")
-        return profiles
+        log.warning(f"Cemu retail saves base path not found or not a directory: {saves_base_path}")
+        # Also check common/mlc01/usr/save/common if previous doesn't exist
+        common_saves_base_path = os.path.join(mlc_path, "usr", "save", "common")
+        if os.path.isdir(common_saves_base_path):
+            log.info(f"Found common saves base path: {common_saves_base_path}. Using this instead.")
+            saves_base_path = common_saves_base_path # Use this if 00050000 is not present
+        else:
+            log.warning(f"Common saves base path also not found: {common_saves_base_path}")
+            return profiles # profiles is empty [] at this point
 
-    log.info(f"Searching for Title ID directories in: {saves_base_path}")
-
-    # Find all subdirectories in the saves_base_path (potential Title IDs)
+    log.info(f"Scanning Cemu saves in: {saves_base_path}")
     try:
         potential_dirs = [d for d in os.listdir(saves_base_path) if os.path.isdir(os.path.join(saves_base_path, d))]
-        log.info(f"Found {len(potential_dirs)} potential Title ID directories.")
-    except OSError as e:
-        log.error(f"Error listing directories in {saves_base_path}: {e}")
+    except FileNotFoundError:
+        log.warning(f"Cemu saves directory appears to have been removed or is inaccessible: {saves_base_path}")
+        return profiles # profiles is empty []
+    except Exception as e:
+        log.error(f"Error listing Cemu save directories in {saves_base_path}: {e}")
+        return profiles # profiles is empty []
+    
+    if not potential_dirs:
+        log.info(f"No potential game save (Title ID) directories found in {saves_base_path}.")
         return profiles
 
     for title_id in potential_dirs:
