@@ -51,7 +51,21 @@ def get_duckstation_memcard_path() -> str | None:
                 log.debug(f"XDG config path not found: {xdg_config_path}. No standard Linux path found.")
 
     elif system == "Darwin": # macOS
-        log.debug("DuckStation path detection for macOS not implemented yet.")
+        user_home = os.path.expanduser("~")
+        # Standard macOS Application Support path
+        macos_path = os.path.join(user_home, "Library", "Application Support", "DuckStation", "memcards")
+        if os.path.isdir(macos_path):
+            memcard_path = macos_path
+            log.debug(f"Found DuckStation memcards via macOS Application Support path: {memcard_path}")
+        else:
+            log.debug(f"macOS Application Support path not found: {macos_path}")
+            # Alternative path (less common)
+            alt_macos_path = os.path.join(user_home, ".config", "duckstation", "memcards")
+            if os.path.isdir(alt_macos_path):
+                memcard_path = alt_macos_path
+                log.debug(f"Found DuckStation memcards via alternative macOS path: {memcard_path}")
+            else:
+                log.debug(f"Alternative macOS path not found: {alt_macos_path}. No standard macOS path found.")
 
     if memcard_path:
         log.info(f"Using DuckStation memory card directory: {memcard_path}")
