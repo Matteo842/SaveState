@@ -338,7 +338,7 @@ COMMON_PUBLISHERS = [
     'ZAUM Studio', # Disco Elysium
     'Nerial',
     'Two and Thirty Software',
-    'nomada studio' #GRIS
+    'nomada studio' # GRIS
     'NBGI' # DarkSouls Remastered
     
     # Aggiungi qui altri nomi che ti vengono in mente o che noti mancare!
@@ -368,13 +368,14 @@ COMMON_SAVE_EXTENSIONS = {
     '.db',         # Alcuni giochi usano database SQLite o simili
     '.ark',        # Usato da Ark: Survival Evolved
 
-    # Estensioni Emulazione (se vuoi includerle, altrimenti rimuovile)
+    # Estensioni Emulazione
     '.srm',        # Save RAM (SNES, GBA, etc.)
     '.state',      # Save State (comune in molti emulatori)
     '.eep',        # EEPROM save (N64, GBA)
     '.fla',        # Flash RAM save (GBA)
     '.mc', '.mcr', # Memory Card (PS1/PS2)
     '.gci',        # GameCube Memory Card Image
+    '.sl2',        # DarkSouls 3
 
     # Aggiungi altre estensioni specifiche che conosci o trovi
 }
