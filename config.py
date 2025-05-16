@@ -6,7 +6,7 @@ import platform # Aggiunto per system detection
 
 # --- Nome Applicazione (per cartella AppData) ---
 APP_NAME = "SaveState"
-APP_VERSION = "1.3.9" # Restored APP_VERSION
+APP_VERSION = "1.4.0" # Restored APP_VERSION
 
 # --- Funzione per Trovare/Creare Cartella Dati App ---
 def get_app_data_folder():
@@ -539,41 +539,6 @@ MAX_SUB_ITEMS_TO_SCAN_LINUX = 50
 MAX_SHALLOW_EXPLORE_DEPTH_LINUX = 1
 
 # <<< FINE COSTANTI LINUX SCORING & DEPTH >>>
-
-# Lista di estensioni file comuni (minuscolo, con punto iniziale)
-# usate per i file di salvataggio dei giochi.
-COMMON_SAVE_EXTENSIONS = {
-    '.sav',        # La più classica (Save)
-    '.save',       # Variante comune
-    '.dat',        # Generica, ma usatissima (Data)
-    '.bin',        # Generica binaria, a volte usata
-    '.slot',       # Per salvataggi basati su slot
-    '.prof',       # Profile
-    '.profile',    # Profile
-    '.usr',        # User data
-    '.sgd',        # Steam Game Data? (Specifico a volte)
-    '.json',       # Usata da alcuni giochi moderni/indie (es. Minecraft per alcuni dati)
-    '.xml',        # Meno comune per salvataggi binari, ma usata per dati strutturati
-    '.bak',        # A volte usato come estensione per backup automatici interni
-    '.tmp',        # Raramente, ma alcuni giochi salvano temporanei che diventano save
-    '.gam',        # Usato da alcuni giochi più vecchi (Game)
-    '.ess',        # Skyrim Special Edition Save
-    '.fos',        # Fallout Save
-    '.lsf',        # Larian Studios Format (Divinity: Original Sin 2)
-    '.lsb',        # Larian Studios Format (Baldur's Gate 3?)
-    '.db',         # Alcuni giochi usano database SQLite o simili
-    '.ark',        # Usato da Ark: Survival Evolved
-
-    # Estensioni Emulazione (se vuoi includerle, altrimenti rimuovile)
-    '.srm',        # Save RAM (SNES, GBA, etc.)
-    '.state',      # Save State (comune in molti emulatori)
-    '.eep',        # EEPROM save (N64, GBA)
-    '.fla',        # Flash RAM save (GBA)
-    '.mc', '.mcr', # Memory Card (PS1/PS2)
-    '.gci',        # GameCube Memory Card Image
-
-    # Aggiungi altre estensioni specifiche che conosci o trovi
-}
 
 # Set di sottostringhe comuni (minuscole) trovate nei nomi dei file di salvataggio
 # Usato per il check euristico del contenuto di una cartella
