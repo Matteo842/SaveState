@@ -243,8 +243,16 @@ def find_flycast_profiles(executable_path: str | None = None) -> list[dict] | No
     log.info("Scanning for Flycast game saves...")
 
     exe_dir_hint = None
-    if executable_path and os.path.isfile(executable_path):
-        exe_dir_hint = os.path.dirname(executable_path)
+    if executable_path:
+        if os.path.isfile(executable_path):
+            exe_dir_hint = os.path.dirname(executable_path)
+            log.debug(f"executable_path ('{executable_path}') is a file, using parent dir: {exe_dir_hint} as hint.")
+        elif os.path.isdir(executable_path):
+            exe_dir_hint = executable_path # Assume it's the emulator's root directory
+            log.debug(f"executable_path ('{executable_path}') is a directory, using it directly as hint.")
+        else:
+            log.debug(f"executable_path ('{executable_path}') is neither a file nor a directory, skipping as hint.")
+            exe_dir_hint = None
 
     savedata_dir = get_flycast_savedata_path(executable_dir_hint=exe_dir_hint)
 
