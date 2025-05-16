@@ -3,6 +3,7 @@ import re
 import glob
 import logging
 import json
+import platform
 
 # Configure basic logging for this module
 log = logging.getLogger(__name__)
@@ -40,28 +41,68 @@ def load_citra_titles() -> dict:
         return _citra_titles_cache
 
 def _get_citra_sdmc_path(user_profile_path=None):
-    """Gets the default Citra/Azahar SDMC path, checking Azahar first."""
-    appdata_path = os.getenv('APPDATA', '')
-    if not appdata_path:
-        log.error("Could not determine APPDATA environment variable.")
+    """Gets the default Citra/Azahar SDMC path, checking standard locations based on OS."""
+    system = platform.system()
+    user_home = os.path.expanduser("~")
+    sdmc_path_candidate = None
+
+    if system == "Windows":
+        appdata_path = os.getenv('APPDATA', '')
+        if not appdata_path:
+            log.error("Could not determine APPDATA environment variable on Windows.")
+            return None
+
+        # Windows: Check Azahar first, then Citra
+        azahar_base_path = os.path.join(appdata_path, 'Azahar')
+        citra_base_path = os.path.join(appdata_path, 'Citra')
+
+        if os.path.isdir(azahar_base_path):
+            log.info(f"Found Azahar directory: {azahar_base_path}")
+            sdmc_path_candidate = os.path.join(azahar_base_path, 'sdmc')
+        elif os.path.isdir(citra_base_path):
+            log.info(f"Found Citra directory: {citra_base_path}")
+            sdmc_path_candidate = os.path.join(citra_base_path, 'sdmc')
+        else:
+            log.error(f"Neither Azahar ('{azahar_base_path}') nor Citra ('{citra_base_path}') directory found in APPDATA.")
+            return None
+
+    elif system == "Linux":
+        # Linux: Check standard XDG data path, then Flatpak data path
+        paths_to_check_linux = [
+            os.path.join(user_home, '.local', 'share', 'citra-emu', 'sdmc'), # Standard XDG
+            os.path.join(user_home, '.var', 'app', 'org.citra_emu.citra', 'data', 'citra-emu', 'sdmc'), # Flatpak
+            # Less common for sdmc, but as a fallback for config locations
+            os.path.join(user_home, '.config', 'citra-emu', 'sdmc'),
+            os.path.join(user_home, '.var', 'app', 'org.citra_emu.citra', 'config', 'citra-emu', 'sdmc')
+        ]
+        for path_linux in paths_to_check_linux:
+            if os.path.isdir(path_linux):
+                log.info(f"Found Citra SDMC directory on Linux: {path_linux}")
+                sdmc_path_candidate = path_linux
+                break
+        if not sdmc_path_candidate:
+            log.error(f"Citra SDMC directory not found in standard Linux locations.")
+            return None
+
+    elif system == "Darwin": # macOS
+        macos_path = os.path.join(user_home, 'Library', 'Application Support', 'Citra', 'sdmc')
+        if os.path.isdir(macos_path):
+            log.info(f"Found Citra SDMC directory on macOS: {macos_path}")
+            sdmc_path_candidate = macos_path
+        else:
+            log.error(f"Citra SDMC directory not found at: {macos_path}")
+            return None
+            
+    else:
+        log.error(f"Unsupported operating system for Citra path detection: {system}")
         return None
 
-    azahar_base_path = os.path.join(appdata_path, 'Azahar')
-    citra_base_path = os.path.join(appdata_path, 'Citra')
-    sdmc_path = None
-
-    if os.path.isdir(azahar_base_path):
-        log.info(f"Found Azahar directory: {azahar_base_path}")
-        sdmc_path = os.path.join(azahar_base_path, 'sdmc')
-    elif os.path.isdir(citra_base_path):
-        log.info(f"Found Citra directory: {citra_base_path}")
-        sdmc_path = os.path.join(citra_base_path, 'sdmc')
+    if sdmc_path_candidate and os.path.isdir(sdmc_path_candidate):
+        log.debug(f"Using SDMC path: {sdmc_path_candidate}")
+        return sdmc_path_candidate
     else:
-        log.error(f"Neither Azahar ('{azahar_base_path}') nor Citra ('{citra_base_path}') directory found in APPDATA.")
-        return None # Indicate failure
-
-    log.debug(f"Using SDMC path: {sdmc_path}")
-    return sdmc_path
+        log.error(f"Determined SDMC path candidate '{sdmc_path_candidate}' is not a valid directory. Citra saves cannot be located.")
+        return None
 
 
 def find_citra_profiles(user_profile_path=None) -> list:

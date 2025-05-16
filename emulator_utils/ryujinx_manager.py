@@ -97,6 +97,10 @@ def parse_imkvdb(file_path):
     expected_key_size = 64
     expected_value_size = 64
 
+    if file_path is None:
+        log.warning("Il percorso del file indice di salvataggio (imkvdb.arc) è None. Impossibile analizzare.")
+        return save_map
+
     if not os.path.isfile(file_path):
         log.error(f"Save index file imkvdb.arc not found at '{file_path}'. Cannot map saves.")
         return save_map
@@ -245,8 +249,8 @@ def find_ryujinx_profiles(executable_dir: str | None = None):
     save_to_title_map = parse_imkvdb(save_index_file) # SaveDataID (UPPER) -> TitleID (UPPER)
 
     if not save_to_title_map:
-        log.warning("Could not load save index. Will not be able to associate saves with game titles.")
-        return profiles # Return empty list if index fails
+        log.warning("Could not load save index (imkvdb.arc). Game names for saves might be generic or based on TitleID if available otherwise.")
+        # No longer returning profiles here, will attempt to list SaveDataIDs directly.
 
     log.info(f"Scanning Ryujinx user save directory: {user_save_dir}")
     try:
@@ -260,25 +264,33 @@ def find_ryujinx_profiles(executable_dir: str | None = None):
                 # Look up the TitleID using the save index map
                 title_id_upper = save_to_title_map.get(save_data_id_upper)
 
+                game_name: str
                 if title_id_upper:
                     # We have the TitleID, now find the game name using the metadata map
                     game_name = game_title_map.get(title_id_upper)
-                    if not game_name:
-                        # Fallback if metadata lookup failed or title wasn't found
-                        game_name = f"Unknown Game ({title_id_upper})"
-                        log.warning(f"    Could not find game name for TitleID {title_id_upper} (mapped from SaveID {save_data_id_upper}). Using fallback name.")
+                    if game_name:
+                        log.debug(f"    Mapped SaveID {save_data_id_upper} to TitleID {title_id_upper} -> Game '{game_name}'")
                     else:
-                        log.debug(f"    Mapped to TitleID {title_id_upper} -> Game '{game_name}'")
-
-                    profile = {
-                        'id': save_data_id_upper, # The directory name is the unique SaveDataID
-                        'paths': [item_path],        # Changed 'path' to 'paths' and made it a list
-                        'name': game_name         # Name derived from TitleID via metadata or fallback
-                    }
-                    profiles.append(profile)
+                        # Fallback if metadata lookup failed or title wasn't found for a known TitleID
+                        game_name = f"Game (Title ID: {title_id_upper})"
+                        log.warning(f"    Could not find game name for TitleID {title_id_upper} (mapped from SaveID {save_data_id_upper}). Using TitleID as fallback name.")
                 else:
-                    # SaveDataID found in the directory, but not in the save index map
-                    log.warning(f"  Save directory {save_data_id_upper} found, but not present in the save index map. Skipping.")
+                    # SaveDataID found in the directory, but TitleID not in the save index map (or map is empty)
+                    game_name = f"Game Data (Save ID: {save_data_id_upper})"
+                    if not save_to_title_map and save_index_file and os.path.exists(save_index_file):
+                        # This means imkvdb.arc was found but parse_imkvdb returned an empty map (e.g. parsing error or empty file)
+                        log.warning(f"  SaveID {save_data_id_upper}: TitleID not found. Save index file '{save_index_file}' might be corrupt, empty, or SaveDataID unlisted.")
+                    elif not save_index_file or not os.path.exists(save_index_file):
+                        log.info(f"  SaveID {save_data_id_upper}: TitleID not found because save index file was not found. Using SaveDataID in name.")
+                    else: # save_to_title_map is empty from a non-existent file, or this specific ID is not in a loaded map
+                        log.warning(f"  SaveID {save_data_id_upper}: TitleID not found in (potentially empty or unparsed) save index. Using SaveDataID in name.")
+                
+                profile = {
+                    'id': save_data_id_upper, # The directory name is the unique SaveDataID
+                    'paths': [item_path],        # Changed 'path' to 'paths' and made it a list
+                    'name': game_name         # Name derived from TitleID via metadata or fallback
+                }
+                profiles.append(profile)
 
     except OSError as e:
         log.error(f"Error listing Ryujinx user save directory '{user_save_dir}': {e}")
