@@ -29,41 +29,47 @@ def get_dolphin_save_dirs(executable_path: str | None = None) -> list[str]:
         else:
             log.debug(f"No 'User' directory found next to executable: {exe_dir}")
 
-    # 2. Check standard locations based on OS
+    # 2. Check standard locations based on OS for the Global User Directory
     system = platform.system()
     user_home = os.path.expanduser("~")
-    standard_base = None
+    standard_user_data_dir = None # This is the directory expected to contain GC, Wii, etc.
 
     if system == "Windows":
         # Typically C:\Users\<user>\Documents\Dolphin Emulator
-        documents_path = os.path.join(user_home, "Documents")
-        standard_base = os.path.join(documents_path, "Dolphin Emulator")
+        standard_user_data_dir = os.path.join(user_home, "Documents", "Dolphin Emulator")
     elif system == "Linux":
-        # ~/.dolphin-emu or ~/.config/dolphin-emu
-        path1 = os.path.join(user_home, ".dolphin-emu")
-        path2 = os.path.join(user_home, ".config", "dolphin-emu")
-        if os.path.isdir(path1):
-            standard_base = path1
-        elif os.path.isdir(path2):
-            standard_base = path2
+        # Paths that are expected to BE the "Global User Directory" containing GC, Wii, etc.
+        # Order: Standard XDG Data, Flatpak Data, Legacy home directory.
+        paths_to_check_linux_user_data = [
+            os.path.join(user_home, ".local", "share", "dolphin-emu"),                                   # Standard XDG Data
+            os.path.join(user_home, ".var", "app", "org.DolphinEmu.dolphin-emu", "data", "dolphin-emu"),  # Flatpak Data
+            os.path.join(user_home, ".dolphin-emu")                                                       # Legacy ~/.dolphin-emu
+        ]
+        for path_linux in paths_to_check_linux_user_data:
+            if os.path.isdir(path_linux):
+                log.debug(f"Found potential Dolphin Global User Directory on Linux: {path_linux}")
+                standard_user_data_dir = path_linux
+                break # Use the first valid path found in order of preference
+
     elif system == "Darwin": # macOS
         # ~/Library/Application Support/Dolphin/
-        standard_base = os.path.join(user_home, "Library", "Application Support", "Dolphin")
+        standard_user_data_dir = os.path.join(user_home, "Library", "Application Support", "Dolphin")
 
-    if standard_base and os.path.isdir(standard_base) and standard_base not in potential_bases:
-        log.debug(f"Found potential Dolphin standard base: {standard_base}")
-        potential_bases.append(standard_base)
-    elif standard_base in potential_bases:
-        log.debug(f"Standard base already found (same as portable?): {standard_base}")
+    if standard_user_data_dir and os.path.isdir(standard_user_data_dir) and standard_user_data_dir not in potential_bases:
+        log.debug(f"Adding standard Global User Directory to potential bases: {standard_user_data_dir}")
+        potential_bases.append(standard_user_data_dir)
+    elif standard_user_data_dir in potential_bases:
+        log.debug(f"Standard Global User Directory already found (likely portable): {standard_user_data_dir}")
     else:
-        log.debug(f"Standard Dolphin base directory not found or invalid: {standard_base}")
+        log.debug(f"Standard Dolphin Global User Directory not found or invalid: {standard_user_data_dir}")
 
     if not potential_bases:
-        log.warning("Could not find any potential Dolphin base directory (portable or standard).")
+        log.warning("Could not find any potential Dolphin Global User Directory (portable or standard).")
         return []
 
-    # 3. Check for GC and Wii save directories within potential bases
-    for base_dir in potential_bases:
+    # 3. Check for GC and Wii save directories within potential Global User Directories
+    for base_dir in potential_bases: # base_dir IS a "Global User Directory"
+        log.debug(f"Checking for save subdirectories in Global User Directory: {base_dir}")
         gc_path = os.path.join(base_dir, "GC")
         wii_path = os.path.join(base_dir, "Wii", "title") # Wii saves are typically nested
 
@@ -82,7 +88,7 @@ def get_dolphin_save_dirs(executable_path: str | None = None) -> list[str]:
              log.debug(f"Wii save directory ('{os.path.join('Wii', 'title')}') not found in base: {base_dir}")
 
     if not save_dirs:
-        log.warning("Found Dolphin base directory but no GC or Wii save subdirectories.")
+        log.warning("Found Dolphin Global User Directory(ies) but no GC or Wii save subdirectories within them.")
 
     return save_dirs
 
