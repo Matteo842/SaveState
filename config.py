@@ -339,6 +339,7 @@ COMMON_PUBLISHERS = [
     'Nerial',
     'Two and Thirty Software',
     'nomada studio' #GRIS
+    'NBGI' # DarkSouls Remastered
     
     # Aggiungi qui altri nomi che ti vengono in mente o che noti mancare!
 ]
