@@ -19,7 +19,7 @@ logging.info(f"Settings file path in use: {SETTINGS_FILE_PATH}")
 
 
 def load_settings():
-    """Carica le impostazioni da SETTINGS_FILE_PATH."""
+    """Load settings from SETTINGS_FILE_PATH."""
     first_launch = not os.path.exists(SETTINGS_FILE_PATH)
     defaults = {
         "backup_base_dir": config.BACKUP_BASE_DIR,
@@ -59,17 +59,17 @@ def load_settings():
 
     if first_launch:
         logging.info("Loading settings from file...")
-        logging.info(f"File impostazioni '{SETTINGS_FILE_PATH}' non trovato...") # <-- Usa la nuova variabile
-        # Potremmo salvare i default qui, ma aspettiamo la conferma dall'utente nel dialogo
-        return defaults.copy(), True # Restituisce COPIA dei default e True per primo avvio
+        logging.info(f"Settings file '{SETTINGS_FILE_PATH}' not found...") 
+        # We could save defaults here, but we wait for user confirmation in the dialog
+        return defaults.copy(), True # Returns COPY of defaults and True for first launch
 
     try:
-        with open(SETTINGS_FILE_PATH, 'r', encoding='utf-8') as f: # <-- Usa la nuova variabile
+        with open(SETTINGS_FILE_PATH, 'r', encoding='utf-8') as f:
             user_settings = json.load(f)
         logging.info("Settings loaded successfully")
-        logging.info(f"Settings loaded successfully from '{SETTINGS_FILE_PATH}'.") # <-- Usa la nuova variabile
-        # Unisci i default con le impostazioni utente per gestire chiavi mancanti
-        # Le impostazioni utente sovrascrivono i default
+        logging.info(f"Settings loaded successfully from '{SETTINGS_FILE_PATH}'.")
+        # Merge defaults with user settings to handle missing keys
+        # User settings override defaults
         settings = defaults.copy()
         settings.update(user_settings)
               
@@ -105,12 +105,21 @@ def load_settings():
             logging.warning(f"Invalid value for check_free_space_enabled ('{settings.get('check_free_space_enabled')}'), using default {defaults['check_free_space_enabled']}.")
             settings["check_free_space_enabled"] = defaults["check_free_space_enabled"]
 
+        # Ensure the backup directory exists
+        backup_dir = settings.get("backup_base_dir")
+        if backup_dir and isinstance(backup_dir, str):
+            try:
+                os.makedirs(backup_dir, exist_ok=True)
+                logging.info(f"Ensured backup directory exists: {backup_dir}")
+            except OSError as e:
+                logging.warning(f"Could not create backup directory {backup_dir}: {e}")
+        
         return settings, False
     except (json.JSONDecodeError, KeyError, TypeError):
         logging.error(f"Failed to read or validate '{SETTINGS_FILE_PATH}'...", exc_info=True)
         return defaults.copy(), True # Treat as first launch if file is corrupted
     except Exception:
-        logging.error(f"Unexpected error reading settings from '{SETTINGS_FILE_PATH}'. ...", exc_info=True)
+        logging.error(f"Unexpected error reading settings from '{SETTINGS_FILE_PATH}'.", exc_info=True)
         return defaults.copy(), True
         
 

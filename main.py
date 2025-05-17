@@ -291,8 +291,8 @@ if __name__ == "__main__":
                             else:
                                 QMessageBox.critical(window, "Errore", "Impossibile salvare le impostazioni iniziali.")
                         else: # User cancelled the first launch dialog
-                            reply = QMessageBox.question(window, "Impostazioni Predefinite",
-                                                        "Nessuna impostazione specifica salvata. Usare quelle predefinite e continuare?",
+                            reply = QMessageBox.question(window, "Default Settings",
+                                                        "No specific settings saved. Use default settings and continue?",
                                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
                                                         QMessageBox.StandardButton.Yes)
                             if reply != QMessageBox.StandardButton.Yes:
@@ -302,7 +302,7 @@ if __name__ == "__main__":
                                 sys.exit(0)
                             else: # Save defaults if user accepts to continue
                                 if not settings_manager.save_settings(current_settings): # Save the loaded defaults
-                                     QMessageBox.warning(window, "Errore", "Impossibile salvare le impostazioni predefinite.")
+                                     QMessageBox.warning(window, "Error", "Unable to save default settings.")
                                 # Continue with the loaded defaults in memory
 
                     # Connect the local server signal to the window slot

@@ -10,11 +10,11 @@ APP_VERSION = "1.4.0" # Restored APP_VERSION
 
 # --- Funzione per Trovare/Creare Cartella Dati App ---
 def get_app_data_folder():
-    """Restituisce il percorso della cartella dati dell'app (%LOCALAPPDATA% su Win)
-       e la crea se non esiste. Gestisce fallback basici."""
+    """Returns the path of the app's data folder (%LOCALAPPDATA% on Windows)
+       and creates it if it doesn't exist. Handles basic fallbacks."""
     system = platform.system()
     base_path = None
-    app_folder = None # Inizializza a None
+    app_folder = None # Initialize to None
 
     try:
         if system == "Windows":
@@ -27,9 +27,9 @@ def get_app_data_folder():
              base_path = xdg_data_home # Mettiamo direttamente qui
 
         if not base_path:
-             logging.error("Impossibile determinare la cartella dati utente standard. Uso la cartella corrente come fallback.")
-             # Fallback alla cartella corrente se non troviamo un percorso standard
-             app_folder = os.path.abspath(APP_NAME) # Crea sottocartella APP_NAME anche qui
+             logging.error("Unable to determine standard user data folder. Using current folder as fallback.")
+             # Fallback to current folder if we can't find a standard path
+             app_folder = os.path.abspath(APP_NAME) # Create APP_NAME subfolder here too
         else:
              app_folder = os.path.join(base_path, APP_NAME)
 
@@ -37,31 +37,61 @@ def get_app_data_folder():
         if not os.path.exists(app_folder):
              try:
                  os.makedirs(app_folder, exist_ok=True)
-                 logging.info(f"Creata cartella dati applicazione: {app_folder}")
+                 logging.info(f"Application data folder created: {app_folder}")
              except OSError as e:
-                 # Se non possiamo creare la cartella, logga errore ma restituisci comunque
-                 # il percorso tentato. Le funzioni load/save gestiranno l'errore.
-                 logging.error(f"Impossibile creare cartella dati {app_folder}: {e}.")
+                 # If we can't create the folder, log the error but still return
+                 # the attempted path. The load/save functions will handle the error.
+                 logging.error(f"Unable to create data folder {app_folder}: {e}.")
 
     except Exception as e:
-         logging.error(f"Errore imprevisto in get_app_data_folder: {e}. Tentativo fallback CWD.", exc_info=True)
-         # Fallback estremo alla cartella corrente
+         logging.error(f"Unexpected error in get_app_data_folder: {e}. Attempting CWD fallback.", exc_info=True)
+         # Extreme fallback to current directory
          app_folder = os.path.abspath(APP_NAME)
-         # Prova a creare anche qui per sicurezza
+         # Try to create here too for safety
          try:
              os.makedirs(app_folder, exist_ok=True)
          except OSError:
-             pass # Ignora se anche questo fallisce
+             pass # Ignore if this fails too
 
-    return app_folder # Restituisce il percorso calcolato (o fallback)
+    return app_folder # Return the calculated path (or fallback)
 
-# --- Impostazioni Generali (quelle che c'erano già) ---
-BACKUP_BASE_DIR = r"D:\GameSaveBackups"
+# --- General Settings ---
+# Function to determine the best default backup directory based on platform
+def get_default_backup_dir():
+    system = platform.system()
+    if system == "Windows":
+        # Check for available drives and suggest the most appropriate one
+        available_drives = []
+        for letter in "CDEFGHIJ":  # Common drive letters in priority order
+            drive_path = f"{letter}:\\"
+            if os.path.exists(drive_path):
+                available_drives.append(letter)
+        
+        # If D: exists, use it as default, otherwise use the first available non-C drive or C if nothing else
+        if "D" in available_drives:
+            return r"D:\GameSaveBackups"
+        elif len(available_drives) > 1:  # If there's any drive other than C
+            for drive in available_drives:
+                if drive != "C":  # Prefer any drive other than C
+                    return fr"{drive}:\GameSaveBackups"  # Using fr-string to handle backslash correctly
+        return r"C:\GameSaveBackups"  # Fallback to C drive if no better option
+    
+    elif system == "Linux":
+        # Use standard Linux user directories
+        home_dir = os.path.expanduser("~")
+        return os.path.join(home_dir, "GameSaveBackups")
+    
+    else:  # macOS or other systems
+        home_dir = os.path.expanduser("~")
+        return os.path.join(home_dir, "GameSaveBackups")
+
+# Default backup directory is now determined dynamically
+BACKUP_BASE_DIR = get_default_backup_dir()
 MAX_BACKUPS = 3
 MIN_FREE_SPACE_GB = 2
 
-# Lista di sottocartelle comuni usate SPECIFICAMENTE per contenere i file di salvataggio
-# all'interno della cartella principale del gioco o del publisher.
+# List of common subdirectories SPECIFICALLY used to contain save files
+# within the main game or publisher folder.
 COMMON_SAVE_SUBDIRS = [
     # I più comuni (con variazioni maiuscolo/minuscolo/spazi)
     'Save',
