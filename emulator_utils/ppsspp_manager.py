@@ -13,7 +13,7 @@ def find_ppsspp_profiles(executable_path=None):
     """
     Trova i profili di salvataggio di PPSSPP basati sulle cartelle degli ID dei giochi.
 
-    Cerca nella posizione standard: %UserProfile%\Documents\PPSSPP\PSP\SAVEDATA
+    Cerca nella posizione standard: %UserProfile%\\Documents\\PPSSPP\\PSP\\SAVEDATA
     Ogni sottocartella in SAVEDATA è considerata un profilo di gioco separato.
 
     Args:
