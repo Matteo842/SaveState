@@ -19,6 +19,7 @@ from .desmume_manager import find_desmume_profiles
 from .cemu_manager import find_cemu_profiles
 from .flycast_manager import find_flycast_profiles
 from .shadps4_manager import find_shadps4_profiles
+from .sameboy_manager import find_sameboy_profiles
 
 # Configure basic logging for this module
 log = logging.getLogger(__name__)
@@ -84,6 +85,10 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'shadps4': {
         'name': 'ShadPS4',
         'profile_finder': lambda path: find_shadps4_profiles(path)
+    },
+    'sameboy': {
+        'name': 'SameBoy',
+        'profile_finder': lambda path: find_sameboy_profiles(path)
     },
 }
 

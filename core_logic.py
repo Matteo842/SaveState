@@ -628,6 +628,45 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path):
                 logging.debug(f"Does the zip contain base folders matching the destinations? {zip_contains_base_folders}")
 
                 if not zip_contains_base_folders:
+                    # Nuovo codice: prova a trovare i file basandosi sul nome file finale
+                    logging.warning("Base folders not found in ZIP. Trying alternative extraction method based on filenames.")
+                    
+                    # Crea una mappa dei nomi file (senza percorso) alle destinazioni complete
+                    filename_to_dest = {os.path.basename(p): p for p in paths_to_process}
+                    logging.debug(f"Filename to destination map: {filename_to_dest}")
+                    
+                    # Crea una mappa dei nomi file (senza percorso) ai percorsi completi nel ZIP
+                    zip_files = zipf.namelist()
+                    zip_filename_to_path = {os.path.basename(m.replace('/', os.sep)): m for m in zip_files}
+                    logging.debug(f"ZIP filename to path map: {zip_filename_to_path}")
+                    
+                    # Verifica se possiamo trovare corrispondenze
+                    matches_found = False
+                    for filename, dest_path in filename_to_dest.items():
+                        if filename in zip_filename_to_path:
+                            matches_found = True
+                            zip_path = zip_filename_to_path[filename]
+                            logging.info(f"Found match: {filename} in ZIP as {zip_path}")
+                            
+                            # Estrai il file
+                            try:
+                                # Assicurati che la directory di destinazione esista
+                                dest_dir = os.path.dirname(dest_path)
+                                if dest_dir and not os.path.exists(dest_dir):
+                                    os.makedirs(dest_dir, exist_ok=True)
+                                    
+                                # Estrai il file
+                                with zipf.open(zip_path) as source, open(dest_path, 'wb') as target:
+                                    shutil.copyfileobj(source, target)
+                                logging.info(f"Successfully extracted {zip_path} to {dest_path}")
+                            except Exception as e:
+                                logging.error(f"Error extracting {zip_path} to {dest_path}: {e}")
+                                return False, f"Error during alternative extraction method: {e}"
+                    
+                    if matches_found:
+                        return True, f"Restore completed successfully using alternative extraction method."
+                    
+                    # Se arriviamo qui, non abbiamo trovato corrispondenze
                     msg = "ERROR: Multi-path restore failed. The ZIP archive doesn't seem to contain the expected base folders (e.g. SAVEDATA/, SYSTEM/). Backup potentially corrupted or created incorrectly."
                     logging.error(msg)
                     logging.error(f"Archive members (example): {zipf.namelist()[:10]}")
