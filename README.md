@@ -64,7 +64,7 @@ Furthermore, SaveState features automatic detection of Steam games and even lets
 
 SaveState includes experimental support for automatically detecting save data locations for certain emulators, simplifying the profile creation process.
 
-**Currently Supported in version 1.3.9:**
+**Currently Supported in version 1.4.0:**
 
 *   **Ryujinx**
 *   **yuzu**
@@ -79,6 +79,7 @@ SaveState includes experimental support for automatically detecting save data lo
 *   **DeSmuME**
 *   **Cemu**
 *   **flycast**
+*   **ShadPs4**
 
 
 ## How Save Search Works (Heuristics)

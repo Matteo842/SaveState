@@ -177,3 +177,5 @@ electron_bridge.py
 package-lock.json
 save_path_finder_linux_old.py
 core_logicOLD.py
+/mymc-pysrc-2.7
+pcsx2_manager2.py
