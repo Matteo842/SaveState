@@ -20,15 +20,19 @@ import core_logic
 import shortcut_utils # Importa l'intero modulo
 from emulator_utils import emulator_manager # Updated import path
 import config # Import the config module
+import settings_manager # Importa settings_manager.py dalla root del progetto
 
+# Setup logging for this module
+logger = logging.getLogger(__name__)
 
 class SavePathDialog(QDialog):
-    """Custom dialog for entering a save path with a browse button."""
+    """Custom dialog for entering a path with a browse button."""
     
-    def __init__(self, parent=None, profile_name="", initial_path=""):
+    def __init__(self, parent=None, window_title="Enter Path", prompt_text="Enter the FULL path:", initial_path="", browse_dialog_title="Select Folder"):
         super().__init__(parent)
-        self.setWindowTitle("Save Path")
+        self.setWindowTitle(window_title)
         self.setMinimumWidth(500)
+        self.browse_dialog_title = browse_dialog_title # Memorizza per l'uso in browse_path
         
         # Get the style for standard icons
         style = QApplication.instance().style()
@@ -37,8 +41,7 @@ class SavePathDialog(QDialog):
         layout = QVBoxLayout(self)
         
         # Add prompt label
-        prompt = f"Now enter the FULL path for the profile's saves:\n'{profile_name}'"
-        layout.addWidget(QLabel(prompt))
+        layout.addWidget(QLabel(prompt_text))
         
         # Path input with browse button
         path_layout = QHBoxLayout()
@@ -58,12 +61,12 @@ class SavePathDialog(QDialog):
         layout.addWidget(button_box)
         
         # Connect browse button
-        self.browse_button.clicked.connect(self.browse_save_path)
+        self.browse_button.clicked.connect(self.browse_path)
     
-    def browse_save_path(self):
-        """Opens dialog to select save folder."""
+    def browse_path(self):
+        """Opens dialog to select a folder."""
         directory = QFileDialog.getExistingDirectory(
-            self, "Select Save Folder", self.path_edit.text()
+            self, self.browse_dialog_title, self.path_edit.text() # Usa il titolo memorizzato
         )
         if directory:
             self.path_edit.setText(os.path.normpath(directory))
@@ -158,7 +161,14 @@ class ProfileCreationManager:
             logging.debug(f"ProfileCreationManager.handle_new_profile - Requesting path for '{profile_name}'...")
             
             # Use custom dialog with browse button instead of QInputDialog
-            path_dialog = SavePathDialog(mw, profile_name)
+            settings, _ = settings_manager.load_settings()
+            path_dialog = SavePathDialog(
+                parent=mw, 
+                window_title=mw.tr("Save Path for '{0}'").format(profile_name),
+                prompt_text=mw.tr("Now enter the FULL path for the profile's saves:\n'{0}'").format(profile_name),
+                initial_path=settings.get(f"last_save_path_{profile_name}", ""), 
+                browse_dialog_title=mw.tr("Select Save Folder")
+            )
             result = path_dialog.exec()
             
             if result == QDialog.DialogCode.Accepted:
@@ -510,13 +520,84 @@ class ProfileCreationManager:
 
         # --- Handle Emulator Result (IF found) ---
         if emulator_result is not None:
-            emulator_name, emulator_profiles_data = emulator_result
+            emulator_key, profiles_data = emulator_result
             event.acceptProposedAction() # Ensure accepted
 
-            if emulator_profiles_data:
-                logging.info(f"Found {emulator_name} profiles: {len(emulator_profiles_data)}")
+            if emulator_key == 'sameboy' and profiles_data is None:
+                logging.info("SameBoy detected, but no save/ROM path found. Prompting user for ROM directory.")
+                
+                settings, _ = settings_manager.load_settings()
+                initial_rom_path = settings.get('last_rom_folder', os.path.expanduser("~"))
+
+                rom_path_dialog = SavePathDialog(
+                    parent=self.main_window,
+                    window_title=self.main_window.tr("Select SameBoy ROMs Folder"),
+                    prompt_text=self.main_window.tr(
+                        "SameBoy needs to know where your Game Boy / Game Boy Color ROMs are stored.\n"
+                        "Please enter or browse to the folder containing your ROMs (.gb, .gbc files).\n"
+                        "Save files (.sav) are usually in this same folder or a 'Saves' subfolder."
+                    ),
+                    initial_path=initial_rom_path,
+                    browse_dialog_title=self.main_window.tr("Select ROMs Folder")
+                )
+                dialog_result = rom_path_dialog.exec()
+                user_rom_dir = None
+                if dialog_result == QDialog.DialogCode.Accepted:
+                    user_rom_dir = rom_path_dialog.get_path()
+
+                if user_rom_dir and os.path.isdir(user_rom_dir):
+                    logging.info(f"User selected SameBoy ROM directory: {user_rom_dir}")
+                    s, _ = settings_manager.load_settings() # Carica di nuovo per evitare sovrascritture se modificate altrove
+                    s['sameboy_roms_path'] = user_rom_dir
+                    s['last_rom_folder'] = user_rom_dir # Salva per usi futuri
+                    settings_manager.save_settings(s) # Assicura che le impostazioni siano scritte
+                    
+                    # Ora che abbiamo il percorso ROM, proviamo di nuovo a trovare i profili
+                    # find_sameboy_profiles userà questo percorso dalle impostazioni
+                    log.info(f"Re-calling find_sameboy_profiles with user-defined ROM path: {user_rom_dir}")
+                    # È importante passare il percorso effettivo dell'eseguibile di SameBoy qui, non la cartella ROM.
+                    # get_sameboy_saves_path all'interno di find_sameboy_profiles leggerà il percorso ROM salvato.
+                    path_for_finder = self.extract_path_from_event(event)
+                    if os.path.isfile(path_for_finder):
+                        path_for_finder = os.path.dirname(path_for_finder)
+                        
+                    updated_profiles = find_sameboy_profiles(path_for_finder) 
+                    
+                    if updated_profiles:
+                        logging.info(f"Found {len(updated_profiles)} SameBoy profiles after user provided ROM directory.")
+                        # Mostra il dialogo di selezione del gioco per questi profili
+                        self.show_game_selection_dialog(updated_profiles, 'sameboy', executable_path)
+                    elif updated_profiles == []: # Nessun salvataggio trovato MA la cartella ROM è valida
+                        logging.warning(f"User provided ROM directory '{user_rom_dir}', but still no .sav/.srm files found by find_sameboy_profiles.")
+                        QMessageBox.information(self.main_window, 
+                                                self.main_window.tr("No Save Files Found"), 
+                                                self.main_window.tr("The selected ROMs directory for SameBoy does not appear to contain any save files (.sav, .srm).\n" \
+                                                  "Please ensure you have selected the correct folder where your ROMs and their corresponding saves are located."))
+                    else: # updated_profiles is None (improbabile qui, ma per completezza)
+                        logging.error("find_sameboy_profiles returned None unexpectedly after user provided ROM directory.")
+                        QMessageBox.warning(self.main_window, 
+                                            self.main_window.tr("Error Finding Saves"), 
+                                            self.main_window.tr("An unexpected error occurred while trying to find save files in the selected SameBoy ROMs directory."))
+                else:
+                    if dialog_result != QDialog.DialogCode.Rejected:
+                        logging.warning(f"Invalid SameBoy ROM directory selected or no path returned: {user_rom_dir}")
+                        QMessageBox.warning(self.main_window, 
+                                            self.main_window.tr("Invalid Folder"), 
+                                            self.main_window.tr("The selected path is not a valid directory. Please select a valid folder for SameBoy ROMs."))
+                    else:
+                        logging.info("User cancelled SameBoy ROM directory selection.")
+                        QMessageBox.information(self.main_window, 
+                                                self.main_window.tr("SameBoy Setup Incomplete"),  
+                                                self.main_window.tr("Profile creation for SameBoy cannot proceed without a ROMs directory.\n" \
+                                                  "You can try adding the emulator again or set the path manually via settings (if available)."))
+                event.accept()
+                return # Stop further processing for this drop event
+            # --- End SameBoy Specific ---
+
+            if emulator_key and profiles_data is not None: # Check if profiles_data is not None (it could be an empty list)
+                logging.info(f"Found {emulator_key} profiles: {len(profiles_data)}")
                 # --- Show Selection Dialog ---
-                selection_dialog = EmulatorGameSelectionDialog(emulator_name, emulator_profiles_data, mw)
+                selection_dialog = EmulatorGameSelectionDialog(emulator_key, profiles_data, mw)
                 if selection_dialog.exec():
                     selected_data = selection_dialog.get_selected_profile_data()
                     if selected_data:
@@ -534,7 +615,7 @@ class ProfileCreationManager:
                             return
 
                         selected_name = selected_data.get('name', selected_id)
-                        profile_name_base = f"{emulator_name} - {selected_name}"
+                        profile_name_base = f"{emulator_key} - {selected_name}"
                         profile_name = shortcut_utils.sanitize_profile_name(profile_name_base)
                         if not profile_name:
                             QMessageBox.warning(mw, "Profile Name Error",
@@ -556,17 +637,17 @@ class ProfileCreationManager:
                         path_data_for_profile_list = None
                         profile_data_to_save = {}
 
-                        if emulator_name == "PPSSPP": # Specific check for multi-path emulator
+                        if emulator_key == "PPSSPP": # Specific check for multi-path emulator
                              profile_data_to_save = {
                                  'paths': selected_paths_list, # Use the list for PPSSPP
-                                 'emulator': emulator_name
+                                 'emulator': emulator_key
                              }
                              logging.info(f"Saving profile '{profile_name}' with multiple paths (PPSSPP).")
                         else: # For all other emulators or no emulator detected
                              if selected_paths_list: # Ensure list is not empty
                                  profile_data_to_save = {
                                      'paths': selected_paths_list, # Use the ENTIRE list
-                                     'emulator': emulator_name
+                                     'emulator': emulator_key
                                  }
                                  logging.info(f"Saving profile '{profile_name}' with {len(selected_paths_list)} paths.")
                              else:
@@ -580,7 +661,7 @@ class ProfileCreationManager:
                         mw.profiles[profile_name] = profile_data_to_save # Add/Update profile in memory
 
                         if core_logic.save_profiles(mw.profiles): # Save all profiles to file
-                            logging.info(f"Emulator game profile '{profile_name}' created/updated with emulator '{emulator_name}'.")
+                            logging.info(f"Emulator game profile '{profile_name}' created/updated with emulator '{emulator_key}'.")
                             if hasattr(mw, 'profile_table_manager'):
                                 mw.profile_table_manager.update_profile_table()
                                 mw.profile_table_manager.select_profile_in_table(profile_name) # Select the new/updated one
@@ -600,9 +681,9 @@ class ProfileCreationManager:
                                     mw.profile_table_manager.update_profile_table() # Update table again
                         # --- Save Profile and Update UI --- END ---
             else:
-                logging.warning(f"{emulator_name} detected, but no profiles found in its standard directory.")
-                QMessageBox.warning(mw, f"Emulator Detected ({emulator_name})",
-                                    f"Detected link to {emulator_name}, but no profiles found in its standard folder.\nCheck the emulator's save location.")
+                logging.warning(f"{emulator_key} detected, but no profiles found in its standard directory.")
+                QMessageBox.warning(mw, f"Emulator Detected ({emulator_key})",
+                                    f"Detected link to {emulator_key}, but no profiles found in its standard folder.\nCheck the emulator's save location.")
             return # IMPORTANT: Stop further processing if an emulator was detected
 
         # --- If NOT a known Emulator, proceed with heuristic search ---
@@ -661,7 +742,6 @@ class ProfileCreationManager:
         self.detection_thread.start()
         logging.debug("Heuristic path detection thread started.")
     # --- FINE dropEvent ---
-
 
     # --- Slot for Path Detection Progress ---
     @Slot(str)

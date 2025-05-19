@@ -196,45 +196,48 @@ def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] 
             try:
                 # Pass the (potentially modified) path_to_scan to the finder
                 profiles = profile_finder(path_to_scan) 
-                if profiles is not None:
-                    log.info(f"Profile finder for {config['name']} ran. Found {len(profiles)} profiles.")
-                    
-                    # Convert profiles from dict to list if needed
-                    # This ensures compatibility with EmulatorGameSelectionDialog
-                    # which expects a list of dictionaries
-                    profiles_list = []
-                    if isinstance(profiles, dict):
-                        for profile_id, profile_data in profiles.items():
-                            # If profile_data is already a dict with 'id', use it as is
-                            if isinstance(profile_data, dict) and 'id' in profile_data:
-                                profiles_list.append(profile_data)
-                            # If profile_data is a string or dict without 'id', create a new dict
+                
+                if profiles is None:
+                    # Se il finder specifico restituisce None (es. SameBoy ha bisogno di un input utente o c'è stato un errore nel finder),
+                    # propaga questa informazione. ProfileCreationManager gestirà il None per profiles_data.
+                    log.warning(f"Profile finder for '{config['name']}' returned None. This might indicate user input is required or an issue with the finder.")
+                    return keyword, None # Restituisce la CHIAVE INTERNA (es. 'sameboy') e None
+
+                log.info(f"Profile finder for {config['name']} ran. Found {len(profiles)} profiles.")
+                
+                # Convert profiles from dict to list if needed
+                # This ensures compatibility with EmulatorGameSelectionDialog
+                # which expects a list of dictionaries
+                profiles_list = []
+                if isinstance(profiles, dict):
+                    for profile_id, profile_data in profiles.items():
+                        # If profile_data is already a dict with 'id', use it as is
+                        if isinstance(profile_data, dict) and 'id' in profile_data:
+                            profiles_list.append(profile_data)
+                        # If profile_data is a string or dict without 'id', create a new dict
+                        else:
+                            profile_dict = {'id': profile_id}
+                            if isinstance(profile_data, dict):
+                                # Merge the existing dict with our new one
+                                profile_dict.update(profile_data)
                             else:
-                                profile_dict = {'id': profile_id}
-                                if isinstance(profile_data, dict):
-                                    # Merge the existing dict with our new one
-                                    profile_dict.update(profile_data)
-                                else:
-                                    # profile_data is a string (or other non-dict), use it as 'name'
-                                    profile_dict['name'] = str(profile_data)
-                                    profile_dict['path'] = str(profile_data)  # Default path to the same value
-                                profiles_list.append(profile_dict)
-                    else:
-                        # If profiles is already a list, use it as is
-                        profiles_list = profiles
-                    
-                    # Return the DISPLAY name and profiles list
-                    return emulator_name, profiles_list
+                                # profile_data is a string (or other non-dict), use it as 'name'
+                                profile_dict['name'] = str(profile_data)
+                                profile_dict['path'] = str(profile_data)  # Default path to the same value
+                            profiles_list.append(profile_dict)
                 else:
-                    log.warning(f"Profile finder for '{config['name']}' failed or returned None. Continuing detection...")
-                    # We continue here, maybe another keyword matches later?
+                    # If profiles is already a list, use it as is
+                    profiles_list = profiles
+                
+                # Return the DISPLAY name and profiles list
+                return emulator_name, profiles_list
             except Exception as e:
                 log.error(f"Error calling profile finder for {emulator_name}: {e}", exc_info=True)
-                # Return the emulator name but an empty list to indicate an error during profile finding
-                return emulator_name, [] 
-    # --- Generic Loop for Other Emulators --- END ---
-
-    # If no keyword matched
+                # In caso di eccezione durante la chiamata al finder, considera che non ha trovato profili
+                # e restituisci la chiave dell'emulatore con None per segnalare il problema.
+                return keyword, None
+    
+    # Se nessun emulatore è stato trovato nel loop
     log.debug(f"Target path '{target_path}' did not match any known emulator keywords.")
     return None
 
