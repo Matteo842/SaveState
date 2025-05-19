@@ -6,7 +6,7 @@ import logging
 import platform
 import string
 
-from PySide6.QtWidgets import QMessageBox, QInputDialog, QApplication
+from PySide6.QtWidgets import QMessageBox, QInputDialog, QApplication, QFileDialog, QHBoxLayout, QDialog, QLineEdit, QPushButton, QVBoxLayout, QLabel, QStyle, QDialogButtonBox
 from PySide6.QtCore import Qt, Slot
 
 # Importa dialoghi specifici se servono (es. Minecraft)
@@ -20,6 +20,57 @@ import core_logic
 import shortcut_utils # Importa l'intero modulo
 from emulator_utils import emulator_manager # Updated import path
 import config # Import the config module
+
+
+class SavePathDialog(QDialog):
+    """Custom dialog for entering a save path with a browse button."""
+    
+    def __init__(self, parent=None, profile_name="", initial_path=""):
+        super().__init__(parent)
+        self.setWindowTitle("Save Path")
+        self.setMinimumWidth(500)
+        
+        # Get the style for standard icons
+        style = QApplication.instance().style()
+        
+        # Main layout
+        layout = QVBoxLayout(self)
+        
+        # Add prompt label
+        prompt = f"Now enter the FULL path for the profile's saves:\n'{profile_name}'"
+        layout.addWidget(QLabel(prompt))
+        
+        # Path input with browse button
+        path_layout = QHBoxLayout()
+        self.path_edit = QLineEdit(initial_path)
+        self.browse_button = QPushButton()
+        # Set the folder icon for the browse button (no text)
+        self.browse_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        
+        path_layout.addWidget(self.path_edit)
+        path_layout.addWidget(self.browse_button)
+        layout.addLayout(path_layout)
+        
+        # Dialog buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+        
+        # Connect browse button
+        self.browse_button.clicked.connect(self.browse_save_path)
+    
+    def browse_save_path(self):
+        """Opens dialog to select save folder."""
+        directory = QFileDialog.getExistingDirectory(
+            self, "Select Save Folder", self.path_edit.text()
+        )
+        if directory:
+            self.path_edit.setText(os.path.normpath(directory))
+    
+    def get_path(self):
+        """Returns the entered path."""
+        return self.path_edit.text()
 
 class ProfileCreationManager:
     """
@@ -105,11 +156,15 @@ class ProfileCreationManager:
                 return
 
             logging.debug(f"ProfileCreationManager.handle_new_profile - Requesting path for '{profile_name}'...")
-            path_prompt = f"Now enter the FULL path for the profile's saves:\n'{profile_name}'"
-            input_path, ok2 = QInputDialog.getText(mw, "Save Path", path_prompt)
-            logging.debug(f"ProfileCreationManager.handle_new_profile - Path entered: '{input_path}', ok2={ok2}")
-
-            if ok2:
+            
+            # Use custom dialog with browse button instead of QInputDialog
+            path_dialog = SavePathDialog(mw, profile_name)
+            result = path_dialog.exec()
+            
+            if result == QDialog.DialogCode.Accepted:
+                input_path = path_dialog.get_path()
+                logging.debug(f"ProfileCreationManager.handle_new_profile - Path entered: '{input_path}'")
+                
                 # Use the validation function
                 validated_path = self.validate_save_path(input_path, profile_name)
 
@@ -136,7 +191,7 @@ class ProfileCreationManager:
                             del mw.profiles[profile_name]
                 # else: validate_save_path has already shown the error
             else:
-                 logging.debug("handle_new_profile - Path input cancelled (ok2=False).")
+                 logging.debug("handle_new_profile - Path input cancelled.")
         else:
             logging.debug("handle_new_profile - Name input cancelled (ok=False or empty name).")
         logging.debug("handle_new_profile - END")
