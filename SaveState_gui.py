@@ -17,7 +17,7 @@ from PySide6.QtCore import (
     QEvent,
     QTimer, Property, QPropertyAnimation, QEasingCurve
 )
-from PySide6.QtGui import QIcon, QPalette, QColor
+from PySide6.QtGui import QIcon, QPalette, QColor, QCursor
 
 from gui_utils import QtLogHandler
 from utils import resource_path
@@ -82,6 +82,16 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.console_log_handler = console_log_handler # Salva riferimento al gestore console
         self.qt_log_handler = qt_log_handler
+        
+        # Variabili per il rilevamento del drag globale
+        self.global_drag_detection_timer = QTimer(self)
+        self.global_drag_detection_timer.setInterval(200)  # Controlla ogni 200ms
+        self.global_drag_detection_timer.timeout.connect(self.check_global_drag_state)
+        self.global_drag_detection_timer.start()
+        self.is_drag_operation_active = False
+        self.last_cursor_pos = QCursor.pos()
+        self.drag_movement_threshold = 5  # Soglia di movimento in pixel per considerare un drag
+        self.drag_check_counter = 0
 
         # Translator removed - application is now English-only
 
@@ -468,11 +478,26 @@ class MainWindow(QMainWindow):
         else:
             super().dragEnterEvent(event) # Chiamata al metodo base
 
-    # Called when a dragged item moves within the window (currently ignored).
+    # Gestisce il movimento durante il drag (attualmente ignorato).
     def dragMoveEvent(self, event):
         """Gestisce il movimento durante il drag (attualmente ignorato)."""
-        # Potrebbe essere usato per dare feedback visivo
-        event.acceptProposedAction() # O ignora
+        if hasattr(self, 'profile_creation_manager'):
+            self.profile_creation_manager.dragMoveEvent(event)
+        else:
+            super().dragMoveEvent(event)
+
+    # Gestisce l'uscita del cursore dall'area dell'applicazione durante il drag.
+    def dragLeaveEvent(self, event):
+        """Gestisce l'uscita del cursore dall'area dell'applicazione durante il drag."""
+        if hasattr(self, 'profile_creation_manager'):
+            self.profile_creation_manager.dragLeaveEvent(event)
+        else:
+            # Nascondi comunque l'overlay se esiste
+            if hasattr(self, 'overlay_widget') and self.overlay_widget:
+                self.overlay_widget.hide()
+                if hasattr(self, 'loading_label'):
+                    self.loading_label.hide()
+            super().dragLeaveEvent(event)
 
     # Called when a dragged item is dropped; handles dropped folders for new profiles.
     def dropEvent(self, event):
@@ -584,5 +609,75 @@ class MainWindow(QMainWindow):
         self.showNormal()
         self.raise_()
         self.activateWindow()
+        
+    def check_global_drag_state(self):
+        """Controlla se è in corso un'operazione di drag a livello di sistema."""
+        try:
+            # Ottieni la posizione corrente del cursore
+            current_pos = QCursor.pos()
+            
+            # Calcola la distanza dal punto precedente
+            distance = ((current_pos.x() - self.last_cursor_pos.x()) ** 2 + 
+                        (current_pos.y() - self.last_cursor_pos.y()) ** 2) ** 0.5
+            
+            # Aggiorna l'ultima posizione conosciuta
+            self.last_cursor_pos = current_pos
+            
+            # Incrementa il contatore per il controllo periodico
+            self.drag_check_counter += 1
+            
+            # Ottieni lo stato dei pulsanti del mouse
+            from PySide6.QtGui import QGuiApplication
+            modifiers = QGuiApplication.queryKeyboardModifiers()
+            mouse_buttons = QGuiApplication.mouseButtons()
+            from PySide6.QtCore import Qt
+            left_button_pressed = bool(mouse_buttons & Qt.MouseButton.LeftButton)
+            
+            # Verifica se sembra essere in corso un'operazione di drag
+            potential_drag = left_button_pressed and distance > self.drag_movement_threshold
+            
+            # Resetta il contatore ogni 10 controlli
+            if self.drag_check_counter >= 10:
+                self.drag_check_counter = 0
+                
+                # Controlla se c'è un'operazione di drag in corso
+                if potential_drag and not self.is_drag_operation_active:
+                    logging.debug("Rilevata possibile operazione di drag globale")
+                    self.is_drag_operation_active = True
+                    
+                    # Mostra l'overlay con animazione fade-in
+                    if hasattr(self, 'overlay_widget') and self.overlay_widget:
+                        self.overlay_widget.resize(self.centralWidget().size())
+                        # Imposta il testo della label a "Drop Here"
+                        if hasattr(self, 'loading_label') and self.loading_label:
+                            self.loading_label.setText("Drop Here")
+                        if hasattr(self, '_center_loading_label'): 
+                            self._center_loading_label()
+                        # Imposta lo stile per il drag (opacità 30%)
+                        self.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 77); }")
+                        self.overlay_widget.show()
+                        if hasattr(self, 'loading_label'):
+                            self.loading_label.show()
+                        if hasattr(self, 'fade_in_animation'): 
+                            self.fade_in_animation.start()
+                        logging.debug("Avviata animazione fade-in per drag globale")
+                
+                # Se non c'è più un'operazione di drag in corso, nascondi l'overlay
+                elif not potential_drag and self.is_drag_operation_active:
+                    logging.debug("Operazione di drag globale terminata")
+                    self.is_drag_operation_active = False
+                    
+                    # Nascondi l'overlay con animazione fade-out
+                    if hasattr(self, 'overlay_widget') and self.overlay_widget and self.overlay_widget.isVisible():
+                        if hasattr(self, 'fade_out_animation'): 
+                            self.fade_out_animation.start()
+                        logging.debug("Avviata animazione fade-out per drag globale terminato")
+        except Exception as e:
+            logging.error(f"Errore durante il controllo dello stato di drag globale: {e}")
+            # Disattiva il timer in caso di errori ripetuti
+            self.drag_check_counter += 1
+            if self.drag_check_counter > 50:  # Dopo 50 errori, disattiva il timer
+                self.global_drag_detection_timer.stop()
+                logging.error("Timer di rilevamento drag globale disattivato dopo errori ripetuti")
 
 # --- End of MainWindow class definition ---

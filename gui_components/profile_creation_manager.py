@@ -7,7 +7,7 @@ import platform
 import string
 
 from PySide6.QtWidgets import QMessageBox, QInputDialog, QApplication, QFileDialog, QHBoxLayout, QDialog, QLineEdit, QPushButton, QVBoxLayout, QLabel, QStyle, QDialogButtonBox
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QTimer
 
 # Importa dialoghi specifici se servono (es. Minecraft)
 from dialogs.minecraft_dialog import MinecraftWorldsDialog
@@ -327,40 +327,94 @@ class ProfileCreationManager:
                 if platform.system() == "Windows" and file_path.lower().endswith('.lnk'):
                     event.acceptProposedAction()
                     logging.debug("DragEnterEvent: Accepted Windows .lnk file.")
+                    # Show overlay with "Drop Here" text
+                    mw = self.main_window
+                    if hasattr(mw, 'loading_label') and mw.loading_label:
+                        mw.loading_label.setText("Drop Here")
+                        if hasattr(mw, '_center_loading_label'): 
+                            mw._center_loading_label()
+                        # Imposta direttamente una semi-trasparenza per l'overlay
+                        if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
+                            # Usa uno stile con opacità ridotta (30%)
+                            mw.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 75); }")
+                            mw.overlay_widget.show()
+                            mw.loading_label.show()
                 elif platform.system() == "Linux" and (file_path.lower().endswith('.desktop') or 
                                                      os.access(file_path, os.X_OK)):
                     event.acceptProposedAction()
                     logging.debug(f"DragEnterEvent: Accepted Linux file: {file_path}")
-                else:
-                    logging.debug(f"DragEnterEvent: Rejected file: {file_path}")
-                    event.ignore()
+                    # Show overlay with "Drop Here" text
+                    mw = self.main_window
+                    if hasattr(mw, 'loading_label') and mw.loading_label:
+                        mw.loading_label.setText("Drop Here")
+                        if hasattr(mw, '_center_loading_label'): 
+                            mw._center_loading_label()
+                        # Imposta direttamente una semi-trasparenza per l'overlay
+                        if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
+                            # Usa uno stile con opacità ridotta (30%)
+                            mw.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 75); }")
+                            mw.overlay_widget.show()
+                            mw.loading_label.show()
             else:
-                logging.debug("DragEnterEvent: Rejected (not a single file).")
+                logging.debug(f"DragEnterEvent: Rejected file: {file_path}")
                 event.ignore()
         else:
             event.ignore()
 
     def dragMoveEvent(self, event):
         """Handles the movement of a dragged object over the widget."""
-        # The acceptance logic is the same as dragEnterEvent
-        mime_data = event.mimeData()
-        if mime_data.hasUrls():
-            urls = mime_data.urls()
+        # Keep the overlay visible during drag movement
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
             if urls and len(urls) == 1 and urls[0].isLocalFile():
                 file_path = urls[0].toLocalFile()
-                # Windows: Accept .lnk files
-                # Linux: Accept .desktop files and executables
                 if platform.system() == "Windows" and file_path.lower().endswith('.lnk'):
                     event.acceptProposedAction()
+                    # Ensure the overlay remains visible during movement
+                    mw = self.main_window
+                    if hasattr(mw, 'loading_label') and mw.loading_label and not mw.loading_label.isVisible():
+                        mw.loading_label.setText("Drop Here")
+                        if hasattr(mw, '_center_loading_label'): 
+                            mw._center_loading_label()
+                        # Imposta direttamente una semi-trasparenza per l'overlay
+                        if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
+                            # Usa uno stile con opacità ridotta (30%)
+                            mw.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 75); }")
+                            mw.overlay_widget.show()
+                            mw.loading_label.show()
                 elif platform.system() == "Linux" and (file_path.lower().endswith('.desktop') or 
                                                      os.access(file_path, os.X_OK)):
                     event.acceptProposedAction()
-                else:
-                    event.ignore()
+                    # Ensure the overlay remains visible during movement
+                    mw = self.main_window
+                    if hasattr(mw, 'loading_label') and mw.loading_label and not mw.loading_label.isVisible():
+                        mw.loading_label.setText("Drop Here")
+                        if hasattr(mw, '_center_loading_label'): 
+                            mw._center_loading_label()
+                        # Imposta direttamente una semi-trasparenza per l'overlay
+                        if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
+                            # Usa uno stile con opacità ridotta (30%)
+                            mw.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 75); }")
+                            mw.overlay_widget.show()
+                            mw.loading_label.show()
             else:
                 event.ignore()
         else:
             event.ignore()
+
+    def dragLeaveEvent(self, event):
+        """Handles the drag leave event."""
+        # Nascondi l'overlay quando il drag esce dalla finestra
+        mw = self.main_window
+        try:
+            if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
+                mw.overlay_widget.hide()
+                if hasattr(mw, 'loading_label'):
+                    mw.loading_label.hide()
+                logging.debug("Overlay nascosto in dragLeaveEvent")
+        except Exception as e:
+            logging.error(f"Errore nel nascondere l'overlay in dragLeaveEvent: {e}")
+        event.accept()
 
     def dropEvent(self, event):
         """Handles the release of a dragged object and starts the path search."""
@@ -390,6 +444,12 @@ class ProfileCreationManager:
 
         file_path = urls[0].toLocalFile()
         logging.info(f"DropEvent: Processing dropped file: {file_path}")
+        
+        # Avvia l'animazione fade-out per l'overlay
+        if hasattr(mw, 'overlay_widget') and mw.overlay_widget and mw.overlay_widget.isVisible():
+            if hasattr(mw, 'fade_out_animation') and mw.fade_out_animation:
+                mw.fade_out_animation.start()
+                logging.debug("Animazione fade-out avviata all'inizio del dropEvent")
 
         target_path = file_path # Default: use the dropped path itself
         game_install_dir = None # Initialize install dir
@@ -713,17 +773,27 @@ class ProfileCreationManager:
             return
 
         mw.set_controls_enabled(False)
-        mw.status_label.setText(f"Searching path for '{profile_name}'...")
+        mw.status_label.setText(f"Searching...")
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
 
         # --- Start Fade/Animation Effect ---
         try:
             if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
                 mw.overlay_widget.resize(mw.centralWidget().size())
+                # Set the loading label text to "Searching..." for heuristic search
+                if hasattr(mw, 'loading_label') and mw.loading_label:
+                    mw.loading_label.setText("Searching...")
                 if hasattr(mw, '_center_loading_label'): mw._center_loading_label()
+                # Usa l'animazione standard per la ricerca (opacità 60%)
+                mw.overlay_widget.setStyleSheet("") # Rimuovi eventuali stili personalizzati
                 mw.overlay_widget.show()
                 if hasattr(mw, 'fade_in_animation'): mw.fade_in_animation.start()
-                logging.debug("Fade-in animation started.")
+                
+                # Imposta un timer per nascondere l'overlay dopo un breve periodo
+                # anche se la ricerca non è ancora terminata
+                QTimer.singleShot(2000, lambda: self._hide_overlay_if_visible(mw))
+                
+                logging.debug("Fade-in animation started with 'Searching...' text.")
             else:
                 logging.warning("Overlay widget or fade animation not found in MainWindow.")
         except Exception as e_fade_start:
@@ -747,8 +817,21 @@ class ProfileCreationManager:
     @Slot(str)
     def on_detection_progress(self, message):
         """Updates the status bar of main_window with messages from the thread."""
-        # It might be useful to filter/simplify the messages here
-        self.main_window.status_label.setText(message)
+        if message and self.main_window:
+            self.main_window.status_label.setText(message)
+            
+    def _hide_overlay_if_visible(self, main_window):
+        """Nasconde l'overlay se è visibile usando l'animazione fade-out."""
+        if hasattr(main_window, 'overlay_widget') and main_window.overlay_widget and main_window.overlay_widget.isVisible():
+            if hasattr(main_window, 'fade_out_animation') and main_window.fade_out_animation:
+                main_window.fade_out_animation.start()
+                logging.debug("Animazione fade-out avviata dal timer di sicurezza")
+            else:
+                # Fallback se l'animazione non è disponibile
+                main_window.overlay_widget.hide()
+                if hasattr(main_window, 'loading_label') and main_window.loading_label:
+                    main_window.loading_label.hide()
+                logging.debug("Overlay nascosto direttamente (senza animazione) dal timer di sicurezza")
     # --- FINE on_detection_progress ---
 
     # --- Slot for Path Detection Finished ---
@@ -760,17 +843,19 @@ class ProfileCreationManager:
         
         # --- Stop Fade/Animation Effect ---
         try:
-            # Start fade-out animation (will hide overlay and label at the end)
-            if hasattr(mw, 'fade_out_animation'):
-                mw.fade_out_animation.start()
-                logging.debug("Fade-out animation started.")
-            elif hasattr(mw, 'overlay_widget'):
-                 # Fallback: hide immediately if the animation doesn't exist
-                 mw.overlay_widget.hide()
-                 if hasattr(mw, 'loading_label'): mw.loading_label.hide()
+            if hasattr(mw, 'overlay_widget') and mw.overlay_widget.isVisible():
+                if hasattr(mw, 'fade_out_animation') and mw.fade_out_animation:
+                    # Usa l'animazione fade-out per nascondere l'overlay
+                    mw.fade_out_animation.start()
+                    logging.debug("Animazione fade-out avviata in on_detection_finished")
+                else:
+                    # Fallback se l'animazione non è disponibile
+                    mw.overlay_widget.hide()
+                    if hasattr(mw, 'loading_label'):
+                        mw.loading_label.hide()
+                    logging.debug("Overlay e loading label nascosti immediatamente (senza animazione).")
             else:
-                 logging.warning("Overlay widget or fade animation not found in MainWindow for stopping.")
-
+                logging.warning("Overlay widget non trovato o già nascosto in MainWindow.")
         except Exception as e_fade_stop:
             logging.error(f"Error stopping fade/animation effect: {e_fade_stop}", exc_info=True)
         # --- FINE Fade/Animation Effect ---

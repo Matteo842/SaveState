@@ -67,19 +67,20 @@ SaveState includes experimental support for automatically detecting save data lo
 **Currently Supported in version 1.4.0:**
 
 *   **Ryujinx**
-*   **yuzu**
-*   **rpcs3**
+*   **Yuzu**
+*   **Rpcs3**
 *   **DuckStation**
 *   **Dolphin**
 *   **PPSSPP**
-*   **citra**
+*   **Citra**
 *   **Azahar**
 *   **mGBA**
-*   **snes9x**
+*   **Snes9x**
 *   **DeSmuME**
 *   **Cemu**
-*   **flycast**
+*   **Flycast**
 *   **ShadPs4**
+*   **SameBoy**
 
 
 ## How Save Search Works (Heuristics)
