@@ -503,10 +503,13 @@ class MainWindowHandlers:
             logging.info("Activating fade effect...")
             try:
                 # Call methods on main_window to show overlay
+                self.main_window.loading_label.setText("Searching...") # Set text for Steam search
+                self.main_window.loading_label.adjustSize() # Ensure label resizes to content
                 self.main_window.overlay_widget.resize(self.main_window.centralWidget().size())
-                self.main_window._center_loading_label()
-                self.main_window.overlay_widget.show()
-                self.main_window.overlay_widget.raise_()
+                self.main_window.overlay_widget.show() # Show overlay first
+                self.main_window.overlay_widget.raise_() # Ensure it's on top
+                self.main_window._center_loading_label() # Center label on now-visible overlay
+                self.main_window.loading_label.show() # Explicitly show the label
                 self.main_window.fade_in_animation.start()
             except Exception as e_fade: logging.error(f"Error starting fade: {e_fade}", exc_info=True)
         else:
