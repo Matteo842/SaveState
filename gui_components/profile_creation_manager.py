@@ -322,41 +322,54 @@ class ProfileCreationManager:
             # Accept only if it's a SINGLE file
             if urls and len(urls) == 1 and urls[0].isLocalFile():
                 file_path = urls[0].toLocalFile()
+                mw = self.main_window
+                
                 # Windows: Accept .lnk files
                 # Linux: Accept .desktop files and executables
+                file_accepted = False
+                
                 if platform.system() == "Windows" and file_path.lower().endswith('.lnk'):
                     event.acceptProposedAction()
-                    logging.debug("DragEnterEvent: Accepted Windows .lnk file.")
-                    # Show overlay with "Drop Here" text
-                    mw = self.main_window
-                    if hasattr(mw, 'loading_label') and mw.loading_label:
-                        mw.loading_label.setText("Drop Here")
-                        if hasattr(mw, '_center_loading_label'): 
-                            mw._center_loading_label()
-                        # Imposta direttamente una semi-trasparenza per l'overlay
-                        if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
-                            # Usa uno stile con opacità ridotta (30%)
-                            mw.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 75); }")
-                            mw.overlay_widget.show()
-                            mw.loading_label.show()
+                    logging.debug(f"DragEnterEvent: Accepted Windows .lnk file: {file_path}")
+                    file_accepted = True
                 elif platform.system() == "Linux" and (file_path.lower().endswith('.desktop') or 
-                                                     os.access(file_path, os.X_OK)):
+                                                      os.access(file_path, os.X_OK)):
                     event.acceptProposedAction()
                     logging.debug(f"DragEnterEvent: Accepted Linux file: {file_path}")
-                    # Show overlay with "Drop Here" text
-                    mw = self.main_window
-                    if hasattr(mw, 'loading_label') and mw.loading_label:
-                        mw.loading_label.setText("Drop Here")
-                        if hasattr(mw, '_center_loading_label'): 
-                            mw._center_loading_label()
-                        # Imposta direttamente una semi-trasparenza per l'overlay
-                        if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
-                            # Usa uno stile con opacità ridotta (30%)
-                            mw.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 75); }")
+                    file_accepted = True
+                else:
+                    logging.debug(f"DragEnterEvent: Rejected file: {file_path}")
+                    event.ignore()
+                
+                # Solo se il file è stato accettato, gestisci l'overlay
+                if file_accepted:
+                    # Controlla se l'overlay è già attivo in MainWindow
+                    if hasattr(mw, 'overlay_active') and mw.overlay_active:
+                        logging.debug("dragEnterEvent: overlay already active in MainWindow, skipping overlay management")
+                    else:
+                        # Gestisci l'overlay solo se non è già attivo
+                        if hasattr(mw, 'loading_label') and mw.loading_label and \
+                           hasattr(mw, 'overlay_widget') and mw.overlay_widget:
+                            
+                            mw.loading_label.setText("Drop Here")
+                            if hasattr(mw, '_center_loading_label'):
+                                mw._center_loading_label()
+                            
+                            # Usa uno stile consistente con quello di MainWindow
+                            mw.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 200); }")
+                            
+                            # Imposta il flag overlay_active su MainWindow
+                            if hasattr(mw, 'overlay_active'):
+                                mw.overlay_active = True
+                                logging.debug("dragEnterEvent: setting MainWindow.overlay_active = True")
+                            
+                            # Assicurati che l'opacità sia completa se mostrato direttamente
+                            if hasattr(mw, 'overlay_opacity_effect'):
+                                mw.overlay_opacity_effect.setOpacity(1.0)
+                            
                             mw.overlay_widget.show()
                             mw.loading_label.show()
             else:
-                logging.debug(f"DragEnterEvent: Rejected file: {file_path}")
                 event.ignore()
         else:
             event.ignore()
@@ -368,35 +381,48 @@ class ProfileCreationManager:
             urls = event.mimeData().urls()
             if urls and len(urls) == 1 and urls[0].isLocalFile():
                 file_path = urls[0].toLocalFile()
+                mw = self.main_window
+                file_accepted = False
+                
                 if platform.system() == "Windows" and file_path.lower().endswith('.lnk'):
                     event.acceptProposedAction()
-                    # Ensure the overlay remains visible during movement
-                    mw = self.main_window
-                    if hasattr(mw, 'loading_label') and mw.loading_label and not mw.loading_label.isVisible():
-                        mw.loading_label.setText("Drop Here")
-                        if hasattr(mw, '_center_loading_label'): 
-                            mw._center_loading_label()
-                        # Imposta direttamente una semi-trasparenza per l'overlay
-                        if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
-                            # Usa uno stile con opacità ridotta (30%)
-                            mw.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 75); }")
-                            mw.overlay_widget.show()
-                            mw.loading_label.show()
+                    file_accepted = True
                 elif platform.system() == "Linux" and (file_path.lower().endswith('.desktop') or 
-                                                     os.access(file_path, os.X_OK)):
+                                                      os.access(file_path, os.X_OK)):
                     event.acceptProposedAction()
-                    # Ensure the overlay remains visible during movement
-                    mw = self.main_window
-                    if hasattr(mw, 'loading_label') and mw.loading_label and not mw.loading_label.isVisible():
-                        mw.loading_label.setText("Drop Here")
-                        if hasattr(mw, '_center_loading_label'): 
-                            mw._center_loading_label()
-                        # Imposta direttamente una semi-trasparenza per l'overlay
-                        if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
-                            # Usa uno stile con opacità ridotta (30%)
-                            mw.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 75); }")
+                    file_accepted = True
+                else:
+                    event.ignore()
+                
+                # Solo se il file è stato accettato e l'overlay non è visibile, mostralo
+                if file_accepted and hasattr(mw, 'loading_label') and hasattr(mw, 'overlay_widget'):
+                    # Controlla se l'overlay è già attivo in MainWindow
+                    if hasattr(mw, 'overlay_active') and mw.overlay_active:
+                        # Se l'overlay è già attivo ma non visibile, assicurati che sia visibile
+                        if not mw.overlay_widget.isVisible() or not mw.loading_label.isVisible():
+                            logging.debug("dragMoveEvent: overlay active but not visible, showing it")
                             mw.overlay_widget.show()
                             mw.loading_label.show()
+                    else:
+                        # Se l'overlay non è attivo, attivalo
+                        mw.loading_label.setText("Drop Here")
+                        if hasattr(mw, '_center_loading_label'):
+                            mw._center_loading_label()
+                        
+                        # Usa uno stile consistente con quello di MainWindow
+                        mw.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 200); }")
+                        
+                        # Imposta il flag overlay_active su MainWindow
+                        if hasattr(mw, 'overlay_active'):
+                            mw.overlay_active = True
+                            logging.debug("dragMoveEvent: setting MainWindow.overlay_active = True")
+                        
+                        # Assicurati che l'opacità sia completa
+                        if hasattr(mw, 'overlay_opacity_effect'):
+                            mw.overlay_opacity_effect.setOpacity(1.0)
+                        
+                        mw.overlay_widget.show()
+                        mw.loading_label.show()
             else:
                 event.ignore()
         else:
@@ -404,16 +430,23 @@ class ProfileCreationManager:
 
     def dragLeaveEvent(self, event):
         """Handles the drag leave event."""
-        # Nascondi l'overlay quando il drag esce dalla finestra
+        # NON nascondiamo più l'overlay quando il drag esce dalla finestra
+        # Ora il MainWindow gestisce il rilevamento globale del drag
+        logging.debug("dragLeaveEvent: il cursore è uscito dalla finestra ma l'overlay rimane visibile")
+        
+        # Impostiamo una variabile per indicare che il drag è attivo
         mw = self.main_window
-        try:
-            if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
-                mw.overlay_widget.hide()
-                if hasattr(mw, 'loading_label'):
-                    mw.loading_label.hide()
-                logging.debug("Overlay nascosto in dragLeaveEvent")
-        except Exception as e:
-            logging.error(f"Errore nel nascondere l'overlay in dragLeaveEvent: {e}")
+        
+        # Manteniamo il flag overlay_active se esiste
+        # Questo è importante per evitare che l'overlay venga mostrato di nuovo quando il cursore rientra
+        if hasattr(mw, 'overlay_active') and mw.overlay_active:
+            logging.debug("dragLeaveEvent: mantengo MainWindow.overlay_active = True")
+            # Non facciamo nulla, il flag rimane True
+        
+        if hasattr(mw, 'is_drag_operation_active'):
+            mw.is_drag_operation_active = True
+            logging.debug("Impostato is_drag_operation_active = True in dragLeaveEvent")
+            
         event.accept()
 
     def dropEvent(self, event):
@@ -783,9 +816,18 @@ class ProfileCreationManager:
                 # Set the loading label text to "Searching..." for heuristic search
                 if hasattr(mw, 'loading_label') and mw.loading_label:
                     mw.loading_label.setText("Searching...")
+                    # --- START OF MODIFIED STYLING ---
+                    # font = mw.loading_label.font()
+                    # font.setPointSize(24)
+                    # font.setBold(True)
+                    # mw.loading_label.setFont(font) # Stylesheet handles this now
+                    mw.loading_label.setStyleSheet("QLabel { color: white; background-color: transparent; font-size: 24pt; font-weight: bold; }")
+                    mw.loading_label.adjustSize() # Ensure label resizes to content
+                    # --- END OF MODIFIED STYLING ---
                 if hasattr(mw, '_center_loading_label'): mw._center_loading_label()
                 # Usa l'animazione standard per la ricerca (opacità 60%)
-                mw.overlay_widget.setStyleSheet("") # Rimuovi eventuali stili personalizzati
+                # mw.overlay_widget.setStyleSheet("") # RIMOSSO: Causa la perdita del background semi-trasparente
+                mw.overlay_opacity_effect.setOpacity(0.6) # Imposta l'opacità per la ricerca
                 mw.overlay_widget.show()
                 if hasattr(mw, 'fade_in_animation'): mw.fade_in_animation.start()
                 

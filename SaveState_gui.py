@@ -1,23 +1,51 @@
 # SaveState_gui.py
 # -*- coding: utf-8 -*-
-import sys
+#import sys
 import os
 import logging
+import platform
+import math
 
 # --- PySide6 Imports (misuriamo i moduli principali) ---
 # Importa il modulo base prima, poi gli elementi specifici
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QStatusBar, QMessageBox,
+    QPushButton, QLabel, QStatusBar,
     QProgressBar, QGroupBox,
-    QStyle, QDockWidget, QPlainTextEdit, QTableWidget
+    QStyle, QDockWidget, QPlainTextEdit, QTableWidget, QGraphicsOpacityEffect
 )
 from PySide6.QtCore import (
-    Slot, Qt, QSize, QCoreApplication,
-    QEvent,
-    QTimer, Property, QPropertyAnimation, QEasingCurve
+    Slot, Qt, QSize,
+    QEvent, Signal,
+    QTimer, QPropertyAnimation, QEasingCurve
 )
-from PySide6.QtGui import QIcon, QPalette, QColor, QCursor
+
+# Try to import pynput for global mouse monitoring
+try:
+    from pynput import mouse
+    PYNPUT_AVAILABLE = True
+    logging.info("pynput.mouse imported successfully. Global mouse drag detection enabled.")
+except ImportError:
+    PYNPUT_AVAILABLE = False
+    mouse = None  # Define mouse as None if import fails, to prevent NameError if referenced before conditional check
+    logging.warning("pynput.mouse could not be imported. Global mouse drag detection will be disabled. "
+                    "Install pynput for this feature (e.g., 'pip install pynput').")
+
+from PySide6.QtGui import QIcon, QAction, QDesktopServices, QPixmap, QPainter, QColor, QBrush, QPen, QFont, QKeySequence, QPalette, QCursor
+
+# Import condizionale per PyWin32 (solo su Windows)
+if platform.system() == "Windows":
+    try:
+        import win32gui
+        import win32con
+        import win32api
+        HAS_PYWIN32 = True
+        logging.debug("PyWin32 importato con successo")
+    except ImportError:
+        HAS_PYWIN32 = False
+        logging.warning("PyWin32 non disponibile. Il rilevamento del drag globale sarà limitato.")
+else:
+    HAS_PYWIN32 = False
 
 from gui_utils import QtLogHandler
 from utils import resource_path
@@ -36,46 +64,13 @@ LOCAL_SERVER_NAME = f"{APP_GUID}_LocalServer"
 
 
 # --- Finestra Principale ---
-class MainWindow(QMainWindow):  
-    # --- Overlay Opacity Property ---
-    # Getter for the overlay opacity property.
-    def _get_overlay_opacity(self):
-        try:
-            # Legge l'alpha dal colore di sfondo esistente
-            return self.overlay_widget.palette().window().color().alphaF()
-        except Exception:
-            return 0.0
+# Approccio semplificato: mostrare l'overlay quando la finestra è attiva
 
-    # Setter for the overlay opacity property.
-    def _set_overlay_opacity(self, opacity):
-        # Imposta l'opacità usando setStyleSheet con rgba()
-        if not hasattr(self, 'overlay_widget'):
-            return
-        try:
-            opacity = max(0.0, min(1.0, opacity)) # Limita tra 0 e 1
-            alpha = int(opacity * 255) # Calcola valore alpha (0-255)
+class MainWindow(QMainWindow):
+    # Segnali per la gestione dell'overlay dal thread principale della GUI
+    request_show_overlay = Signal()
+    request_hide_overlay = Signal()  
 
-            # Imposta lo stile del widget overlay
-            # Usiamo nero (0,0,0) con l'alpha calcolato.
-            style_sheet = f"QWidget#BusyOverlay {{ background-color: rgba(0, 0, 0, {alpha}); }}"
-            self.overlay_widget.setStyleSheet(style_sheet)
-            # print(f"DEBUG: Setting stylesheet: {style_sheet}") # Log se serve
-
-            # Gestisci visibilità e posizione della label animazione (come prima)
-            if hasattr(self, 'loading_label') and self.loading_label:
-                 is_visible = opacity > 0.1
-                 self.loading_label.setVisible(is_visible)
-                 if is_visible: # Centra solo se sta per essere visibile
-                      self._center_loading_label()
-
-            # Potrebbe non servire update() con stylesheet, ma lasciamolo per sicurezza
-            self.overlay_widget.update()
-
-        except Exception as e:
-             logging.error(f"Error setting overlay opacity via stylesheet: {e}")
-
-    _overlay_opacity = Property(float, _get_overlay_opacity, _set_overlay_opacity)
-    
     # --- Initialization ---
     # Initializes the main window, sets up UI elements, managers, and connects signals.
     def __init__(self, initial_settings, console_log_handler, qt_log_handler):
@@ -84,14 +79,30 @@ class MainWindow(QMainWindow):
         self.qt_log_handler = qt_log_handler
         
         # Variabili per il rilevamento del drag globale
-        self.global_drag_detection_timer = QTimer(self)
-        self.global_drag_detection_timer.setInterval(200)  # Controlla ogni 200ms
-        self.global_drag_detection_timer.timeout.connect(self.check_global_drag_state)
-        self.global_drag_detection_timer.start()
         self.is_drag_operation_active = False
-        self.last_cursor_pos = QCursor.pos()
-        self.drag_movement_threshold = 5  # Soglia di movimento in pixel per considerare un drag
-        self.drag_check_counter = 0
+        self.mouse_pressed = False            # True se il tasto sinistro è attualmente premuto
+        self.mouse_press_time = 0         # Timestamp (ms) di quando il tasto è stato premuto
+        self.min_press_duration = 250     # Durata minima (ms) della pressione per attivare il drag (1/4 di secondo)
+        self.press_position = None          # Posizione (x, y) di quando il tasto è stato premuto
+        self.min_drag_distance = 10         # Distanza minima (pixel) di movimento per attivare il drag
+        self.mouse_listener = None # Initialize to None
+        self.overlay_active = False # Flag to track if overlay is already active
+
+        if PYNPUT_AVAILABLE and mouse is not None:
+            try:
+                # Configura il listener del mouse per il rilevamento globale del drag
+                self.mouse_listener = mouse.Listener(
+                    on_click=self.on_mouse_click,
+                    on_move=self.on_mouse_move  # Aggiungiamo il gestore per il movimento
+                )
+                self.mouse_listener.daemon = True  # Il thread si chiuderà quando l'applicazione termina
+                self.mouse_listener.start()
+                logging.info("Global mouse listener for drag detection started successfully.")
+            except Exception as e:
+                logging.error(f"Failed to start pynput mouse listener: {e}. Global drag detection will be disabled.", exc_info=True)
+                self.mouse_listener = None # Ensure it's None if an error occurs during start
+        else:
+            logging.info("pynput is not available or mouse module is None. Global mouse drag detection is disabled.")
 
         # Translator removed - application is now English-only
 
@@ -99,6 +110,45 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         self.current_settings = initial_settings
         self.profiles = core_logic.load_profiles()
+
+        # Collega i segnali per l'overlay ai rispettivi slot
+        self.request_show_overlay.connect(self._show_overlay)
+        self.request_hide_overlay.connect(self._hide_overlay)
+
+        # --- Overlay Widget for Drag and Drop ---
+        self.overlay_widget = QWidget(self) # Parent to MainWindow directly
+        self.overlay_widget.setObjectName("BusyOverlay")
+        self.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 200); }") # Semi-transparent background, darker
+        self.overlay_widget.hide() # Start hidden
+        self.overlay_widget.setMouseTracking(False) # Don't let the overlay intercept mouse events for itself
+
+        self.loading_label = QLabel("Drop Here", self.overlay_widget)
+        # font = self.loading_label.font()
+        # font.setPointSize(24)
+        # font.setBold(True)
+        # self.loading_label.setFont(font) # Stylesheet handles this now
+        self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.loading_label.setStyleSheet("QLabel { color: white; background-color: transparent; font-size: 24pt; font-weight: bold; }")
+        self.loading_label.hide()
+
+        # Fade-in animation for the overlay (using QGraphicsOpacityEffect for QWidget)
+        self.overlay_opacity_effect = QGraphicsOpacityEffect(self.overlay_widget)
+        self.overlay_widget.setGraphicsEffect(self.overlay_opacity_effect)
+        self.fade_in_animation = QPropertyAnimation(self.overlay_opacity_effect, b"opacity")
+        self.fade_in_animation.setDuration(200) # ms
+        self.fade_in_animation.setStartValue(0.0)
+        self.fade_in_animation.setEndValue(1.0) 
+        self.fade_in_animation.setEasingCurve(QEasingCurve.InOutQuad)
+
+        # Fade-out animation for the overlay
+        self.fade_out_animation = QPropertyAnimation(self.overlay_opacity_effect, b"opacity")
+        self.fade_out_animation.setDuration(200) # ms
+        self.fade_out_animation.setStartValue(1.0)
+        self.fade_out_animation.setEndValue(0.0)
+        self.fade_out_animation.setEasingCurve(QEasingCurve.InOutQuad)
+        # Connect finished signals to hide widgets after animation
+        self.fade_out_animation.finished.connect(self.overlay_widget.hide)
+        self.fade_out_animation.finished.connect(self.loading_label.hide)
         
         self.developer_mode_enabled = False # Stato iniziale delle opzioni sviluppatore
         self.log_button_press_timer = None  # Timer per il long press
@@ -359,52 +409,7 @@ class MainWindow(QMainWindow):
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
 
-        
-        # --- NUOVO: Creazione Overlay Widget ---
-        self.overlay_widget = QWidget(self.centralWidget())
-        self.overlay_widget.setObjectName("BusyOverlay")
-        # Imposta un colore di base (qui verrà applicato l'alpha da _set_overlay_opacity)
-        base_palette = self.overlay_widget.palette()
-        base_palette.setColor(QPalette.ColorRole.Window, QColor(0, 0, 0, 0)) # Nero, alpha 0 iniziale
-        self.overlay_widget.setPalette(base_palette)
-        self.overlay_widget.setAutoFillBackground(True)
-        self.overlay_widget.hide()
-        # --- FINE Overlay ---
 
-
-        # --- Creazione Label per Animazione/Placeholder ---
-        self.loading_label = QLabel(self.overlay_widget) # Figlio dell'overlay!
-        self.loading_label.setObjectName("LoadingIndicatorLabel")
-        self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        loading_indicator_size = QSize(200, 200) 
-        self.loading_label.setFixedSize(loading_indicator_size)
-        self.loading_label.setText("Searching...")
-        # Stile per il testo caricamento
-        self.loading_label.setStyleSheet("QLabel#LoadingIndicatorLabel { color: white; font-size: 17pt; background-color: transparent; }")
-        # Nascondi la label all'inizio (verrà mostrata dal set_overlay_opacity)
-        self.loading_label.hide()
-        # --- FINE Label Animazione ---
-
-
-        # --- Creazione Animazioni Opacità ---
-        fade_duration = 250 # Durata animazione in ms
-
-        self.fade_in_animation = QPropertyAnimation(self, b"_overlay_opacity", self)
-        self.fade_in_animation.setDuration(fade_duration)
-        self.fade_in_animation.setStartValue(0.0)
-        self.fade_in_animation.setEndValue(0.6) # Opacità 60%
-        self.fade_in_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
-
-        self.fade_out_animation = QPropertyAnimation(self, b"_overlay_opacity", self)
-        self.fade_out_animation.setDuration(fade_duration)
-        self.fade_out_animation.setStartValue(0.6)
-        self.fade_out_animation.setEndValue(0.0)
-        self.fade_out_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
-
-        # Nasconde l'overlay (e quindi la label figlia) quando il fade-out finisce
-        self.fade_out_animation.finished.connect(self.overlay_widget.hide)
-        # --- FINE Animazioni ---
         
         self.profile_table_manager = ProfileListManager(self.profile_table_widget, self)
         self.profile_table_manager.update_profile_table()
@@ -534,6 +539,14 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'loading_label') and self.loading_label and \
             (not hasattr(self, 'loading_movie') or not self.loading_movie or not self.loading_movie.isValid()):
                 self.loading_label.setText("Searching...")
+                # --- START OF MODIFIED STYLING ---
+                # font = self.loading_label.font()
+                # font.setPointSize(24)
+                # font.setBold(True)
+                # self.loading_label.setFont(font) # Stylesheet handles this now
+                self.loading_label.setStyleSheet("QLabel { color: white; background-color: transparent; font-size: 24pt; font-weight: bold; }")
+                self.loading_label.adjustSize() # Ensure label resizes to content
+                # --- END OF MODIFIED STYLING ---
 
             logging.debug("Updating profile table after UI text update")
             self.profile_table_manager.update_profile_table()
@@ -551,6 +564,85 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'log_dock_widget'):
             self.log_dock_widget.setWindowTitle("Console Log")
         logging.debug(">>> updateUiText: END <<<")
+
+    def _show_overlay(self):
+        """Mostra l'overlay con animazione."""
+        if not hasattr(self, 'overlay_widget') or not self.overlay_widget:
+            logging.error("_show_overlay called but overlay_widget does not exist.")
+            return
+            
+        # If overlay is already active, don't show it again to prevent double fade effects
+        if hasattr(self, 'overlay_active') and self.overlay_active:
+            logging.debug("_show_overlay: overlay already active, skipping to prevent double fade")
+            return
+            
+        # Set the flag to indicate overlay is now active
+        self.overlay_active = True
+        logging.debug("_show_overlay: setting overlay_active = True")
+        
+        # Ensure the overlay is sized correctly.
+        # It's parented to self (MainWindow), so it should cover the MainWindow's area or central widget area.
+        if self.centralWidget():
+            self.overlay_widget.setGeometry(self.centralWidget().rect())
+        else:
+            logging.warning("Central widget not available for overlay. Overlay will cover the entire main window.")
+            self.overlay_widget.setGeometry(self.rect()) # Fallback to main window rect
+
+        # Ensure the overlay itself has the correct dark style every time it's shown
+        self.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 200); }")
+        self.overlay_widget.raise_() # Bring to front
+        self.loading_label.setText("Drop Here")
+
+        # Ensure font and style are correct
+    # font = self.loading_label.font()
+    # font.setPointSize(24)
+    # font.setBold(True)
+    # self.loading_label.setFont(font) # Stylesheet handles this now
+        self.loading_label.setStyleSheet("QLabel { color: white; background-color: transparent; font-size: 24pt; font-weight: bold; }")
+        self.loading_label.adjustSize() # Ensure label resizes before centering
+        self._center_loading_label() # Center the label
+        
+        self.loading_label.show()
+        self.overlay_widget.show()
+        
+        if hasattr(self, 'fade_in_animation'):
+            self.fade_in_animation.stop() # Stop if already running
+            self.fade_in_animation.start()
+            logging.debug("Fade-in animation started for overlay.")
+        else:
+            # Fallback if animation not set up, just show (though we expect it to be)
+            self.overlay_opacity_effect.setOpacity(1.0)
+            logging.warning("Fade-in animation missing, showing overlay directly.")
+
+    def _hide_overlay(self):
+        """Nasconde l'overlay con animazione."""
+        if not hasattr(self, 'overlay_widget') or not self.overlay_widget:
+            logging.error("_hide_overlay called but overlay_widget does not exist.")
+            return
+            
+        # If overlay is not active, no need to hide it
+        if hasattr(self, 'overlay_active') and not self.overlay_active:
+            logging.debug("_hide_overlay: overlay not active, nothing to hide")
+            return
+            
+        # Reset the flag to indicate overlay is no longer active
+        self.overlay_active = False
+        logging.debug("_hide_overlay: setting overlay_active = False")
+
+        if hasattr(self, 'fade_out_animation'):
+            self.fade_out_animation.stop() # Stop if already running
+            # Make sure current opacity is 1.0 before starting fade-out from full visibility
+            if self.overlay_opacity_effect.opacity() < 1.0 and self.overlay_widget.isVisible():
+                 self.overlay_opacity_effect.setOpacity(1.0) 
+            self.fade_out_animation.start()
+            logging.debug("Fade-out animation started for overlay.")
+        else:
+            # Fallback if animation not set up
+            self.overlay_widget.hide()
+            self.loading_label.hide()
+            if hasattr(self, 'overlay_opacity_effect'):
+                self.overlay_opacity_effect.setOpacity(0.0)
+            logging.warning("Fade-out animation missing, hiding overlay directly.")
 
     # Handles application-level events
     def changeEvent(self, event):
@@ -610,74 +702,63 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
         
-    def check_global_drag_state(self):
-        """Controlla se è in corso un'operazione di drag a livello di sistema."""
+    def on_mouse_move(self, x, y):
+        """Callback chiamata quando il mouse si muove."""
         try:
-            # Ottieni la posizione corrente del cursore
-            current_pos = QCursor.pos()
-            
-            # Calcola la distanza dal punto precedente
-            distance = ((current_pos.x() - self.last_cursor_pos.x()) ** 2 + 
-                        (current_pos.y() - self.last_cursor_pos.y()) ** 2) ** 0.5
-            
-            # Aggiorna l'ultima posizione conosciuta
-            self.last_cursor_pos = current_pos
-            
-            # Incrementa il contatore per il controllo periodico
-            self.drag_check_counter += 1
-            
-            # Ottieni lo stato dei pulsanti del mouse
-            from PySide6.QtGui import QGuiApplication
-            modifiers = QGuiApplication.queryKeyboardModifiers()
-            mouse_buttons = QGuiApplication.mouseButtons()
-            from PySide6.QtCore import Qt
-            left_button_pressed = bool(mouse_buttons & Qt.MouseButton.LeftButton)
-            
-            # Verifica se sembra essere in corso un'operazione di drag
-            potential_drag = left_button_pressed and distance > self.drag_movement_threshold
-            
-            # Resetta il contatore ogni 10 controlli
-            if self.drag_check_counter >= 10:
-                self.drag_check_counter = 0
+            if self.mouse_pressed and self.press_position and not self.is_drag_operation_active:
+                import time # Consider moving to class level if used frequently
+                current_time = int(time.time() * 1000)
                 
-                # Controlla se c'è un'operazione di drag in corso
-                if potential_drag and not self.is_drag_operation_active:
-                    logging.debug("Rilevata possibile operazione di drag globale")
-                    self.is_drag_operation_active = True
-                    
-                    # Mostra l'overlay con animazione fade-in
-                    if hasattr(self, 'overlay_widget') and self.overlay_widget:
-                        self.overlay_widget.resize(self.centralWidget().size())
-                        # Imposta il testo della label a "Drop Here"
-                        if hasattr(self, 'loading_label') and self.loading_label:
-                            self.loading_label.setText("Drop Here")
-                        if hasattr(self, '_center_loading_label'): 
-                            self._center_loading_label()
-                        # Imposta lo stile per il drag (opacità 30%)
-                        self.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 77); }")
-                        self.overlay_widget.show()
-                        if hasattr(self, 'loading_label'):
-                            self.loading_label.show()
-                        if hasattr(self, 'fade_in_animation'): 
-                            self.fade_in_animation.start()
-                        logging.debug("Avviata animazione fade-in per drag globale")
+                # Calcola la distanza euclidea
+                dx = x - self.press_position[0]
+                dy = y - self.press_position[1]
+                distance = math.sqrt(dx*dx + dy*dy)
                 
-                # Se non c'è più un'operazione di drag in corso, nascondi l'overlay
-                elif not potential_drag and self.is_drag_operation_active:
-                    logging.debug("Operazione di drag globale terminata")
-                    self.is_drag_operation_active = False
-                    
-                    # Nascondi l'overlay con animazione fade-out
-                    if hasattr(self, 'overlay_widget') and self.overlay_widget and self.overlay_widget.isVisible():
-                        if hasattr(self, 'fade_out_animation'): 
-                            self.fade_out_animation.start()
-                        logging.debug("Avviata animazione fade-out per drag globale terminato")
+                # logging.debug(f"Mouse move: duration={press_duration}ms, distance={distance:.2f}px")
+
+                if current_time - self.mouse_press_time > self.min_press_duration and distance > self.min_drag_distance:
+                    logging.debug(f"Drag detected! Duration: {current_time - self.mouse_press_time}ms, Distance: {distance:.2f}px. Emitting request to show overlay.")
+                    self.request_show_overlay.emit()
+                    self.is_drag_operation_active = True 
         except Exception as e:
-            logging.error(f"Errore durante il controllo dello stato di drag globale: {e}")
-            # Disattiva il timer in caso di errori ripetuti
-            self.drag_check_counter += 1
-            if self.drag_check_counter > 50:  # Dopo 50 errori, disattiva il timer
-                self.global_drag_detection_timer.stop()
-                logging.error("Timer di rilevamento drag globale disattivato dopo errori ripetuti")
+            logging.error(f"Errore durante la gestione dell'evento move del mouse: {e}", exc_info=True)
+
+    def on_mouse_click(self, x, y, button, pressed):
+        """Callback chiamata quando un pulsante del mouse viene premuto o rilasciato."""
+        try:
+            import time # Consider moving to class level
+            current_time = int(time.time() * 1000)
+            
+            if button == mouse.Button.left:
+                if pressed:
+                    # Quando il pulsante viene premuto, memorizza il tempo e la posizione
+                    self.mouse_press_time = current_time
+                    self.press_position = (x, y)
+                    self.mouse_pressed = True
+                    self.is_drag_operation_active = False # Resetta lo stato del drag all'inizio di ogni click
+                    logging.debug(f"Tasto sinistro del mouse PREMUTO a ({x}, {y}), press_pos: {self.press_position}. Drag state reset.")
+                else:  # Rilasciato
+                    press_duration = current_time - self.mouse_press_time # Calcola per logging o altre logiche future
+                    logging.debug(f"Tasto sinistro del mouse RILASCIATO a ({x}, {y}), durata pressione: {press_duration}ms")
+                    
+                    self.mouse_pressed = False # Il pulsante non è più premuto
+                    
+                    if self.is_drag_operation_active:
+                        # Se un'operazione di drag era attiva (overlay mostrato da on_mouse_move)
+                        # questo è il momento del "drop".
+                        logging.info("Mouse release detected during active drag operation. Emitting request to hide overlay.")
+                        self.request_hide_overlay.emit()
+                    else:
+                        # Se non c'era un drag attivo (click semplice o lungo senza movimento sufficiente),
+                        # assicurati che l'overlay sia nascosto se per caso era visibile.
+                        if hasattr(self, 'overlay_widget') and self.overlay_widget and self.overlay_widget.isVisible():
+                            logging.debug("Mouse rilasciato, nessun drag attivo, ma overlay visibile. Emitting request to hide overlay.")
+                            self.request_hide_overlay.emit()
+
+                    self.is_drag_operation_active = False # Resetta sempre lo stato del drag al rilascio
+                    self.press_position = None # Resetta la posizione di pressione
+                    
+        except Exception as e:
+            logging.error(f"Errore durante la gestione dell'evento click del mouse: {e}", exc_info=True)
 
 # --- End of MainWindow class definition ---
