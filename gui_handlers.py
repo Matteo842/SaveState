@@ -166,6 +166,12 @@ class MainWindowHandlers:
             if settings_manager.save_settings(self.main_window.current_settings):
                 logging.info("Settings saved successfully after dialog confirmation.")
                 self.main_window.status_label.setText("Settings saved.")
+                # Update the global drag listener state if the setting was changed
+                if hasattr(self.main_window, 'update_global_drag_listener_state'):
+                    logging.debug("Calling update_global_drag_listener_state after saving settings.")
+                    self.main_window.update_global_drag_listener_state()
+                else:
+                    logging.warning("MainWindow does not have update_global_drag_listener_state method.")
             else:
                 logging.error("Failed to save settings after dialog confirmation.")
                 QMessageBox.warning(self.main_window, "Save Error",

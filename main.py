@@ -4,7 +4,7 @@ import sys
 import os
 import logging
 import argparse
-import config # <--- Added import here
+import config
 # --- PySide6 Imports ---
 from PySide6.QtWidgets import QApplication, QMessageBox, QDialog, QSplashScreen
 from PySide6.QtCore import QSharedMemory
@@ -16,7 +16,7 @@ import settings_manager
 import backup_runner
 from gui_utils import QtLogHandler
 from utils import resource_path # <--- Import from utils
-from SaveState_gui import MainWindow # , ENGLISH_TRANSLATOR, CURRENT_TRANSLATOR # Importa da SaveState_gui
+from SaveState_gui import MainWindow # , ENGLISH_TRANSLATOR, CURRENT_TRANSLATOR
 from SaveState_gui import SHARED_MEM_KEY, LOCAL_SERVER_NAME # Importa costanti
 
 try:
@@ -266,7 +266,7 @@ if __name__ == "__main__":
                     # console_handler è definito sopra
                     logging.debug("Creating MainWindow instance...")
                     # Pass the handlers created here to MainWindow
-                    window = MainWindow(current_settings, console_handler, qt_log_handler)
+                    window = MainWindow(current_settings, console_handler, qt_log_handler, settings_manager)
                     logging.debug("MainWindow instance created.")
 
                     # Language handling removed - application is now English-only

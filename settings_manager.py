@@ -28,6 +28,7 @@ def load_settings():
         "theme": "dark", # Possible values: 'dark', 'light'
         "compression_mode": "standard",
         "check_free_space_enabled": True,
+        "enable_global_drag_effect": True, # ADDED: For the pynput global mouse drag detection overlay
         "ini_whitelist": [ # Files to check for paths
             "steam_emu.ini",
             "user_steam_emu.ini",
@@ -104,6 +105,11 @@ def load_settings():
         if not isinstance(settings.get("check_free_space_enabled"), bool):
             logging.warning(f"Invalid value for check_free_space_enabled ('{settings.get('check_free_space_enabled')}'), using default {defaults['check_free_space_enabled']}.")
             settings["check_free_space_enabled"] = defaults["check_free_space_enabled"]
+
+        # --- VALIDATION GLOBAL DRAG EFFECT (boolean) ---
+        if not isinstance(settings.get("enable_global_drag_effect"), bool):
+            logging.warning(f"Invalid value for enable_global_drag_effect ('{settings.get('enable_global_drag_effect')}'), using default {defaults['enable_global_drag_effect']}.")
+            settings["enable_global_drag_effect"] = defaults["enable_global_drag_effect"]
 
         # Ensure the backup directory exists
         backup_dir = settings.get("backup_base_dir")

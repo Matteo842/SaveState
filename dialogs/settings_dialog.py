@@ -104,6 +104,15 @@ class SettingsDialog(QDialog):
         self.space_check_group.setLayout(space_check_layout)
         layout.addWidget(self.space_check_group)
 
+        # --- UI Settings Group ---
+        self.ui_settings_group = QGroupBox() # Saved reference
+        ui_settings_layout = QVBoxLayout()
+        self.enable_global_drag_checkbox = QCheckBox() # Saved reference
+        self.enable_global_drag_checkbox.setChecked(self.settings.get("enable_global_drag_effect", True))
+        ui_settings_layout.addWidget(self.enable_global_drag_checkbox)
+        self.ui_settings_group.setLayout(ui_settings_layout)
+        layout.addWidget(self.ui_settings_group)
+
         layout.addStretch()
 
         # --- Dialog Buttons ---
@@ -132,6 +141,10 @@ class SettingsDialog(QDialog):
         self.comp_group.setTitle("Backup Compression (.zip)")
         self.space_check_group.setTitle("Free Disk Space Check")
         self.space_check_checkbox.setText(f"Enable space check before backup (minimum {config.MIN_FREE_SPACE_GB} GB)")
+
+        # UI Settings Texts
+        self.ui_settings_group.setTitle("UI Settings")
+        self.enable_global_drag_checkbox.setText("Enable global mouse drag-to-show effect")
 
         # Update texts in the compression combobox
         current_key_comp = self.comp_combobox.currentData() # Save current key
@@ -210,6 +223,7 @@ class SettingsDialog(QDialog):
         self.settings["max_source_size_mb"] = new_max_src_size_mb
         self.settings["compression_mode"] = new_compression_mode
         self.settings["check_free_space_enabled"] = new_check_free_space
+        self.settings["enable_global_drag_effect"] = self.enable_global_drag_checkbox.isChecked()
 
         # Accept the dialog
         super().accept()

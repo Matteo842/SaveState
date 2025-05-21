@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import (
     Slot, Qt, QSize,
     QEvent, Signal,
-    QTimer, QPropertyAnimation, QEasingCurve
+    QTimer, QPropertyAnimation, QEasingCurve, QAbstractAnimation
 )
 
 # Try to import pynput for global mouse monitoring
@@ -31,7 +31,9 @@ except ImportError:
     logging.warning("pynput.mouse could not be imported. Global mouse drag detection will be disabled. "
                     "Install pynput for this feature (e.g., 'pip install pynput').")
 
-from PySide6.QtGui import QIcon, QAction, QDesktopServices, QPixmap, QPainter, QColor, QBrush, QPen, QFont, QKeySequence, QPalette, QCursor
+from PySide6.QtGui import (
+    QAction, QIcon, QKeySequence, QShortcut, QFont, QFontMetrics, QPainter, QColor, QPen, QBrush, QPixmap, QPainterPath, QWheelEvent, QMouseEvent, QDragEnterEvent, QDropEvent, QDragLeaveEvent, QCursor, QPalette
+)
 
 # Import condizionale per PyWin32 (solo su Windows)
 if platform.system() == "Windows":
@@ -73,10 +75,11 @@ class MainWindow(QMainWindow):
 
     # --- Initialization ---
     # Initializes the main window, sets up UI elements, managers, and connects signals.
-    def __init__(self, initial_settings, console_log_handler, qt_log_handler):
+    def __init__(self, initial_settings, console_log_handler, qt_log_handler, settings_manager_instance):
         super().__init__()
         self.console_log_handler = console_log_handler # Salva riferimento al gestore console
         self.qt_log_handler = qt_log_handler
+        self.settings_manager = settings_manager_instance # Assign settings_manager instance
         
         # Variabili per il rilevamento del drag globale
         self.is_drag_operation_active = False
@@ -88,6 +91,9 @@ class MainWindow(QMainWindow):
         self.mouse_listener = None # Initialize to None
         self.overlay_active = False # Flag to track if overlay is already active
 
+        # Initial state of the listener will be set by update_global_drag_listener_state
+        # called after settings are fully initialized and accessible.
+
         if PYNPUT_AVAILABLE and mouse is not None:
             try:
                 # Configura il listener del mouse per il rilevamento globale del drag
@@ -96,8 +102,8 @@ class MainWindow(QMainWindow):
                     on_move=self.on_mouse_move  # Aggiungiamo il gestore per il movimento
                 )
                 self.mouse_listener.daemon = True  # Il thread si chiuderà quando l'applicazione termina
-                self.mouse_listener.start()
-                logging.info("Global mouse listener for drag detection started successfully.")
+                # self.mouse_listener.start()
+                logging.info("Global mouse listener for drag detection initialized successfully.")
             except Exception as e:
                 logging.error(f"Failed to start pynput mouse listener: {e}. Global drag detection will be disabled.", exc_info=True)
                 self.mouse_listener = None # Ensure it's None if an error occurs during start
@@ -111,9 +117,12 @@ class MainWindow(QMainWindow):
         self.current_settings = initial_settings
         self.profiles = core_logic.load_profiles()
 
-        # Collega i segnali per l'overlay ai rispettivi slot
+        # Connect signals for overlay management
         self.request_show_overlay.connect(self._show_overlay)
         self.request_hide_overlay.connect(self._hide_overlay)
+
+        # Initialize and set the global drag listener state based on settings
+        self.update_global_drag_listener_state()
 
         # --- Overlay Widget for Drag and Drop ---
         self.overlay_widget = QWidget(self) # Parent to MainWindow directly
@@ -147,8 +156,8 @@ class MainWindow(QMainWindow):
         self.fade_out_animation.setEndValue(0.0)
         self.fade_out_animation.setEasingCurve(QEasingCurve.InOutQuad)
         # Connect finished signals to hide widgets after animation
-        self.fade_out_animation.finished.connect(self.overlay_widget.hide)
-        self.fade_out_animation.finished.connect(self.loading_label.hide)
+        self.fade_out_animation.finished.connect(self.overlay_widget.hide) # Hides the widget itself
+        self.fade_out_animation.finished.connect(self._on_overlay_faded_out) # Manages overlay_active flag and hides label
         
         self.developer_mode_enabled = False # Stato iniziale delle opzioni sviluppatore
         self.log_button_press_timer = None  # Timer per il long press
@@ -476,12 +485,16 @@ class MainWindow(QMainWindow):
         event.accept()
 
     # Called when a dragged item enters the window; accepts if it contains valid URLs.
-    def dragEnterEvent(self, event):
-        """Accetta l'evento se contiene URL (per drag-and-drop cartelle)."""
-        if hasattr(self, 'profile_creation_manager'):
-            self.profile_creation_manager.dragEnterEvent(event)
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        # This event is triggered when a drag enters the widget area.
+        # We check if the dragged data contains URLs (for files/folders) or text.
+        if event.mimeData().hasUrls() or event.mimeData().hasText():
+            logging.debug(f"MainWindow.dragEnterEvent: Valid data detected. Emitting request_show_overlay.")
+            self.request_show_overlay.emit() # Request to show the "Drop Here" overlay
+            event.acceptProposedAction() # Accept the drag operation
         else:
-            super().dragEnterEvent(event) # Chiamata al metodo base
+            logging.debug(f"MainWindow.dragEnterEvent: No valid data (URLs/Text). Ignoring.")
+            event.ignore() # Ignore if not carrying URLs/Text
 
     # Gestisce il movimento durante il drag (attualmente ignorato).
     def dragMoveEvent(self, event):
@@ -492,27 +505,45 @@ class MainWindow(QMainWindow):
             super().dragMoveEvent(event)
 
     # Gestisce l'uscita del cursore dall'area dell'applicazione durante il drag.
-    def dragLeaveEvent(self, event):
-        """Gestisce l'uscita del cursore dall'area dell'applicazione durante il drag."""
-        if hasattr(self, 'profile_creation_manager'):
-            self.profile_creation_manager.dragLeaveEvent(event)
-        else:
-            # Nascondi comunque l'overlay se esiste
-            if hasattr(self, 'overlay_widget') and self.overlay_widget:
-                self.overlay_widget.hide()
-                if hasattr(self, 'loading_label'):
-                    self.loading_label.hide()
-            super().dragLeaveEvent(event)
+    def dragLeaveEvent(self, event: QDragLeaveEvent):
+        # This event is triggered when a drag leaves the widget area.
+        logging.debug(f"MainWindow.dragLeaveEvent: Emitting request_hide_overlay.")
+        self.request_hide_overlay.emit()
+        event.accept() # Accept the event
 
     # Called when a dragged item is dropped; handles dropped folders for new profiles.
-    def dropEvent(self, event):
-        """Gestisce il rilascio di elementi (cartelle) sulla finestra."""
-        if hasattr(self, 'profile_creation_manager'):
-            self.profile_creation_manager.dropEvent(event)
+    def dropEvent(self, event: QDropEvent):
+        # This event is triggered when a drag is dropped on the widget.
+        logging.debug("MainWindow.dropEvent: Processing drop. Emitting request_hide_overlay.")
+        self.request_hide_overlay.emit() # Request to hide overlay after processing the drop
+
+        dropped_path = None
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                local_path = urls[0].toLocalFile()
+                logging.info(f"MainWindow.dropEvent: File dropped via URL: {local_path}")
+                dropped_path = local_path
+        elif event.mimeData().hasText():
+            text = event.mimeData().text()
+            potential_path = os.path.normpath(text)
+            if os.path.exists(potential_path):
+                logging.info(f"MainWindow.dropEvent: File dropped via text (looks like a path): {potential_path}")
+            else:
+                logging.debug(f"MainWindow.dropEvent: Dropped text '{text}' is not an existing path. Ignoring text drop.")
+        # The 'except Exception as e:' block was part of the erroneous code and is now removed.
+
+        if dropped_path:
+            # Delegate the drop event to the ProfileCreationManager
+            if hasattr(self, 'profile_creation_manager') and self.profile_creation_manager:
+                self.profile_creation_manager.dropEvent(event)
+                # ProfileCreationManager.dropEvent is responsible for event.acceptProposedAction() or event.ignore()
+            else:
+                logging.error("MainWindow.dropEvent: profile_creation_manager is not initialized!")
+                event.ignore()
         else:
-            super().dropEvent(event)
-    
-    # Sets up the UI text for all components
+            logging.debug("MainWindow.dropEvent: No valid path found in drop event. Ignoring.")
+            event.ignore()
     def updateUiText(self):
         """Updates the UI text"""
         logging.debug(">>> updateUiText: START <<<")
@@ -625,24 +656,42 @@ class MainWindow(QMainWindow):
             logging.debug("_hide_overlay: overlay not active, nothing to hide")
             return
             
-        # Reset the flag to indicate overlay is no longer active
-        self.overlay_active = False
-        logging.debug("_hide_overlay: setting overlay_active = False")
+        if self.fade_out_animation.state() == QAbstractAnimation.Running:
+            logging.debug("_hide_overlay: Already fading out.")
+            return
 
+        # Stop any incoming animation if it's running
+        if hasattr(self, 'fade_in_animation') and self.fade_in_animation.state() == QAbstractAnimation.Running:
+            logging.debug("_hide_overlay: Stopping fade_in_animation.")
+            self.fade_in_animation.stop()
+            # Ensure opacity is at a known state if fade-in was interrupted early
+            # self.overlay_opacity_effect.setOpacity(1.0) # Or current value, but fade_out starts from 1.0
+
+        logging.debug(f"_hide_overlay: Proceeding to hide. Visible: {self.overlay_widget.isVisible()}, Active: {self.overlay_active}")
         if hasattr(self, 'fade_out_animation'):
-            self.fade_out_animation.stop() # Stop if already running
-            # Make sure current opacity is 1.0 before starting fade-out from full visibility
-            if self.overlay_opacity_effect.opacity() < 1.0 and self.overlay_widget.isVisible():
-                 self.overlay_opacity_effect.setOpacity(1.0) 
+            # Ensure opacity is 1.0 if we are about to fade out from a visible state
+            # This handles cases where fade-in might have been stopped midway by a rapid hide request
+            if self.overlay_opacity_effect.opacity() < 1.0:
+                 self.overlay_opacity_effect.setOpacity(1.0)
             self.fade_out_animation.start()
             logging.debug("Fade-out animation started for overlay.")
         else:
             # Fallback if animation not set up
             self.overlay_widget.hide()
+            if hasattr(self, 'loading_label'): self.loading_label.hide()
+            if hasattr(self, 'overlay_opacity_effect'): self.overlay_opacity_effect.setOpacity(0.0)
+            self.overlay_active = False # Set directly if no animation
+            logging.warning("Fade-out animation missing, hiding overlay directly and setting overlay_active=False.")
+
+    @Slot()
+    def _on_overlay_faded_out(self):
+        """Called when the fade-out animation of the overlay is finished."""
+        logging.debug("_on_overlay_faded_out: Fade-out finished. Setting overlay_active = False.")
+        self.overlay_active = False
+        # Ensure the label is also hidden if it wasn't part of the overlay_widget's fade directly
+        if hasattr(self, 'loading_label'):
             self.loading_label.hide()
-            if hasattr(self, 'overlay_opacity_effect'):
-                self.overlay_opacity_effect.setOpacity(0.0)
-            logging.warning("Fade-out animation missing, hiding overlay directly.")
+        # The overlay_widget itself should be hidden by its fade_out_animation.finished.connect(self.overlay_widget.hide) connection
 
     # Handles application-level events
     def changeEvent(self, event):
@@ -698,33 +747,102 @@ class MainWindow(QMainWindow):
     def activateExistingInstance(self):
         # Connected to QLocalServer signal in main.py
         logging.info("Received signal to activate existing instance (slot in MainWindow).")
-        self.showNormal()
-        self.raise_()
-        self.activateWindow()
-        
+
+    # --- Global Mouse Drag Detection Callbacks (pynput) ---
+    def update_global_drag_listener_state(self):
+        """Starts or stops the global mouse listener based on settings."""
+        if not PYNPUT_AVAILABLE or not mouse:
+            if self.mouse_listener and self.mouse_listener.is_alive():
+                logging.info("PYNPUT not available/imported, stopping any active mouse listener.")
+                self.mouse_listener.stop()
+            self.mouse_listener = None
+            return
+
+        enable_effect = self.current_settings.get("enable_global_drag_effect")
+
+        if enable_effect:
+            if not self.mouse_listener or not self.mouse_listener.is_alive():
+                try:
+                    # Recreate listener instance if it was set to None
+                    self.mouse_listener = mouse.Listener(
+                        on_click=self.on_mouse_click,
+                        on_move=self.on_mouse_move
+                    )
+                    self.mouse_listener.start()
+                    logging.info("Global mouse listener started (setting enabled).")
+                except Exception as e:
+                    logging.error(f"Failed to start global mouse listener: {e}", exc_info=True)
+                    self.mouse_listener = None
+            else:
+                logging.debug("Global mouse listener already running (setting enabled).")
+        else:  # Setting is disabled
+            if self.mouse_listener and self.mouse_listener.is_alive():
+                self.mouse_listener.stop()
+                # self.mouse_listener.join() # Consider if join is needed
+                self.mouse_listener = None # Clear the listener instance
+                logging.info("Global mouse listener stopped (setting disabled).")
+                
+                if self.is_drag_operation_active:
+                    logging.debug("Resetting is_drag_operation_active as global effect is disabled.")
+                    self.is_drag_operation_active = False
+                
+                if self.overlay_active: 
+                    logging.debug("Requesting overlay hide as global effect is disabled and overlay was active.")
+                    self.request_hide_overlay.emit()
+            else:
+                logging.debug("Global mouse listener already stopped or not initialized (setting disabled).")
+
     def on_mouse_move(self, x, y):
         """Callback chiamata quando il mouse si muove."""
+        if not self.current_settings.get("enable_global_drag_effect", True) or not self.mouse_listener or not self.mouse_listener.is_alive():
+            return 
         try:
             if self.mouse_pressed and self.press_position and not self.is_drag_operation_active:
-                import time # Consider moving to class level if used frequently
+                import time 
                 current_time = int(time.time() * 1000)
                 
-                # Calcola la distanza euclidea
                 dx = x - self.press_position[0]
                 dy = y - self.press_position[1]
                 distance = math.sqrt(dx*dx + dy*dy)
                 
-                # logging.debug(f"Mouse move: duration={press_duration}ms, distance={distance:.2f}px")
-
                 if current_time - self.mouse_press_time > self.min_press_duration and distance > self.min_drag_distance:
-                    logging.debug(f"Drag detected! Duration: {current_time - self.mouse_press_time}ms, Distance: {distance:.2f}px. Emitting request to show overlay.")
-                    self.request_show_overlay.emit()
+                    logging.debug(f"Pynput drag detected! Duration: {current_time - self.mouse_press_time}ms, Distance: {distance:.2f}px. Emitting request to show overlay.")
                     self.is_drag_operation_active = True 
+                    self.request_show_overlay.emit()
         except Exception as e:
-            logging.error(f"Errore durante la gestione dell'evento move del mouse: {e}", exc_info=True)
+            logging.error(f"Errore durante la gestione dell'evento move del mouse (pynput): {e}", exc_info=True)
 
     def on_mouse_click(self, x, y, button, pressed):
         """Callback chiamata quando un pulsante del mouse viene premuto o rilasciato."""
+        if not self.current_settings.get("enable_global_drag_effect", True) or not self.mouse_listener or not self.mouse_listener.is_alive():
+            return
+        try:
+            import time 
+            current_time = int(time.time() * 1000)
+            
+            if button == mouse.Button.left:
+                if pressed:
+                    self.mouse_press_time = current_time
+                    self.press_position = (x, y)
+                    self.mouse_pressed = True
+                    self.is_drag_operation_active = False 
+                    logging.debug(f"Pynput: Left mouse PRESSED at ({x}, {y}). Drag state reset.")
+                else:  # Rilasciato
+                    logging.debug(f"Pynput: Left mouse RELEASED at ({x}, {y}).")
+                    self.mouse_pressed = False 
+                    
+                    if self.is_drag_operation_active:
+                        logging.info("Pynput: Mouse release detected during pynput-active drag. Requesting hide overlay.")
+                        self.request_hide_overlay.emit()
+                    
+                    self.is_drag_operation_active = False 
+                    self.press_position = None 
+        except Exception as e:
+            logging.error(f"Errore durante la gestione dell'evento click del mouse (pynput): {e}", exc_info=True)
+
+
+        if not self.current_settings.get("enable_global_drag_effect") or not self.mouse_listener or not self.mouse_listener.is_alive():
+            return # Do nothing if the effect is disabled or listener not active
         try:
             import time # Consider moving to class level
             current_time = int(time.time() * 1000)
