@@ -2,6 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Latest Release](https://img.shields.io/github/v/release/Matteo842/SaveState)](https://github.com/Matteo842/SaveState/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Matteo842/SaveState/total.svg)](https://github.com/Matteo842/SaveState/releases)
 
 A user-friendly GUI application for Windows to easily back up and restore video game save files, especially useful for games without cloud saves or for managing multiple save locations.
 
@@ -66,21 +67,13 @@ SaveState includes experimental support for automatically detecting save data lo
 
 **Currently Supported in version 1.4.0:**
 
-*   **Ryujinx**
-*   **Yuzu**
-*   **Rpcs3**
-*   **DuckStation**
-*   **Dolphin**
-*   **PPSSPP**
-*   **Citra**
-*   **Azahar**
-*   **mGBA**
-*   **Snes9x**
-*   **DeSmuME**
-*   **Cemu**
-*   **Flycast**
-*   **ShadPs4**
-*   **SameBoy**
+|             |            |          |
+|-------------|------------|----------|
+| Ryujinx     | Yuzu       | Rpcs3    |
+| DuckStation | Dolphin    | PPSSPP   |
+| Citra       | Azahar     | mGBA     |
+| Snes9x      | DeSmuME    | Cemu     |
+| Flycast     | ShadPs4    | SameBoy  |
 
 
 ## How Save Search Works (Heuristics)
