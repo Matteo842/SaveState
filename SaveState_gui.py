@@ -5,6 +5,8 @@ import os
 import logging
 import platform
 import math
+import configparser
+import core_logic # Added import
 
 # --- PySide6 Imports (misuriamo i moduli principali) ---
 # Importa il modulo base prima, poi gli elementi specifici
@@ -32,7 +34,7 @@ except ImportError:
                     "Install pynput for this feature (e.g., 'pip install pynput').")
 
 from PySide6.QtGui import (
-    QAction, QIcon, QKeySequence, QShortcut, QFont, QFontMetrics, QPainter, QColor, QPen, QBrush, QPixmap, QPainterPath, QWheelEvent, QMouseEvent, QDragEnterEvent, QDropEvent, QDragLeaveEvent, QCursor, QPalette
+     QIcon, QColor, QDragEnterEvent, QDropEvent, QDragLeaveEvent, QDragMoveEvent, QPalette
 )
 
 # Import condizionale per PyWin32 (solo su Windows)
@@ -80,6 +82,7 @@ class MainWindow(QMainWindow):
         self.console_log_handler = console_log_handler # Salva riferimento al gestore console
         self.qt_log_handler = qt_log_handler
         self.settings_manager = settings_manager_instance # Assign settings_manager instance
+        self.core_logic = core_logic # Assign core_logic module to an instance attribute
         
         # Variabili per il rilevamento del drag globale
         self.is_drag_operation_active = False
@@ -116,6 +119,18 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         self.current_settings = initial_settings
         self.profiles = core_logic.load_profiles()
+        self.installed_steam_games_dict = core_logic.find_installed_steam_games()
+        # Log the result for debugging
+        if self.installed_steam_games_dict:
+            logging.info(f"Initialized installed_steam_games_dict with {len(self.installed_steam_games_dict)} games.")
+            # Example: Log first 3 games found for quick verification
+            # for i, (app_id, details) in enumerate(self.installed_steam_games_dict.items()):
+            #     if i < 3:
+            #         logging.debug(f"  Found Steam game: {details.get('name', 'N/A')} (AppID: {app_id})")
+            #     else:
+            #         break
+        else:
+            logging.warning("installed_steam_games_dict is empty or None after initialization from core_logic.find_installed_steam_games().")
 
         # Connect signals for overlay management
         self.request_show_overlay.connect(self._show_overlay)
@@ -144,14 +159,14 @@ class MainWindow(QMainWindow):
         self.overlay_opacity_effect = QGraphicsOpacityEffect(self.overlay_widget)
         self.overlay_widget.setGraphicsEffect(self.overlay_opacity_effect)
         self.fade_in_animation = QPropertyAnimation(self.overlay_opacity_effect, b"opacity")
-        self.fade_in_animation.setDuration(200) # ms
+        self.fade_in_animation.setDuration(400) # ms - Increased duration for better visibility
         self.fade_in_animation.setStartValue(0.0)
         self.fade_in_animation.setEndValue(1.0) 
         self.fade_in_animation.setEasingCurve(QEasingCurve.InOutQuad)
 
         # Fade-out animation for the overlay
         self.fade_out_animation = QPropertyAnimation(self.overlay_opacity_effect, b"opacity")
-        self.fade_out_animation.setDuration(200) # ms
+        self.fade_out_animation.setDuration(400) # ms - Increased duration for better visibility
         self.fade_out_animation.setStartValue(1.0)
         self.fade_out_animation.setEndValue(0.0)
         self.fade_out_animation.setEasingCurve(QEasingCurve.InOutQuad)
@@ -481,28 +496,48 @@ class MainWindow(QMainWindow):
             self.overlay_widget.resize(self.centralWidget().size())
         # Centra label
         self._center_loading_label() # Chiama il metodo helper
-        super().resizeEvent(event)
         event.accept()
-
     # Called when a dragged item enters the window; accepts if it contains valid URLs.
     def dragEnterEvent(self, event: QDragEnterEvent):
-        # This event is triggered when a drag enters the widget area.
-        # We check if the dragged data contains URLs (for files/folders) or text.
+        logging.debug(f"MainWindow.dragEnterEvent: Entered. MimeData formats: {event.mimeData().formats()}")
+        if event.mimeData().hasUrls():
+            urls_debug_list = []
+            for url_obj_debug in event.mimeData().urls():
+                urls_debug_list.append(
+                    f"URL: {url_obj_debug.toString()}, "
+                    f"Scheme: {url_obj_debug.scheme()}, "
+                    f"IsLocal: {url_obj_debug.isLocalFile()}, "
+                    f"LocalPath: {url_obj_debug.toLocalFile() if url_obj_debug.isLocalFile() else 'N/A'}"
+                )
+            logging.debug(f"  MimeData has URLs: [{', '.join(urls_debug_list)}]")
+        if event.mimeData().hasText():
+            logging.debug(f"  MimeData has Text (first 200 chars): '{event.mimeData().text()[:200]}'")
+
         if event.mimeData().hasUrls() or event.mimeData().hasText():
-            logging.debug(f"MainWindow.dragEnterEvent: Valid data detected. Emitting request_show_overlay.")
+            logging.debug("MainWindow.dragEnterEvent: Potentially valid data. Emitting request_show_overlay and accepting event.")
+            
+            # Reset the custom overlay message flag to ensure we show "Drop Here" during drag
+            if hasattr(self, '_custom_overlay_message_set'):
+                self._custom_overlay_message_set = False
+                logging.debug("MainWindow.dragEnterEvent: Reset _custom_overlay_message_set to False")
+                
+            # Force the loading label to show "Drop Here" during drag
+            if hasattr(self, 'loading_label') and self.loading_label:
+                self.loading_label.setText("Drop Here")
+                logging.debug("MainWindow.dragEnterEvent: Set loading_label text to 'Drop Here'")
+                
             self.request_show_overlay.emit() # Request to show the "Drop Here" overlay
             event.acceptProposedAction() # Accept the drag operation
         else:
-            logging.debug(f"MainWindow.dragEnterEvent: No valid data (URLs/Text). Ignoring.")
+            logging.debug("MainWindow.dragEnterEvent: Invalid data type. Ignoring event.")
             event.ignore() # Ignore if not carrying URLs/Text
 
-    # Gestisce il movimento durante il drag (attualmente ignorato).
-    def dragMoveEvent(self, event):
-        """Gestisce il movimento durante il drag (attualmente ignorato)."""
-        if hasattr(self, 'profile_creation_manager'):
-            self.profile_creation_manager.dragMoveEvent(event)
-        else:
-            super().dragMoveEvent(event)
+    # Gestisce il movimento durante il drag.
+    def dragMoveEvent(self, event: QDragMoveEvent):
+        """Gestisce il movimento durante il drag."""
+        # If dragEnterEvent accepted, then dragMoveEvent should also generally accept.
+        # Specific child widgets will handle their own dragMoveEvents if they accept drops.
+        event.acceptProposedAction()
 
     # Gestisce l'uscita del cursore dall'area dell'applicazione durante il drag.
     def dragLeaveEvent(self, event: QDragLeaveEvent):
@@ -511,43 +546,173 @@ class MainWindow(QMainWindow):
         self.request_hide_overlay.emit()
         event.accept() # Accept the event
 
-    # Called when a dragged item is dropped; handles dropped folders for new profiles.
     def dropEvent(self, event: QDropEvent):
-        # This event is triggered when a drag is dropped on the widget.
-        logging.debug("MainWindow.dropEvent: Processing drop. Emitting request_hide_overlay.")
-        self.request_hide_overlay.emit() # Request to hide overlay after processing the drop
+        logging.debug("MainWindow.dropEvent: Event triggered. VERY TOP OF FUNCTION.")
+        logging.debug(f"MainWindow.dropEvent: MimeData formats: {event.mimeData().formats()}")
+        if event.mimeData().hasUrls():
+            urls_debug_list = []
+            for url_obj_debug in event.mimeData().urls():
+                urls_debug_list.append(
+                    f"URL: {url_obj_debug.toString()}, "
+                    f"Scheme: {url_obj_debug.scheme()}, "
+                    f"IsLocal: {url_obj_debug.isLocalFile()}, "
+                    f"LocalPath: {url_obj_debug.toLocalFile() if url_obj_debug.isLocalFile() else 'N/A'}"
+                )
+            logging.debug(f"  MimeData has URLs: [{', '.join(urls_debug_list)}]")
+        if event.mimeData().hasText():
+            logging.debug(f"  MimeData has Text (first 200 chars): '{event.mimeData().text()[:200]}'")
 
-        dropped_path = None
+        # Check if this is a Steam URL before hiding the overlay
+        is_steam_url = False
+        
+        # First check if it's a direct Steam URL
+        if event.mimeData().hasUrls():
+            for url_obj in event.mimeData().urls():
+                if url_obj.toString().startswith("steam://rungameid/"):
+                    is_steam_url = True
+                    break
+        
+        # Then check if it's a Steam URL in text
+        if not is_steam_url and event.mimeData().hasText():
+            if event.mimeData().text().startswith("steam://rungameid/"):
+                is_steam_url = True
+        
+        # Finally check if it's a .url file pointing to a Steam URL
+        if not is_steam_url and event.mimeData().hasUrls():
+            for url_obj in event.mimeData().urls():
+                if url_obj.isLocalFile() and url_obj.toLocalFile().lower().endswith(".url"):
+                    try:
+                        parser = configparser.ConfigParser()
+                        with open(url_obj.toLocalFile(), 'r', encoding='utf-8') as f:
+                            parser.read_file(f)
+                        if 'InternetShortcut' in parser and 'URL' in parser['InternetShortcut']:
+                            if parser['InternetShortcut']['URL'].startswith("steam://rungameid/"):
+                                is_steam_url = True
+                                break
+                    except Exception as e:
+                        logging.error(f"Error checking .url file for Steam URL: {e}")
+        
+        # For non-Steam URLs, hide the overlay immediately
+        # For Steam URLs, we'll let ProfileCreationManager.handle_steam_url_drop handle the overlay
+        if not is_steam_url:
+            logging.debug("MainWindow.dropEvent: Not a Steam URL, hiding overlay.")
+            self.request_hide_overlay.emit()
+
+        # Attempt 1: Check QUrls for direct steam:// link
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
-            if urls:
-                local_path = urls[0].toLocalFile()
-                logging.info(f"MainWindow.dropEvent: File dropped via URL: {local_path}")
-                dropped_path = local_path
-        elif event.mimeData().hasText():
-            text = event.mimeData().text()
-            potential_path = os.path.normpath(text)
-            if os.path.exists(potential_path):
-                logging.info(f"MainWindow.dropEvent: File dropped via text (looks like a path): {potential_path}")
-            else:
-                logging.debug(f"MainWindow.dropEvent: Dropped text '{text}' is not an existing path. Ignoring text drop.")
-        # The 'except Exception as e:' block was part of the erroneous code and is now removed.
+            for url_obj in urls:
+                url_string = url_obj.toString()
+                scheme = url_obj.scheme()
+                logging.debug(f"MainWindow.dropEvent: Checking QUrl: '{url_string}', Scheme: '{scheme}'")
+                if url_string.startswith("steam://rungameid/"):
+                    logging.info(f"MainWindow.dropEvent: Steam URL detected directly from QUrl: {url_string}")
+                    if hasattr(self, 'profile_creation_manager') and self.profile_creation_manager:
+                        self.profile_creation_manager.handle_steam_url_drop(url_string)
+                        event.acceptProposedAction()
+                        return
+                    else:
+                        logging.error("MainWindow.dropEvent: PCM not init for direct Steam QUrl.")
+                        event.ignore()
+                        return
+
+        # Attempt 2: Check plain text for steam:// link
+        if event.mimeData().hasText():
+            text_content = event.mimeData().text()
+            log_text_snippet = text_content[:200] + ('...' if len(text_content) > 200 else '')
+            logging.debug(f"MainWindow.dropEvent: Checking plain text: '{log_text_snippet}'")
+            if text_content.startswith("steam://rungameid/"):
+                logging.info(f"MainWindow.dropEvent: Steam URL detected from plain text: {text_content}")
+                if hasattr(self, 'profile_creation_manager') and self.profile_creation_manager:
+                    self.profile_creation_manager.handle_steam_url_drop(text_content)
+                    event.acceptProposedAction()
+                    return
+                else:
+                    logging.error("MainWindow.dropEvent: PCM not init for Steam plain text.")
+                    event.ignore()
+                    return
+        
+        # Attempt 3: Check for .url files pointing to a Steam URL
+        if event.mimeData().hasUrls():
+            urls_list = event.mimeData().urls()
+            for u_obj in urls_list:
+                if u_obj.isLocalFile():
+                    local_file_path = u_obj.toLocalFile()
+                    if local_file_path.lower().endswith(".url"):
+                        logging.info(f"MainWindow.dropEvent: Detected .url file: {local_file_path}")
+                        try:
+                            parser = configparser.ConfigParser()
+                            # Read with UTF-8, common for .url files, but be mindful of potential errors
+                            with open(local_file_path, 'r', encoding='utf-8') as f:
+                                parser.read_file(f)
+                            if 'InternetShortcut' in parser and 'URL' in parser['InternetShortcut']:
+                                extracted_url = parser['InternetShortcut']['URL']
+                                logging.debug(f"MainWindow.dropEvent: Extracted URL from .url file: {extracted_url}")
+                                if extracted_url.startswith("steam://rungameid/"):
+                                    logging.info(f"MainWindow.dropEvent: Steam URL found in .url file: {extracted_url}")
+                                    if hasattr(self, 'profile_creation_manager') and self.profile_creation_manager:
+                                        self.profile_creation_manager.handle_steam_url_drop(extracted_url)
+                                        event.acceptProposedAction()
+                                        return
+                                    else:
+                                        logging.error("MainWindow.dropEvent: PCM not init for Steam URL from .url file.")
+                                        event.ignore()
+                                        return
+                                else:
+                                    logging.debug(f"MainWindow.dropEvent: URL in .url file is not a Steam URL: {extracted_url}")
+                            else:
+                                logging.warning(f"MainWindow.dropEvent: .url file {local_file_path} does not contain [InternetShortcut] or URL key.")
+                        except Exception as e:
+                            logging.error(f"MainWindow.dropEvent: Error parsing .url file {local_file_path}: {e}")
+                        # If .url parsing fails or it's not a Steam URL, we don't set dropped_path here
+                        # to let the generic file handling below take over if needed for other .url uses.
+                        # However, if it was a .url, we probably don't want to treat it as a generic dropped_path for PCM's dropEvent.
+                        # So, if we processed a .url file (Steam or not), we should probably return or explicitly ignore.
+                        # For now, let's assume if it's a .url, it's either a Steam link (handled) or not relevant for PCM's file drop.
+                        # If it was a .url file, we've attempted to handle it. If not a Steam link, ignore it for PCM file drop.
+                        event.ignore() # Explicitly ignore if it was a .url but not a Steam one we could handle
+                        return
+
+        # If no Steam URL was handled (direct, text, or .url), proceed with generic local file/path logic
+        logging.debug("MainWindow.dropEvent: No Steam URL found. Checking for other local files/paths.")
+        dropped_path = None
+        if event.mimeData().hasUrls():
+            urls_list_generic = event.mimeData().urls()
+            for u_gen in urls_list_generic:
+                if u_gen.isLocalFile():
+                    # Ensure it's not a .url file we already decided to ignore or handle
+                    if not u_gen.toLocalFile().lower().endswith(".url"):
+                        local_path_generic = u_gen.toLocalFile()
+                        logging.info(f"MainWindow.dropEvent: Generic local file dropped: {local_path_generic}")
+                        dropped_path = local_path_generic
+                        break 
+        
+        if not dropped_path and event.mimeData().hasText():
+            text_generic = event.mimeData().text()
+            if not text_generic.startswith("steam://"):
+                potential_path_generic = os.path.normpath(text_generic)
+                if os.path.exists(potential_path_generic):
+                    logging.info(f"MainWindow.dropEvent: Generic local path from text: {potential_path_generic}")
+                    dropped_path = potential_path_generic
+                else:
+                    logging.debug(f"MainWindow.dropEvent: Generic text '{text_generic}' is not an existing path.")
+            # else: Steam text already handled
 
         if dropped_path:
-            # Delegate the drop event to the ProfileCreationManager
             if hasattr(self, 'profile_creation_manager') and self.profile_creation_manager:
-                self.profile_creation_manager.dropEvent(event)
-                # ProfileCreationManager.dropEvent is responsible for event.acceptProposedAction() or event.ignore()
+                logging.debug(f"MainWindow.dropEvent: Passing non-Steam drop event for path '{dropped_path}' to PCM.")
+                self.profile_creation_manager.dropEvent(event) # PCM's original dropEvent for files/folders
             else:
-                logging.error("MainWindow.dropEvent: profile_creation_manager is not initialized!")
+                logging.error("MainWindow.dropEvent: PCM not init for generic file drop!")
                 event.ignore()
         else:
-            logging.debug("MainWindow.dropEvent: No valid path found in drop event. Ignoring.")
+            logging.debug("MainWindow.dropEvent: No valid Steam URL or generic local path found. Ignoring drop.")
             event.ignore()
+    
     def updateUiText(self):
         """Updates the UI text"""
         logging.debug(">>> updateUiText: START <<<")
-        self.setWindowTitle("SaveState - 1.4.0")
+        self.setWindowTitle("SaveState - 1.4.1")
         self.profile_table_manager.retranslate_headers()
         self.settings_button.setText("Settings...")
         self.new_profile_button.setText("New Profile...")
@@ -569,7 +734,7 @@ class MainWindow(QMainWindow):
             # Check if the label exists and is NOT showing a GIF (movie)
             if hasattr(self, 'loading_label') and self.loading_label and \
             (not hasattr(self, 'loading_movie') or not self.loading_movie or not self.loading_movie.isValid()):
-                self.loading_label.setText("Searching...")
+                self.loading_label.setText("Drop Here")
                 # --- START OF MODIFIED STYLING ---
                 # font = self.loading_label.font()
                 # font.setPointSize(24)
@@ -596,6 +761,31 @@ class MainWindow(QMainWindow):
             self.log_dock_widget.setWindowTitle("Console Log")
         logging.debug(">>> updateUiText: END <<<")
 
+    def show_overlay_message(self, message_text):
+        """Shows the overlay with a custom message.
+        This method is called from ProfileCreationManager when processing Steam URLs.
+        """
+        if not hasattr(self, 'loading_label') or not self.loading_label:
+            logging.error("show_overlay_message called but loading_label does not exist.")
+            return
+            
+        # Set the custom message text
+        self.loading_label.setText(message_text)
+        
+        # Ensure the label has the right style and text formatting
+        self.loading_label.setStyleSheet("QLabel { color: white; background-color: transparent; font-size: 24pt; font-weight: bold; padding: 20px; }") 
+        
+        # Make sure the label adjusts its size to fit the text
+        self.loading_label.adjustSize()
+        
+        # Ensure the label is visible
+        self.loading_label.setVisible(True)
+        
+        # Emit the signal to show the overlay
+        self.request_show_overlay.emit()
+        
+        logging.info(f"Showing overlay with message: {message_text}")
+    
     def _show_overlay(self):
         """Mostra l'overlay con animazione."""
         if not hasattr(self, 'overlay_widget') or not self.overlay_widget:
@@ -622,14 +812,16 @@ class MainWindow(QMainWindow):
         # Ensure the overlay itself has the correct dark style every time it's shown
         self.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 200); }")
         self.overlay_widget.raise_() # Bring to front
-        self.loading_label.setText("Drop Here")
+        
+        # Only set default text if no text is already set
+        if not self.loading_label.text() or self.loading_label.text().strip() == "":
+            self.loading_label.setText("Drop Here")
 
-        # Ensure font and style are correct
-    # font = self.loading_label.font()
-    # font.setPointSize(24)
-    # font.setBold(True)
-    # self.loading_label.setFont(font) # Stylesheet handles this now
-        self.loading_label.setStyleSheet("QLabel { color: white; background-color: transparent; font-size: 24pt; font-weight: bold; }")
+        # Ensure font and style are correct if not already set by show_overlay_message
+        if "padding" not in self.loading_label.styleSheet():
+            self.loading_label.setStyleSheet("QLabel { color: white; background-color: transparent; font-size: 24pt; font-weight: bold; padding: 20px; }")
+        
+        # Always adjust size and center
         self.loading_label.adjustSize() # Ensure label resizes before centering
         self._center_loading_label() # Center the label
         

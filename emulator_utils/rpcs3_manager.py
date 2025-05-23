@@ -27,17 +27,26 @@ def get_rpcs3_saves_path(executable_path: str | None = None) -> str | None:
     # 1. Identify potential base directories (portable and standard)
     portable_base_dir = None
     if executable_path:
-        # Make sure we have the full executable path, not just the directory
+        # Check if executable_path is a file or directory
         if os.path.isfile(executable_path):
+            # If it's a file (normal case), get the directory containing the executable
             exe_dir = os.path.dirname(executable_path)
+        elif os.path.isdir(executable_path):
+            # If it's already a directory, use it directly
+            exe_dir = executable_path
+        else:
+            # If it's neither a file nor a directory, log a warning
+            log.warning(f"Provided executable_path is neither a file nor a directory: {executable_path}")
+            exe_dir = None
+            
+        # If we have a valid directory, check for the portable RPCS3 structure
+        if exe_dir:
             portable_base_dir = os.path.join(exe_dir, "dev_hdd0", "home")
             if os.path.isdir(portable_base_dir):
                 log.debug(f"Found potential portable base home: {portable_base_dir}")
                 base_paths_to_check.append(portable_base_dir)
             else:
                 log.debug(f"Portable base home not found or not a directory: {portable_base_dir}")
-        else:
-             log.warning(f"Provided executable_path is not a valid file: {executable_path}")
 
     standard_base_dir = None
     system = platform.system()

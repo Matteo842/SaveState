@@ -999,34 +999,58 @@ def find_installed_steam_games():
                     data = _parse_vdf(acf_path)
                     if data and 'AppState' in data:
                         app_state = data['AppState']
+                        raw_appid = app_state.get('appid', 'MISSING_APPID')
+                        raw_name = app_state.get('name', 'MISSING_NAME')
+                        raw_installdir = app_state.get('installdir', 'MISSING_INSTALLDIR')
+                        raw_state_flags = app_state.get('StateFlags', 'MISSING_STATEFLAGS')
+                        logging.debug(f"Processing ACF '{filename}': AppID='{raw_appid}', Name='{raw_name}', InstallDir='{raw_installdir}', StateFlags='{raw_state_flags}'")
+
                         # <<< MODIFICATO: Verifica più robusta dei campi necessari
                         if all(k in app_state for k in ['appid', 'name', 'installdir']) and 'StateFlags' in app_state:
-                            appid = app_state['appid']
-                            if appid in processed_appids: continue # Già trovato (probabilmente nella libreria principale)
+                            appid = app_state['appid'] # Should be a string from VDF
+                            if appid in processed_appids:
+                                logging.debug(f"Skipping AppID {appid} ('{app_state.get('name', 'N/A')}') from '{filename}': already processed.")
+                                continue # Già trovato (probabilmente nella libreria principale)
 
                             installdir_relative = app_state['installdir']
                             # Costruisci percorso assoluto relativo alla LIBRERIA corrente
                             installdir_absolute = os.path.normpath(os.path.join(steamapps_path, 'common', installdir_relative))
+                            name_original = app_state.get('name', f"Unknown Game {appid}")
+                            name = name_original.replace('™', '').replace('®', '').strip()
 
                             # Verifica installazione: StateFlags 4 = installato, 1026 = installato+aggiornamento, 6 = installato+validazione?
                             # Controlliamo anche se la cartella esiste fisicamente come fallback
                             state_flags = int(app_state.get('StateFlags', 0))
-                            is_installed = (state_flags in [4, 6, 1026]) or \
+                            is_installed_by_flag = (state_flags in [4, 6, 1026]) or \
                                            (state_flags == 2 and os.path.isdir(installdir_absolute)) # 2=UpdateRequired?
+                            
+                            is_dir_present = os.path.isdir(installdir_absolute)
+                            logging.debug(f"  AppID {appid} ('{name}'): RelativeDir='{installdir_relative}', AbsoluteDir='{installdir_absolute}', StateFlags={state_flags}, InstalledByFlag={is_installed_by_flag}, DirPresent={is_dir_present}")
 
-                            if is_installed and os.path.isdir(installdir_absolute): # Doppio check
-                                name = app_state.get('name', f"Unknown Game {appid}").replace('™', '').replace('®', '').strip()
-                                # FILTRO PER ESCLUDERE STEAM RUNTIME E SIMILI
-                                name_lower = name.lower()
-                                if "steam" in name_lower and "runtime" in name_lower:
-                                    logging.info(f"Skipping '{name}' (AppID: {appid}) as it appears to be a Steam Runtime tool.")
-                                    continue # Salta l'aggiunta di questo elemento
-                                
-                                games[appid] = {'name': name, 'installdir': installdir_absolute}
-                                processed_appids.add(appid)
-                                total_games_found += 1
-                                logging.debug(f"Found game: {name} (AppID: {appid}) in '{lib_path}'")
-                        # else: logging.debug(f"ACF file '{filename}' missing required fields.")
+                            if not is_installed_by_flag:
+                                logging.debug(f"  Skipping AppID {appid} ('{name}'): Not installed according to StateFlags ({state_flags}).")
+                                continue
+                            if not is_dir_present:
+                                logging.debug(f"  Skipping AppID {appid} ('{name}'): Install directory '{installdir_absolute}' not found.")
+                                continue
+
+                            # FILTRO PER ESCLUDERE STEAM RUNTIME E SIMILI
+                            name_lower = name.lower()
+                            if "steam" in name_lower and "runtime" in name_lower:
+                                logging.info(f"Skipping '{name}' (AppID: {appid}) as it appears to be a Steam Runtime tool.")
+                                continue # Salta l'aggiunta di questo elemento
+                            
+                            # Sanity check for installdir_absolute before adding
+                            if not installdir_absolute or not isinstance(installdir_absolute, str):
+                                logging.warning(f"  Skipping AppID {appid} ('{name}'): Calculated installdir_absolute is invalid ('{installdir_absolute}').")
+                                continue
+
+                            games[appid] = {'name': name, 'installdir': installdir_absolute}
+                            processed_appids.add(appid)
+                            total_games_found += 1
+                            logging.debug(f"  Successfully added game: {name} (AppID: {appid}), InstallDir: {installdir_absolute} from library '{lib_path}'")
+                        else:
+                            logging.debug(f"Skipping ACF file '{filename}' (AppID: {raw_appid}): missing one or more required fields (appid, name, installdir, StateFlags). Fields found: {list(app_state.keys())}")
         except Exception as e:
             logging.error(f"Error scanning games in '{steamapps_path}': {e}")
 

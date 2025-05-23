@@ -5,11 +5,13 @@ import os
 import logging
 import platform
 import string
+import re # Added for Steam URL parsing
+from pathlib import Path # Added for Path().stem usage
 
 from PySide6.QtWidgets import QMessageBox, QInputDialog, QApplication, QFileDialog, QHBoxLayout, QDialog, QLineEdit, QPushButton, QVBoxLayout, QLabel, QStyle, QDialogButtonBox
-from PySide6.QtCore import Qt, Slot, QTimer
+from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QDropEvent
 
-# Importa dialoghi specifici se servono (es. Minecraft)
 from dialogs.minecraft_dialog import MinecraftWorldsDialog
 from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
 
@@ -19,8 +21,9 @@ import minecraft_utils
 import core_logic
 import shortcut_utils # Importa l'intero modulo
 from emulator_utils import emulator_manager # Updated import path
-import config # Import the config module
+#import config # Import the config module
 import settings_manager # Importa settings_manager.py dalla root del progetto
+import configparser # For parsing .url files
 
 # Setup logging for this module
 logger = logging.getLogger(__name__)
@@ -90,6 +93,153 @@ class ProfileCreationManager:
         """
         self.main_window = main_window
         self.detection_thread = None # Handles its own worker for detection
+        
+        # Initialize state variables that will be managed by reset_internal_state
+        self.game_name_suggestion = None
+        self.game_install_dir = None 
+        self.is_steam_game = False
+        self.steam_app_id = None
+        self.executable_path = None 
+        self.shortcut_target_path = None
+        self.shortcut_game_name = None
+        logger.debug("ProfileCreationManager initialized with internal state variables.")
+
+    def reset_internal_state(self):
+        """Resets internal state variables before processing a new item."""
+        logger.debug("Resetting ProfileCreationManager internal state.")
+        self.game_name_suggestion = None
+        self.game_install_dir = None
+        self.is_steam_game = False
+        self.steam_app_id = None
+        self.executable_path = None
+        self.shortcut_target_path = None
+        self.shortcut_game_name = None
+        if self.detection_thread and self.detection_thread.isRunning():
+            logger.warning("Resetting state while detection thread might be running. Ensure it's handled.")
+        self.detection_thread = None
+
+    def _get_steam_game_details(self, app_id):
+        """
+        Retrieves game name and install directory for a given Steam AppID
+        from main_window.installed_steam_games_dict.
+        Returns a dictionary {'name': game_name, 'install_dir': install_dir} or None.
+        """
+        mw = self.main_window
+        if not hasattr(mw, 'installed_steam_games_dict') or not mw.installed_steam_games_dict:
+            logger.warning(f"Cannot get Steam game details: main_window.installed_steam_games_dict is not available or empty.")
+            return None
+            
+        game_info = mw.installed_steam_games_dict.get(str(app_id)) # Ensure app_id is string for dict key
+        if game_info and isinstance(game_info, dict) and 'name' in game_info:
+            return {'name': game_info.get('name'), 'install_dir': game_info.get('install_dir')}
+        else:
+            logger.warning(f"Details for Steam AppID {app_id} not found or incomplete in installed_steam_games_dict.")
+            return None
+
+    # --- Method to handle Steam URL drop ---
+    def handle_steam_url_drop(self, steam_url_str):
+        """
+        Handles a dropped Steam URL string.
+        Parses the AppID, checks if the game is installed, and starts detection.
+        """
+        logger.info(f"Handling Steam URL drop: {steam_url_str}")
+        self.reset_internal_state()
+
+        mw = self.main_window
+
+        app_id_match = re.search(r'steam://rungameid/(\d+)', steam_url_str)
+        if not app_id_match:
+            QMessageBox.warning(mw, "Invalid Steam URL", "The provided Steam URL is not valid or could not be parsed.")
+            mw.status_label.setText("Invalid Steam URL detected.")
+            logger.warning(f"Could not parse AppID from Steam URL: {steam_url_str}")
+            self._hide_overlay_if_visible(mw)
+            return
+
+        app_id = app_id_match.group(1)
+        logger.debug(f"Extracted AppID: {app_id} from URL.")
+
+        game_details = self._get_steam_game_details(app_id)
+
+        if game_details:
+            self.game_name_suggestion = game_details['name']
+            self.game_install_dir = game_details['install_dir'] 
+            self.is_steam_game = True
+            self.steam_app_id = app_id
+            
+            logger.info(f"Steam game found: '{self.game_name_suggestion}' (AppID: {self.steam_app_id}), Install Dir: {self.game_install_dir}")
+            mw.status_label.setText(f"Processing Steam game: {self.game_name_suggestion}...")
+
+            # Disabilitiamo i controlli e impostiamo il cursore di attesa
+            # come facciamo nel metodo dropEvent normale
+            mw.set_controls_enabled(False)
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+
+            if not hasattr(mw, 'current_settings'):
+                logger.error("MainWindow is missing 'current_settings'. Cannot proceed with detection.")
+                QMessageBox.critical(mw, "Internal Error", "Required application settings are missing. Cannot start game detection.")
+                self._hide_overlay_if_visible(mw)
+                # Ripristiniamo i controlli e il cursore normale in caso di errore
+                mw.set_controls_enabled(True)
+                QApplication.restoreOverrideCursor()
+                return
+            
+            # Utilizziamo lo stesso approccio del metodo start_steam_configuration
+            # che funziona correttamente con il fade effect
+            if hasattr(mw, 'loading_label') and mw.loading_label:
+                mw.loading_label.setText("Searching...") # Set text for search
+                mw.loading_label.setStyleSheet("QLabel { color: white; background-color: transparent; font-size: 24pt; font-weight: bold; }")
+                mw.loading_label.adjustSize() # Ensure label resizes to content
+            
+            if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
+                mw.overlay_widget.resize(mw.centralWidget().size())
+                # Assicuriamoci che l'overlay non sia già attivo
+                if hasattr(mw, 'overlay_active'):
+                    mw.overlay_active = False
+                mw.overlay_widget.show() # Show overlay first
+                mw.overlay_widget.raise_() # Ensure it's on top
+            
+            if hasattr(mw, '_center_loading_label'):
+                mw._center_loading_label() # Center label on now-visible overlay
+            
+            if hasattr(mw, 'loading_label') and mw.loading_label:
+                mw.loading_label.show() # Explicitly show the label
+            
+            if hasattr(mw, 'fade_in_animation') and mw.fade_in_animation:
+                mw.fade_in_animation.stop() # Stop if already running
+                mw.fade_in_animation.start() # Start the animation
+                logging.debug("Fade-in animation started for overlay in handle_steam_url_drop.")
+
+            # Per i link Steam, passiamo la lista dei giochi installati di Steam
+            # Questo è necessario solo per i link Steam, non per i giochi normali o gli emulatori
+            steam_games_dict = None
+            if hasattr(mw, 'installed_steam_games_dict') and mw.installed_steam_games_dict:
+                steam_games_dict = mw.installed_steam_games_dict
+                logging.debug(f"Using Steam games list with {len(steam_games_dict)} entries for detection")
+            else:
+                logging.debug("No Steam games list available for detection")
+                
+            self.detection_thread = DetectionWorkerThread(
+                profile_name_suggestion=self.game_name_suggestion,
+                game_install_dir=self.game_install_dir,
+                current_settings=mw.current_settings,
+                installed_steam_games_dict=steam_games_dict
+            )
+            self.detection_thread.progress.connect(self.on_detection_progress)
+            self.detection_thread.finished.connect(self.on_detection_finished)
+            self.detection_thread.start()
+            
+        else:
+            QMessageBox.warning(
+                mw, 
+                "Steam Game Not Found", 
+                f"The Steam game with AppID {app_id} does not appear to be installed, "
+                "or its details could not be retrieved from your Steam library.\\n\\n"
+                "Please ensure the game is installed and that SaveState has correctly "
+                "identified your Steam installation."
+            )
+            mw.status_label.setText(f"Steam game (AppID: {app_id}) not found or not installed.")
+            logger.warning(f"Steam game with AppID {app_id} not found in installed_steam_games_dict.")
+            self._hide_overlay_if_visible(mw)
 
     # --- HELPER METHOD FOR PATH VALIDATION (Moved here) ---
     def validate_save_path(self, path_to_check, context_profile_name="profile"):
@@ -139,6 +289,7 @@ class ProfileCreationManager:
     @Slot()
     def handle_new_profile(self):
         """Handles the creation of a new profile with manual input."""
+        self.reset_internal_state() # Reset state at the beginning
         mw = self.main_window
         logging.debug("ProfileCreationManager.handle_new_profile - START")
         profile_name, ok = QInputDialog.getText(mw, "New Profile", "Enter a name for the new profile:")
@@ -310,121 +461,72 @@ class ProfileCreationManager:
                 mw.status_label.setText("World selection cancelled or failed.")
         else:
             logging.info("Minecraft world selection cancelled by user.")
-            mw.status_label.setText("World selection cancelled.")
+
     # --- FINE handle_minecraft_button ---
 
     # --- Drag and Drop Management ---
     def dragEnterEvent(self, event):
-        """Handles the drag-and-drop event."""
+        """Handles the drag-and-drop event. Accepts if mimeData has URLs or text."""
         mime_data = event.mimeData()
+        mw = self.main_window
+
+        # Log detailed MIME data information
+        logging.debug(f"PCM.dragEnterEvent: MimeData formats: {mime_data.formats()}")
         if mime_data.hasUrls():
-            urls = mime_data.urls()
-            # Accept only if it's a SINGLE file
-            if urls and len(urls) == 1 and urls[0].isLocalFile():
-                file_path = urls[0].toLocalFile()
-                mw = self.main_window
-                
-                # Windows: Accept .lnk files
-                # Linux: Accept .desktop files and executables
-                file_accepted = False
-                
-                if platform.system() == "Windows" and file_path.lower().endswith('.lnk'):
-                    event.acceptProposedAction()
-                    logging.debug(f"DragEnterEvent: Accepted Windows .lnk file: {file_path}")
-                    file_accepted = True
-                elif platform.system() == "Linux" and (file_path.lower().endswith('.desktop') or 
-                                                      os.access(file_path, os.X_OK)):
-                    event.acceptProposedAction()
-                    logging.debug(f"DragEnterEvent: Accepted Linux file: {file_path}")
-                    file_accepted = True
-                else:
-                    logging.debug(f"DragEnterEvent: Rejected file: {file_path}")
-                    event.ignore()
-                
-                # Solo se il file è stato accettato, gestisci l'overlay
-                if file_accepted:
-                    # Controlla se l'overlay è già attivo in MainWindow
-                    if hasattr(mw, 'overlay_active') and mw.overlay_active:
-                        logging.debug("dragEnterEvent: overlay already active in MainWindow, skipping overlay management")
-                    else:
-                        # Gestisci l'overlay solo se non è già attivo
-                        if hasattr(mw, 'loading_label') and mw.loading_label and \
-                           hasattr(mw, 'overlay_widget') and mw.overlay_widget:
-                            
-                            mw.loading_label.setText("Drop Here")
-                            if hasattr(mw, '_center_loading_label'):
-                                mw._center_loading_label()
-                            
-                            # Usa uno stile consistente con quello di MainWindow
-                            mw.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 200); }")
-                            
-                            # Imposta il flag overlay_active su MainWindow
-                            if hasattr(mw, 'overlay_active'):
-                                mw.overlay_active = True
-                                logging.debug("dragEnterEvent: setting MainWindow.overlay_active = True")
-                            
-                            # Assicurati che l'opacità sia completa se mostrato direttamente
-                            if hasattr(mw, 'overlay_opacity_effect'):
-                                mw.overlay_opacity_effect.setOpacity(1.0)
-                            
-                            mw.overlay_widget.show()
-                            mw.loading_label.show()
+            urls_debug_list = []
+            for url_obj_debug in mime_data.urls():
+                urls_debug_list.append(
+                    f"URL: {url_obj_debug.toString()}, "
+                    f"Scheme: {url_obj_debug.scheme()}, "
+                    f"IsLocal: {url_obj_debug.isLocalFile()}, "
+                    f"LocalPath: {url_obj_debug.toLocalFile() if url_obj_debug.isLocalFile() else 'N/A'}"
+                )
+            logging.debug(f"  PCM.dragEnterEvent: MimeData has URLs: [{', '.join(urls_debug_list)}]")
+        if mime_data.hasText():
+            logging.debug(f"  PCM.dragEnterEvent: MimeData has Text (first 200 chars): '{mime_data.text()[:200]}'")
+
+        if mime_data.hasUrls() or mime_data.hasText():
+            event.acceptProposedAction()
+            logging.debug("PCM.dragEnterEvent: Accepted event due to presence of URLs or Text.")
+
+            # Overlay Management
+            if hasattr(mw, 'enable_global_drag_effect') and mw.settings_manager.get_setting('enable_global_drag_effect'):
+                logging.debug("PCM.dragEnterEvent: Global drag effect is ON. MainWindow should handle overlay.")
+            elif hasattr(mw, 'overlay_active') and mw.overlay_active:
+                logging.debug("PCM.dragEnterEvent: Overlay already active (by MainWindow), PCM skipping local overlay.")
             else:
-                event.ignore()
+                if hasattr(mw, 'loading_label') and mw.loading_label and \
+                   hasattr(mw, 'overlay_widget') and mw.overlay_widget:
+                    
+                    logging.debug("PCM.dragEnterEvent: Managing local overlay indication.")
+                    mw.loading_label.setText("Drop Here to Create Profile")
+                    if hasattr(mw, '_center_loading_label'):
+                        mw._center_loading_label()
+                    
+                    mw.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 200); }")
+                    
+                    if hasattr(mw, 'overlay_active'):
+                        mw.overlay_active = True
+                        logging.debug("PCM.dragEnterEvent: setting MainWindow.overlay_active = True for local overlay.")
+                    
+                    if hasattr(mw, 'overlay_opacity_effect'):
+                        mw.overlay_opacity_effect.setOpacity(1.0)
+                    
+                    mw.overlay_widget.show()
+                    mw.loading_label.show()
+                else:
+                    logging.debug("PCM.dragEnterEvent: MainWindow overlay components not found.")
         else:
+            logging.debug("PCM.dragEnterEvent: Rejected event, no URLs or Text.")
             event.ignore()
 
     def dragMoveEvent(self, event):
         """Handles the movement of a dragged object over the widget."""
-        # Keep the overlay visible during drag movement
-        if event.mimeData().hasUrls():
-            urls = event.mimeData().urls()
-            if urls and len(urls) == 1 and urls[0].isLocalFile():
-                file_path = urls[0].toLocalFile()
-                mw = self.main_window
-                file_accepted = False
-                
-                if platform.system() == "Windows" and file_path.lower().endswith('.lnk'):
-                    event.acceptProposedAction()
-                    file_accepted = True
-                elif platform.system() == "Linux" and (file_path.lower().endswith('.desktop') or 
-                                                      os.access(file_path, os.X_OK)):
-                    event.acceptProposedAction()
-                    file_accepted = True
-                else:
-                    event.ignore()
-                
-                # Solo se il file è stato accettato e l'overlay non è visibile, mostralo
-                if file_accepted and hasattr(mw, 'loading_label') and hasattr(mw, 'overlay_widget'):
-                    # Controlla se l'overlay è già attivo in MainWindow
-                    if hasattr(mw, 'overlay_active') and mw.overlay_active:
-                        # Se l'overlay è già attivo ma non visibile, assicurati che sia visibile
-                        if not mw.overlay_widget.isVisible() or not mw.loading_label.isVisible():
-                            logging.debug("dragMoveEvent: overlay active but not visible, showing it")
-                            mw.overlay_widget.show()
-                            mw.loading_label.show()
-                    else:
-                        # Se l'overlay non è attivo, attivalo
-                        mw.loading_label.setText("Drop Here")
-                        if hasattr(mw, '_center_loading_label'):
-                            mw._center_loading_label()
-                        
-                        # Usa uno stile consistente con quello di MainWindow
-                        mw.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 200); }")
-                        
-                        # Imposta il flag overlay_active su MainWindow
-                        if hasattr(mw, 'overlay_active'):
-                            mw.overlay_active = True
-                            logging.debug("dragMoveEvent: setting MainWindow.overlay_active = True")
-                        
-                        # Assicurati che l'opacità sia completa
-                        if hasattr(mw, 'overlay_opacity_effect'):
-                            mw.overlay_opacity_effect.setOpacity(1.0)
-                        
-                        mw.overlay_widget.show()
-                        mw.loading_label.show()
-            else:
-                event.ignore()
+        # This event should generally accept if dragEnterEvent accepted.
+        # The main purpose is to allow dropEvent to occur.
+        # Specific logic for visual feedback during move can be added if needed.
+        if event.mimeData().hasUrls() or event.mimeData().hasText():
+            event.acceptProposedAction()
         else:
             event.ignore()
 
@@ -449,9 +551,104 @@ class ProfileCreationManager:
             
         event.accept()
 
-    def dropEvent(self, event):
-        """Handles the release of a dragged object and starts the path search."""
-        # Import winshell ONLY if on Windows and needed
+    def dropEvent(self, event: QDropEvent):
+        """Handles the release of a dragged object. Prioritizes Steam URLs, then local files/shortcuts."""
+        self.reset_internal_state() # Reset state at the beginning
+        mw = self.main_window # Alias for main window
+        mime_data = event.mimeData()
+
+        # --- Log MIME Data --- 
+        logging.debug(f"PCM.dropEvent: MimeData formats: {mime_data.formats()}")
+        if mime_data.hasUrls():
+            urls_debug_list = []
+            for url_obj_debug in mime_data.urls():
+                urls_debug_list.append(
+                    f"URL: {url_obj_debug.toString()}, "
+                    f"Scheme: {url_obj_debug.scheme()}, "
+                    f"IsLocal: {url_obj_debug.isLocalFile()}, "
+                    f"LocalPath: {url_obj_debug.toLocalFile() if url_obj_debug.isLocalFile() else 'N/A'}"
+                )
+            logging.debug(f"  PCM.dropEvent: MimeData has URLs: [{', '.join(urls_debug_list)}]")
+        if mime_data.hasText():
+            logging.debug(f"  PCM.dropEvent: MimeData has Text (first 200 chars): '{mime_data.text()[:200]}'")
+        # --- End Log MIME Data ---
+
+        # --- Overlay Fade-out --- 
+        if hasattr(mw, 'overlay_widget') and mw.overlay_widget and mw.overlay_widget.isVisible():
+            if hasattr(mw, 'fade_out_animation'):
+                try:
+                    if hasattr(mw, 'on_fade_out_finished'):
+                        mw.fade_out_animation.finished.disconnect(mw.on_fade_out_finished)
+                except RuntimeError: 
+                    logging.debug("PCM.dropEvent: Error disconnecting on_fade_out_finished (possibly not connected or already disconnected).")
+                # No explicit AttributeError catch for disconnect here, as hasattr should prevent it.
+
+                if hasattr(mw, 'on_fade_out_finished'):
+                    mw.fade_out_animation.finished.connect(mw.on_fade_out_finished)
+                else:
+                    logging.debug("PCM.dropEvent: MainWindow.on_fade_out_finished not found for connection. Animation will run without this specific callback.")
+                
+                mw.fade_out_animation.start()
+                logging.debug("PCM.dropEvent: Overlay fade-out animation started.")
+            else:
+                # If no animation, hide directly and reset flag
+                if hasattr(mw, 'overlay_widget'): mw.overlay_widget.hide()
+                if hasattr(mw, 'loading_label'): mw.loading_label.hide()
+                if hasattr(mw, 'overlay_active'): mw.overlay_active = False 
+                logging.debug("PCM.dropEvent: Overlay hidden directly (no animation found).")
+        # --- End Overlay Fade-out ---
+
+        # --- Priority 1: Handle Steam URLs from QUrls --- 
+        if mime_data.hasUrls():
+            for url_obj in mime_data.urls():
+                url_str = url_obj.toString()
+                # Check for direct Steam URL (e.g., steam://rungameid/xxxx)
+                if url_obj.scheme() == 'steam' and url_obj.host() == 'rungameid':
+                    logging.info(f"PCM.dropEvent: Detected direct Steam URL: {url_str}")
+                    self.handle_steam_url_drop(url_str)
+                    event.acceptProposedAction()
+                    return # Steam URL handled
+
+                # Check for .url files pointing to Steam games
+                if url_obj.isLocalFile():
+                    local_file_path = url_obj.toLocalFile()
+                    if local_file_path.lower().endswith('.url'):
+                        logging.info(f"PCM.dropEvent: Detected .url file: {local_file_path}")
+                        parser = configparser.ConfigParser()
+                        try:
+                            parser.read(local_file_path, encoding='utf-8')
+                            if 'InternetShortcut' in parser and 'URL' in parser['InternetShortcut']:
+                                extracted_url = parser['InternetShortcut']['URL']
+                                logging.debug(f"  PCM.dropEvent: Extracted URL from .url file: {extracted_url}")
+                                if extracted_url.startswith('steam://rungameid/'):
+                                    logging.info(f"PCM.dropEvent: .url file points to Steam URL: {extracted_url}")
+                                    self.handle_steam_url_drop(extracted_url)
+                                    event.acceptProposedAction()
+                                    return # Steam URL from .url file handled
+                                else:
+                                    logging.info(f"PCM.dropEvent: .url file does not point to a Steam game: {extracted_url}")
+                            else:
+                                logging.warning(f"PCM.dropEvent: .url file is missing [InternetShortcut] or URL key: {local_file_path}")
+                        except configparser.Error as e_cfg:
+                            logging.error(f"PCM.dropEvent: Error parsing .url file '{local_file_path}': {e_cfg}")
+                        except Exception as e_file:
+                            logging.error(f"PCM.dropEvent: Could not read .url file '{local_file_path}': {e_file}")
+                        # If it was a .url file, accept and return, regardless of whether it was a Steam link.
+                        event.acceptProposedAction()
+                        return # .url file processed (or attempted)
+
+        # --- Priority 2: Handle Steam URLs from plain text --- 
+        if mime_data.hasText():
+            text_content = mime_data.text()
+            if text_content.startswith('steam://rungameid/'):
+                logging.info(f"PCM.dropEvent: Detected Steam URL in plain text: {text_content}")
+                self.handle_steam_url_drop(text_content)
+                event.acceptProposedAction()
+                return # Steam URL from text handled
+
+        # --- Fallback to existing logic for local files/shortcuts --- 
+        logging.debug("PCM.dropEvent: No Steam URL detected directly, proceeding with local file/shortcut logic.")
+
         winshell = None
         if platform.system() == "Windows":
             try:
@@ -461,39 +658,40 @@ class ProfileCreationManager:
                 logging.error("The 'winshell' or 'pywin32' library is not installed. Cannot read .lnk files.")
                 QMessageBox.critical(self.main_window, "Dependency Error",
                                      "The 'winshell' and 'pywin32' libraries are required to read shortcuts (.lnk) on Windows.")
+                return
+
+        file_path = None
+        if mime_data.hasUrls(): # Re-check for local file URLs if Steam specific URLs weren't found
+            urls = mime_data.urls()
+            if urls and len(urls) == 1 and urls[0].isLocalFile(): # Ensure it's a single local file
+                file_path = urls[0].toLocalFile()
+                logging.info(f"PCM.dropEvent (Fallback): Processing dropped local file: {file_path}")
+            else:
+                # This case handles multiple files or non-local URLs not caught by Steam checks.
+                logging.debug("PCM.dropEvent (Fallback): No single local file URL found for fallback. Ignoring.")
                 event.ignore()
                 return
-        # --- End Conditional Import ---
+        elif not mime_data.hasText(): # If no URLs and no text, nothing to process
+            logging.debug("PCM.dropEvent (Fallback): No URLs or text. Ignoring.")
+            event.ignore()
+            return
+        # If only text was present and it wasn't a Steam URL, it's ignored by this point.
 
-        mw = self.main_window # Alias for main window
-        if not event.mimeData().hasUrls():
+        if not file_path: # Should only be true if only non-Steam text was dropped.
+            logging.debug("PCM.dropEvent (Fallback): No file_path to process. Likely unhandled text. Ignoring.")
             event.ignore()
             return
 
-        urls = event.mimeData().urls()
-        if not (urls and len(urls) == 1 and urls[0].isLocalFile()):
-            event.ignore()
-            return
+        target_path = file_path
+        game_install_dir = None
 
-        file_path = urls[0].toLocalFile()
-        logging.info(f"DropEvent: Processing dropped file: {file_path}")
-        
-        # Avvia l'animazione fade-out per l'overlay
-        if hasattr(mw, 'overlay_widget') and mw.overlay_widget and mw.overlay_widget.isVisible():
-            if hasattr(mw, 'fade_out_animation') and mw.fade_out_animation:
-                mw.fade_out_animation.start()
-                logging.debug("Animazione fade-out avviata all'inizio del dropEvent")
-
-        target_path = file_path # Default: use the dropped path itself
-        game_install_dir = None # Initialize install dir
-
-        # --- Resolve .lnk if applicable (Windows only) ---
         is_windows_link = file_path.lower().endswith('.lnk') and platform.system() == "Windows" and winshell is not None
         is_linux_desktop = file_path.lower().endswith('.desktop') and platform.system() == "Linux"
-        is_linux_executable = platform.system() == "Linux" and os.access(file_path, os.X_OK)
+        # Ensure it's a file and executable, not a directory
+        is_linux_executable = platform.system() == "Linux" and os.access(file_path, os.X_OK) and os.path.isfile(file_path)
         
         if is_windows_link:
-            logging.debug("Detected Windows .lnk file, attempting to resolve target...")
+            logging.debug("PCM.dropEvent (Fallback): Detected Windows .lnk file, attempting to resolve target...")
             try:
                 shortcut = winshell.shortcut(file_path)
                 resolved_target = shortcut.path
@@ -506,186 +704,218 @@ class ProfileCreationManager:
                      event.ignore()
                      return
 
-                target_path = resolved_target # Use the RESOLVED path for detection
-                logging.info(f"Resolved .lnk target to: {target_path}")
+                target_path = resolved_target
+                logging.info(f"PCM.dropEvent (Fallback): Resolved .lnk target to: {target_path}")
 
-                # Determine game_install_dir from resolved link
                 if working_dir and os.path.isdir(working_dir):
                     game_install_dir = os.path.normpath(working_dir)
-                elif os.path.isfile(target_path): # If target is a file
+                elif os.path.isfile(target_path):
                     game_install_dir = os.path.normpath(os.path.dirname(target_path))
-                elif os.path.isdir(target_path): # If target is a directory itself
+                elif os.path.isdir(target_path):
                      game_install_dir = os.path.normpath(target_path)
-                else:
-                    logging.warning(f"Unable to determine game folder from resolved shortcut: {file_path}")
-                logging.debug(f"Game folder derived from resolved shortcut: {game_install_dir}")
+                logging.debug(f"PCM.dropEvent (Fallback): Game folder from resolved shortcut: {game_install_dir}")
             except Exception as e_lnk:
                 logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
                 QMessageBox.critical(mw, "Shortcut Error", f"Unable to read the .lnk file:\n{e_lnk}")
                 event.ignore()
                 return
-                
-        # --- Parse .desktop file if applicable (Linux only) ---
+            
         elif is_linux_desktop:
-            logging.debug("Detected Linux .desktop file, parsing for executable path...")
+            logging.debug("PCM.dropEvent (Fallback): Detected Linux .desktop file, parsing...")
             try:
-                # Parse .desktop file to extract Exec and Path fields
-                exec_path = None
-                working_dir = None
-                
-                with open(file_path, 'r', encoding='utf-8') as desktop_file:
-                    for line in desktop_file:
-                        line = line.strip()
-                        if line.startswith('Exec='):
-                            # Extract the executable path, removing parameters
-                            exec_cmd = line[5:].strip()
-                            # Remove parameters (anything after space that starts with %)
-                            exec_parts = exec_cmd.split()
-                            exec_path = exec_parts[0]
-                            # Handle quoted paths
-                            if exec_path.startswith('"') and exec_path.endswith('"'):
-                                exec_path = exec_path[1:-1]
-                        elif line.startswith('Path='):
-                            working_dir = line[5:].strip()
-                            # Handle quoted paths
-                            if working_dir.startswith('"') and working_dir.endswith('"'):
-                                working_dir = working_dir[1:-1]
-                
-                if exec_path:
-                    # If exec_path is not absolute, try to find it in PATH
-                    if not os.path.isabs(exec_path):
-                        # Try to find the executable in PATH
-                        for path_dir in os.environ.get('PATH', '').split(os.pathsep):
-                            full_path = os.path.join(path_dir, exec_path)
-                            if os.path.isfile(full_path) and os.access(full_path, os.X_OK):
-                                exec_path = full_path
-                                break
-                    
-                    target_path = exec_path
-                    logging.info(f"Parsed .desktop file, found executable: {target_path}")
-                    
-                    # Determine game_install_dir
-                    if working_dir and os.path.isdir(working_dir):
-                        game_install_dir = os.path.normpath(working_dir)
-                    elif os.path.isfile(target_path):
-                        game_install_dir = os.path.normpath(os.path.dirname(target_path))
-                    
-                    logging.debug(f"Game folder derived from .desktop file: {game_install_dir}")
-                else:
-                    logging.error("Could not find Exec= line in .desktop file")
-                    QMessageBox.critical(mw, "Desktop File Error", 
-                                        f"Could not find executable path in .desktop file:\n{file_path}")
-                    event.ignore()
-                    return
-                    
+                # Use the utility function from core_logic to parse .desktop files
+                parsed_exec, parsed_path, parsed_icon = self.main_window.core_logic.parse_desktop_file(file_path)
+                if parsed_icon: self.current_game_icon_path = parsed_icon # Store icon if found
+
+                if not parsed_exec or not os.path.exists(parsed_exec):
+                    logging.error(f"Could not parse 'Exec' from .desktop or path does not exist: {parsed_exec}")
+                    QMessageBox.critical(mw, "Desktop File Error", f"Unable to parse exec path from .desktop or path doesn't exist:\n'{parsed_exec or 'N/A'}'")
+                    event.ignore(); return
+
+                target_path = parsed_exec
+                logging.info(f"PCM.dropEvent (Fallback): Parsed .desktop 'Exec' to: {target_path}")
+
+                if parsed_path and os.path.isdir(parsed_path):
+                    game_install_dir = os.path.normpath(parsed_path)
+                elif os.path.isfile(target_path):
+                    game_install_dir = os.path.normpath(os.path.dirname(target_path))
+                logging.debug(f"PCM.dropEvent (Fallback): Game folder from .desktop: {game_install_dir}")
             except Exception as e_desktop:
                 logging.error(f"Error parsing .desktop file: {e_desktop}", exc_info=True)
-                QMessageBox.critical(mw, "Desktop File Error", 
-                                    f"Error parsing .desktop file:\n{e_desktop}")
-                event.ignore()
-                return
-                
-        # --- Handle Linux executable ---
-        elif is_linux_executable:
-            logging.debug(f"Detected Linux executable: {file_path}")
+                QMessageBox.critical(mw, "Desktop File Error", f"Unable to parse .desktop file:\n{e_desktop}")
+                event.ignore(); return
+
+        elif is_linux_executable: # Already checked it's not a .desktop and is a file
+            logging.debug(f"PCM.dropEvent (Fallback): Detected Linux executable: {file_path}")
             target_path = file_path
-            
-            # For executables, use the parent directory as the game install directory
+            game_install_dir = os.path.normpath(os.path.dirname(file_path))
+            logging.debug(f"PCM.dropEvent (Fallback): Game folder from Linux executable: {game_install_dir}")
+
+        # Se è un file ma non è un collegamento di Windows (.lnk), un file desktop di Linux (.desktop) o un file eseguibile di Linux
+        # lo rifiutiamo per motivi di sicurezza (per evitare che l'applicazione accetti file non validi come immagini)
+        elif os.path.isfile(file_path):
+            logging.warning(f"PCM.dropEvent: File type not allowed: {file_path}")
+            QMessageBox.warning(mw, "File Type Not Supported", 
+                              f"Only Windows shortcuts (.lnk), Linux desktop files (.desktop), Linux executables, or Steam links are supported.\n\n"
+                              f"The file '{os.path.basename(file_path)}' is not a valid shortcut or executable.")
+            event.ignore()
+            return
+        elif os.path.isdir(file_path):
+            logging.debug(f"PCM.dropEvent (Fallback): Processing direct folder drop: {file_path}")
+            target_path = file_path # Could be the game folder itself or a folder containing the executable
+            game_install_dir = os.path.normpath(file_path)
+            # For directories, we might need to search for an executable later if target_path is this directory
+            logging.debug(f"PCM.dropEvent (Fallback): Game folder from direct directory: {game_install_dir}")
+        
+        # Fallback for game_install_dir if not set by specific handlers
+        if not game_install_dir and target_path and os.path.exists(target_path):
             if os.path.isfile(target_path):
-                game_install_dir = os.path.normpath(os.path.dirname(target_path))
-            elif os.path.isdir(target_path):
+                potential_dir = os.path.dirname(target_path)
+                if os.path.isdir(potential_dir): game_install_dir = os.path.normpath(potential_dir)
+            elif os.path.isdir(target_path): # If target_path itself is a directory
                 game_install_dir = os.path.normpath(target_path)
-                
-            logging.debug(f"Game folder derived from executable: {game_install_dir}")
+            if game_install_dir: logging.debug(f"PCM.dropEvent (Fallback): Game install dir set by general fallback: {game_install_dir}")
+
+        if target_path and os.path.exists(target_path):
+            game_name = Path(target_path).stem
+            if platform.system() == "Windows" and game_name.lower().endswith('.exe'): game_name = game_name[:-4]
+            # Utilizziamo clean_for_comparison da save_path_finder invece di clean_game_name da core_logic
+            from save_path_finder import clean_for_comparison
+            game_name = clean_for_comparison(game_name)
+            logging.info(f"PCM.dropEvent (Fallback): Extracted game name: {game_name} from target: {target_path}")
             
-        else:
-            # If not a special file type, determine game_install_dir from the dropped path itself
-            if os.path.isfile(target_path):
-                game_install_dir = os.path.normpath(os.path.dirname(target_path))
-            elif os.path.isdir(target_path):
-                 game_install_dir = os.path.normpath(target_path)
-            logging.debug(f"Dropped item is a regular file/folder. Using path: {target_path}, Derived install dir: {game_install_dir}")
-        # --- End Link Resolution ---
-
-        # --- NOW, call emulator detection using the RESOLVED target_path ---
-        logging.debug(f"Calling detect_and_find_profiles with path: {target_path}")
-        emulator_result = emulator_manager.detect_and_find_profiles(target_path)
-
-        # --- Handle Emulator Result (IF found) ---
-        if emulator_result is not None:
-            emulator_key, profiles_data = emulator_result
-            event.acceptProposedAction() # Ensure accepted
-
-            if emulator_key == 'sameboy' and profiles_data is None:
-                logging.info("SameBoy detected, but no save/ROM path found. Prompting user for ROM directory.")
+            # --- NOW, call emulator detection using the RESOLVED target_path ---
+            # This should happen BEFORE we start the heuristic search
+            emulator_result = emulator_manager.detect_and_find_profiles(target_path)
+            
+            # If an emulator was detected, handle it accordingly
+            if emulator_result is not None:
+                emulator_key, profiles_data = emulator_result
                 
-                settings, _ = settings_manager.load_settings()
-                initial_rom_path = settings.get('last_rom_folder', os.path.expanduser("~"))
-
-                rom_path_dialog = SavePathDialog(
-                    parent=self.main_window,
-                    window_title=self.main_window.tr("Select SameBoy ROMs Folder"),
-                    prompt_text=self.main_window.tr(
-                        "SameBoy needs to know where your Game Boy / Game Boy Color ROMs are stored.\n"
-                        "Please enter or browse to the folder containing your ROMs (.gb, .gbc files).\n"
-                        "Save files (.sav) are usually in this same folder or a 'Saves' subfolder."
-                    ),
-                    initial_path=initial_rom_path,
-                    browse_dialog_title=self.main_window.tr("Select ROMs Folder")
-                )
-                dialog_result = rom_path_dialog.exec()
-                user_rom_dir = None
-                if dialog_result == QDialog.DialogCode.Accepted:
-                    user_rom_dir = rom_path_dialog.get_path()
-
-                if user_rom_dir and os.path.isdir(user_rom_dir):
-                    logging.info(f"User selected SameBoy ROM directory: {user_rom_dir}")
-                    s, _ = settings_manager.load_settings() # Carica di nuovo per evitare sovrascritture se modificate altrove
-                    s['sameboy_roms_path'] = user_rom_dir
-                    s['last_rom_folder'] = user_rom_dir # Salva per usi futuri
-                    settings_manager.save_settings(s) # Assicura che le impostazioni siano scritte
+                # Special handling for SameBoy emulator
+                if emulator_key == 'sameboy' and profiles_data is None:
+                    # Try to find SameBoy profiles manually
+                    try:
+                        from emulator_utils import sameboy_manager
+                        rom_dir = sameboy_manager.get_sameboy_saves_path()
+                        if rom_dir:
+                            profiles_data = sameboy_manager.find_sameboy_profiles(rom_dir)
+                            if profiles_data:
+                                logging.info(f"Found save files in hardcoded path: {rom_dir}")
+                                logging.info(f"Found {len(profiles_data)} SameBoy profiles in directory '{rom_dir}'.")
+                            else:
+                                logging.warning(f"No SameBoy profiles found in directory '{rom_dir}'.")
+                        else:
+                            logging.warning("Could not determine SameBoy ROM directory.")
+                    except Exception as e:
+                        logging.error(f"Error finding SameBoy profiles: {e}")
+                        QMessageBox.warning(
+                            mw, "SameBoy Detection Error",
+                            f"An error occurred while trying to detect SameBoy profiles: {e}\n"
+                            "You can try adding the emulator again or set the path manually via settings (if available).")
+                
+                # Handle emulator profiles if found
+                if emulator_key and profiles_data is not None: # Check if profiles_data is not None (it could be an empty list)
+                    logging.info(f"Found {emulator_key} profiles: {len(profiles_data)}")
                     
-                    # Ora che abbiamo il percorso ROM, proviamo di nuovo a trovare i profili
-                    # find_sameboy_profiles userà questo percorso dalle impostazioni
-                    log.info(f"Re-calling find_sameboy_profiles with user-defined ROM path: {user_rom_dir}")
-                    # È importante passare il percorso effettivo dell'eseguibile di SameBoy qui, non la cartella ROM.
-                    # get_sameboy_saves_path all'interno di find_sameboy_profiles leggerà il percorso ROM salvato.
-                    path_for_finder = self.extract_path_from_event(event)
-                    if os.path.isfile(path_for_finder):
-                        path_for_finder = os.path.dirname(path_for_finder)
-                        
-                    updated_profiles = find_sameboy_profiles(path_for_finder) 
-                    
-                    if updated_profiles:
-                        logging.info(f"Found {len(updated_profiles)} SameBoy profiles after user provided ROM directory.")
-                        # Mostra il dialogo di selezione del gioco per questi profili
-                        self.show_game_selection_dialog(updated_profiles, 'sameboy', executable_path)
-                    elif updated_profiles == []: # Nessun salvataggio trovato MA la cartella ROM è valida
-                        logging.warning(f"User provided ROM directory '{user_rom_dir}', but still no .sav/.srm files found by find_sameboy_profiles.")
-                        QMessageBox.information(self.main_window, 
-                                                self.main_window.tr("No Save Files Found"), 
-                                                self.main_window.tr("The selected ROMs directory for SameBoy does not appear to contain any save files (.sav, .srm).\n" \
-                                                  "Please ensure you have selected the correct folder where your ROMs and their corresponding saves are located."))
-                    else: # updated_profiles is None (improbabile qui, ma per completezza)
-                        logging.error("find_sameboy_profiles returned None unexpectedly after user provided ROM directory.")
-                        QMessageBox.warning(self.main_window, 
-                                            self.main_window.tr("Error Finding Saves"), 
-                                            self.main_window.tr("An unexpected error occurred while trying to find save files in the selected SameBoy ROMs directory."))
-                else:
-                    if dialog_result != QDialog.DialogCode.Rejected:
-                        logging.warning(f"Invalid SameBoy ROM directory selected or no path returned: {user_rom_dir}")
-                        QMessageBox.warning(self.main_window, 
-                                            self.main_window.tr("Invalid Folder"), 
-                                            self.main_window.tr("The selected path is not a valid directory. Please select a valid folder for SameBoy ROMs."))
+                    # Show dialog for selecting which emulator game to create a profile for
+                    selection_dialog = EmulatorGameSelectionDialog(emulator_key, profiles_data, mw)
+                    if selection_dialog.exec():
+                        selected_profile = selection_dialog.get_selected_profile()
+                        if selected_profile:
+                            # Extract details from the selected profile
+                            profile_id = selected_profile.get('id', '')
+                            selected_name = selected_profile.get('name', profile_id)
+                            save_paths = selected_profile.get('paths', [])
+                            
+                            # Create a profile name based on the emulator and game
+                            profile_name_base = f"{emulator_key} - {selected_name}"
+                            profile_name = profile_name_base
+                            
+                            # Ensure unique profile name
+                            counter = 1
+                            while profile_name in mw.profiles:
+                                profile_name = f"{profile_name_base} ({counter})"
+                                counter += 1
+                            
+                            # Create the profile with the appropriate data
+                            if emulator_key == "PPSSPP": # Specific check for multi-path emulator
+                                new_profile = {
+                                    'name': profile_name,
+                                    'paths': save_paths,
+                                    'emulator': emulator_key
+                                }
+                            else: # For all other emulators or no emulator detected
+                                new_profile = {
+                                    'name': profile_name,
+                                    'paths': save_paths,
+                                    'emulator': emulator_key
+                                }
+                            
+                            # Add the profile to the main window's profiles dictionary
+                            mw.profiles[profile_name] = new_profile
+                            
+                            # Save the profiles to disk
+                            if mw.core_logic.save_profiles(mw.profiles):
+                                mw.refresh_profile_table()
+                                mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
+                                logging.info(f"Emulator game profile '{profile_name}' created/updated with emulator '{emulator_key}'.")
+                                
+                                # Select the newly created profile in the table
+                                mw.select_profile_by_name(profile_name)
+                            else:
+                                logging.error(f"Failed to save profiles after adding '{profile_name}'.")
+                                QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
                     else:
-                        logging.info("User cancelled SameBoy ROM directory selection.")
-                        QMessageBox.information(self.main_window, 
-                                                self.main_window.tr("SameBoy Setup Incomplete"),  
-                                                self.main_window.tr("Profile creation for SameBoy cannot proceed without a ROMs directory.\n" \
-                                                  "You can try adding the emulator again or set the path manually via settings (if available)."))
-                event.accept()
-                return # Stop further processing for this drop event
-            # --- End SameBoy Specific ---
+                        logging.info("User cancelled emulator game selection.")
+                    
+                    # Hide the overlay if it's visible
+                    self._hide_overlay_if_visible(mw)
+                    mw.set_controls_enabled(True)
+                    QApplication.restoreOverrideCursor()
+                    event.acceptProposedAction()
+                    return # Return after handling emulator profiles
+                elif emulator_key: # Emulator detected but no profiles found
+                    logging.warning(f"{emulator_key} detected, but no profiles found in its standard directory.")
+                    QMessageBox.warning(mw, f"Emulator Detected ({emulator_key})",
+                                    f"Detected link to {emulator_key}, but no profiles found in its standard folder.\nCheck the emulator's save location.")
+                return # IMPORTANT: Stop further processing if an emulator was detected
+            
+            logging.debug(f"Path '{target_path}' did not match known emulators, proceeding with standard heuristic path detection.")
+
+            # self.game_name_input.setText(game_name) # Temporarily commented out
+            # self.executable_path_input.setText(os.path.normpath(target_path)) # Temporarily commented out
+            
+            if game_install_dir: 
+                # self.game_install_dir_input.setText(os.path.normpath(game_install_dir)) # Temporarily commented out
+                pass # Added to satisfy linter for empty if-block
+            else: # Final fallback for install directory if still not set
+                final_fallback_dir = os.path.dirname(target_path) if os.path.isfile(target_path) else target_path
+                # self.game_install_dir_input.setText(os.path.normpath(final_fallback_dir)) # Temporarily commented out
+                logging.debug(f"PCM.dropEvent (Fallback): Install dir set to absolute final fallback: {final_fallback_dir}")
+
+            # Icon handling - Temporarily commented out due to missing attributes/methods
+            # if not self.current_game_icon_path: # If not set by .desktop parsing
+            #     if game_install_dir: self.find_and_set_game_icon(game_install_dir, game_name)
+            #     else: self.find_and_set_game_icon(os.path.dirname(self.executable_path_input.text()), game_name)
+            # elif self.current_game_icon_path: # Icon was found (e.g. from .desktop)
+            #     self.update_icon_preview(self.current_game_icon_path)
+            # # If no icon found by any means, it will use the default
+            
+            # Store values in internal state variables for potential later use
+            self.game_name_suggestion = game_name
+            self.game_install_dir = game_install_dir
+            self.executable_path = target_path
+            
+            # self.start_detection_process(game_name, os.path.normpath(target_path), game_install_dir) # Method doesn't exist
+            logging.info(f"PCM.dropEvent: Successfully processed non-Steam game: {game_name}. Ready for detection.")
+            event.acceptProposedAction()
+        else:
+            logging.warning(f"PCM.dropEvent (Fallback): Target path '{target_path or 'N/A'}' invalid or non-existent. Ignoring drop.")
+            QMessageBox.warning(mw, "Path Error", f"Dropped item or target ('{target_path or 'N/A'}') is invalid/not found.")
+            event.ignore()
+
+
 
             if emulator_key and profiles_data is not None: # Check if profiles_data is not None (it could be an empty list)
                 logging.info(f"Found {emulator_key} profiles: {len(profiles_data)}")
@@ -813,27 +1043,35 @@ class ProfileCreationManager:
         try:
             if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
                 mw.overlay_widget.resize(mw.centralWidget().size())
-                # Set the loading label text to "Searching..." for heuristic search
+                # Utilizziamo lo stesso approccio del metodo start_steam_configuration
+                # che funziona correttamente con il fade effect
                 if hasattr(mw, 'loading_label') and mw.loading_label:
-                    mw.loading_label.setText("Searching...")
-                    # --- START OF MODIFIED STYLING ---
-                    # font = mw.loading_label.font()
-                    # font.setPointSize(24)
-                    # font.setBold(True)
-                    # mw.loading_label.setFont(font) # Stylesheet handles this now
+                    mw.loading_label.setText("Searching...") # Set text for search
                     mw.loading_label.setStyleSheet("QLabel { color: white; background-color: transparent; font-size: 24pt; font-weight: bold; }")
                     mw.loading_label.adjustSize() # Ensure label resizes to content
-                    # --- END OF MODIFIED STYLING ---
-                if hasattr(mw, '_center_loading_label'): mw._center_loading_label()
-                # Usa l'animazione standard per la ricerca (opacità 60%)
-                # mw.overlay_widget.setStyleSheet("") # RIMOSSO: Causa la perdita del background semi-trasparente
-                mw.overlay_opacity_effect.setOpacity(0.6) # Imposta l'opacità per la ricerca
-                mw.overlay_widget.show()
-                if hasattr(mw, 'fade_in_animation'): mw.fade_in_animation.start()
                 
-                # Imposta un timer per nascondere l'overlay dopo un breve periodo
-                # anche se la ricerca non è ancora terminata
-                QTimer.singleShot(2000, lambda: self._hide_overlay_if_visible(mw))
+                if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
+                    mw.overlay_widget.resize(mw.centralWidget().size())
+                    # Assicuriamoci che l'overlay non sia già attivo
+                    if hasattr(mw, 'overlay_active'):
+                        mw.overlay_active = False
+                    mw.overlay_widget.show() # Show overlay first
+                    mw.overlay_widget.raise_() # Ensure it's on top
+                
+                if hasattr(mw, '_center_loading_label'):
+                    mw._center_loading_label() # Center label on now-visible overlay
+                
+                if hasattr(mw, 'loading_label') and mw.loading_label:
+                    mw.loading_label.show() # Explicitly show the label
+                
+                if hasattr(mw, 'fade_in_animation') and mw.fade_in_animation:
+                    mw.fade_in_animation.stop() # Stop if already running
+                    mw.fade_in_animation.start() # Start the animation
+                    logging.debug("Fade-in animation started for overlay in dropEvent.")
+                
+                # Non impostiamo più un timer per nascondere l'overlay
+                # L'overlay rimarrà visibile fino al completamento della ricerca
+                # e verrà nascosto nel metodo on_detection_finished
                 
                 logging.debug("Fade-in animation started with 'Searching...' text.")
             else:
@@ -847,7 +1085,7 @@ class ProfileCreationManager:
             game_install_dir=game_install_dir, # Use derived install dir
             profile_name_suggestion=profile_name,
             current_settings=mw.current_settings.copy(),
-            installed_steam_games_dict=None # Pass Steam games if available
+            installed_steam_games_dict=None # Non-Steam game, no need to pass Steam games list
         )
         self.detection_thread.progress.connect(self.on_detection_progress)
         self.detection_thread.finished.connect(self.on_detection_finished)
@@ -883,24 +1121,9 @@ class ProfileCreationManager:
         mw = self.main_window
         logging.debug(f"Detection thread finished. Success: {success}, Results: {results}")
         
-        # --- Stop Fade/Animation Effect ---
-        try:
-            if hasattr(mw, 'overlay_widget') and mw.overlay_widget.isVisible():
-                if hasattr(mw, 'fade_out_animation') and mw.fade_out_animation:
-                    # Usa l'animazione fade-out per nascondere l'overlay
-                    mw.fade_out_animation.start()
-                    logging.debug("Animazione fade-out avviata in on_detection_finished")
-                else:
-                    # Fallback se l'animazione non è disponibile
-                    mw.overlay_widget.hide()
-                    if hasattr(mw, 'loading_label'):
-                        mw.loading_label.hide()
-                    logging.debug("Overlay e loading label nascosti immediatamente (senza animazione).")
-            else:
-                logging.warning("Overlay widget non trovato o già nascosto in MainWindow.")
-        except Exception as e_fade_stop:
-            logging.error(f"Error stopping fade/animation effect: {e_fade_stop}", exc_info=True)
-        # --- FINE Fade/Animation Effect ---
+        # Nascondiamo l'overlay appena prima di mostrare i dialoghi di conferma
+        # Questo garantisce che l'overlay non rimanga visibile durante l'interazione con i dialoghi
+        # ma che la transizione sia comunque fluida
         
         QApplication.restoreOverrideCursor() # Restore cursor
         mw.set_controls_enabled(True)      # Reenable controls in MainWindow
@@ -922,7 +1145,35 @@ class ProfileCreationManager:
         final_path_to_use = None
         paths_found = results.get('path_data', []) # Get the list of (path, score) tuples
         status = results.get('status', 'error')
-
+        
+        # Nascondiamo l'overlay appena prima di mostrare i dialoghi di conferma
+        # --- Stop Fade/Animation Effect ---
+        try:
+            if hasattr(mw, 'overlay_widget') and mw.overlay_widget.isVisible():
+                # Ripristina il testo "Drop Here" prima di nascondere l'overlay
+                if hasattr(mw, 'loading_label') and mw.loading_label:
+                    mw.loading_label.setText("Drop Here")
+                    mw.loading_label.setStyleSheet("QLabel { color: white; background-color: transparent; font-size: 24pt; font-weight: bold; }")
+                    mw.loading_label.adjustSize() # Ensure label resizes to content
+                    logging.debug("Overlay text reset to 'Drop Here'")
+                
+                # Utilizziamo lo stesso comportamento di fade-out per tutti i tipi di file
+                if hasattr(mw, 'fade_out_animation') and mw.fade_out_animation:
+                    # Use fade-out animation to hide the overlay
+                    mw.fade_out_animation.start()
+                    logging.debug("Fade-out animation started BEFORE showing dialogs")
+                else:
+                    # Fallback if animation not available
+                    mw.overlay_widget.hide()
+                    if hasattr(mw, 'loading_label'):
+                        mw.loading_label.hide()
+                    logging.debug("Overlay and loading label hidden BEFORE showing dialogs")
+            else:
+                logging.warning("Overlay widget not found or already hidden in MainWindow.")
+        except Exception as e_fade_stop:
+            logging.error(f"Error stopping fade/animation effect: {e_fade_stop}", exc_info=True)
+        # --- FINE Fade/Animation Effect ---
+            
         if status == 'found':
             logging.debug(f"Path data found by detection thread: {paths_found}") # Updated log
             if len(paths_found) == 1:
