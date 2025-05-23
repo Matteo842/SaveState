@@ -70,8 +70,23 @@ def parse_nacp(filepath: str):
         log.error(f"Unexpected error parsing NACP file {filepath}: {e}", exc_info=True)
         return None
 
-def get_yuzu_appdata_path():
-    """Gets the default Yuzu AppData path based on the OS."""
+def get_yuzu_appdata_path(executable_dir=None):
+    """Gets the default Yuzu AppData path based on the OS or from the executable directory for portable installations."""
+    # Check for portable installation if executable_dir is provided
+    if executable_dir:
+        # Check if there's a 'nand' directory in the executable directory (portable installation)
+        portable_nand_path = os.path.join(executable_dir, "nand")
+        if os.path.isdir(portable_nand_path):
+            log.info(f"Found Yuzu portable installation at: {executable_dir}")
+            return executable_dir
+        
+        # Check if there's a 'user' directory in the executable directory (another portable structure)
+        portable_user_path = os.path.join(executable_dir, "user")
+        if os.path.isdir(portable_user_path):
+            log.info(f"Found Yuzu portable installation with user directory at: {executable_dir}")
+            return executable_dir
+    
+    # If not portable or portable path not found, proceed with standard paths
     system = platform.system()
     user_home = os.path.expanduser("~")
     path_to_check = None
@@ -106,8 +121,7 @@ def get_yuzu_appdata_path():
              legacy_path = os.path.join(user_home, ".local", "share", "yuzu")
              if os.path.isdir(legacy_path):
                  log.info(f"Found legacy Yuzu data directory: {legacy_path}")
-                 # NOTE: This might be the *data* path, not config. Check if saves are here.
-                 # return legacy_path # Keep commented unless needed
+                 return legacy_path
         return None
 
 def get_yuzu_game_title_map(yuzu_appdata_dir: str):
@@ -154,7 +168,7 @@ def find_yuzu_profiles(executable_dir: str | None = None):
     NOTE: Currently uses TitleID as the profile name if JSON lookup fails.
 
     Args:
-        executable_dir: Ignored for Yuzu, kept for signature consistency.
+        executable_dir: Path to Yuzu executable directory for portable installations.
 
     Returns:
         List of profile dicts: [{'id': TitleID, 'paths': [full_path_to_titleid_folder], 'name': GameName or TitleID}, ...]
@@ -162,7 +176,7 @@ def find_yuzu_profiles(executable_dir: str | None = None):
     profiles = []
     log.info("Attempting to find Yuzu profiles...")
 
-    yuzu_appdata_dir = get_yuzu_appdata_path()
+    yuzu_appdata_dir = get_yuzu_appdata_path(executable_dir)
     if not yuzu_appdata_dir:
         log.error("Could not determine Yuzu AppData path. Cannot find profiles.")
         return profiles

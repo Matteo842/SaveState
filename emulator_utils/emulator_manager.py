@@ -20,6 +20,7 @@ from .cemu_manager import find_cemu_profiles
 from .flycast_manager import find_flycast_profiles
 from .shadps4_manager import find_shadps4_profiles
 from .sameboy_manager import find_sameboy_profiles
+# Eden è un fork di Yuzu, quindi utilizza lo stesso codice
 
 # Configure basic logging for this module
 log = logging.getLogger(__name__)
@@ -37,6 +38,10 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'yuzu': {
         'name': 'Yuzu',
         'profile_finder': lambda path: find_yuzu_profiles(path)
+    },
+    'eden': {
+        'name': 'Eden',
+        'profile_finder': lambda path: find_yuzu_profiles(path)  # Eden usa lo stesso codice di Yuzu
     },
     'ppsspp': {
         'name': 'PPSSPP',

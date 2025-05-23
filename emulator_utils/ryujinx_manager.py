@@ -12,8 +12,29 @@ log.addHandler(logging.NullHandler()) # Avoid 'No handler found' warnings
 
 # --- Ryujinx Specific Helper Functions ---
 
-def get_ryujinx_appdata_path():
-    """Gets the default Ryujinx AppData path based on the OS."""
+def get_ryujinx_appdata_path(executable_dir=None):
+    """Gets the default Ryujinx AppData path based on the OS or from the executable directory for portable installations."""
+    # Check for portable installation if executable_dir is provided
+    if executable_dir:
+        # Check if there's a 'portable.ini' file in the executable directory (portable installation marker)
+        portable_ini_path = os.path.join(executable_dir, "portable.ini")
+        if os.path.isfile(portable_ini_path):
+            log.info(f"Found Ryujinx portable installation with portable.ini at: {executable_dir}")
+            return executable_dir
+            
+        # Check if there's a 'portable' directory in the executable directory (another portable structure)
+        portable_dir_path = os.path.join(executable_dir, "portable")
+        if os.path.isdir(portable_dir_path):
+            log.info(f"Found Ryujinx portable installation with portable directory at: {executable_dir}")
+            return executable_dir
+            
+        # Check if there's a 'bis' directory in the executable directory (another portable structure)
+        bis_dir_path = os.path.join(executable_dir, "bis")
+        if os.path.isdir(bis_dir_path):
+            log.info(f"Found Ryujinx portable installation with bis directory at: {executable_dir}")
+            return executable_dir
+    
+    # If not portable or portable path not found, proceed with standard paths
     system = platform.system()
     user_home = os.path.expanduser("~")
     path_to_check = None # Initialize
@@ -221,7 +242,7 @@ def find_ryujinx_profiles(executable_dir: str | None = None):
     Finds Ryujinx game profiles/saves using metadata and the save index.
 
     Args:
-        executable_dir: Ignored for Ryujinx, kept for signature consistency.
+        executable_dir: Path to Ryujinx executable directory for portable installations.
 
     Returns:
         List of profile dicts: [{'id': SaveDataID, 'paths': [full_save_path], 'name': GameName}, ...]
@@ -229,7 +250,7 @@ def find_ryujinx_profiles(executable_dir: str | None = None):
     profiles = []
     log.info("Attempting to find Ryujinx profiles...")
 
-    ryujinx_appdata_dir = get_ryujinx_appdata_path()
+    ryujinx_appdata_dir = get_ryujinx_appdata_path(executable_dir)
     if not ryujinx_appdata_dir:
         log.error("Could not determine Ryujinx AppData path. Cannot find profiles.")
         return profiles # Empty list
