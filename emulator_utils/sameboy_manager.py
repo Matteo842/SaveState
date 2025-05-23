@@ -11,11 +11,14 @@ from settings_manager import load_settings
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())  # Avoid 'No handler found' warnings
 
-def get_sameboy_saves_path():
+def get_sameboy_saves_path(executable_path: str | None = None):
     """
     Gets the SameBoy save directory based on platform.
     SameBoy typically stores save files (.sav) in the same directory as the ROM files.
-    Checks for a user-defined path in settings first, then common hardcoded paths.
+    Checks for a user-defined path in settings first, then executable directory for portable installations, then common hardcoded paths.
+    
+    Args:
+        executable_path: Optional path to the SameBoy executable for portable installations.
     """
     system = platform.system()
     user_home = os.path.expanduser("~")
@@ -35,6 +38,31 @@ def get_sameboy_saves_path():
             log.info(f"Found ROM files (but no saves yet) in user-defined SameBoy ROM path: {custom_sameboy_rom_path}")
             return custom_sameboy_rom_path
         log.warning(f"User-defined SameBoy ROM path '{custom_sameboy_rom_path}' is a directory, but no saves or ROMs found there.")
+        
+    # 2. Controlla la directory dell'eseguibile per installazioni portable
+    if executable_path:
+        executable_dir = os.path.dirname(executable_path) if os.path.isfile(executable_path) else executable_path
+        log.info(f"Checking SameBoy executable directory for portable installation: {executable_dir}")
+        
+        # Controlla direttamente nella directory dell'eseguibile
+        if os.path.isdir(executable_dir):
+            if glob.glob(os.path.join(executable_dir, "*.sav")) or glob.glob(os.path.join(executable_dir, "*.srm")):
+                log.info(f"Found save files in SameBoy executable directory: {executable_dir}")
+                return executable_dir
+            if glob.glob(os.path.join(executable_dir, "*.gb")) or glob.glob(os.path.join(executable_dir, "*.gbc")):
+                log.info(f"Found ROM files (but no saves yet) in SameBoy executable directory: {executable_dir}")
+                return executable_dir
+                
+        # Controlla nelle sottodirectory comuni per ROM/salvataggi
+        for rom_subfolder in ["ROMs", "Saves", "roms", "saves", "GB", "GBC", "GameBoy"]:
+            subdir_path = os.path.join(executable_dir, rom_subfolder)
+            if os.path.isdir(subdir_path):
+                if glob.glob(os.path.join(subdir_path, "*.sav")) or glob.glob(os.path.join(subdir_path, "*.srm")):
+                    log.info(f"Found save files in SameBoy executable subdirectory: {subdir_path}")
+                    return subdir_path
+                if glob.glob(os.path.join(subdir_path, "*.gb")) or glob.glob(os.path.join(subdir_path, "*.gbc")):
+                    log.info(f"Found ROM files (but no saves yet) in SameBoy executable subdirectory: {subdir_path}")
+                    return subdir_path
 
     # 2. Definisci una lista più estesa di percorsi hardcoded
     hardcoded_paths = []
@@ -151,7 +179,7 @@ def find_sameboy_profiles(executable_path: str | None = None) -> list[dict] | No
     profiles = []
     try:
         # Only look for actual save files here.
-        saves_dir = get_sameboy_saves_path() 
+        saves_dir = get_sameboy_saves_path(executable_path) 
 
         if saves_dir is None:
             log.info("get_sameboy_saves_path returned None. User prompt for ROM directory is likely needed.")
