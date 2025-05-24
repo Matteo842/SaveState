@@ -11,6 +11,119 @@ from settings_manager import load_settings
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())  # Avoid 'No handler found' warnings
 
+def get_sameboy_prefs_path():
+    """
+    Gets the default SameBoy prefs.bin path based on the platform.
+    """
+    system = platform.system()
+    
+    if system == "Windows":
+        appdata = os.getenv('APPDATA')
+        if appdata:
+            return os.path.join(appdata, "SameBoy", "prefs.bin")
+        log.warning("APPDATA environment variable not found on Windows.")
+    elif system == "Darwin":  # macOS
+        user_home = os.path.expanduser("~")
+        return os.path.join(user_home, "Library", "Application Support", "SameBoy", "prefs.bin")
+    elif system == "Linux":
+        user_home = os.path.expanduser("~")
+        # First check the lowercase path as specified by the user
+        linux_path = os.path.join(user_home, ".config", "sameboy", "prefs.bin")
+        if os.path.exists(linux_path):
+            return linux_path
+            
+        # Then try with uppercase 'SameBoy' as a fallback
+        linux_path_alt = os.path.join(user_home, ".config", "SameBoy", "prefs.bin")
+        if os.path.exists(linux_path_alt):
+            return linux_path_alt
+            
+        # Also try XDG_CONFIG_HOME if set
+        xdg_config = os.getenv('XDG_CONFIG_HOME')
+        if xdg_config:
+            xdg_path = os.path.join(xdg_config, "sameboy", "prefs.bin")
+            if os.path.exists(xdg_path):
+                return xdg_path
+            xdg_path_alt = os.path.join(xdg_config, "SameBoy", "prefs.bin")
+            if os.path.exists(xdg_path_alt):
+                return xdg_path_alt
+                
+        # Return the most likely path even if it doesn't exist yet
+        return linux_path
+    
+    log.warning(f"Unsupported platform {system} for SameBoy prefs.bin path detection.")
+    return None
+
+def find_potential_rom_paths_in_prefs(prefs_path):
+    """
+    Tries to find path-like strings within prefs.bin.
+    This is a heuristic approach and might not be 100% accurate.
+    """
+    potential_paths = set()
+    if not os.path.isfile(prefs_path):
+        log.warning(f"prefs.bin file not found at: {prefs_path}")
+        return list(potential_paths)
+
+    try:
+        with open(prefs_path, 'rb') as f:
+            content = f.read()
+
+        # Look for byte sequences that could be path strings
+        # This is a very generic regex to find path-like strings
+        # It looks for printable character sequences that include \ or / and end with .gb, .gbc, .zip etc.
+        # or simply directories containing keywords like "ROM" or "Game".
+        for match in re.finditer(rb"[ -~]{5,512}", content):
+            try:
+                potential_string = match.group(0).decode('latin-1')  # Try latin-1 for maximum ASCII-like compatibility
+                # Filter for strings that look like paths
+                if '\\' in potential_string or '/' in potential_string:
+                    if any(ext in potential_string.lower() for ext in ['.gb', '.gbc', '.zip', 'rom', 'game', 'save']):
+                        # Extract the directory containing this potential file/subfolder
+                        path_part = potential_string
+                        # Remove any null characters or garbage at the end
+                        path_part = path_part.split('\x00')[0].strip()
+
+                        # Try to normalize and get the directory
+                        try:
+                            # If it's a file, get the directory
+                            if os.path.isfile(path_part) or any(path_part.lower().endswith(ext) for ext in ['.gb', '.gbc', '.sgb', '.zip']):
+                                dir_path = os.path.dirname(path_part)
+                            # If it's already a plausible directory
+                            elif os.path.isdir(path_part):
+                                dir_path = path_part
+                            else:
+                                # Maybe it's part of a longer or malformed path, let's try to see if part of it is a directory
+                                parts = re.split(r'[\\\/]', path_part)
+                                found_valid_parent = False
+                                for i in range(len(parts), 0, -1):
+                                    try:
+                                        temp_path_try = os.path.join(*parts[:i])
+                                        if os.path.isdir(temp_path_try):
+                                            dir_path = temp_path_try
+                                            found_valid_parent = True
+                                            break
+                                    except Exception:
+                                        continue
+                                if not found_valid_parent:
+                                    continue  # We couldn't extract a valid directory
+                            
+                            # Normalize and add only existing directories
+                            normalized_dir = os.path.normpath(dir_path)
+                            if os.path.isdir(normalized_dir):
+                                potential_paths.add(normalized_dir)
+                        except Exception as e:
+                            log.debug(f"Error parsing path {path_part}: {e}")
+                            pass  # Ignore errors in individual path parsing
+            except UnicodeDecodeError:
+                pass  # Not a valid latin-1 string
+            except Exception as e:
+                log.debug(f"Error processing potential path: {e}")
+                pass  # Other errors
+
+    except Exception as e:
+        log.error(f"Error reading or parsing {prefs_path}: {e}")
+    
+    return list(potential_paths)
+
 def get_sameboy_saves_path(executable_path: str | None = None):
     """
     Gets the SameBoy save directory based on platform.
@@ -27,6 +140,52 @@ def get_sameboy_saves_path(executable_path: str | None = None):
     custom_paths = current_settings.get("custom_paths", {})
     custom_sameboy_rom_path = custom_paths.get("sameboy_rom_dir")
 
+    # 0. Try to find paths from SameBoy prefs.bin first
+    prefs_path = get_sameboy_prefs_path()
+    if prefs_path:
+        log.info(f"Checking SameBoy prefs.bin at: {prefs_path}")
+        rom_folders = find_potential_rom_paths_in_prefs(prefs_path)
+        
+        if rom_folders:
+            # Filter further to folders that actually contain ROM or save files
+            actual_rom_or_save_holding_dirs = set()
+            for folder in rom_folders:
+                try:
+                    if os.path.isdir(folder):
+                        # Look for .gb, .gbc, .sav, .srm files
+                        has_relevant_files = False
+                        for root, _, files_in_folder in os.walk(folder):
+                            for fname in files_in_folder:
+                                if fname.lower().endswith(('.gb', '.gbc', '.sav', '.srm')):
+                                    actual_rom_or_save_holding_dirs.add(folder)  # Add the parent folder
+                                    has_relevant_files = True
+                                    break
+                            if has_relevant_files:  # Found in a subfolder, this parent folder is good
+                                break
+                except Exception as e_walk:
+                    log.warning(f"Error scanning folder {folder}: {e_walk}")
+
+            if actual_rom_or_save_holding_dirs:
+                log.info(f"Found {len(actual_rom_or_save_holding_dirs)} folders with ROM/Save files from prefs.bin")
+                # Return the first folder that contains save files, or if none have saves, return the first with ROMs
+                for folder in actual_rom_or_save_holding_dirs:
+                    if glob.glob(os.path.join(folder, "*.sav")) or glob.glob(os.path.join(folder, "*.srm")):
+                        log.info(f"Found save files in folder from prefs.bin: {folder}")
+                        return folder
+                
+                # If we didn't find any folder with saves, return the first with ROMs
+                for folder in actual_rom_or_save_holding_dirs:
+                    if glob.glob(os.path.join(folder, "*.gb")) or glob.glob(os.path.join(folder, "*.gbc")):
+                        log.info(f"Found ROM files (but no saves yet) in folder from prefs.bin: {folder}")
+                        return folder
+            else:
+                log.info("No folders with ROM/Save files found among extracted paths from prefs.bin")
+        else:
+            log.info("No path-like strings found in prefs.bin, or the file is empty/corrupted")
+    
+    # If we couldn't find anything from prefs.bin, fall back to the existing methods
+    log.info("Falling back to custom settings and hardcoded paths")
+    
     # 1. Controlla il percorso personalizzato nelle impostazioni
     if custom_sameboy_rom_path and os.path.isdir(custom_sameboy_rom_path):
         log.info(f"Checking user-defined SameBoy ROM path: {custom_sameboy_rom_path}")
