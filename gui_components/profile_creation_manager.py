@@ -572,31 +572,9 @@ class ProfileCreationManager:
         if mime_data.hasText():
             logging.debug(f"  PCM.dropEvent: MimeData has Text (first 200 chars): '{mime_data.text()[:200]}'")
         # --- End Log MIME Data ---
-
-        # --- Overlay Fade-out --- 
-        if hasattr(mw, 'overlay_widget') and mw.overlay_widget and mw.overlay_widget.isVisible():
-            if hasattr(mw, 'fade_out_animation'):
-                try:
-                    if hasattr(mw, 'on_fade_out_finished'):
-                        mw.fade_out_animation.finished.disconnect(mw.on_fade_out_finished)
-                except RuntimeError: 
-                    logging.debug("PCM.dropEvent: Error disconnecting on_fade_out_finished (possibly not connected or already disconnected).")
-                # No explicit AttributeError catch for disconnect here, as hasattr should prevent it.
-
-                if hasattr(mw, 'on_fade_out_finished'):
-                    mw.fade_out_animation.finished.connect(mw.on_fade_out_finished)
-                else:
-                    logging.debug("PCM.dropEvent: MainWindow.on_fade_out_finished not found for connection. Animation will run without this specific callback.")
-                
-                mw.fade_out_animation.start()
-                logging.debug("PCM.dropEvent: Overlay fade-out animation started.")
-            else:
-                # If no animation, hide directly and reset flag
-                if hasattr(mw, 'overlay_widget'): mw.overlay_widget.hide()
-                if hasattr(mw, 'loading_label'): mw.loading_label.hide()
-                if hasattr(mw, 'overlay_active'): mw.overlay_active = False 
-                logging.debug("PCM.dropEvent: Overlay hidden directly (no animation found).")
-        # --- End Overlay Fade-out ---
+        
+        # Note: We don't hide the overlay here as MainWindow.dropEvent now handles this
+        # based on whether it's a Steam URL or not
 
         # --- Priority 1: Handle Steam URLs from QUrls --- 
         if mime_data.hasUrls():
@@ -877,25 +855,24 @@ class ProfileCreationManager:
                             profile_name_base = f"{emulator_key} - {selected_name}"
                             profile_name = profile_name_base
                             
-                            # Ensure unique profile name
-                            counter = 1
-                            while profile_name in mw.profiles:
-                                profile_name = f"{profile_name_base} ({counter})"
-                                counter += 1
+                            # Check if profile already exists
+                            if profile_name in mw.profiles:
+                                reply = QMessageBox.question(mw, "Existing Profile",
+                                                        f"A profile named '{profile_name}' already exists. Overwrite it?",
+                                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                                        QMessageBox.StandardButton.No)
+                                if reply == QMessageBox.StandardButton.No:
+                                    mw.status_label.setText("Profile creation cancelled.")
+                                    return
+                                else:
+                                    logging.warning(f"Overwriting existing profile: {profile_name}")
                             
                             # Create the profile with the appropriate data
-                            if emulator_key == "PPSSPP": # Specific check for multi-path emulator
-                                new_profile = {
-                                    'name': profile_name,
-                                    'paths': save_paths,
-                                    'emulator': emulator_key
-                                }
-                            else: # For all other emulators or no emulator detected
-                                new_profile = {
-                                    'name': profile_name,
-                                    'paths': save_paths,
-                                    'emulator': emulator_key
-                                }
+                            new_profile = {
+                                'name': profile_name,
+                                'paths': save_paths,
+                                'emulator': emulator_key
+                            }
                             
                             # Add the profile to the main window's profiles dictionary
                             mw.profiles[profile_name] = new_profile
@@ -960,99 +937,7 @@ class ProfileCreationManager:
             QMessageBox.warning(mw, "Path Error", f"Dropped item or target ('{target_path or 'N/A'}') is invalid/not found.")
             event.ignore()
 
-
-
-            if emulator_key and profiles_data is not None: # Check if profiles_data is not None (it could be an empty list)
-                logging.info(f"Found {emulator_key} profiles: {len(profiles_data)}")
-                # --- Show Selection Dialog ---
-                selection_dialog = EmulatorGameSelectionDialog(emulator_key, profiles_data, mw)
-                if selection_dialog.exec():
-                    selected_data = selection_dialog.get_selected_profile_data()
-                    if selected_data:
-                        selected_id = selected_data.get('id')
-                        # --- Handle both single 'path' and multiple 'paths' --- START ---
-                        selected_paths_list = selected_data.get('paths') # For multi-path (e.g., PPSSPP)
-                        selected_path_single = selected_data.get('path')  # For single-path
-                        # --- Handle both single 'path' and multiple 'paths' --- END ---
-
-                        # --- Updated Check --- START ---
-                        if not selected_id or (not selected_path_single and not selected_paths_list):
-                            logging.error(f"Selected data from dialog is missing id or path(s): {selected_data}")
-                        # --- Updated Check --- END ---
-                            QMessageBox.critical(mw, "Internal Error", "Invalid selected profile data.")
-                            return
-
-                        selected_name = selected_data.get('name', selected_id)
-                        profile_name_base = f"{emulator_key} - {selected_name}"
-                        profile_name = shortcut_utils.sanitize_profile_name(profile_name_base)
-                        if not profile_name:
-                            QMessageBox.warning(mw, "Profile Name Error",
-                                                f"Unable to generate a valid profile name for '{profile_name_base}'.")
-                            return
-
-                        if profile_name in mw.profiles:
-                            reply = QMessageBox.question(mw, "Existing Profile",
-                                                       f"A profile named '{profile_name}' already exists. Overwrite it?",
-                                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                                       QMessageBox.StandardButton.No)
-                            if reply == QMessageBox.StandardButton.No:
-                                mw.status_label.setText("Profile creation cancelled.")
-                                return
-                            else:
-                                logging.warning(f"Overwriting existing profile: {profile_name}")
-
-                        # --- Determine path data and prepare profile dictionary --- START ---
-                        path_data_for_profile_list = None
-                        profile_data_to_save = {}
-
-                        if emulator_key == "PPSSPP": # Specific check for multi-path emulator
-                             profile_data_to_save = {
-                                 'paths': selected_paths_list, # Use the list for PPSSPP
-                                 'emulator': emulator_key
-                             }
-                             logging.info(f"Saving profile '{profile_name}' with multiple paths (PPSSPP).")
-                        else: # For all other emulators or no emulator detected
-                             if selected_paths_list: # Ensure list is not empty
-                                 profile_data_to_save = {
-                                     'paths': selected_paths_list, # Use the ENTIRE list
-                                     'emulator': emulator_key
-                                 }
-                                 logging.info(f"Saving profile '{profile_name}' with {len(selected_paths_list)} paths.")
-                             else:
-                                 # This case should ideally not be reached due to earlier checks
-                                 logging.error(f"Cannot save profile '{profile_name}', path list is unexpectedly empty.")
-                                 QMessageBox.critical(mw, "Internal Error", "Unable to save the profile, no valid paths available.")
-                                 return
-                        # --- Determine path data and prepare profile dictionary --- END ---
-
-                        # --- Save Profile and Update UI --- START ---
-                        mw.profiles[profile_name] = profile_data_to_save # Add/Update profile in memory
-
-                        if core_logic.save_profiles(mw.profiles): # Save all profiles to file
-                            logging.info(f"Emulator game profile '{profile_name}' created/updated with emulator '{emulator_key}'.")
-                            if hasattr(mw, 'profile_table_manager'):
-                                mw.profile_table_manager.update_profile_table()
-                                mw.profile_table_manager.select_profile_in_table(profile_name) # Select the new/updated one
-                            # No success message box here, status bar is enough
-                            mw.status_label.setText(f"Profile '{profile_name}' created/updated.")
-                        else:
-                            # Error saving file
-                            QMessageBox.critical(mw, "Save Error",
-                                                 f"Unable to save the profiles file after adding/modifying '{profile_name}'. "
-                                                       "The changes may have been lost.")
-                            # Attempt to revert the change in memory if save failed
-                            if profile_name in mw.profiles:
-                                # Ideally, revert to previous state, but simple removal is fallback
-                                del mw.profiles[profile_name]
-                                logging.warning(f"Reverted profile '{profile_name}' from memory due to save failure.")
-                                if hasattr(mw, 'profile_table_manager'):
-                                    mw.profile_table_manager.update_profile_table() # Update table again
-                        # --- Save Profile and Update UI --- END ---
-            else:
-                logging.warning(f"{emulator_key} detected, but no profiles found in its standard directory.")
-                QMessageBox.warning(mw, f"Emulator Detected ({emulator_key})",
-                                    f"Detected link to {emulator_key}, but no profiles found in its standard folder.\nCheck the emulator's save location.")
-            return # IMPORTANT: Stop further processing if an emulator was detected
+            # This section was removed as it duplicated code from earlier in the method
 
         # --- If NOT a known Emulator, proceed with heuristic search ---
         logging.debug(f"Path '{target_path}' did not match known emulators, proceeding with standard heuristic path detection.")
@@ -1072,8 +957,15 @@ class ProfileCreationManager:
             return
 
         if profile_name in mw.profiles:
-            QMessageBox.warning(mw, "Existing Profile", f"Profile '{profile_name}' already exists.")
-            return
+            reply = QMessageBox.question(mw, "Existing Profile",
+                                       f"A profile named '{profile_name}' already exists. Overwrite it?",
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                       QMessageBox.StandardButton.No)
+            if reply == QMessageBox.StandardButton.No:
+                mw.status_label.setText("Profile creation cancelled.")
+                return
+            else:
+                logging.warning(f"Overwriting existing profile: {profile_name}")
 
         # --- Start Heuristic Path Search Thread ---
         if self.detection_thread and self.detection_thread.isRunning():

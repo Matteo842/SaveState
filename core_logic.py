@@ -624,8 +624,35 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path):
                 logging.debug(f"Destination map created: {dest_map}")
 
                 # Check if the zip contains base folders (e.g. 'SAVEDATA/', 'SYSTEM/')
-                zip_contains_base_folders = any(m.replace('/', os.sep).split(os.sep, 1)[0] in dest_map for m in zipf.namelist() if os.sep in m.replace('/', os.sep))
+                # Improved cross-platform compatibility for path checking
+                zip_members = zipf.namelist()
+                logging.debug(f"ZIP contains {len(zip_members)} members. First 10: {zip_members[:10]}")
+                
+                # More robust check that works on both Windows and Linux
+                zip_contains_base_folders = False
+                for m in zip_members:
+                    # Normalize path separators for the current OS
+                    normalized_path = m.replace('/', os.sep)
+                    # Split the path to get the base folder
+                    path_parts = normalized_path.split(os.sep, 1)
+                    if len(path_parts) > 0:
+                        base_folder = path_parts[0]
+                        if base_folder in dest_map:
+                            zip_contains_base_folders = True
+                            logging.debug(f"Found matching base folder: '{base_folder}' in ZIP member: '{m}'")
+                            break
+                
                 logging.debug(f"Does the zip contain base folders matching the destinations? {zip_contains_base_folders}")
+                # If no base folders found, also try checking for exact filename matches
+                if not zip_contains_base_folders and len(zip_members) > 0:
+                    logging.debug("No base folders found, checking if any ZIP members match destination filenames directly.")
+                    for dest_path in paths_to_process:
+                        dest_filename = os.path.basename(dest_path)
+                        for m in zip_members:
+                            if m.endswith(dest_filename) or m.endswith(dest_filename + '/'):
+                                zip_contains_base_folders = True
+                                logging.debug(f"Found matching filename: '{dest_filename}' in ZIP member: '{m}'")
+                                break
 
                 if not zip_contains_base_folders:
                     # Nuovo codice: prova a trovare i file basandosi sul nome file finale
