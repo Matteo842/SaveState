@@ -563,7 +563,7 @@ class MainWindow(QMainWindow):
             logging.debug(f"  MimeData has Text (first 200 chars): '{event.mimeData().text()[:200]}'")
 
         # Check if this is a Steam URL before hiding the overlay
-        is_steam_url = False
+        is_steam_url = False # Questa variabile è importante per la logica dell'overlay più avanti
         
         # First check if it's a direct Steam URL
         if event.mimeData().hasUrls():
@@ -582,6 +582,7 @@ class MainWindow(QMainWindow):
             for url_obj in event.mimeData().urls():
                 if url_obj.isLocalFile() and url_obj.toLocalFile().lower().endswith(".url"):
                     try:
+                        # Nota: configparser è già importato nel tuo file
                         parser = configparser.ConfigParser()
                         with open(url_obj.toLocalFile(), 'r', encoding='utf-8') as f:
                             parser.read_file(f)
@@ -613,6 +614,7 @@ class MainWindow(QMainWindow):
                         return
                     else:
                         logging.error("MainWindow.dropEvent: PCM not init for direct Steam QUrl.")
+                        # Non c'era is_steam_url qui, ma se arriviamo qui, è un URL steam, quindi l'overlay è gestito da PCM
                         event.ignore()
                         return
 
@@ -642,7 +644,6 @@ class MainWindow(QMainWindow):
                         logging.info(f"MainWindow.dropEvent: Detected .url file: {local_file_path}")
                         try:
                             parser = configparser.ConfigParser()
-                            # Read with UTF-8, common for .url files, but be mindful of potential errors
                             with open(local_file_path, 'r', encoding='utf-8') as f:
                                 parser.read_file(f)
                             if 'InternetShortcut' in parser and 'URL' in parser['InternetShortcut']:
@@ -664,23 +665,21 @@ class MainWindow(QMainWindow):
                                 logging.warning(f"MainWindow.dropEvent: .url file {local_file_path} does not contain [InternetShortcut] or URL key.")
                         except Exception as e:
                             logging.error(f"MainWindow.dropEvent: Error parsing .url file {local_file_path}: {e}")
-                        # If .url parsing fails or it's not a Steam URL, we don't set dropped_path here
-                        # to let the generic file handling below take over if needed for other .url uses.
-                        # However, if it was a .url, we probably don't want to treat it as a generic dropped_path for PCM's dropEvent.
-                        # So, if we processed a .url file (Steam or not), we should probably return or explicitly ignore.
-                        # For now, let's assume if it's a .url, it's either a Steam link (handled) or not relevant for PCM's file drop.
-                        # If it was a .url file, we've attempted to handle it. If not a Steam link, ignore it for PCM file drop.
-                        event.ignore() # Explicitly ignore if it was a .url but not a Steam one we could handle
+                        
+                        # Se era un file .url ma non un link Steam valido gestito sopra, ignoralo esplicitamente.
+                        # L'overlay per i non-Steam URL è già stato nascosto da "if not is_steam_url".
+                        logging.debug(f"MainWindow.dropEvent: .url file '{local_file_path}' was not a handled Steam link. Ignoring.")
+                        event.ignore() 
                         return
 
-        # If no Steam URL was handled (direct, text, or .url), proceed with generic local file/path logic
+        # Se nessun URL di Steam è stato gestito (diretto, testo, o .url), procedi con la logica generica per file/percorsi locali
         logging.debug("MainWindow.dropEvent: No Steam URL found. Checking for other local files/paths.")
         dropped_path = None
         if event.mimeData().hasUrls():
             urls_list_generic = event.mimeData().urls()
             for u_gen in urls_list_generic:
                 if u_gen.isLocalFile():
-                    # Ensure it's not a .url file we already decided to ignore or handle
+                    # Assicurati che non sia un file .url (quelli sono stati gestiti o ignorati sopra)
                     if not u_gen.toLocalFile().lower().endswith(".url"):
                         local_path_generic = u_gen.toLocalFile()
                         logging.info(f"MainWindow.dropEvent: Generic local file dropped: {local_path_generic}")
@@ -689,6 +688,7 @@ class MainWindow(QMainWindow):
         
         if not dropped_path and event.mimeData().hasText():
             text_generic = event.mimeData().text()
+            # Non dovrebbe essere un link Steam testuale, quelli sono già stati gestiti sopra
             if not text_generic.startswith("steam://"):
                 potential_path_generic = os.path.normpath(text_generic)
                 if os.path.exists(potential_path_generic):
@@ -696,17 +696,38 @@ class MainWindow(QMainWindow):
                     dropped_path = potential_path_generic
                 else:
                     logging.debug(f"MainWindow.dropEvent: Generic text '{text_generic}' is not an existing path.")
-            # else: Steam text already handled
+            # else: Il testo di Steam è già stato gestito
 
         if dropped_path:
+            # --- NUOVO CONTROLLO CARTELLE ---
+            # Verifica se il percorso droppato è una directory (cartella)
+            # `os.path.isdir` è la funzione chiave qui.
+            # Assicurati che `import os` sia presente all'inizio del tuo file (lo è già).
+            if os.path.isdir(dropped_path):
+                logging.info(f"MainWindow.dropEvent: Path '{dropped_path}' is a directory. Ignoring for ProfileCreationManager.")
+                # `is_steam_url` è False a questo punto, perché i link Steam sono gestiti e ritornano prima.
+                # L'overlay per i non-Steam URL è già stato nascosto all'inizio con:
+                # if not is_steam_url: self.request_hide_overlay.emit()
+                # Quindi non dovrebbe essere necessario nasconderlo di nuovo qui, ma per sicurezza:
+                if not self.overlay_widget.isHidden() and not is_steam_url: # Controlla se l'overlay è visibile e non era per Steam
+                     self.request_hide_overlay.emit()
+                event.ignore() # Ignora l'evento di drop per le cartelle
+                return         # Interrompi ulteriore elaborazione per questa cartella
+            # --- FINE NUOVO CONTROLLO ---
+
+            # Se non è una cartella, allora procedi come prima
             if hasattr(self, 'profile_creation_manager') and self.profile_creation_manager:
                 logging.debug(f"MainWindow.dropEvent: Passing non-Steam drop event for path '{dropped_path}' to PCM.")
-                self.profile_creation_manager.dropEvent(event) # PCM's original dropEvent for files/folders
+                # A questo punto, `is_steam_url` è False. L'overlay per non-Steam URL dovrebbe essere già
+                # stato nascosto. ProfileCreationManager.dropEvent gestirà l'overlay se necessario per le sue operazioni.
+                self.profile_creation_manager.dropEvent(event) # dropEvent originale di PCM per file/link
             else:
                 logging.error("MainWindow.dropEvent: PCM not init for generic file drop!")
+                # L'overlay per non-Steam URL dovrebbe essere già stato nascosto.
                 event.ignore()
         else:
             logging.debug("MainWindow.dropEvent: No valid Steam URL or generic local path found. Ignoring drop.")
+            # L'overlay per non-Steam URL dovrebbe essere già stato nascosto.
             event.ignore()
     
     def updateUiText(self):

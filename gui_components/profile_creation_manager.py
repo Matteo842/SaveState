@@ -721,28 +721,73 @@ class ProfileCreationManager:
                 return
             
         elif is_linux_desktop:
-            logging.debug("PCM.dropEvent (Fallback): Detected Linux .desktop file, parsing...")
             try:
-                # Use the utility function from core_logic to parse .desktop files
-                parsed_exec, parsed_path, parsed_icon = self.main_window.core_logic.parse_desktop_file(file_path)
-                if parsed_icon: self.current_game_icon_path = parsed_icon # Store icon if found
+                # --- BEGIN INLINE .desktop PARSING (Adattato da v1.4, SENZA ICONE) ---
+                logging.debug("PCM.dropEvent (Fallback): Parsing Linux .desktop file inline...")
+                parsed_exec = None
+                parsed_path = None # Corrisponde a 'Path=' nel file .desktop
+                # Nessuna variabile parsed_icon qui, perché hai detto che non ti serve
+
+                with open(file_path, 'r', encoding='utf-8') as desktop_file:
+                    for line in desktop_file:
+                        line = line.strip()
+                        if line.startswith('Exec='):
+                            exec_cmd = line[5:].strip()
+                            if exec_cmd.startswith('"'):
+                                end_quote_idx = exec_cmd.find('"', 1)
+                                if end_quote_idx != -1:
+                                    parsed_exec = exec_cmd[1:end_quote_idx]
+                                else: 
+                                    parsed_exec = exec_cmd.split()[0]
+                            else:
+                                parsed_exec = exec_cmd.split()[0]
+
+                        elif line.startswith('Path='):
+                            parsed_path = line[5:].strip()
+                            if parsed_path.startswith('"') and parsed_path.endswith('"'):
+                                parsed_path = parsed_path[1:-1]
+                
+                if parsed_exec:
+                    if not os.path.isabs(parsed_exec):
+                        resolved_in_custom_path = False
+                        if parsed_path and os.path.isdir(parsed_path):
+                            potential_full_path = os.path.join(parsed_path, parsed_exec)
+                            if os.path.isfile(potential_full_path) and os.access(potential_full_path, os.X_OK):
+                                parsed_exec = os.path.normpath(potential_full_path)
+                                resolved_in_custom_path = True
+                                logging.debug(f".desktop 'Exec' ('{os.path.basename(parsed_exec)}') resolved using 'Path=' field to: {parsed_exec}")
+                        
+                        if not resolved_in_custom_path:
+                            logging.debug(f".desktop 'Exec' ('{parsed_exec}') is relative. Searching in system PATH...")
+                            system_path_dirs = os.environ.get('PATH', '').split(os.pathsep)
+                            for path_dir_env in system_path_dirs:
+                                full_path_env = os.path.join(path_dir_env, parsed_exec)
+                                if os.path.isfile(full_path_env) and os.access(full_path_env, os.X_OK):
+                                    parsed_exec = os.path.normpath(full_path_env)
+                                    logging.debug(f".desktop 'Exec' resolved via system PATH to: {parsed_exec}")
+                                    break 
+                            else: 
+                                logging.warning(f".desktop 'Exec' ('{parsed_exec}') could not be resolved to an absolute path via 'Path=' field or system PATH.")
+                # --- FINE INLINE .desktop PARSING ---
 
                 if not parsed_exec or not os.path.exists(parsed_exec):
-                    logging.error(f"Could not parse 'Exec' from .desktop or path does not exist: {parsed_exec}")
-                    QMessageBox.critical(mw, "Desktop File Error", f"Unable to parse exec path from .desktop or path doesn't exist:\n'{parsed_exec or 'N/A'}'")
+                    logging.error(f"Could not parse 'Exec' from .desktop or resolved path does not exist: {parsed_exec}")
+                    QMessageBox.critical(mw, "Desktop File Error", f"Unable to parse executable path from .desktop or the path doesn't exist:\n'{parsed_exec or 'N/A'}'")
                     event.ignore(); return
 
-                target_path = parsed_exec
-                logging.info(f"PCM.dropEvent (Fallback): Parsed .desktop 'Exec' to: {target_path}")
+                target_path = parsed_exec 
+                logging.info(f"PCM.dropEvent (Fallback): Parsed .desktop 'Exec' to target: {target_path}")
 
-                if parsed_path and os.path.isdir(parsed_path):
+                if parsed_path and os.path.isdir(parsed_path): 
                     game_install_dir = os.path.normpath(parsed_path)
-                elif os.path.isfile(target_path):
+                elif os.path.isfile(target_path): 
                     game_install_dir = os.path.normpath(os.path.dirname(target_path))
-                logging.debug(f"PCM.dropEvent (Fallback): Game folder from .desktop: {game_install_dir}")
-            except Exception as e_desktop:
-                logging.error(f"Error parsing .desktop file: {e_desktop}", exc_info=True)
-                QMessageBox.critical(mw, "Desktop File Error", f"Unable to parse .desktop file:\n{e_desktop}")
+                
+                logging.debug(f"PCM.dropEvent (Fallback): Game install directory from .desktop: {game_install_dir}")
+
+            except Exception as e_desktop: 
+                logging.error(f"Error processing .desktop file '{file_path}': {e_desktop}", exc_info=True)
+                QMessageBox.critical(mw, "Desktop File Error", f"Unable to process .desktop file:\n{file_path}\nError: {e_desktop}")
                 event.ignore(); return
 
         elif is_linux_executable: # Already checked it's not a .desktop and is a file
@@ -821,7 +866,7 @@ class ProfileCreationManager:
                     # Show dialog for selecting which emulator game to create a profile for
                     selection_dialog = EmulatorGameSelectionDialog(emulator_key, profiles_data, mw)
                     if selection_dialog.exec():
-                        selected_profile = selection_dialog.get_selected_profile()
+                        selected_profile = selection_dialog.get_selected_profile_data()
                         if selected_profile:
                             # Extract details from the selected profile
                             profile_id = selected_profile.get('id', '')
@@ -857,12 +902,12 @@ class ProfileCreationManager:
                             
                             # Save the profiles to disk
                             if mw.core_logic.save_profiles(mw.profiles):
-                                mw.refresh_profile_table()
+                                mw.profile_table_manager.update_profile_table()
                                 mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
                                 logging.info(f"Emulator game profile '{profile_name}' created/updated with emulator '{emulator_key}'.")
                                 
                                 # Select the newly created profile in the table
-                                mw.select_profile_by_name(profile_name)
+                                mw.profile_table_manager.select_profile_in_table(profile_name)
                             else:
                                 logging.error(f"Failed to save profiles after adding '{profile_name}'.")
                                 QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
