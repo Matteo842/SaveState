@@ -351,10 +351,51 @@ def find_sameboy_profiles(executable_path: str | None = None) -> list[dict] | No
         save_files = glob.glob(os.path.join(saves_dir, "*.sav")) + glob.glob(os.path.join(saves_dir, "*.srm"))
 
         if not save_files:
-            # Se saves_dir è stato fornito (cioè, get_sameboy_saves_path ha trovato una cartella, probabilmente con ROMs),
-            # ma non ci sono file .sav o .srm, dobbiamo chiedere all'utente.
-            log.info(f"No .sav or .srm files found in '{saves_dir}'. This path was likely identified due to ROMs. Signalling for user prompt.")
-            return None # Restituisce None per attivare il prompt utente
+            # Check for save files in subdirectories
+            for root, _, files in os.walk(saves_dir):
+                for file in files:
+                    if file.lower().endswith(('.sav', '.srm')):
+                        save_files.append(os.path.join(root, file))
+                        
+            # If we still don't have any save files, create profiles from ROM files instead
+            if not save_files:
+                log.info(f"No .sav or .srm files found in '{saves_dir}' or its subdirectories. Creating profiles from ROM files.")
+                rom_files = []
+                for root, _, files in os.walk(saves_dir):
+                    for file in files:
+                        if file.lower().endswith(('.gb', '.gbc')):
+                            rom_files.append(os.path.join(root, file))
+                
+                if rom_files:
+                    log.info(f"Found {len(rom_files)} ROM files in '{saves_dir}' and its subdirectories.")
+                    # Create profiles from ROM files
+                    for file_path in rom_files:
+                        if os.path.isfile(file_path):
+                            # Use the filename without extension as both ID and Name
+                            base_name = os.path.splitext(os.path.basename(file_path))[0]
+                            profile_id = base_name  # Keep full name for ID
+                            
+                            # Clean the name for display by removing trailing language codes
+                            profile_name = re.sub(r'\s*\([A-Za-z]{2}(?:,[A-Za-z]{2})+\)$', '', base_name).strip()
+                            if not profile_name:
+                                profile_name = base_name
+                            
+                            # Create a profile with the ROM path (no save file yet)
+                            profile = {
+                                'id': profile_id,
+                                'name': profile_name,
+                                'paths': [file_path]  # Using ROM path since no save exists yet
+                            }
+                            profiles.append(profile)
+                            log.debug(f"  Added SameBoy ROM profile: ID='{profile_id}', Name='{profile_name}', Path='{file_path}'")
+                    
+                    if profiles:
+                        log.info(f"Created {len(profiles)} profiles from ROM files in '{saves_dir}'.")
+                        return profiles
+                    
+                # If we still don't have any profiles, signal for user prompt
+                log.info(f"No ROM files found in '{saves_dir}'. Signalling for user prompt.")
+                return None # Restituisce None per attivare il prompt utente
 
         game_names_processed = set() # Per evitare duplicati basati solo sull'estensione
 
