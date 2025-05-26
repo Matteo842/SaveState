@@ -65,7 +65,7 @@ Furthermore, SaveState features automatic detection of Steam games and even lets
 
 SaveState includes experimental support for automatically detecting save data locations for certain emulators, simplifying the profile creation process.
 
-**Currently Supported in version 1.4.0:**
+**Currently Supported in version 1.4.1:**
 
 |             |            |          |
 |-------------|------------|----------|
