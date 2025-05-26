@@ -16,11 +16,11 @@ This tool offers a simple graphical user interface for creating compressed backu
 
 Furthermore, SaveState features automatic detection of Steam games and even lets you generate profiles directly from Minecraft worlds or game shortcuts.
 
-——————————————————————————————————————————————————
+---
 
-⚠️ Current Status (2025-05-6): This is a personal project currently **under active development.** 
+⚠️ Current Status (2025-05-26): This is a personal project currently **under active development.** 
 
-——————————————————————————————————————————————————
+---
 
 ## Features
 
@@ -214,7 +214,10 @@ This tool provides a user-friendly way to perform common development tasks witho
 
 *(This tool itself requires PySide6 to run).*
 
+---
 [No time to fate, save your state!](https://www.youtube.com/@MrSujano)
+
+---
 
 ## License
 
