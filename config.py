@@ -89,6 +89,8 @@ def get_default_backup_dir():
 BACKUP_BASE_DIR = get_default_backup_dir()
 MAX_BACKUPS = 3
 MIN_FREE_SPACE_GB = 2
+MAX_SOURCE_SIZE_MB = 200  # Default max source size in MB for backups
+COMPRESSION_MODE = "standard"  # Default compression mode: standard, fast, best, none
 
 # List of common subdirectories SPECIFICALLY used to contain save files
 # within the main game or publisher folder.
@@ -613,8 +615,7 @@ MAX_FILES_TO_SCAN_IN_DIR_WINDOWS = 200 # Max files to check for save extensions 
 EXPLORATORY_SCAN_MAX_DEPTH_WINDOWS = 3 # Max depth for recursive exploratory scan (Windows)
 
 # --- Linux Specific Scoring & Behavior ---
-# Questi sono i valori di default, verranno sovrascritti se presenti in un file di config utente
-# Punteggi per la logica di Linux
+# Questi sono i valori di default, verranno sovrascritti se presenti in un file di config utente# Punteggi per la logica di Linux
 SCORE_LINUX_GAME_NAME_MATCH = 500       # Corrispondenza (fuzzy) del nome del gioco nel percorso
 SCORE_LINUX_COMPANY_NAME_MATCH = 200    # Corrispondenza nome azienda/publisher
 SCORE_LINUX_SAVE_DIR_MATCH = 150        # Trovata una sottocartella comune per i salvataggi (es. 'saves')

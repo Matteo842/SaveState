@@ -5,6 +5,9 @@ import os
 import logging
 import platform
 import json
+import pickle
+
+from .obfuscation_utils import xor_bytes
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
@@ -126,7 +129,7 @@ def get_yuzu_appdata_path(executable_dir=None):
 
 def get_yuzu_game_title_map(yuzu_appdata_dir: str):
     """
-    Loads a map of Title IDs to game names from a local JSON file.
+    Loads a map of Title IDs to game names from a local JSON file or a pickle file.
     
     Returns:
         A dictionary mapping uppercase Title IDs to game names.
@@ -134,31 +137,59 @@ def get_yuzu_game_title_map(yuzu_appdata_dir: str):
     title_map = {}
     current_script_dir = os.path.dirname(os.path.abspath(__file__))
     json_file_name = "switch_game_list.json"
+    pkl_file_name = "switch_game_map.pkl"
     json_path = os.path.join(current_script_dir, json_file_name)
-    log.info(f"Attempting to load game titles from: {json_path}")
+    pkl_path = os.path.join(current_script_dir, pkl_file_name)
 
-    if not os.path.isfile(json_path):
-        log.error(f"Game title JSON file not found at '{json_path}'. Cannot map Yuzu Title IDs to names.")
-        return title_map
+    log.info(f"Attempting to load game titles from: {json_path} or {pkl_path}")
 
+    loaded_from_json = False
     try:
         with open(json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        # Expecting a dictionary like {'games': {'TITLE_ID': 'Name', ...}}
-        raw_title_map = data.get("games")
-        if isinstance(raw_title_map, dict):
-            # Ensure keys are uppercase for consistent lookup
-            title_map = {tid.upper(): name for tid, name in raw_title_map.items()}
-            log.info(f"Loaded {len(title_map)} game titles from {json_file_name}.")
-        else:
-             log.error(f"Invalid format in {json_file_name}. Expected a dictionary with a 'games' key containing title mappings.")
+            raw_data_from_json = json.load(f)
+        
+        # Expect the actual map to be under the 'games' key
+        actual_game_map_from_json = raw_data_from_json.get("games")
 
+        if isinstance(actual_game_map_from_json, dict):
+            for title_id, game_name in actual_game_map_from_json.items():
+                if isinstance(title_id, str) and isinstance(game_name, str):
+                    title_map[title_id.upper()] = game_name
+            loaded_from_json = True
+            log.info(f"Successfully loaded {len(title_map)} titles from {json_file_name}")
+        else:
+             log.error(f"Invalid format in {json_file_name}. Expected a 'games' key containing a dictionary mapping.")
+
+    except FileNotFoundError:
+        log.info(f"{json_file_name} not found. Attempting to load from {pkl_file_name}.")
     except json.JSONDecodeError as e:
-        log.error(f"Error decoding JSON from {json_path}: {e}")
-    except IOError as e:
-        log.error(f"Error reading file {json_path}: {e}")
+        log.error(f"Error decoding JSON from {json_path}: {e}. Attempting to load from {pkl_file_name}.")
     except Exception as e:
-        log.error(f"Unexpected error loading game titles from {json_path}: {e}", exc_info=True)
+        log.error(f"Unexpected error loading titles from {json_path}: {e}. Attempting to load from {pkl_file_name}.")
+
+    if not loaded_from_json:
+        try:
+            with open(pkl_path, 'rb') as pf:
+                obf_map = pickle.load(pf)
+            
+            for tid, ob_name in obf_map.items():
+                try:
+                    game_name = xor_bytes(ob_name).decode('utf-8')
+                    title_map[tid.upper()] = game_name # Assuming tid is already string and upper
+                except UnicodeDecodeError:
+                    log.warning(f"Could not decode game name for TID {tid} from {pkl_file_name}. Skipping.")
+                except Exception as e_dec:
+                    log.warning(f"Error deobfuscating/processing TID {tid} from {pkl_file_name}: {e_dec}. Skipping.")
+            log.info(f"Successfully loaded and deobfuscated {len(title_map)} titles from {pkl_file_name}")
+        except FileNotFoundError:
+            log.error(f"Neither {json_file_name} nor {pkl_file_name} were found in {current_script_dir}.")
+        except pickle.UnpicklingError as e_pkl_load:
+            log.error(f"Error loading pickle data from {pkl_path}: {e_pkl_load}")
+        except Exception as e_pkl:
+            log.error(f"Unexpected error loading titles from {pkl_path}: {e_pkl}", exc_info=True)
+
+    if not title_map:
+        log.warning(f"Game title map is empty after attempting to load from both JSON and PKL sources.")
 
     return title_map
 

@@ -5,17 +5,34 @@ import os
 import logging
 import platform
 import json
+import pickle  # for loading obfuscated title map
+
+# Import from common obfuscation utilities
+from .obfuscation_utils import KEY, xor_bytes
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
 _title_map: dict = {}
+# Attempt to load JSON title map, fallback to obfuscated pickle
+dir_path = os.path.dirname(__file__)
+json_file = os.path.join(dir_path, 'xenia_title_map.json')
 try:
-    map_file = os.path.join(os.path.dirname(__file__), 'xenia_title_map.json')
-    with open(map_file, 'r', encoding='utf-8') as mf:
+    with open(json_file, 'r', encoding='utf-8') as mf:
         _title_map = json.load(mf)
-except Exception as e:
-    log.debug(f"Could not load Xenia title map: {e}")
+except Exception:
+    pkl_file = os.path.join(dir_path, 'xenia_title_map.pkl')
+    try:
+        with open(pkl_file, 'rb') as pf:
+            obf_map = pickle.load(pf)
+        # Deobfuscate entries
+        for tid, ob in obf_map.items():
+            try:
+                _title_map[tid] = xor_bytes(ob).decode('utf-8')
+            except Exception:
+                continue
+    except Exception as e:
+        log.debug(f"Could not load Xenia title map: {e}")
 
 def get_xenia_content_path(executable_path: str | None = None) -> str | None:
     """

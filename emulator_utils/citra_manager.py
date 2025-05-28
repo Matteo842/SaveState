@@ -4,41 +4,75 @@ import glob
 import logging
 import json
 import platform
+import pickle
+
+from .obfuscation_utils import xor_bytes
 
 # Configure basic logging for this module
 log = logging.getLogger(__name__)
 
 # Path to the Citra titles JSON database
-CITRA_TITLES_JSON_PATH = os.path.join(os.path.dirname(__file__), "citra_titles.json") # Moved to emulator_utils dir
+CITRA_TITLES_JSON_PATH = os.path.join(os.path.dirname(__file__), "citra_titles.json")
+CITRA_TITLES_PKL_PATH = os.path.join(os.path.dirname(__file__), "citra_titles_map.pkl")
 
 # Cache for the loaded titles
 _citra_titles_cache: dict = None
 
 def load_citra_titles() -> dict:
-    """Loads the Citra titles database from the JSON file."""
+    """Loads the Citra titles database from JSON or PKL file."""
     global _citra_titles_cache
     if _citra_titles_cache is not None:
         return _citra_titles_cache
 
-    if not os.path.exists(CITRA_TITLES_JSON_PATH):
-        log.warning(f"Citra titles database not found at: {CITRA_TITLES_JSON_PATH}")
-        log.warning("Run the update_citra_db.py script to generate it.")
-        _citra_titles_cache = {}
-        return _citra_titles_cache
+    loaded_titles = {}
+    loaded_from_json = False
 
-    try:
-        with open(CITRA_TITLES_JSON_PATH, 'r', encoding='utf-8') as f:
-            _citra_titles_cache = json.load(f)
-        log.info(f"Successfully loaded {len(_citra_titles_cache)} titles from {CITRA_TITLES_JSON_PATH}")
-        return _citra_titles_cache
-    except json.JSONDecodeError:
-        log.exception(f"Error decoding JSON from {CITRA_TITLES_JSON_PATH}. Please check the file integrity.")
-        _citra_titles_cache = {}
-        return _citra_titles_cache
-    except Exception as e:
-        log.exception(f"Failed to load Citra titles database: {e}")
-        _citra_titles_cache = {}
-        return _citra_titles_cache
+    # Try loading from JSON first
+    if os.path.exists(CITRA_TITLES_JSON_PATH):
+        try:
+            with open(CITRA_TITLES_JSON_PATH, 'r', encoding='utf-8') as f:
+                loaded_titles = json.load(f)
+            log.info(f"Successfully loaded {len(loaded_titles)} titles from {CITRA_TITLES_JSON_PATH}")
+            loaded_from_json = True
+        except json.JSONDecodeError:
+            log.exception(f"Error decoding JSON from {CITRA_TITLES_JSON_PATH}. Will attempt PKL.")
+        except Exception as e:
+            log.exception(f"Failed to load Citra titles from JSON {CITRA_TITLES_JSON_PATH}: {e}. Will attempt PKL.")
+    else:
+        log.info(f"Citra titles JSON not found at: {CITRA_TITLES_JSON_PATH}. Attempting PKL.")
+
+    # If JSON loading failed or file not found, try PKL
+    if not loaded_from_json:
+        if os.path.exists(CITRA_TITLES_PKL_PATH):
+            try:
+                with open(CITRA_TITLES_PKL_PATH, 'rb') as pf:
+                    obf_map = pickle.load(pf)
+                
+                temp_loaded_titles = {}
+                for tid, ob_name in obf_map.items():
+                    try:
+                        game_name = xor_bytes(ob_name).decode('utf-8')
+                        temp_loaded_titles[tid] = game_name # Assuming tid is already correct format
+                    except UnicodeDecodeError:
+                        log.warning(f"Could not decode game name for TID {tid} from {CITRA_TITLES_PKL_PATH}. Skipping.")
+                    except Exception as e_dec:
+                        log.warning(f"Error deobfuscating/processing TID {tid} from {CITRA_TITLES_PKL_PATH}: {e_dec}. Skipping.")
+                loaded_titles = temp_loaded_titles
+                log.info(f"Successfully loaded and deobfuscated {len(loaded_titles)} titles from {CITRA_TITLES_PKL_PATH}")
+            except pickle.UnpicklingError as e_pkl_load:
+                log.exception(f"Error loading pickle data from {CITRA_TITLES_PKL_PATH}.")
+                loaded_titles = {} # Ensure cache is empty on error
+            except Exception as e_pkl:
+                log.exception(f"Failed to load Citra titles from PKL {CITRA_TITLES_PKL_PATH}: {e_pkl}.")
+                loaded_titles = {} # Ensure cache is empty on error
+        else:
+            log.warning(f"Citra titles PKL not found at: {CITRA_TITLES_PKL_PATH}. Title map will be empty.")
+            loaded_titles = {}
+
+    _citra_titles_cache = loaded_titles
+    if not _citra_titles_cache:
+        log.warning("Citra titles cache is empty after attempting all loading methods.")
+    return _citra_titles_cache
 
 def _get_citra_sdmc_path(user_profile_path=None):
     """Gets the default Citra/Azahar SDMC path, checking standard locations based on OS."""

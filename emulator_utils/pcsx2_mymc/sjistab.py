@@ -1,0 +1,19 @@
+#
+# This file is part of mymc+, based on mymc by Ross Ridge.
+#
+# mymc+ is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# mymc+ is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with mymc+.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+# automatically generated
+shift_jis_normalize_table = {u'\uff81': u'\u30c1', u'\u3000': u' ', u'\uff85': u'\u30ca', u'\uff06': u'&', u'\uff89': u'\u30ce', u'\uff0a': u'*', u'\uff8d': u'\u30d8', u'\uff0e': u'.', u'\uff91': u'\u30e0', u'\uff12': u'2', u'\uff95': u'\u30e6', u'\uff16': u'6', u'\uff99': u'\u30eb', u'\u309b': u' \u3099', u'\uff1a': u':', u'\uff9d': u'\u30f3', u'\uff03': u'#', u'\uff1e': u'>', u'\uff22': u'B', u'\uff26': u'F', u'\uff2a': u'J', u'\u222c': u'\u222b\u222b', u'\uff2e': u'N', u'\uff32': u'R', u'\uff36': u'V', u'\uff3a': u'Z', u'\uff3e': u'^', u'\uff42': u'b', u'\uff46': u'f', u'\uff4a': u'j', u'\uff4e': u'n', u'\uff52': u'r', u'\uff56': u'v', u'\uff5a': u'z', u'\uff62': u'\u300c', u'\uffe5': u'\xa5', u'\uff66': u'\u30f2', u'\uff6a': u'\u30a7', u'\uff6e': u'\u30e7', u'\uff72': u'\u30a4', u'\uff76': u'\u30ab', u'\uff7a': u'\u30b3', u'\uff7e': u'\u30bb', u'\uff01': u'!', u'\uff82': u'\u30c4', u'\uff05': u'%', u'\uff86': u'\u30cb', u'\uff09': u')', u'\uff8a': u'\u30cf', u'\uff8e': u'\u30db', u'\uff11': u'1', u'\uff92': u'\u30e1', u'\uff15': u'5', u'\uff96': u'\u30e8', u'\uff19': u'9', u'\uff9a': u'\u30ec', u'\uff1d': u'=', u'\u309c': u' \u309a', u'\uff9e': u'\u3099', u'\uff21': u'A', u'\uff25': u'E', u'\uff29': u'I', u'\xa8': u' \u0308', u'\uff2d': u'M', u'\uff31': u'Q', u'\u2033': u'\u2032\u2032', u'\uff35': u'U', u'\xb4': u' \u0301', u'\uff39': u'Y', u'\uff3d': u']', u'\uff41': u'a', u'\uff45': u'e', u'\uff49': u'i', u'\uff4d': u'm', u'\uff51': u'q', u'\uff55': u'u', u'\uff59': u'y', u'\uff5d': u'}', u'\uff61': u'\u3002', u'\uff65': u'\u30fb', u'\uff69': u'\u30a5', u'\uff6d': u'\u30e5', u'\uff71': u'\u30a2', u'\uff75': u'\u30aa', u'\uff79': u'\u30b1', u'\uff7d': u'\u30b9', u'\uff83': u'\u30c6', u'\uff04': u'$', u'\uff87': u'\u30cc', u'\uff08': u'(', u'\uff8b': u'\u30d2', u'\uff0c': u',', u'\uff8f': u'\u30de', u'\uff10': u'0', u'\uff93': u'\u30e2', u'\uff14': u'4', u'\uff97': u'\u30e9', u'\uff18': u'8', u'\uff9b': u'\u30ed', u'\uff1c': u'<', u'\uff9f': u'\u309a', u'\uff20': u'@', u'\uff24': u'D', u'\u2026': u'...', u'\uff28': u'H', u'\uff2c': u'L', u'\uff30': u'P', u'\uff34': u'T', u'\uff38': u'X', u'\uff3c': u'\\', u'\uff40': u'`', u'\uff44': u'd', u'\uff48': u'h', u'\uff4c': u'l', u'\uff50': u'p', u'\uff54': u't', u'\uff58': u'x', u'\uff5c': u'|', u'\uffe3': u' \u0304', u'\uff64': u'\u3001', u'\uff68': u'\u30a3', u'\uff6c': u'\u30e3', u'\uff70': u'\u30fc', u'\uff74': u'\u30a8', u'\uff78': u'\u30af', u'\uff7c': u'\u30b7', u'\uff80': u'\u30bf', u'\u2103': u'\xb0C', u'\uff84': u'\u30c8', u'\uff88': u'\u30cd', u'\uff0b': u'+', u'\uff8c': u'\u30d5', u'\uff0f': u'/', u'\uff90': u'\u30df', u'\uff13': u'3', u'\uff94': u'\u30e4', u'\uff17': u'7', u'\uff98': u'\u30ea', u'\uff1b': u';', u'\uff9c': u'\u30ef', u'\uff1f': u'?', u'\uff23': u'C', u'\u2025': u'..', u'\uff27': u'G', u'\u212b': u'\xc5', u'\uff2f': u'O', u'\uff33': u'S', u'\uff37': u'W', u'\uff3b': u'[', u'\uff3f': u'_', u'\uff43': u'c', u'\uff47': u'g', u'\uff4b': u'k', u'\uff4f': u'o', u'\uff53': u's', u'\uff57': u'w', u'\uff5b': u'{', u'\uff63': u'\u300d', u'\uff67': u'\u30a1', u'\uff6b': u'\u30a9', u'\uff6f': u'\u30c3', u'\uff73': u'\u30a6', u'\uff77': u'\u30ad', u'\uff7b': u'\u30b5', u'\uff2b': u'K', u'\uff7f': u'\u30bd'}

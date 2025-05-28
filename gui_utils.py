@@ -46,12 +46,13 @@ class DetectionWorkerThread(QThread):
     progress = Signal(str)
     finished = Signal(bool, dict) # Segnale emesso alla fine: successo(bool), risultati(dict)
 
-    def __init__(self, game_install_dir, profile_name_suggestion, current_settings, installed_steam_games_dict=None):
+    def __init__(self, game_install_dir, profile_name_suggestion, current_settings, installed_steam_games_dict=None, emulator_name=None):
         super().__init__()
         self.game_install_dir = game_install_dir
         self.profile_name_suggestion = profile_name_suggestion
         self.current_settings = current_settings
         self.installed_steam_games_dict = installed_steam_games_dict if installed_steam_games_dict is not None else {}
+        self.emulator_name = emulator_name # Store emulator name
         self.is_running = True
         self.setObjectName("DetectionWorkerThread") # Aggiunto ObjectName
 
@@ -317,24 +318,26 @@ class DetectionWorkerThread(QThread):
         # --- Blocco Finally per Emettere Risultati ---
         finally:
             if self.is_running:
-                # Prepara il dizionario dei risultati
-                results = {
+                # Costruisci il dizionario dei risultati
+                results_dict = {
+                    'path_data': final_path_data, # Lista di tuple (path, score)
                     'status': status,
-                    'path_data': final_path_data, # Lista di tuple (path, score) ordinata
                     'message': error_message,
-                    'profile_name_suggestion': profile_name
+                    'profile_name_suggestion': profile_name, # Aggiungi il nome del profilo usato
+                    'emulator_name': self.emulator_name # Add emulator name to results
                 }
-                # Emetti il segnale
-                self.finished.emit(status != "error", results) # successo se non 'error'
+                self.finished.emit(True, results_dict)
+
             else:
                  # Se il thread è stato interrotto
-                 results = {
+                 results_dict = {
                      'status': 'error', # Segnala come errore l'interruzione
                      'path_data': [],
                      'message': "Search interrupted by user.", # Messaggio più specifico
-                     'profile_name_suggestion': profile_name
+                     'profile_name_suggestion': profile_name,
+                     'emulator_name': self.emulator_name # Also include emulator name in error case
                  }
-                 self.finished.emit(False, results)
+                 self.finished.emit(False, results_dict)
 
             logging.debug(f"DetectionWorkerThread.run() finished. Status: {status}, PathData Count: {len(final_path_data)}")
             if final_path_data and status == 'found':

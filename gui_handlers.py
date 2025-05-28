@@ -4,6 +4,9 @@
 import os
 import logging
 import shutil
+import zipfile
+import tempfile
+import config
 
 from PySide6.QtWidgets import QMessageBox, QDialog, QInputDialog, QApplication
 from PySide6.QtCore import Slot, QUrl, QPropertyAnimation, QTimer
@@ -17,10 +20,12 @@ from dialogs.steam_dialog import SteamDialog
 
 # Import core logic, utils, managers
 import core_logic
+from emulator_utils.pcsx2_manager import backup_pcsx2_save, restore_pcsx2_save
 import settings_manager
 import shortcut_utils
 import config
 from gui_utils import WorkerThread, SteamSearchWorkerThread
+from utils import sanitize_filename
 
 
 class MainWindowHandlers:
@@ -104,10 +109,17 @@ class MainWindowHandlers:
     # Opens the base backup folder in the system's file explorer.
     @Slot()
     def handle_open_backup_folder(self):
-        backup_dir = self.main_window.current_settings.get("backup_base_dir")
+        # Attempt to get the user-configured backup directory first
+        backup_dir = self.main_window.current_settings.get("backup_base_dir") # CORRECTED KEY
 
+        # If not found in settings, fall back to the default from config
         if not backup_dir:
-            QMessageBox.warning(self.main_window, "Error", "Backup base directory not configured in settings.")
+            backup_dir = config.BACKUP_BASE_DIR
+            # Optionally, log that we're using the default
+            logging.info(f"'backup_base_dir' not in settings, using default: {backup_dir}")
+
+        if not backup_dir: # If still no backup_dir (e.g., config.BACKUP_BASE_DIR was also None/empty, though unlikely)
+            QMessageBox.warning(self.main_window, "Error", "Backup base directory not configured in settings or config file.")
             return
 
         backup_dir = os.path.normpath(backup_dir)
@@ -216,100 +228,132 @@ class MainWindowHandlers:
             logging.error(f"Invalid profile data for '{profile_name}': {profile_data}")
             return
 
-        # --- Modified Path Handling START ---
-        source_paths = [] # Initialize empty list
-        paths_data = profile_data.get('paths')
-        path_data = profile_data.get('path')
-
-        if isinstance(paths_data, list) and paths_data and all(isinstance(p, str) for p in paths_data):
-            source_paths = paths_data
-            logging.debug(f"Using 'paths' key for profile '{profile_name}': {source_paths}")
-        elif isinstance(path_data, str) and path_data:
-            source_paths = [path_data] # Create a list from the single path
-            logging.debug(f"Using 'path' key for profile '{profile_name}': {source_paths}")
-        else:
-            QMessageBox.critical(self.main_window, "Profile Data Error",
-                                 "No valid source path ('paths' or 'path') found in profile '{0}'. Check profile.".format(profile_name))
-            logging.error(f"Invalid path data for profile '{profile_name}': paths={paths_data}, path={path_data}")
-            return
-
-        # Validate each path in the determined list
-        invalid_paths = []
-        for path in source_paths:
-            # Use os.path.exists to validate both files and directories
-            if not os.path.exists(path):
-                invalid_paths.append(path)
-
-        if invalid_paths:
-            # Use parentheses for cleaner multi-line string concatenation
-            error_message = ("One or more source paths do not exist or are invalid:" + "\n" +
-                             "\n".join(invalid_paths))
-            QMessageBox.critical(self.main_window, "Source Path Error", error_message)
-            return
-        # --- Modified Path Handling END ---
-
-        # Access main_window's settings
-        backup_dir = self.main_window.current_settings.get("backup_base_dir")
-        max_bk = self.main_window.current_settings.get("max_backups")
-        max_src_size = self.main_window.current_settings.get("max_source_size_mb")
-        compression_mode = self.main_window.current_settings.get("compression_mode", "standard")
-        check_space = self.main_window.current_settings.get("check_free_space_enabled", True)
-        min_gb_required = config.MIN_FREE_SPACE_GB
-
-        if not backup_dir or max_bk is None or max_src_size is None:
-            QMessageBox.critical(self.main_window, "Configuration Error", "Required settings (backup base dir, max backup, max source size) not found or invalid!")
-            return
-
-        # Free space check
-        if check_space:
-            logging.debug(f"Free space check enabled. Threshold: {min_gb_required} GB.")
-            min_bytes_required = min_gb_required * 1024 * 1024 * 1024
-            try:
-                os.makedirs(backup_dir, exist_ok=True)
-                disk_usage = shutil.disk_usage(backup_dir)
-                free_bytes = disk_usage.free
-                free_gb = free_bytes / (1024 * 1024 * 1024)
-                logging.debug(f"Free space detected on disk for '{backup_dir}': {free_gb:.2f} GB")
-                if free_bytes < min_bytes_required:
-                    msg = ("Insufficient disk space for backup!\n\n" +
-                           "Free space: {0:.2f} GB\n" +
-                           "Minimum required space: {1} GB\n\n" +
-                           "Free up space on the destination disk ('{2}') or disable the check in settings.").format(free_gb, min_gb_required, backup_dir)
-                    QMessageBox.warning(self.main_window, "Insufficient Disk Space", msg)
-                    return
-            except FileNotFoundError:
-                 msg = "Error checking space: the specified backup path does not seem to be valid or accessible:\n{0}".format(backup_dir)
-                 QMessageBox.critical(self.main_window, "Backup Path Error", msg)
-                 return
-            except Exception as e_space:
-                 msg = "An error occurred while checking free disk space:\n{0}".format(e_space)
-                 QMessageBox.critical(self.main_window, "Error Checking Space", msg)
-                 logging.error("Error while checking free disk space.", exc_info=True)
-                 return
-        else:
-             logging.debug("Free space check disabled.")
-
-        # Check for existing worker thread on main_window
+        # Check for existing worker thread
         if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
-             QMessageBox.information(self.main_window, "Operation in Progress", "A backup or restore is already in progress. Wait for completion.")
-             return
+            QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+            return
 
-        # Set status and controls on main_window
         self.main_window.status_label.setText("Starting backup for '{0}'...".format(profile_name))
-        self.main_window.set_controls_enabled(False)
+        self.main_window.set_controls_enabled(False) # Disable controls
 
-        # Create and assign WorkerThread to main_window
-        self.main_window.worker_thread = WorkerThread(
-            core_logic.perform_backup,
-            # Pass the list of source_paths instead of single save_path
-            profile_name, source_paths, backup_dir, max_bk, max_src_size, compression_mode
-        )
-        # Connect signals to slots in this handler class
+        # Determine which backup function to use
+        is_pcsx2_selective_profile = (profile_data.get('emulator') == 'PCSX2' and
+                                      'save_dir' in profile_data and
+                                      'paths' in profile_data and
+                                      isinstance(profile_data['paths'], list) and
+                                      len(profile_data['paths']) > 0)
+
+        if is_pcsx2_selective_profile:
+            memcard_path = profile_data['paths'][0] # Assuming the first path is the memcard
+            save_dir_on_mc = profile_data['save_dir'] # e.g., "BASLUS-12345F0"
+            logging.info(f"Using selective PCSX2 backup for '{profile_name}', save_dir: '{save_dir_on_mc}' on memcard: '{memcard_path}'")
+
+            def pcsx2_backup_task(p_name_worker, mc_path_worker, mc_save_dir_worker):
+                try:
+                    # Carica le impostazioni per ottenere i parametri necessari
+                    settings, _ = settings_manager.load_settings()
+                    backup_dir = settings.get('backup_dir', config.BACKUP_BASE_DIR) # Usa get_default_backup_dir come fallback
+                    max_bks = settings.get('max_backups', config.MAX_BACKUPS)
+                    max_size_mb = settings.get('max_source_size_mb', config.MAX_SOURCE_SIZE_MB)
+                    compress_mode = settings.get('compression_mode', config.COMPRESSION_MODE)
+                    
+                    logging.debug(f"pcsx2_backup_task: Calling backup_pcsx2_save with: profile='{p_name_worker}', mc_path='{mc_path_worker}', save_dir='{mc_save_dir_worker}', backup_base_dir='{backup_dir}', max_backups={max_bks}, max_source_size_mb={max_size_mb}, compression_mode='{compress_mode}'")
+
+                    success_worker, result_message_worker = backup_pcsx2_save(
+                        p_name_worker, 
+                        mc_path_worker, 
+                        mc_save_dir_worker,
+                        backup_dir,         # backup_base_dir
+                        max_bks,            # max_backups
+                        max_size_mb,        # max_source_size_mb
+                        compress_mode       # compression_mode
+                    )
+                    return success_worker, result_message_worker
+                except Exception as e_bk_worker:
+                    err_msg = f"Exception in PCSX2 backup task for '{p_name_worker}': {e_bk_worker}"
+                    logging.error(err_msg, exc_info=True)
+                    return False, err_msg
+
+            self.main_window.worker_thread = WorkerThread(
+                pcsx2_backup_task,
+                profile_name, memcard_path, save_dir_on_mc
+            )
+        else: # Generic backup for other profiles
+            source_paths = []
+            paths_data = profile_data.get('paths')
+            path_data = profile_data.get('path') # Legacy support
+
+            if isinstance(paths_data, list) and paths_data and all(isinstance(p, str) for p in paths_data):
+                source_paths = paths_data
+            elif isinstance(path_data, str) and path_data:
+                source_paths = [path_data]
+            else:
+                QMessageBox.critical(self.main_window, self.tr("Profile Data Error"),
+                                     self.tr("No valid source path ('paths' or 'path') found in profile '{0}'. Unable to backup.").format(profile_name))
+                logging.error(f"Invalid source path data for profile '{profile_name}': paths={paths_data}, path={path_data}")
+                self.main_window.set_controls_enabled(True)
+                return
+            
+            # Settings needed for core_logic.perform_backup
+            if not hasattr(self.main_window, 'current_settings') or not self.main_window.current_settings:
+                QMessageBox.critical(self.main_window, self.tr("Internal Error"), self.tr("Settings not loaded correctly."))
+                logging.error("current_settings not found on main_window or is empty.")
+                self.main_window.set_controls_enabled(True)
+                return
+
+            backup_base_dir = self.main_window.current_settings.get('backup_dir', config.BACKUP_BASE_DIR)
+            max_backups = self.main_window.current_settings.get('max_backups', config.MAX_BACKUPS)
+            max_source_size_mb = self.main_window.current_settings.get('max_source_size_mb', 200) # Corretto fallback
+            compression_mode = self.main_window.current_settings.get('compression_mode', "standard") # Corretto fallback
+            check_space = self.main_window.current_settings.get("check_free_space_enabled", True)
+            min_gb_required = config.MIN_FREE_SPACE_GB
+
+            # Free space check
+            if check_space:
+                logging.debug(f"Free space check enabled. Threshold: {min_gb_required} GB.")
+                min_bytes_required = min_gb_required * 1024 * 1024 * 1024
+                try:
+                    os.makedirs(backup_base_dir, exist_ok=True)
+                    disk_usage = shutil.disk_usage(backup_base_dir)
+                    free_bytes = disk_usage.free
+                    free_gb = free_bytes / (1024 * 1024 * 1024)
+                    logging.debug(f"Free space detected on disk for '{backup_base_dir}': {free_gb:.2f} GB")
+                    if free_bytes < min_bytes_required:
+                        msg = self.tr("Insufficient disk space for backup!\n\n" +
+                                   "Free space: {0:.2f} GB\n" +
+                                   "Minimum required space: {1} GB\n\n" +
+                                   "Free up space on the destination disk ('{2}') or disable the check in settings.").format(free_gb, min_gb_required, backup_base_dir)
+                        QMessageBox.warning(self.main_window, self.tr("Insufficient Disk Space"), msg)
+                        self.main_window.set_controls_enabled(True)
+                        return
+                except FileNotFoundError:
+                     msg = self.tr("Error checking space: the specified backup path does not seem to be valid or accessible:\n{0}").format(backup_base_dir)
+                     QMessageBox.critical(self.main_window, self.tr("Backup Path Error"), msg)
+                     self.main_window.set_controls_enabled(True)
+                     return
+                except Exception as e_space:
+                     msg = self.tr("An error occurred while checking free disk space:\n{0}").format(e_space)
+                     QMessageBox.critical(self.main_window, self.tr("Error Checking Space"), msg)
+                     logging.error("Error while checking free disk space.", exc_info=True)
+                     self.main_window.set_controls_enabled(True)
+                     return
+            else:
+                 logging.debug("Free space check disabled.")
+
+            logging.info(f"Using generic backup for '{profile_name}' with source(s): {source_paths}")
+            self.main_window.worker_thread = WorkerThread(
+                core_logic.perform_backup,
+                profile_name,
+                source_paths,
+                backup_base_dir,
+                max_backups,
+                max_source_size_mb,
+                compression_mode
+            )
+
         self.main_window.worker_thread.finished.connect(self.on_operation_finished)
-        # Progress still updates the main window's status label directly
-        self.main_window.worker_thread.progress.connect(self.main_window.status_label.setText)
         self.main_window.worker_thread.start()
-        logging.debug(f"Started backup thread for profile '{profile_name}'.")
+        logging.info(f"Started backup worker thread for '{profile_name}'.")
 
     # Opens the restore dialog and starts the restore process if confirmed.
     @Slot()
@@ -320,60 +364,123 @@ class MainWindowHandlers:
         profile_data = self.main_window.profiles.get(profile_name)
         if not profile_data or not isinstance(profile_data, dict):
             QMessageBox.critical(self.main_window, "Internal Error", "Corrupted or missing profile data for '{0}'.".format(profile_name))
-            logging.error(f"Invalid profile data for '{profile_name}' during restore: {profile_data}")
+            logging.error(f"Invalid profile data for '{profile_name}': {profile_data}")
             return
 
-        # --- Determine Destination Paths START ---
-        destination_paths = []
-        paths_data = profile_data.get('paths')
-        path_data = profile_data.get('path')
+        is_pcsx2_selective_profile = (profile_data.get('emulator') == 'PCSX2' and
+                                      'save_dir' in profile_data and
+                                      'paths' in profile_data and
+                                      isinstance(profile_data['paths'], list) and
+                                      len(profile_data['paths']) > 0)
 
-        if isinstance(paths_data, list) and paths_data and all(isinstance(p, str) for p in paths_data):
-            destination_paths = paths_data
-            logging.debug(f"Restore target using 'paths': {destination_paths}")
-        elif isinstance(path_data, str) and path_data:
-            destination_paths = [path_data]
-            logging.debug(f"Restore target using 'path': {destination_paths}")
-        else:
-            QMessageBox.critical(self.main_window, "Profile Data Error",
-                                 "No valid destination path ('paths' or 'path') found in profile '{0}'. Unable to restore.".format(profile_name))
-            logging.error(f"Invalid destination path data for profile '{profile_name}': paths={paths_data}, path={path_data}")
-            return
-        # --- Determine Destination Paths END ---
-
-        dialog = RestoreDialog(profile_name, self.main_window) # Pass main_window as parent
+        dialog = RestoreDialog(profile_name, self.main_window)
         if dialog.exec():
             archive_to_restore = dialog.get_selected_path()
             if archive_to_restore:
-                # Format destination paths for display in the message box
-                destination_paths_str = "\n".join([f"- {p}" for p in destination_paths])
-                confirm = QMessageBox.warning(self.main_window,
-                                              "Confirm Final Restore",
-                                              # Updated message to show all destination paths
-                                              "WARNING!\nRestoring '{0}' will overwrite files in the following destinations:\n{1}\n\nProceed?".format(os.path.basename(archive_to_restore), destination_paths_str),
-                                              QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                              QMessageBox.StandardButton.No)
+                if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
+                    QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+                    return
 
-                if confirm == QMessageBox.StandardButton.Yes:
-                    # Check for existing worker thread
-                    if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
-                        QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+                if is_pcsx2_selective_profile:
+                    memcard_path = profile_data['paths'][0]
+                    mc_target_save_dir_name = profile_data['save_dir'].strip('/')
+                    archive_filename = os.path.basename(archive_to_restore)
+
+                    confirm_msg = "WARNING!\nRestoring '{archive}' will overwrite the save folder '{save_folder}' on memory card '{memcard}'.\n\nProceed?".format(
+                        archive=archive_filename, 
+                        save_folder=mc_target_save_dir_name, 
+                        memcard=os.path.basename(memcard_path)
+                    )
+                    confirm = QMessageBox.warning(self.main_window, "Confirm PCSX2 Restore", confirm_msg,
+                                                  QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                                  QMessageBox.StandardButton.No)
+                    if confirm == QMessageBox.StandardButton.Yes:
+                        self.main_window.status_label.setText("Starting PCSX2 restore for '{0}'...".format(profile_name))
+                        self.main_window.set_controls_enabled(False)
+
+                        def pcsx2_restore_worker_task(p_name_worker, mc_path_worker, mc_save_dir_worker, archive_path_worker):
+                            temp_extract_dir = None
+                            try:
+                                # Sanitize profile name for temp dir to avoid invalid characters
+                                sanitized_p_name_worker = sanitize_filename(p_name_worker)
+                                temp_extract_dir = tempfile.mkdtemp(prefix=f"ss_pcsx2_restore_{sanitized_p_name_worker}_") # Use sanitized name
+                                logging.debug(f"Temporary extraction dir for PCSX2 restore: {temp_extract_dir}")
+                                with zipfile.ZipFile(archive_path_worker, 'r') as zip_ref:
+                                    zip_ref.extractall(temp_extract_dir)
+                                logging.info(f"Extracted '{archive_path_worker}' to '{temp_extract_dir}'")
+                                
+                                local_save_data_root = os.path.join(temp_extract_dir, mc_save_dir_worker)
+                                if not os.path.isdir(local_save_data_root):
+                                    logging.warning(f"Expected save data folder '{local_save_data_root}' not found. Checking for single subfolder.")
+                                    extracted_items = [item for item in os.listdir(temp_extract_dir) if os.path.isdir(os.path.join(temp_extract_dir, item))]
+                                    if len(extracted_items) == 1:
+                                        local_save_data_root = os.path.join(temp_extract_dir, extracted_items[0])
+                                        logging.info(f"Using single subfolder '{extracted_items[0]}' as source: {local_save_data_root}")
+                                    else:
+                                        err_msg = f"Could not find the expected save data folder '{mc_save_dir_worker}' or a unique subfolder within '{temp_extract_dir}'. Found: {extracted_items}"
+                                        logging.error(err_msg)
+                                        return False, err_msg
+                                else:
+                                    logging.info(f"Found expected save data folder: {local_save_data_root}")
+                                
+                                return restore_pcsx2_save(p_name_worker, mc_path_worker, local_save_data_root, mc_save_dir_worker)
+                            except Exception as e_worker:
+                                error_message = f"Error in PCSX2 restore worker for '{p_name_worker}': {e_worker}"
+                                logging.error(error_message, exc_info=True)
+                                return False, error_message
+                            finally:
+                                if temp_extract_dir and os.path.isdir(temp_extract_dir):
+                                    try:
+                                        shutil.rmtree(temp_extract_dir)
+                                        logging.debug(f"Cleaned up temp directory: {temp_extract_dir}")
+                                    except Exception as e_cleanup:
+                                        logging.error(f"Failed to clean up temp directory {temp_extract_dir}: {e_cleanup}")
+                        
+                        self.main_window.worker_thread = WorkerThread(
+                            pcsx2_restore_worker_task,
+                            profile_name, memcard_path, mc_target_save_dir_name, archive_to_restore
+                        )
+                        self.main_window.worker_thread.finished.connect(self.on_operation_finished)
+                        self.main_window.worker_thread.start()
+                        logging.info(f"Started PCSX2 restore worker thread for '{profile_name}'.")
+                    else:
+                        self.main_window.status_label.setText("PCSX2 restore cancelled.")
+                else:
+                    destination_paths = []
+                    paths_data = profile_data.get('paths')
+                    path_data = profile_data.get('path')
+
+                    if isinstance(paths_data, list) and paths_data and all(isinstance(p, str) for p in paths_data):
+                        destination_paths = paths_data
+                    elif isinstance(path_data, str) and path_data:
+                        destination_paths = [path_data]
+                    else:
+                        QMessageBox.critical(self.main_window, "Profile Data Error",
+                                             "No valid destination path ('paths' or 'path') found in profile '{0}'. Unable to restore.".format(profile_name))
+                        logging.error(f"Invalid destination path data for profile '{profile_name}': paths={paths_data}, path={path_data}")
+                        self.main_window.set_controls_enabled(True)
                         return
 
-                    self.main_window.status_label.setText("Starting restore for '{0}'...".format(profile_name))
-                    self.main_window.set_controls_enabled(False)
+                    destination_paths_str = "\n".join([f"- {p}" for p in destination_paths])
+                    confirm = QMessageBox.warning(self.main_window,
+                                                  "Confirm Final Restore",
+                                                  "WARNING!\nRestoring '{0}' will overwrite files in the following destinations:\n{1}\n\nProceed?".format(os.path.basename(archive_to_restore), destination_paths_str),
+                                                  QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                                  QMessageBox.StandardButton.No)
 
-                    self.main_window.worker_thread = WorkerThread(
-                        core_logic.perform_restore,
-                        # Pass the list of destination paths
-                        profile_name, destination_paths, archive_to_restore
-                    )
-                    self.main_window.worker_thread.finished.connect(self.on_operation_finished)
-                    self.main_window.worker_thread.progress.connect(self.main_window.status_label.setText)
-                    self.main_window.worker_thread.start()
-                    logging.info(f"Started restore worker thread for '{profile_name}'.")
-                else:
-                    self.main_window.status_label.setText("Restore cancelled.")
+                    if confirm == QMessageBox.StandardButton.Yes:
+                        self.main_window.status_label.setText("Starting restore for '{0}'...".format(profile_name))
+                        self.main_window.set_controls_enabled(False)
+                        self.main_window.worker_thread = WorkerThread(
+                            core_logic.perform_restore,
+                            profile_name, destination_paths, archive_to_restore
+                        )
+                        self.main_window.worker_thread.finished.connect(self.on_operation_finished)
+                        self.main_window.worker_thread.progress.connect(self.main_window.status_label.setText)
+                        self.main_window.worker_thread.start()
+                        logging.info(f"Started generic restore worker thread for '{profile_name}'.")
+                    else:
+                        self.main_window.status_label.setText("Restore cancelled.")
             else:
                 self.main_window.status_label.setText("No backup selected for restore.")
         else:

@@ -845,6 +845,7 @@ class ProfileCreationManager:
                     selection_dialog = EmulatorGameSelectionDialog(emulator_key, profiles_data, mw)
                     if selection_dialog.exec():
                         selected_profile = selection_dialog.get_selected_profile_data()
+                        logging.debug(f"PCM.dropEvent: Emulator game selected. Raw selected_profile data: {selected_profile}") # ADDED LOG
                         if selected_profile:
                             # Extract details from the selected profile
                             profile_id = selected_profile.get('id', '')
@@ -873,6 +874,15 @@ class ProfileCreationManager:
                                 'paths': save_paths,
                                 'emulator': emulator_key
                             }
+                            
+                            # Add save_dir to new_profile if it was automatically determined and present in selected_profile
+                            if 'save_dir' in selected_profile and selected_profile['save_dir']:
+                                new_profile['save_dir'] = selected_profile['save_dir']
+                                logging.debug(f"PCM.dropEvent: Added 'save_dir': '{selected_profile['save_dir']}' to new_profile for '{profile_name}'.")
+                            elif emulator_key == 'PCSX2':
+                                logging.warning(f"PCM.dropEvent: PCSX2 profile '{profile_name}' selected, but 'save_dir' was missing or empty in selected_profile data. Selective backup might be affected.")
+                            
+                            logging.debug(f"PCM.dropEvent: Final new_profile data before saving for '{profile_name}': {new_profile}") # ADDED LOG
                             
                             # Add the profile to the main window's profiles dictionary
                             mw.profiles[profile_name] = new_profile
@@ -968,7 +978,7 @@ class ProfileCreationManager:
                 logging.warning(f"Overwriting existing profile: {profile_name}")
 
         # --- Start Heuristic Path Search Thread ---
-        if self.detection_thread and self.detection_thread.isRunning():
+        if self.detection_thread is not None and self.detection_thread.isRunning():
             QMessageBox.information(mw, "Operation in Progress", "Another path search is already in progress. Please wait.")
             return
 
@@ -1022,7 +1032,8 @@ class ProfileCreationManager:
             game_install_dir=game_install_dir, # Use derived install dir
             profile_name_suggestion=profile_name,
             current_settings=mw.current_settings.copy(),
-            installed_steam_games_dict=None # Non-Steam game, no need to pass Steam games list
+            installed_steam_games_dict=None, # Non-Steam game, no need to pass Steam games list
+            emulator_name=emulator_result[0] if emulator_result else None # Pass the detected emulator name
         )
         self.detection_thread.progress.connect(self.on_detection_progress)
         self.detection_thread.finished.connect(self.on_detection_finished)
@@ -1059,31 +1070,6 @@ class ProfileCreationManager:
         logging.debug(f"Detection thread finished. Success: {success}, Results: {results}")
         
         # Nascondiamo l'overlay appena prima di mostrare i dialoghi di conferma
-        # Questo garantisce che l'overlay non rimanga visibile durante l'interazione con i dialoghi
-        # ma che la transizione sia comunque fluida
-        
-        QApplication.restoreOverrideCursor() # Restore cursor
-        mw.set_controls_enabled(True)      # Reenable controls in MainWindow
-        mw.status_label.setText("Path search completed.")
-
-        self.detection_thread = None # Remove reference to completed thread
-
-        profile_name = results.get('profile_name_suggestion', 'unknown_profile')
-
-        if not success:
-            error_msg = results.get('message', "Unknown error during search.")
-            if "interrupted" not in error_msg.lower(): # Don't show popup if interrupted
-                QMessageBox.critical(mw, "Path Search Error", error_msg)
-            else:
-                mw.status_label.setText("Search interrupted.")
-            return
-
-        # --- Results handling logic ---
-        final_path_to_use = None
-        paths_found = results.get('path_data', []) # Get the list of (path, score) tuples
-        status = results.get('status', 'error')
-        
-        # Nascondiamo l'overlay appena prima di mostrare i dialoghi di conferma
         # --- Stop Fade/Animation Effect ---
         try:
             if hasattr(mw, 'overlay_widget') and mw.overlay_widget.isVisible():
@@ -1111,6 +1097,37 @@ class ProfileCreationManager:
             logging.error(f"Error stopping fade/animation effect: {e_fade_stop}", exc_info=True)
         # --- FINE Fade/Animation Effect ---
             
+        QApplication.restoreOverrideCursor() # Restore cursor
+        mw.set_controls_enabled(True)      # Reenable controls in MainWindow
+        mw.status_label.setText("Path search completed.")
+
+        self.detection_thread = None # Remove reference to completed thread
+
+        profile_name = results.get('profile_name_suggestion', 'unknown_profile')
+
+        if not success:
+            error_msg = results.get('message', "Unknown error during search.")
+            if "interrupted" not in error_msg.lower(): # Don't show popup if interrupted
+                QMessageBox.critical(mw, "Path Search Error", error_msg)
+            else:
+                mw.status_label.setText("Search interrupted.")
+            return
+
+        # --- Results handling logic ---
+        final_path_to_use = None
+        paths_found = results.get('path_data', []) # Get the list of (path, score) tuples
+        status = results.get('status', 'error')
+        
+        # --- NUOVO: Estrai emulator_name --- 
+        emulator_name_from_results = results.get('emulator_name') # Potrebbe essere None
+        logging.debug(f"PCM.on_detection_finished: Emulator name from results: {emulator_name_from_results}")
+        # --- Log per il controllo della condizione PCSX2 --- 
+        is_pcsx2_profile_creation = emulator_name_from_results == 'PCSX2'
+        logging.debug(f"PCM.on_detection_finished: Is this a PCSX2 profile creation? {is_pcsx2_profile_creation} (Emulator name: '{emulator_name_from_results}')")
+        
+        # Nascondiamo l'overlay appena prima di mostrare i dialoghi di conferma
+        # --- Stop Fade/Animation Effect ---
+        
         if status == 'found':
             logging.debug(f"Path data found by detection thread: {paths_found}") # Updated log
             if len(paths_found) == 1:
@@ -1206,25 +1223,54 @@ class ProfileCreationManager:
         # --- Manual Input Request (if necessary) ---
         if final_path_to_use is None:
             path_prompt = f"Insert the FULL path for the profile's saves:\n'{profile_name}'"
-            input_path, ok_manual = QInputDialog.getText(mw, "Manual Save Path", path_prompt)
-            if ok_manual and input_path:
-                final_path_to_use = input_path
-            elif ok_manual and not input_path:
-                QMessageBox.warning(mw, "Path Error", "The path cannot be empty.")
-                mw.status_label.setText("Profile creation cancelled (empty path).")
-                return
-            else: # Cancelled
+            # Sostituisci QInputDialog.getText con la classe SavePathDialog personalizzata
+            path_dialog_manual = SavePathDialog(
+                parent=mw,
+                window_title=mw.tr("Manual Save Path for '{0}'").format(profile_name),
+                prompt_text=path_prompt,
+                browse_dialog_title=mw.tr("Select Save Folder")
+            )
+            result_manual = path_dialog_manual.exec()
+            if result_manual == QDialog.DialogCode.Accepted:
+                input_path = path_dialog_manual.get_path()
+                if input_path:
+                    final_path_to_use = input_path
+                else:
+                    QMessageBox.warning(mw, "Path Error", "The path cannot be empty.")
+                    mw.status_label.setText("Profile creation cancelled (empty path).")
+                    return
+            else: # Cancelled or rejected
                 mw.status_label.setText("Profile creation cancelled.")
                 return
 
-        # --- Final Validation and Profile Saving ---
+        # --- Final Validation and Profile Saving --- 
         if final_path_to_use:
             # Use the validation function (now part of this class)
             validated_path = self.validate_save_path(final_path_to_use, profile_name)
 
             if validated_path:
-                logging.debug(f"Final path validated: {validated_path}. Saving profile '{profile_name}'")
-                mw.profiles[profile_name] = {'path': validated_path} # Salva come dizionario
+                logging.debug(f"Final path validated: {validated_path}. Preparing to save profile '{profile_name}'")
+                profile_data = {'path': validated_path}
+
+                # --- NUOVO: Logica per PCSX2 save_dir ---
+                if emulator_name_from_results == 'PCSX2':
+                    logging.info(f"PCM.on_detection_finished: Detected PCSX2 profile ('{profile_name}'). Prompting for save_dir.") # ADDED LOG
+                    ps2_save_dir_name, ok_ps2 = QInputDialog.getText(mw, 
+                                                                     "PCSX2 Save Directory Name", 
+                                                                     f"Enter the EXACT PS2 save directory name for '{profile_name}'\n(e.g., BASLUS-20314):")
+                    logging.debug(f"PCM.on_detection_finished: QInputDialog for PCSX2 save_dir - ok: {ok_ps2}, name: '{ps2_save_dir_name}'") # ADDED LOG
+                    if ok_ps2 and ps2_save_dir_name:
+                        profile_data['save_dir'] = ps2_save_dir_name.strip()
+                        logging.info(f"PCSX2 save_dir '{ps2_save_dir_name}' added for profile '{profile_name}'.")
+                    elif ok_ps2 and not ps2_save_dir_name:
+                        QMessageBox.warning(mw, "PCSX2 Save Dir Skipped", 
+                                            "No PS2 save directory name entered. Selective backup/restore for this profile will require manual configuration or may not work as expected.")
+                        logging.warning(f"User skipped PCSX2 save_dir for profile '{profile_name}'.")
+                    # else: User cancelled, save_dir not added, which is fine, it's optional for now.
+                # --- FINE Logica PCSX2 ---
+
+                logging.debug(f"Saving profile '{profile_name}' with data: {profile_data}")
+                mw.profiles[profile_name] = profile_data # Salva come dizionario
                 if core_logic.save_profiles(mw.profiles):
                     # Update the table via the table manager in MainWindow
                     if hasattr(mw, 'profile_table_manager'):

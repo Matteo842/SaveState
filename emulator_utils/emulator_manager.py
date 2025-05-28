@@ -21,6 +21,7 @@ from .flycast_manager import find_flycast_profiles
 from .shadps4_manager import find_shadps4_profiles
 from .sameboy_manager import find_sameboy_profiles
 from .xenia_manager import find_xenia_profiles
+from .pcsx2_manager import find_pcsx2_profiles
 # Eden è un fork di Yuzu, quindi utilizza lo stesso codice
 
 # Configure basic logging for this module
@@ -99,6 +100,10 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'xenia': {
         'name': 'Xenia',
         'profile_finder': lambda path: find_xenia_profiles(path)
+    },
+    'pcsx2': {
+        'name': 'PCSX2',
+        'profile_finder': lambda path: find_pcsx2_profiles(path)
     },
 }
 
