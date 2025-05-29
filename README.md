@@ -4,7 +4,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/Matteo842/SaveState)](https://github.com/Matteo842/SaveState/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Matteo842/SaveState/total.svg)](https://github.com/Matteo842/SaveState/releases)
 
-A user-friendly GUI application for Windows to easily back up and restore video game save files, especially useful for games without cloud saves or for managing multiple save locations.
+A user-friendly GUI application for Windows and Linux to easily back up and restore video game save files, especially useful for games without cloud saves or for managing multiple save locations.
 
 ![Main GUI](images/gui.png)
 
@@ -97,16 +97,23 @@ Get SaveState up and running on your system.
 ### Prerequisites
 
 * **Operating System:** Windows (tested on Windows 10/11). Relies on Windows-specific libraries for shortcut handling.
-* **Python:** Version 3.10 or higher recommended.
+* **Operating System:** Linux (tested on Ubuntu 24.x LTS)
+* **Python:** Version 3.10 or higher recommended. (3.13 work fine)
 * **Pip:** Python package installer (usually included with Python).
 
 ### Installation
 
 **Option 1: Using the Release (Recommended for most users)**
 
+**windows**
 1.  Go to the [**Releases Page**](https://github.com/Matteo842/SaveState/releases/latest) on GitHub.
 2.  Download the `SaveState.exe` file from the latest release assets.
 3.  Place `SaveState.exe` in any folder you like and simply run it. No installation required!
+
+**Linux**
+1.  Go to the [**Releases Page**](https://github.com/Matteo842/SaveState/releases/latest) on GitHub.
+2.  Download the `SaveState-linux.zip` file from the latest release assets.
+3.  Place `SaveState` in any folder you like and simply run it. No installation required!
 
 **Option 2: Running from Source (for development or advanced users)**
 
@@ -122,7 +129,10 @@ Get SaveState up and running on your system.
 4.  (Recommended) Create and activate a virtual environment:
     ```bash
     python -m venv venv
+    # On Windows
     .\venv\Scripts\activate
+    # On Linux/macOS
+    source venv/bin/activate
     ```
 5.  Install the required dependencies (see Dependencies section below):
     ```bash
