@@ -101,9 +101,6 @@ def tod_now():
     return time_to_tod(time.time())
 
 
-def tod_from_file(filename):
-    return time_to_tod(os.stat(filename).st_mtime)
-
 
 def mode_is_file(mode):
     return (mode & (DF_FILE | DF_DIR | DF_EXISTS)) == (DF_FILE | DF_EXISTS)
@@ -112,10 +109,3 @@ def mode_is_file(mode):
 def mode_is_dir(mode):
     return (mode & (DF_FILE | DF_DIR | DF_EXISTS)) == (DF_DIR | DF_EXISTS)
 
-
-def mode_is_psx_dir(mode):
-    return (mode & (DF_PSX | DF_DIR | DF_EXISTS)) == (DF_PSX | DF_DIR | DF_EXISTS)
-
-
-def mode_is_psx_save(mode):
-    return (mode & (DF_PSX | DF_DIR | DF_EXISTS)) == (DF_PSX | DF_DIR | DF_EXISTS)

@@ -16,15 +16,10 @@
 #
 
 __all__ = [
-    "gui",
     "ps2icon",
-    "lzari",
-    "mymc",
     "ps2mc",
     "ps2mc_dir",
     "ps2mc_ecc",
-    "ps2save",
     "round",
-    "sjistab",
-    "verbuild"
+    "sjistab"
 ]
