@@ -7,11 +7,12 @@ from pathlib import Path
 import configparser # Per il parsing dei file .url
 
 from PySide6.QtWidgets import QMessageBox, QInputDialog, QApplication, QFileDialog, QDialog
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QObject
 from PySide6.QtGui import QDropEvent
 
 from dialogs.minecraft_dialog import MinecraftWorldsDialog
 from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
+from gui_components.multi_profile_dialog import MultiProfileDialog
 
 # Importa utility e logica
 from gui_utils import DetectionWorkerThread
@@ -23,21 +24,16 @@ from emulator_utils import emulator_manager
 # Setup logging per questo modulo
 logger = logging.getLogger(__name__)
 
-class DragDropHandler:
+class DragDropHandler(QObject):
     """
     Gestisce le operazioni di drag and drop per la creazione di profili.
     Supporta URL Steam, collegamenti Windows (.lnk), file desktop Linux (.desktop) e cartelle.
     """
     def __init__(self, main_window):
-        """
-        Inizializza il gestore.
-
-        Args:
-            main_window: Riferimento all'istanza MainWindow per accedere agli
-                         elementi UI, impostazioni, profili, metodi, ecc.
-        """
+        super().__init__()
         self.main_window = main_window
-        self.detection_thread = None # Gestisce il proprio worker per il rilevamento
+        self.detection_thread = None
+        self.profile_dialog = None  # Riferimento al dialogo dei profili
         
         # Inizializza le variabili di stato che saranno gestite da reset_internal_state
         self.reset_internal_state()
@@ -82,6 +78,97 @@ class DragDropHandler:
                 main_window.fade_out_animation.stop()
                 main_window.fade_out_animation.start()
                 logging.debug("Fade-out animation started for overlay.")
+                
+    def _handle_profile_analysis(self, profile_data):
+        """Gestisce l'analisi di un profilo quando viene richiesto dal dialogo.
+        
+        Args:
+            profile_data: Dizionario con i dati del profilo
+        """
+        # Verifica se è una richiesta di avvio dell'analisi
+        if 'action' in profile_data and profile_data['action'] == 'start_analysis':
+            # Ottieni la lista dei file da analizzare
+            files_to_analyze = self.profile_dialog.get_files_to_analyze()
+            
+            # Imposta il cursore di attesa
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            
+            # Processa ogni file
+            for i, (profile_name, file_path) in enumerate(files_to_analyze):
+                # Aggiorna la barra di avanzamento
+                self.profile_dialog.update_progress(i, f"Analisi di: {os.path.basename(file_path)}")
+                
+                # Aggiorna l'applicazione per mostrare i cambiamenti nell'interfaccia
+                QApplication.processEvents()
+                
+                logging.info(f"DragDropHandler._handle_profile_analysis: Processing file: {file_path}")
+                
+                # Determina la directory di installazione
+                game_install_dir = None
+                if os.path.isfile(file_path):
+                    game_install_dir = os.path.normpath(os.path.dirname(file_path))
+                elif os.path.isdir(file_path):
+                    game_install_dir = os.path.normpath(file_path)
+                
+                # Avvia il thread di rilevamento per questo file
+                detection_thread = DetectionWorkerThread(
+                    game_install_dir=game_install_dir,
+                    profile_name_suggestion=profile_name,
+                    current_settings=self.main_window.current_settings.copy(),
+                    installed_steam_games_dict=None,
+                    emulator_name=None
+                )
+                
+                # Creiamo un dizionario per memorizzare i risultati
+                results_dict = {}
+                
+                # Creiamo una funzione di callback per gestire i risultati
+                def handle_detection_finished(success, results):
+                    results_dict['success'] = success
+                    results_dict['results'] = results
+                
+                # Colleghiamo il segnale finished alla nostra funzione di callback
+                detection_thread.finished.connect(handle_detection_finished)
+                
+                # Esegui il thread in modo sincrono
+                detection_thread.run()
+                
+                # Verifichiamo se abbiamo ricevuto i risultati
+                if 'success' in results_dict and 'results' in results_dict:
+                    success = results_dict['success']
+                    results = results_dict['results']
+                    
+                    if success and results:
+                        # Estrai i percorsi di salvataggio
+                        paths_found = results.get('path_data', [])
+                        
+                        # Usa il percorso con lo score più alto
+                        if paths_found and len(paths_found) > 0:
+                            # Ordina i percorsi per score (dal più alto al più basso)
+                            paths_found.sort(key=lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else 0, reverse=True)
+                            
+                            # Usa il primo percorso (quello con lo score più alto)
+                            best_path, best_score = paths_found[0] if isinstance(paths_found[0], tuple) else (paths_found[0], 0)
+                            
+                            # Aggiorna il profilo nel dialogo
+                            self.profile_dialog.update_profile(profile_name, best_path, best_score)
+                            
+                            # Aggiorna l'applicazione per mostrare i cambiamenti nell'interfaccia
+                            QApplication.processEvents()
+                            
+                            logging.info(f"DragDropHandler._handle_profile_analysis: Detected profile '{profile_name}' with path: {best_path} (score: {best_score})")
+                        else:
+                            logging.warning(f"DragDropHandler._handle_profile_analysis: No save paths found for: {profile_name}")
+                    else:
+                        logging.warning(f"DragDropHandler._handle_profile_analysis: Detection failed for: {profile_name}")
+                else:
+                    logging.warning(f"DragDropHandler._handle_profile_analysis: No results received for: {profile_name}")
+            
+            # Aggiorna la barra di avanzamento per indicare il completamento
+            self.profile_dialog.update_progress(len(files_to_analyze), "Analisi completata")
+            
+            # Ripristina il cursore
+            QApplication.restoreOverrideCursor()
 
     def on_detection_progress(self, message):
         """Aggiorna la barra di stato di main_window con i messaggi dal thread."""
@@ -348,251 +435,162 @@ class DragDropHandler:
         if mime_data.hasUrls():
             urls_debug_list = []
             for url_obj_debug in mime_data.urls():
-                urls_debug_list.append(
-                    f"URL: {url_obj_debug.toString()}, "
-                    f"Scheme: {url_obj_debug.scheme()}, "
-                    f"IsLocal: {url_obj_debug.isLocalFile()}, "
-                    f"LocalPath: {url_obj_debug.toLocalFile() if url_obj_debug.isLocalFile() else 'N/A'}"
-                )
-            logging.debug(f"  PCM.dropEvent: MimeData has URLs: [{', '.join(urls_debug_list)}]")
-        if mime_data.hasText():
-            logging.debug(f"  PCM.dropEvent: MimeData has Text (first 200 chars): '{mime_data.text()[:200]}'")
+                urls_debug_list.append(url_obj_debug.toString())
+            logging.debug(f"PCM.dropEvent: MimeData URLs: {urls_debug_list}")
         # --- End Log MIME Data ---
-        
-        # Note: We don't hide the overlay here as MainWindow.dropEvent now handles this
-        # based on whether it's a Steam URL or not
 
-        # --- Priority 1: Handle Steam URLs from QUrls --- 
-        if mime_data.hasUrls():
-            for url_obj in mime_data.urls():
-                url_str = url_obj.toString()
-                # Check for direct Steam URL (e.g., steam://rungameid/xxxx)
-                if url_obj.scheme() == 'steam' and url_obj.host() == 'rungameid':
-                    logging.info(f"PCM.dropEvent: Detected direct Steam URL: {url_str}")
-                    self.handle_steam_url_drop(url_str)
-                    event.acceptProposedAction()
-                    return # Steam URL handled
-
-                # Check for .url files pointing to Steam games
-                if url_obj.isLocalFile():
-                    local_file_path = url_obj.toLocalFile()
-                    if local_file_path.lower().endswith('.url'):
-                        logging.info(f"PCM.dropEvent: Detected .url file: {local_file_path}")
-                        parser = configparser.ConfigParser()
+        # Gestione per URL Steam (priorità alta)
+        if mime_data.hasText() or mime_data.hasUrls():
+            # Estrai l'URL dal testo o dall'URL
+            steam_url_str = None
+            
+            # Controlla prima il testo
+            if mime_data.hasText():
+                text = mime_data.text()
+                if "store.steampowered.com" in text or "steam://" in text:
+                    steam_url_str = text
+                    logging.debug(f"PCM.dropEvent: Found Steam URL in text: {steam_url_str}")
+            
+            # Se non trovato nel testo, controlla gli URL
+            if not steam_url_str and mime_data.hasUrls():
+                for url_obj in mime_data.urls():
+                    url_str = url_obj.toString()
+                    
+                    # Controlla se è un URL Steam diretto
+                    if "store.steampowered.com" in url_str or "steam://" in url_str:
+                        steam_url_str = url_str
+                        logging.debug(f"PCM.dropEvent: Found Steam URL in URL: {steam_url_str}")
+                        break
+                    
+                    # Controlla se è un file .url che potrebbe contenere un URL Steam
+                    if url_str.endswith(".url") and url_obj.isLocalFile():
+                        local_path = url_obj.toLocalFile()
                         try:
-                            parser.read(local_file_path, encoding='utf-8')
-                            if 'InternetShortcut' in parser and 'URL' in parser['InternetShortcut']:
-                                extracted_url = parser['InternetShortcut']['URL']
-                                logging.debug(f"  PCM.dropEvent: Extracted URL from .url file: {extracted_url}")
-                                if extracted_url.startswith('steam://rungameid/'):
-                                    logging.info(f"PCM.dropEvent: .url file points to Steam URL: {extracted_url}")
-                                    self.handle_steam_url_drop(extracted_url)
-                                    event.acceptProposedAction()
-                                    return # Steam URL from .url file handled
-                                else:
-                                    logging.info(f"PCM.dropEvent: .url file does not point to a Steam game: {extracted_url}")
-                            else:
-                                logging.warning(f"PCM.dropEvent: .url file is missing [InternetShortcut] or URL key: {local_file_path}")
-                        except configparser.Error as e_cfg:
-                            logging.error(f"PCM.dropEvent: Error parsing .url file '{local_file_path}': {e_cfg}")
-                        except Exception as e_file:
-                            logging.error(f"PCM.dropEvent: Could not read .url file '{local_file_path}': {e_file}")
-                        # If it was a .url file, accept and return, regardless of whether it was a Steam link.
-                        event.acceptProposedAction()
-                        return # .url file processed (or attempted)
-
-        # --- Priority 2: Handle Steam URLs from plain text --- 
-        if mime_data.hasText():
-            text_content = mime_data.text()
-            if text_content.startswith('steam://rungameid/'):
-                logging.info(f"PCM.dropEvent: Detected Steam URL in plain text: {text_content}")
-                self.handle_steam_url_drop(text_content)
+                            config = configparser.ConfigParser()
+                            config.read(local_path)
+                            if 'InternetShortcut' in config and 'URL' in config['InternetShortcut']:
+                                url_from_file = config['InternetShortcut']['URL']
+                                if "store.steampowered.com" in url_from_file or "steam://" in url_from_file:
+                                    steam_url_str = url_from_file
+                                    logging.debug(f"PCM.dropEvent: Found Steam URL in .url file: {steam_url_str}")
+                                    break
+                        except Exception as e:
+                            logging.error(f"Error parsing .url file: {e}")
+            
+            # Se abbiamo trovato un URL Steam, gestiscilo
+            if steam_url_str:
+                self.original_steam_url_str = steam_url_str
+                self.handle_steam_url_drop(steam_url_str)
                 event.acceptProposedAction()
-                return # Steam URL from text handled
-
-        # --- Fallback to existing logic for local files/shortcuts --- 
-        logging.debug("PCM.dropEvent: No Steam URL detected directly, proceeding with local file/shortcut logic.")
-
-        winshell = None
-        if platform.system() == "Windows":
-            try:
-                import winshell
-                from win32com.client import Dispatch # Needed by winshell
-            except ImportError:
-                logging.error("The 'winshell' or 'pywin32' library is not installed. Cannot read .lnk files.")
-                QMessageBox.critical(self.main_window, "Dependency Error",
-                                     "The 'winshell' and 'pywin32' libraries are required to read shortcuts (.lnk) on Windows.")
                 return
+        
+        # Gestione per file locali e collegamenti
+        if mime_data.hasUrls():
+            # Importa winshell solo su Windows (richiesto per i file .lnk)
+            if platform.system() == "Windows":
+                try:
+                    import winshell
+                    import pythoncom
+                except ImportError:
+                    logging.error("The 'winshell' or 'pywin32' library is not installed. Cannot read .lnk files.")
+                    QMessageBox.critical(self.main_window, "Dependency Error",
+                                     "The 'winshell' and 'pywin32' libraries are required to read shortcuts (.lnk) on Windows.")
+                    return
 
         # Lista per raccogliere i file da processare
         files_to_process = []
         
-        if mime_data.hasUrls(): # Re-check for local file URLs if Steam specific URLs weren't found
-            urls = mime_data.urls()
-            if urls:
-                # Raccogliamo tutti i file locali
-                for url in urls:
-                    if url.isLocalFile():
-                        file_path = url.toLocalFile()
-                        files_to_process.append(file_path)
-                        logging.info(f"DragDropHandler.dropEvent: Added file to process: {file_path}")
-                
-                if not files_to_process:
-                    logging.debug("DragDropHandler.dropEvent: No local files found in URLs. Ignoring.")
-                    event.ignore()
-                    return
-            else:
-                logging.debug("DragDropHandler.dropEvent: No URLs found. Ignoring.")
-                event.ignore()
-                return
-        elif not mime_data.hasText(): # If no URLs and no text, nothing to process
-            logging.debug("DragDropHandler.dropEvent: No URLs or text. Ignoring.")
-            event.ignore()
-            return
-        # If only text was present and it wasn't a Steam URL, it's ignored by this point.
+        if mime_data.hasUrls(): # Raccoglie tutti i file/URL validi
+            for url in mime_data.urls():
+                if url.isLocalFile():
+                    file_path = url.toLocalFile()
+                    logging.info(f"DragDropHandler.dropEvent: Added file to process: {file_path}")
+                    files_to_process.append(file_path)
         
-        if not files_to_process: # Should only be true if only non-Steam text was dropped.
-            logging.debug("DragDropHandler.dropEvent: No files to process. Likely unhandled text. Ignoring.")
+        # Verifica se abbiamo file da processare
+        if not files_to_process:
+            logging.warning("DragDropHandler.dropEvent: No valid files to process")
             event.ignore()
             return
-            
-        # Verifichiamo se ci sono emulatori nella lista dei file
-        has_emulators = False
-        for file_path in files_to_process:
-            # Controlliamo se il file è un emulatore
-            emulator_result = self._check_if_emulator(file_path)
-            if emulator_result:
-                has_emulators = True
-                break
-                
-        # Se ci sono emulatori e più di un file, mostriamo un messaggio di errore
-        if has_emulators and len(files_to_process) > 1:
-            logging.warning("DragDropHandler.dropEvent: Emulator detected in multiple files drop. Only single emulator drops are supported.")
-            QMessageBox.warning(mw, "Multiple Files with Emulator", 
-                               "Detected an emulator in the dropped files. Emulators can only be processed one at a time.\n"
-                               "Please drag and drop the emulator separately.")
-            event.ignore()
-            return
-            
-        # Se c'è un solo file, procediamo come prima
+        
+        # Verifica se è un emulatore
         if len(files_to_process) == 1:
             file_path = files_to_process[0]
+            emulator_result = self._check_if_emulator(file_path)
             
-            # Definiamo le variabili per il tipo di file
-            is_windows_link = file_path.lower().endswith('.lnk') and platform.system() == "Windows" and winshell is not None
-            is_linux_desktop = file_path.lower().endswith('.desktop') and platform.system() == "Linux"
-            # Ensure it's a file and executable, not a directory
-            is_linux_executable = platform.system() == "Linux" and os.access(file_path, os.X_OK) and os.path.isfile(file_path)
+            if emulator_result:
+                emulator_key, profiles_data = emulator_result
+                logging.info(f"DragDropHandler.dropEvent: Detected emulator: {emulator_key}")
+                
+                # Gestisci l'emulatore in modo specifico
+                if emulator_key == "PCSX2" and profiles_data:
+                    self._handle_pcsx2_emulator(file_path, profiles_data)
+                    event.acceptProposedAction()
+                    return
+                elif emulator_key == "minecraft" and profiles_data:
+                    self._handle_minecraft(file_path, profiles_data)
+                    event.acceptProposedAction()
+                    return
+                else:
+                    # Gestione generica per altri emulatori
+                    self._handle_generic_emulator(emulator_key, file_path, profiles_data)
+                    event.acceptProposedAction()
+                    return
         else:
             # Processare più file contemporaneamente
             logging.info(f"DragDropHandler.dropEvent: Processing multiple files: {len(files_to_process)}")
             
-            # Mostra un messaggio di informazione
-            QMessageBox.information(mw, "Multiple Files Detected", 
-                                   f"Processing {len(files_to_process)} files at once.\n"
-                                   f"Profiles will be created automatically using the most likely save paths.")
+            # Crea il dialogo per la gestione dei profili
+            dialog = MultiProfileDialog(files_to_process=files_to_process, parent=mw)
             
-            # Imposta l'overlay e il cursore
-            mw.set_controls_enabled(False)
-            mw.status_label.setText(f"Processing {len(files_to_process)} files...")
-            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            # Connetti il segnale profileAdded al metodo che gestisce l'analisi
+            dialog.profileAdded.connect(self._handle_profile_analysis)
             
-            # Mostra l'overlay
-            if hasattr(mw, 'show_overlay_message'):
-                mw.show_overlay_message(f"Processing {len(files_to_process)} files...")
+            # Salva il riferimento al dialogo come attributo dell'istanza
+            self.profile_dialog = dialog
             
-            # Processa ogni file
-            for file_path in files_to_process:
-                logging.info(f"DragDropHandler.dropEvent: Processing file: {file_path}")
-                
-                # Estrai il nome del profilo dal nome del file
-                base_name = os.path.basename(file_path)
-                profile_name_temp, _ = os.path.splitext(base_name)
-                profile_name_original = profile_name_temp.replace('™', '').replace('®', '').strip()
-                profile_name = shortcut_utils.sanitize_profile_name(profile_name_original)
-                
-                if not profile_name:
-                    logging.warning(f"DragDropHandler.dropEvent: Could not generate valid profile name for: {file_path}")
-                    continue
-                
-                # Determina la directory di installazione
-                game_install_dir = None
-                if os.path.isfile(file_path):
-                    game_install_dir = os.path.normpath(os.path.dirname(file_path))
-                elif os.path.isdir(file_path):
-                    game_install_dir = os.path.normpath(file_path)
-                
-                # Creiamo un dizionario per memorizzare i risultati
-                results_dict = {}
-                
-                # Creiamo una funzione di callback per gestire i risultati
-                def handle_detection_finished(success, results):
-                    results_dict['success'] = success
-                    results_dict['results'] = results
-                
-                # Avvia il thread di rilevamento per questo file
-                detection_thread = DetectionWorkerThread(
-                    game_install_dir=game_install_dir,
-                    profile_name_suggestion=profile_name,
-                    current_settings=mw.current_settings.copy(),
-                    installed_steam_games_dict=None,
-                    emulator_name=None
-                )
-                
-                # Colleghiamo il segnale finished alla nostra funzione di callback
-                detection_thread.finished.connect(handle_detection_finished)
-                
-                # Esegui il thread in modo sincrono
-                detection_thread.run()
-                
-                # Verifichiamo se abbiamo ricevuto i risultati
-                if 'success' in results_dict and 'results' in results_dict:
-                    success = results_dict['success']
-                    results = results_dict['results']
-                    
-                    if success and results:
-                        # Estrai i percorsi di salvataggio
-                        paths_found = results.get('path_data', [])
-                        
-                        # Usa il percorso con lo score più alto
-                        if paths_found and len(paths_found) > 0:
-                            # Ordina i percorsi per score (dal più alto al più basso)
-                            paths_found.sort(key=lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else 0, reverse=True)
-                            
-                            # Usa il primo percorso (quello con lo score più alto)
-                            best_path, best_score = paths_found[0] if isinstance(paths_found[0], tuple) else (paths_found[0], 0)
-                            
-                            # Crea il profilo
-                            if profile_name in mw.profiles:
-                                logging.warning(f"DragDropHandler.dropEvent: Profile '{profile_name}' already exists. Skipping.")
-                                continue
-                            
-                            # Crea il profilo con il percorso migliore
-                            mw.profiles[profile_name] = {'path': best_path}
-                            logging.info(f"DragDropHandler.dropEvent: Created profile '{profile_name}' with path: {best_path} (score: {best_score})")
-                        else:
-                            logging.warning(f"DragDropHandler.dropEvent: No save paths found for: {profile_name}")
-                    else:
-                        logging.warning(f"DragDropHandler.dropEvent: Detection failed for: {profile_name}")
-                else:
-                    logging.warning(f"DragDropHandler.dropEvent: No results received for: {profile_name}")
-            
-            # Salva i profili
-            if mw.core_logic.save_profiles(mw.profiles):
-                mw.profile_table_manager.update_profile_table()
-                mw.status_label.setText(f"Created {len(files_to_process)} profiles.")
-                logging.info(f"DragDropHandler.dropEvent: Successfully processed {len(files_to_process)} files.")
-            else:
-                mw.status_label.setText("Error saving profiles.")
-                logging.error("DragDropHandler.dropEvent: Failed to save profiles.")
+            # Mostra il dialogo e attendi che l'utente faccia la sua scelta
+            result = dialog.exec()
             
             # Ripristina lo stato dell'UI
             mw.set_controls_enabled(True)
-            QApplication.restoreOverrideCursor()
+            
+            # Nascondi l'overlay se visibile
             self._hide_overlay_if_visible(mw)
+            
+            if result == QDialog.Accepted:
+                # Ottieni i profili accettati
+                accepted_profiles = dialog.get_accepted_profiles()
+                
+                # Aggiungi i profili accettati
+                for profile_name, profile_data in accepted_profiles.items():
+                    mw.profiles[profile_name] = profile_data
+                
+                # Salva i profili
+                if mw.core_logic.save_profiles(mw.profiles):
+                    mw.profile_table_manager.update_profile_table()
+                    mw.status_label.setText(f"Aggiunti {len(accepted_profiles)} profili.")
+                    logging.info(f"Saved {len(accepted_profiles)} profiles.")
+                else:
+                    mw.status_label.setText("Errore nel salvataggio dei profili.")
+                    logging.error("Failed to save profiles.")
+                    QMessageBox.critical(mw, "Errore", "Impossibile salvare i profili.")
+            else:
+                mw.status_label.setText("Creazione profili annullata.")
+                logging.info("DragDropHandler.dropEvent: Profile creation cancelled by user.")
+                
+            # Rimuovi il riferimento al dialogo
+            self.profile_dialog = None
             
             event.acceptProposedAction()
             return
+            
+        # Definiamo le variabili per il tipo di file
+        file_path = files_to_process[0]  # A questo punto sappiamo che c'è almeno un file
+        is_windows_link = file_path.lower().endswith('.lnk') and platform.system() == "Windows"
+        is_linux_desktop = file_path.lower().endswith('.desktop') and platform.system() == "Linux"
+        # Ensure it's a file and executable, not a directory
+        is_linux_executable = platform.system() == "Linux" and os.path.isfile(file_path) and os.access(file_path, os.X_OK)
         
         if is_windows_link:
             logging.debug("PCM.dropEvent (Fallback): Detected Windows .lnk file, attempting to resolve target...")
