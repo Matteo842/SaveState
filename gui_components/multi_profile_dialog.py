@@ -24,6 +24,7 @@ class ProfileListItem(QWidget):
         self.save_path = ""  # Sarà impostato dopo la ricerca
         self.score = 0  # Sarà impostato dopo la ricerca
         self.analyzed = False  # Flag per indicare se il profilo è stato analizzato
+        self.show_score = False  # Flag to control score display
         
         # Layout principale orizzontale
         layout = QHBoxLayout(self)
@@ -98,11 +99,21 @@ class ProfileListItem(QWidget):
         self.score = score
         self.analyzed = True
         
-        # Aggiorna l'etichetta del percorso di salvataggio
-        self.save_path_label.setText(f"Percorso salvataggio: {save_path} (Score: {score})")
-        # Tooltip shows full path
-        self.save_path_label.setToolTip(save_path)
+        # Update label text based on show_score flag
+        self.update_label()
         self.save_path_label.show()
+    
+    def update_label(self):
+        """Update save_path_label text based on show_score flag."""
+        text = f"Percorso salvataggio: {self.save_path}" + (f" (Score: {self.score})" if self.show_score else "")
+        self.save_path_label.setText(text)
+        self.save_path_label.setToolTip(self.save_path)
+    
+    def set_show_score(self, show):
+        """Enable or disable score display and refresh label if analyzed."""
+        self.show_score = show
+        if self.analyzed:
+            self.update_label()
 
 class MultiProfileDialog(QDialog):
     """
@@ -149,6 +160,12 @@ class MultiProfileDialog(QDialog):
         self.description_label.setWordWrap(True)
         self.description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.description_label)
+        
+        # Checkbox to toggle score display
+        self.show_scores_checkbox = QCheckBox("Mostra punteggi")
+        self.show_scores_checkbox.setToolTip("Mostra i punteggi accanto ai percorsi di salvataggio")
+        layout.addWidget(self.show_scores_checkbox)
+        self.show_scores_checkbox.toggled.connect(self.toggle_scores_display)
         
         # Barra di avanzamento (inizialmente nascosta)
         self.progress_bar = QProgressBar()
@@ -361,3 +378,11 @@ class MultiProfileDialog(QDialog):
             widget = self.profile_list.itemWidget(item)
             files.append((widget.profile_name, widget.file_path))
         return files
+    
+    def toggle_scores_display(self, show):
+        """Show or hide score in all profile list items."""
+        for i in range(self.profile_list.count()):
+            item = self.profile_list.item(i)
+            widget = self.profile_list.itemWidget(item)
+            widget.set_show_score(show)
+            item.setSizeHint(widget.sizeHint())
