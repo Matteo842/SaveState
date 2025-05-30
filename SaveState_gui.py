@@ -56,6 +56,7 @@ from utils import resource_path
 from gui_components.profile_list_manager import ProfileListManager
 from gui_components.theme_manager import ThemeManager
 from gui_components.profile_creation_manager import ProfileCreationManager
+from gui_components.drag_drop_handler import DragDropHandler
 import core_logic # Mantenuto per load_profiles
 from gui_handlers import MainWindowHandlers
 
@@ -434,11 +435,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
 
-        
+        # Inizializza i gestori delle funzionalità
         self.profile_table_manager = ProfileListManager(self.profile_table_widget, self)
-        self.profile_table_manager.update_profile_table()
         self.theme_manager = ThemeManager(self.theme_button, self)
         self.profile_creation_manager = ProfileCreationManager(self)
+        self.drag_drop_handler = DragDropHandler(self)
         self.current_search_thread = None
 
         # Create the handlers instance HERE, before connecting signals that use it
@@ -608,8 +609,8 @@ class MainWindow(QMainWindow):
                 logging.debug(f"MainWindow.dropEvent: Checking QUrl: '{url_string}', Scheme: '{scheme}'")
                 if url_string.startswith("steam://rungameid/"):
                     logging.info(f"MainWindow.dropEvent: Steam URL detected directly from QUrl: {url_string}")
-                    if hasattr(self, 'profile_creation_manager') and self.profile_creation_manager:
-                        self.profile_creation_manager.handle_steam_url_drop(url_string)
+                    if hasattr(self, 'drag_drop_handler') and self.drag_drop_handler:
+                        self.drag_drop_handler.handle_steam_url_drop(url_string)
                         event.acceptProposedAction()
                         return
                     else:
@@ -625,8 +626,8 @@ class MainWindow(QMainWindow):
             logging.debug(f"MainWindow.dropEvent: Checking plain text: '{log_text_snippet}'")
             if text_content.startswith("steam://rungameid/"):
                 logging.info(f"MainWindow.dropEvent: Steam URL detected from plain text: {text_content}")
-                if hasattr(self, 'profile_creation_manager') and self.profile_creation_manager:
-                    self.profile_creation_manager.handle_steam_url_drop(text_content)
+                if hasattr(self, 'drag_drop_handler') and self.drag_drop_handler:
+                    self.drag_drop_handler.handle_steam_url_drop(text_content)
                     event.acceptProposedAction()
                     return
                 else:
@@ -651,8 +652,8 @@ class MainWindow(QMainWindow):
                                 logging.debug(f"MainWindow.dropEvent: Extracted URL from .url file: {extracted_url}")
                                 if extracted_url.startswith("steam://rungameid/"):
                                     logging.info(f"MainWindow.dropEvent: Steam URL found in .url file: {extracted_url}")
-                                    if hasattr(self, 'profile_creation_manager') and self.profile_creation_manager:
-                                        self.profile_creation_manager.handle_steam_url_drop(extracted_url)
+                                    if hasattr(self, 'drag_drop_handler') and self.drag_drop_handler:
+                                        self.drag_drop_handler.handle_steam_url_drop(extracted_url)
                                         event.acceptProposedAction()
                                         return
                                     else:
@@ -716,11 +717,11 @@ class MainWindow(QMainWindow):
             # --- FINE NUOVO CONTROLLO ---
 
             # Se non è una cartella, allora procedi come prima
-            if hasattr(self, 'profile_creation_manager') and self.profile_creation_manager:
-                logging.debug(f"MainWindow.dropEvent: Passing non-Steam drop event for path '{dropped_path}' to PCM.")
+            if hasattr(self, 'drag_drop_handler') and self.drag_drop_handler:
+                logging.debug(f"MainWindow.dropEvent: Passing non-Steam drop event for path '{dropped_path}' to DragDropHandler.")
                 # A questo punto, `is_steam_url` è False. L'overlay per non-Steam URL dovrebbe essere già
-                # stato nascosto. ProfileCreationManager.dropEvent gestirà l'overlay se necessario per le sue operazioni.
-                self.profile_creation_manager.dropEvent(event) # dropEvent originale di PCM per file/link
+                # stato nascosto. DragDropHandler.dropEvent gestirà l'overlay se necessario per le sue operazioni.
+                self.drag_drop_handler.dropEvent(event) # Utilizziamo il nuovo DragDropHandler
             else:
                 logging.error("MainWindow.dropEvent: PCM not init for generic file drop!")
                 # L'overlay per non-Steam URL dovrebbe essere già stato nascosto.

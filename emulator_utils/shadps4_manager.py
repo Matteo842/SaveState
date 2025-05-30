@@ -4,28 +4,48 @@
 import logging
 import os
 import json
+import pickle
 from typing import Dict, Optional
+from .obfuscation_utils import xor_bytes
 
 log = logging.getLogger(__name__)
 
-# Load PS4 game titles from JSON file
+# Load PS4 game titles from JSON or encrypted PKL file
 def load_ps4_game_titles() -> Dict[str, str]:
-    """Load PS4 game titles from the ps4_game_list.json file."""
-    try:
-        # Get the directory of this script
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        json_path = os.path.join(current_dir, 'ps4_game_list.json')
-        
-        if not os.path.exists(json_path):
-            log.warning(f"PS4 game list file not found at {json_path}")
-            return {}
-            
-        with open(json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return data.get('games', {})
-    except Exception as e:
-        log.error(f"Error loading PS4 game list: {e}")
-        return {}
+    """Load PS4 game titles from JSON or encrypted PKL file."""
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    json_path = os.path.join(current_dir, 'ps4_game_list.json')
+    pkl_path = os.path.join(current_dir, 'ps4_game_map.pkl')
+
+    # Try JSON first
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get('games', {})
+        except Exception as e:
+            log.error(f"Error loading PS4 game list from JSON: {e}")
+
+    # Try PKL next
+    if os.path.exists(pkl_path):
+        try:
+            with open(pkl_path, 'rb') as pf:
+                obf_map = pickle.load(pf)
+        except Exception as e:
+            log.error(f"Error loading PS4 game titles from PKL: {e}")
+        else:
+            titles = {}
+            for game_id, ob_name in obf_map.items():
+                try:
+                    game_name = xor_bytes(ob_name).decode('utf-8')
+                    titles[game_id] = game_name
+                except Exception as de:
+                    log.warning(f"Error deobfuscating PS4 game title for ID {game_id}: {de}")
+            log.info(f"Loaded {len(titles)} PS4 game titles from PKL.")
+            return titles
+
+    log.warning(f"No PS4 game list found (JSON or PKL) at {current_dir}")
+    return {}
 
 # Load the game titles when the module is imported
 PS4_GAME_TITLES = load_ps4_game_titles()
