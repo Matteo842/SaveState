@@ -8,8 +8,48 @@ import logging
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
                               QPushButton, QListWidget, QListWidgetItem, 
                               QWidget, QMessageBox, QProgressBar, QCheckBox)
-from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QIcon, QFont, QCursor
+from PySide6.QtCore import Qt, Signal, QTimer, QRect
+from PySide6.QtGui import QIcon, QFont, QCursor, QPainter, QPen, QColor
+
+# Custom progress bar with smooth segments equal to number of profiles
+class SegmentedProgressBar(QProgressBar):
+    """Progress bar with segment boundaries equal to number of profiles and smooth fill."""
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = self.rect()
+        radius = 4
+        # Draw background
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor('#2D2D2D'))
+        painter.drawRoundedRect(rect, radius, radius)
+        # Draw segment dividers
+        segments = self.maximum() - self.minimum()
+        if segments > 1:
+            pen = QPen(QColor('#2D2D2D'))
+            pen.setWidth(1)
+            painter.setPen(pen)
+            w = rect.width()
+            h = rect.height()
+            for i in range(1, segments):
+                x = int(w * i / segments)
+                painter.drawLine(x, 0, x, h)
+        # Draw fill
+        value = self.value()
+        if self.maximum() > self.minimum():
+            ratio = (value - self.minimum()) / (self.maximum() - self.minimum())
+        else:
+            ratio = 0
+        fill_width = int(rect.width() * ratio)
+        if fill_width > 0:
+            fill_rect = QRect(rect.x(), rect.y(), fill_width, rect.height())
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor('#FF0000'))
+            painter.drawRoundedRect(fill_rect, radius, radius)
+        # Draw text
+        painter.setPen(QColor('#FFFFFF'))
+        painter.drawText(rect, Qt.AlignCenter, self.text())
+        painter.end()
 
 class ProfileListItem(QWidget):
     """Widget personalizzato per rappresentare un elemento nella lista dei profili."""
@@ -38,36 +78,38 @@ class ProfileListItem(QWidget):
         font = QFont()
         font.setBold(True)
         self.name_label.setFont(font)
-        # Enable wrapping and selection for profile name
+        # Enable wrapping for profile name
         self.name_label.setWordWrap(True)
-        self.name_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        # Disable context menu and selection
+        self.name_label.setContextMenuPolicy(Qt.NoContextMenu)
         
-        # Definiamo un font per i percorsi
+        # Define a font for paths
         path_font = QFont()
         path_font.setPointSize(8)
         
-        # Manteniamo il percorso del file in memoria ma non lo mostriamo
+        # Keep the file path in memory but don't display it
         self.file_path = file_path
         
-        # Percorso di salvataggio (inizialmente nascosto)
+        # Save path (initially hidden)
         self.save_path_label = QLabel("")
         self.save_path_label.setFont(path_font)
         self.save_path_label.setStyleSheet("color: #4CAF50;")
-        # Enable wrapping and selection for save path
+        # Enable wrapping for save path
         self.save_path_label.setWordWrap(True)
-        self.save_path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        # Disable context menu and selection
+        self.save_path_label.setContextMenuPolicy(Qt.NoContextMenu)
         self.save_path_label.hide()
         
-        # Aggiungi le etichette al layout delle informazioni
+        # Add labels to the info layout
         info_layout.addWidget(self.name_label)
         info_layout.addWidget(self.save_path_label)
         
-        # Aggiungi il layout delle informazioni al layout principale
-        layout.addLayout(info_layout, 1)  # Stretch factor 1 per dare più spazio
+        # Add the info layout to the main layout
+        layout.addLayout(info_layout, 1)  # Stretch factor 1 to give more space
         
-        # Pulsante di eliminazione con icona Unicode del cestino
+        # Delete button with Unicode trash can icon
         self.delete_button = QPushButton("🗑️")
-        self.delete_button.setToolTip("Rimuovi questo profilo")
+        self.delete_button.setToolTip("Remove this profile")
         self.delete_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.delete_button.setStyleSheet("""
             QPushButton {
@@ -105,7 +147,7 @@ class ProfileListItem(QWidget):
     
     def update_label(self):
         """Update save_path_label text based on show_score flag."""
-        text = f"Percorso salvataggio: {self.save_path}" + (f" (Score: {self.score})" if self.show_score else "")
+        text = f"Save path: {self.save_path}" + (f" (Score: {self.score})" if self.show_score else "")
         self.save_path_label.setText(text)
         self.save_path_label.setToolTip(self.save_path)
     
@@ -137,15 +179,15 @@ class MultiProfileDialog(QDialog):
         self.files_to_process = files_to_process
         self.total_files = len(files_to_process)
         self.processed_files = 0
-        self.profiles_data = {}  # Dizionario per memorizzare i dati dei profili (nome -> dati)
-        self.accepted_profiles = {}  # Dizionario per memorizzare i profili accettati
-        self.analysis_running = False  # Flag per indicare se l'analisi è in corso
+        self.profiles_data = {}  # Dictionary to store profile data (name -> data)
+        self.accepted_profiles = {}  # Dictionary to store accepted profiles
+        self.analysis_running = False  # Flag to indicate if analysis is in progress
         
-        self.setWindowTitle("Gestione Profili")
-        self.setMinimumWidth(700)
-        self.setMinimumHeight(500)
+        self.setWindowTitle("Manage Profiles")
+        self.setMinimumWidth(750)
+        self.setMinimumHeight(800)
         
-        # Layout principale
+        # Main layout
         layout = QVBoxLayout(self)
         
         # Intestazione
@@ -154,28 +196,43 @@ class MultiProfileDialog(QDialog):
         self.header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.header_label)
         
-        # Descrizione
-        self.description_label = QLabel("Seleziona i file che vuoi analizzare per creare profili. "
-                                  "Puoi rimuovere i file che non ti interessano prima di avviare l'analisi.")
+        # Description
+        self.description_label = QLabel("Select the Games you want to analyze to create profiles. "
+                                  "You can remove Games you don't want before starting the analysis.")
         self.description_label.setWordWrap(True)
         self.description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.description_label)
         
         # Checkbox to toggle score display
-        self.show_scores_checkbox = QCheckBox("Mostra punteggi")
-        self.show_scores_checkbox.setToolTip("Mostra i punteggi accanto ai percorsi di salvataggio")
+        self.show_scores_checkbox = QCheckBox("Show scores")
+        self.show_scores_checkbox.setToolTip("Show scores next to save paths")
         layout.addWidget(self.show_scores_checkbox)
         self.show_scores_checkbox.toggled.connect(self.toggle_scores_display)
         
-        # Barra di avanzamento (inizialmente nascosta)
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 1)  # Sarà aggiornato quando inizia l'analisi
+        # Progress bar (initially hidden)
+        self.progress_bar = SegmentedProgressBar()
+        self.progress_bar.setRange(0, 1)  # Will be updated when analysis starts
         self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("%v/%m file processati (%p%)")
+        self.progress_bar.setFormat("%v/%m file processed (%p%)")
         self.progress_bar.hide()
         layout.addWidget(self.progress_bar)
         
-        # Etichetta stato corrente (inizialmente nascosta)
+        # Material design style for progress bar: solid fill, no segments
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: none;
+                border-radius: 4px;
+                background-color: #2D2D2D;
+                text-align: center;
+            }
+            QProgressBar::chunk {
+                background-color: #FF0000;
+                border-radius: 4px;
+                margin: 0px;
+            }
+        """)
+        
+        # Current status label (initially hidden)
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.hide()
@@ -183,9 +240,11 @@ class MultiProfileDialog(QDialog):
         
         # Lista dei profili
         self.profile_list = QListWidget()
-        # Rimuoviamo l'alternanza dei colori che causa problemi di leggibilità
+        # Remove alternating row colors that cause readability issues
         self.profile_list.setAlternatingRowColors(False)
-        # Impostiamo uno stile coerente con il tema scuro
+        # Disable item selection - we'll handle clicks through custom widgets
+        self.profile_list.setSelectionMode(QListWidget.NoSelection)
+        # Set a consistent style with the dark theme
         self.profile_list.setStyleSheet("""
             QListWidget {
                 background-color: #2D2D2D;
@@ -211,21 +270,21 @@ class MultiProfileDialog(QDialog):
         # Popola la lista con i file da processare
         self.populate_profile_list()
         
-        # Pulsanti
+        # Buttons
         buttons_layout = QHBoxLayout()
         
-        # Pulsante per avviare l'analisi
-        self.start_analysis_button = QPushButton("Avvia Analisi")
+        # Button to start analysis
+        self.start_analysis_button = QPushButton("Start Analysis")
         self.start_analysis_button.clicked.connect(self.start_analysis)
         
-        # Pulsante per aggiungere i profili
-        self.add_button = QPushButton("Aggiungi Profili")
-        self.add_button.setEnabled(False)  # Disabilitato finché l'analisi non è completa
+        # Button to add profiles
+        self.add_button = QPushButton("Add Profiles")
+        self.add_button.setEnabled(False)  # Disabled until analysis is complete
         self.add_button.setDefault(True)
         self.add_button.clicked.connect(self.accept)
         
-        # Pulsante per annullare
-        self.cancel_button = QPushButton("Annulla")
+        # Button to cancel
+        self.cancel_button = QPushButton("Cancel")
         self.cancel_button.clicked.connect(self.reject)
         
         buttons_layout.addWidget(self.cancel_button)
@@ -234,25 +293,25 @@ class MultiProfileDialog(QDialog):
         
         layout.addLayout(buttons_layout)
         
-        # Imposta il layout
+        # Set layout
         self.setLayout(layout)
     
     def populate_profile_list(self):
-        """Popola la lista con i file da processare."""
+        """Populate the list with files to process."""
         for file_path in self.files_to_process:
-            # Estrai il nome del profilo dal nome del file
+            # Extract profile name from file name
             file_name = os.path.basename(file_path)
             profile_name = os.path.splitext(file_name)[0]
             
-            # Crea l'elemento personalizzato
+            # Create custom item
             item_widget = ProfileListItem(profile_name, file_path)
             item_widget.deleteClicked.connect(self.remove_profile)
             
-            # Crea l'elemento della lista
+            # Create list item
             list_item = QListWidgetItem()
             list_item.setSizeHint(item_widget.sizeHint())
             
-            # Aggiungi l'elemento alla lista
+            # Add item to list
             self.profile_list.addItem(list_item)
             self.profile_list.setItemWidget(list_item, item_widget)
             
@@ -263,28 +322,28 @@ class MultiProfileDialog(QDialog):
             }
     
     def start_analysis(self):
-        """Avvia l'analisi dei profili selezionati."""
-        # Verifica se ci sono profili da analizzare
+        """Start the analysis of selected profiles."""
+        # Check if there are profiles to analyze
         if self.profile_list.count() == 0:
-            QMessageBox.warning(self, "Nessun profilo", "Non ci sono profili da analizzare.")
+            QMessageBox.warning(self, "No profiles", "No profiles to analyze.")
             return
         
-        # Imposta il flag di analisi in corso
+        # Set analysis running flag
         self.analysis_running = True
         
-        # Aggiorna l'interfaccia per la fase di analisi
-        self.header_label.setText("<b>Analisi in corso...</b>")
-        self.description_label.setText("Sto analizzando i file per trovare i percorsi di salvataggio. "
-                                      "I risultati verranno mostrati man mano che vengono trovati.")
+        # Update interface for analysis phase
+        self.header_label.setText("<b>Analysis in progress...</b>")
+        self.description_label.setText("I'm analyzing the files to find the save paths. "
+                                      "Results will be shown as they are found.")
         
-        # Mostra la barra di avanzamento e l'etichetta di stato
+        # Show progress bar and status label
         self.progress_bar.setRange(0, self.profile_list.count())
         self.progress_bar.setValue(0)
         self.progress_bar.show()
-        self.status_label.setText("Inizializzazione...")
+        self.status_label.setText("Initialization...")
         self.status_label.show()
         
-        # Disabilita il pulsante di avvio analisi
+        # Disable the start analysis button
         self.start_analysis_button.setEnabled(False)
         
         # Emetti un segnale per avviare l'analisi
@@ -319,19 +378,19 @@ class MultiProfileDialog(QDialog):
             })
     
     def update_progress(self, current_file, status_text):
-        """Aggiorna la barra di avanzamento e lo stato."""
+        """Update the progress bar and status label."""
         self.processed_files = current_file
         self.progress_bar.setValue(current_file)
         self.status_label.setText(status_text)
         
-        # Se tutti i file sono stati processati, abilita il pulsante di aggiunta
+        # If all files are processed, enable the add button
         if current_file >= self.profile_list.count():
             self.analysis_running = False
             self.add_button.setEnabled(True)
-            self.header_label.setText(f"<b>Analisi completata</b>")
-            self.description_label.setText("I seguenti profili verranno creati con i percorsi di salvataggio trovati. "
-                                          "Puoi ancora rimuovere i profili che non desideri aggiungere.")
-            self.status_label.setText("Analisi completata.")
+            self.header_label.setText(f"<b>Analysis completed</b>")
+            self.description_label.setText("The following profiles will be created with the found save paths. "
+                                          "You can still remove profiles you don't want to add.")
+            self.status_label.setText("Analysis completed.")
     
     def remove_profile(self, profile_name):
         """Rimuove un profilo dalla lista."""
@@ -355,13 +414,13 @@ class MultiProfileDialog(QDialog):
                 break
     
     def update_header(self):
-        """Aggiorna l'intestazione con il numero di profili."""
+        """Update the header with the number of profiles."""
         count = self.profile_list.count()
-        self.header_label.setText(f"<b>{count} profili rilevati</b>")
+        self.header_label.setText(f"<b>{count} profiles found</b>")
     
     def get_accepted_profiles(self):
-        """Restituisce i profili accettati."""
-        # Aggiorna i profili accettati con i percorsi di salvataggio trovati
+        """Return the accepted profiles."""
+        # Update accepted profiles with found save paths
         accepted = {}
         for i in range(self.profile_list.count()):
             item = self.profile_list.item(i)
@@ -371,7 +430,7 @@ class MultiProfileDialog(QDialog):
         return accepted
         
     def get_files_to_analyze(self):
-        """Restituisce la lista dei file da analizzare."""
+        """Return the list of files to analyze."""
         files = []
         for i in range(self.profile_list.count()):
             item = self.profile_list.item(i)
