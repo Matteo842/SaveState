@@ -69,19 +69,31 @@ class ProfileListItem(QWidget):
         # Layout principale orizzontale
         layout = QHBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
+        # Impostiamo l'allineamento verticale al centro per tutto il contenuto
+        layout.setAlignment(Qt.AlignVCenter)
         
         # Layout per le informazioni del profilo (nome e percorso)
         info_layout = QVBoxLayout()
+        # Impostiamo margini ridotti per il layout verticale e allineamento al centro
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        info_layout.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        info_layout.setSpacing(2)  # Riduciamo lo spazio tra gli elementi
         
         # Nome del profilo (in grassetto)
         self.name_label = QLabel(profile_name)
         font = QFont()
         font.setBold(True)
         self.name_label.setFont(font)
-        # Enable wrapping for profile name
-        self.name_label.setWordWrap(True)
+        # Disabilitiamo il word wrap per evitare che i nomi vadano a capo
+        self.name_label.setWordWrap(False)
+        # Impostiamo l'ellissi se il testo è troppo lungo
+        self.name_label.setTextFormat(Qt.PlainText)
         # Disable context menu and selection
         self.name_label.setContextMenuPolicy(Qt.NoContextMenu)
+        # Allineamento verticale al centro, orizzontale a sinistra
+        self.name_label.setAlignment(Qt.AlignLeft)
+        # Impostiamo il tooltip per mostrare il nome completo al passaggio del mouse
+        self.name_label.setToolTip(profile_name)
         
         # Define a font for paths
         path_font = QFont()
@@ -98,6 +110,8 @@ class ProfileListItem(QWidget):
         self.save_path_label.setWordWrap(True)
         # Disable context menu and selection
         self.save_path_label.setContextMenuPolicy(Qt.NoContextMenu)
+        # Allineamento a sinistra come per il nome
+        self.save_path_label.setAlignment(Qt.AlignLeft)
         # Restrict save path height to one line to avoid item over-expansion
         self.save_path_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         line_height = self.save_path_label.fontMetrics().height()
@@ -146,10 +160,17 @@ class ProfileListItem(QWidget):
         
         # Set layout
         self.setLayout(layout)
-        # Increase minimum height for readability (extra space)
+        
+        # Imposta un'altezza fissa che accomodi sia il nome che il percorso di salvataggio
+        # Calcoliamo l'altezza in base all'altezza del font e aggiungiamo spazio extra
         font_height = self.name_label.fontMetrics().height()
-        base_hint = super().sizeHint().height()
-        self.setMinimumHeight(base_hint + font_height)
+        save_path_height = self.save_path_label.fontMetrics().height() * 2  # Spazio per due righe
+        
+        # Aumentiamo significativamente l'altezza per dare più spazio al testo
+        base_height = font_height + save_path_height + 30  # Margini più ampi
+        
+        # Imposta un'altezza fissa che sia sufficiente per tutti gli stati dell'elemento
+        self.setFixedHeight(base_height)
     
     def update_save_path(self, save_path, score):
         """Aggiorna il percorso di salvataggio e lo score dopo l'analisi."""
@@ -334,7 +355,9 @@ class MultiProfileDialog(QDialog):
             
             # Create list item
             list_item = QListWidgetItem()
-            list_item.setSizeHint(item_widget.sizeHint())
+            # Impostiamo la sizeHint dell'elemento in base all'altezza fissa del widget
+            size = QSize(item_widget.width(), item_widget.height())
+            list_item.setSizeHint(size)
             
             # Add item to list
             self.profile_list.addItem(list_item)
@@ -345,22 +368,6 @@ class MultiProfileDialog(QDialog):
                 'file_path': file_path,
                 'analyzed': False
             }
-        
-        # Ensure all items have same height based on each widget's sizeHint
-        heights = []
-        for i in range(self.profile_list.count()):
-            item = self.profile_list.item(i)
-            widget = self.profile_list.itemWidget(item)
-            heights.append(widget.sizeHint().height())
-        if heights:
-            max_h = max(heights)
-            for i in range(self.profile_list.count()):
-                item = self.profile_list.item(i)
-                widget = self.profile_list.itemWidget(item)
-                widget.setFixedHeight(max_h)
-                size = item.sizeHint()
-                size.setHeight(max_h)
-                item.setSizeHint(size)
     
     def start_analysis(self):
         """Start the analysis of selected profiles."""
@@ -404,8 +411,7 @@ class MultiProfileDialog(QDialog):
                 widget = self.profile_list.itemWidget(item)
                 if widget.profile_name == profile_name:
                     widget.update_save_path(save_path, score)
-                    # Resize list item to accommodate wrapped text
-                    item.setSizeHint(widget.sizeHint())
+                    # Non ridimensioniamo più l'elemento perché ora ha un'altezza fissa
                     break
             
             # Aggiungi il profilo alla lista dei profili accettati
@@ -485,4 +491,8 @@ class MultiProfileDialog(QDialog):
             item = self.profile_list.item(i)
             widget = self.profile_list.itemWidget(item)
             widget.set_show_score(show)
-            item.setSizeHint(widget.sizeHint())
+            # Manteniamo l'altezza fissa impostata nel widget
+            # Impostiamo solo la larghezza dal sizeHint, mantenendo l'altezza fissa
+            current_height = widget.height()
+            size = QSize(widget.sizeHint().width(), current_height)
+            item.setSizeHint(size)
