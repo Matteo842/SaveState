@@ -6,6 +6,7 @@ import logging
 import platform
 import math
 import configparser
+import re  # Per espressioni regolari
 import core_logic # Added import
 
 # --- PySide6 Imports (misuriamo i moduli principali) ---
@@ -635,6 +636,24 @@ class MainWindow(QMainWindow):
                     event.ignore()
                     return
         
+        # Check if this is a multi-file drop (more than one file)
+        is_multi_file_drop = False
+        if event.mimeData().hasUrls() and len(event.mimeData().urls()) > 1:
+            is_multi_file_drop = True
+            logging.info(f"MainWindow.dropEvent: Multi-file drop detected with {len(event.mimeData().urls())} files")
+            
+            # For multi-file drops, pass directly to DragDropHandler
+            if hasattr(self, 'drag_drop_handler') and self.drag_drop_handler:
+                logging.debug("MainWindow.dropEvent: Passing multi-file drop to DragDropHandler")
+                self.drag_drop_handler.dropEvent(event)
+                return
+            else:
+                logging.error("MainWindow.dropEvent: DragDropHandler not available for multi-file drop")
+                self.request_hide_overlay.emit()
+                event.ignore()
+                return
+        
+        # If we get here, it's a single-file drop
         # Attempt 3: Check for .url files pointing to a Steam URL
         if event.mimeData().hasUrls():
             urls_list = event.mimeData().urls()
@@ -652,8 +671,33 @@ class MainWindow(QMainWindow):
                                 logging.debug(f"MainWindow.dropEvent: Extracted URL from .url file: {extracted_url}")
                                 if extracted_url.startswith("steam://rungameid/"):
                                     logging.info(f"MainWindow.dropEvent: Steam URL found in .url file: {extracted_url}")
+                                    
                                     if hasattr(self, 'drag_drop_handler') and self.drag_drop_handler:
+                                        # Check if the game is installed before handling it
+                                        app_id_match = re.search(r'steam://rungameid/(\d+)', extracted_url)
+                                        if app_id_match:
+                                            app_id = app_id_match.group(1)
+                                            
+                                            # Check if the game is installed
+                                            game_details = None
+                                            if hasattr(self, 'installed_steam_games_dict') and self.installed_steam_games_dict:
+                                                game_details = self.installed_steam_games_dict.get(app_id)
+                                            
+                                            if not game_details:
+                                                # Game not installed
+                                                # For single .url file, show the normal error popup
+                                                logging.info(f"Steam game with AppID {app_id} not installed, showing error popup")
+                                                # Non impostare skip_steam_error_popup a True, così verrà mostrato il popup
+                                                self.drag_drop_handler.handle_steam_url_drop(extracted_url)
+                                                event.acceptProposedAction()
+                                                return
+                                        
+                                        # If we get here, the game is installed
+                                        # Set flag to skip error popup for .url files
+                                        self.drag_drop_handler.skip_steam_error_popup = True
                                         self.drag_drop_handler.handle_steam_url_drop(extracted_url)
+                                        # Reset flag after handling
+                                        self.drag_drop_handler.skip_steam_error_popup = False
                                         event.acceptProposedAction()
                                         return
                                     else:

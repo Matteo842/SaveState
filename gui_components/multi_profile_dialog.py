@@ -8,7 +8,7 @@ import logging
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
                               QPushButton, QListWidget, QListWidgetItem, 
                               QWidget, QMessageBox, QProgressBar, QCheckBox)
-from PySide6.QtCore import Qt, Signal, QTimer, QRect
+from PySide6.QtCore import Qt, Signal, QTimer, QRect, QSize
 from PySide6.QtGui import QIcon, QFont, QCursor, QPainter, QPen, QColor
 
 # Custom progress bar with smooth segments equal to number of profiles
@@ -98,6 +98,10 @@ class ProfileListItem(QWidget):
         self.save_path_label.setWordWrap(True)
         # Disable context menu and selection
         self.save_path_label.setContextMenuPolicy(Qt.NoContextMenu)
+        # Restrict save path height to one line to avoid item over-expansion
+        self.save_path_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        line_height = self.save_path_label.fontMetrics().height()
+        self.save_path_label.setMaximumHeight(line_height * 2)
         self.save_path_label.hide()
         
         # Add labels to the info layout
@@ -132,8 +136,20 @@ class ProfileListItem(QWidget):
         # Aggiungi il pulsante di eliminazione al layout principale
         layout.addWidget(self.delete_button)
         
-        # Imposta il layout
+        # Ensure delete button is fixed size and centered vertically
+        self.delete_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        layout.setAlignment(self.delete_button, Qt.AlignVCenter)
+        # Ensure widget height accommodates delete button
+        btn_height = self.delete_button.sizeHint().height()
+        margins = layout.contentsMargins()
+        self.setMinimumHeight(btn_height + margins.top() + margins.bottom())
+        
+        # Set layout
         self.setLayout(layout)
+        # Increase minimum height for readability (extra space)
+        font_height = self.name_label.fontMetrics().height()
+        base_hint = super().sizeHint().height()
+        self.setMinimumHeight(base_hint + font_height)
     
     def update_save_path(self, save_path, score):
         """Aggiorna il percorso di salvataggio e lo score dopo l'analisi."""
@@ -150,6 +166,12 @@ class ProfileListItem(QWidget):
         text = f"Save path: {self.save_path}" + (f" (Score: {self.score})" if self.show_score else "")
         self.save_path_label.setText(text)
         self.save_path_label.setToolTip(self.save_path)
+        
+        # Set text color based on score
+        if self.score < 0:
+            self.save_path_label.setStyleSheet("color: #FF5555;")  # Rosso per score negativo
+        else:
+            self.save_path_label.setStyleSheet("color: #4CAF50;")  # Verde per score positivo o zero
     
     def set_show_score(self, show):
         """Enable or disable score display and refresh label if analyzed."""
@@ -244,6 +266,8 @@ class MultiProfileDialog(QDialog):
         self.profile_list.setAlternatingRowColors(False)
         # Disable item selection - we'll handle clicks through custom widgets
         self.profile_list.setSelectionMode(QListWidget.NoSelection)
+        # Use uniform item sizes to ensure all profile items have the same height
+        self.profile_list.setUniformItemSizes(True)
         # Set a consistent style with the dark theme
         self.profile_list.setStyleSheet("""
             QListWidget {
@@ -320,6 +344,22 @@ class MultiProfileDialog(QDialog):
                 'file_path': file_path,
                 'analyzed': False
             }
+        
+        # Ensure all items have same height based on each widget's sizeHint
+        heights = []
+        for i in range(self.profile_list.count()):
+            item = self.profile_list.item(i)
+            widget = self.profile_list.itemWidget(item)
+            heights.append(widget.sizeHint().height())
+        if heights:
+            max_h = max(heights)
+            for i in range(self.profile_list.count()):
+                item = self.profile_list.item(i)
+                widget = self.profile_list.itemWidget(item)
+                widget.setFixedHeight(max_h)
+                size = item.sizeHint()
+                size.setHeight(max_h)
+                item.setSizeHint(size)
     
     def start_analysis(self):
         """Start the analysis of selected profiles."""

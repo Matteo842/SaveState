@@ -48,6 +48,7 @@ class DragDropHandler(QObject):
         self.shortcut_target_path = None
         self.shortcut_game_name = None
         self.original_steam_url_str = None
+        self.skip_steam_error_popup = False  # Flag per evitare popup di errore per Steam
         
         logger.debug("DragDropHandler state reset.")
     
@@ -109,6 +110,25 @@ class DragDropHandler(QObject):
                     game_install_dir = os.path.normpath(os.path.dirname(file_path))
                 elif os.path.isdir(file_path):
                     game_install_dir = os.path.normpath(file_path)
+                    
+                # Risolvi il percorso del collegamento se è un .lnk o .url
+                target_path = None
+                if file_path.lower().endswith('.lnk') and platform.system() == "Windows":
+                    try:
+                        from win32com.client import Dispatch
+                        shell = Dispatch("WScript.Shell")
+                        shortcut = shell.CreateShortCut(file_path)
+                        target_path = shortcut.Targetpath
+                        logging.debug(f"Resolved shortcut target: {target_path}")
+                    except Exception as e:
+                        logging.error(f"Error resolving shortcut: {e}")
+                
+                # Se abbiamo risolto il collegamento, usa la directory del target
+                if target_path and os.path.exists(target_path):
+                    real_install_dir = os.path.dirname(target_path)
+                    logging.info(f"Using resolved target directory: {real_install_dir}")
+                    # Usa la directory risolta come directory di installazione
+                    game_install_dir = real_install_dir
                 
                 # Avvia il thread di rilevamento per questo file
                 detection_thread = DetectionWorkerThread(
@@ -239,7 +259,15 @@ class DragDropHandler(QObject):
         Parses the AppID, checks if the game is installed, and starts detection.
         """
         logger.info(f"Handling Steam URL drop: {steam_url_str}")
+        
+        # Salva il valore attuale del flag prima di resettare lo stato
+        skip_popup = getattr(self, 'skip_steam_error_popup', False)
+        
+        # Reset dello stato interno
         self.reset_internal_state()
+        
+        # Ripristina il flag dopo il reset
+        self.skip_steam_error_popup = skip_popup
 
         mw = self.main_window
 
@@ -325,17 +353,25 @@ class DragDropHandler(QObject):
             self.detection_thread.start()
             
         else:
-            QMessageBox.warning(
-                mw, 
-                "Steam Game Not Found", 
-                f"The Steam game with AppID {app_id} does not appear to be installed, "
-                "or its details could not be retrieved from your Steam library.\\n\\n"
-                "Please ensure the game is installed and that SaveState has correctly "
-                "identified your Steam installation."
-            )
-            mw.status_label.setText(f"Steam game (AppID: {app_id}) not found or not installed.")
-            logger.warning(f"Steam game with AppID {app_id} not found in installed_steam_games_dict.")
-            self._hide_overlay_if_visible(mw)
+            # Check if this is a direct call or from dropEvent
+            if hasattr(self, 'skip_steam_error_popup') and self.skip_steam_error_popup:
+                # Skip showing error popup, just log and update status
+                mw.status_label.setText(f"Steam game (AppID: {app_id}) not installed. No profile created.")
+                logger.warning(f"Steam game with AppID {app_id} not found in installed_steam_games_dict.")
+                self._hide_overlay_if_visible(mw)
+            else:
+                # Show normal error popup
+                QMessageBox.warning(
+                    mw, 
+                    "Steam Game Not Found", 
+                    f"The Steam game with AppID {app_id} does not appear to be installed, "
+                    "or its details could not be retrieved from your Steam library.\n\n"
+                    "Please ensure the game is installed and that SaveState has correctly "
+                    "identified your Steam installation."
+                )
+                mw.status_label.setText(f"Steam game (AppID: {app_id}) not found or not installed.")
+                logger.warning(f"Steam game with AppID {app_id} not found in installed_steam_games_dict.")
+                self._hide_overlay_if_visible(mw)
 
    # --- Drag and Drop Management ---
     def dragEnterEvent(self, event):
@@ -479,10 +515,78 @@ class DragDropHandler(QObject):
             
             # Se abbiamo trovato un URL Steam, gestiscilo
             if steam_url_str:
-                self.original_steam_url_str = steam_url_str
-                self.handle_steam_url_drop(steam_url_str)
-                event.acceptProposedAction()
-                return
+                # Check if we're in a multi-file drop scenario
+                multi_file_drop = False
+                file_count = 0
+                if mime_data.hasUrls():
+                    file_count = len(mime_data.urls())
+                    multi_file_drop = file_count > 1
+                
+                # Extract the AppID
+                app_id_match = re.search(r'steam://rungameid/(\d+)', steam_url_str)
+                if app_id_match:
+                    app_id = app_id_match.group(1)
+                    game_details = self._get_steam_game_details(app_id)
+                    
+                    # Check if the game is installed
+                    if not game_details:
+                        # Game not installed
+                        if multi_file_drop:
+                            # In multi-file drop, just log and continue with other files
+                            logging.info(f"Steam game with AppID {app_id} not installed, skipping in multi-file drop")
+                            # Don't handle this Steam URL, proceed to process all files together
+                            # This will allow the multi-file handling code to filter out invalid files
+                            # We're not returning here, letting it fall through to the multi-file handling code
+                        else:
+                            # For single file drop, check if it's a .url file
+                            is_url_file = False
+                            if mime_data.hasUrls():
+                                for url_obj in mime_data.urls():
+                                    if url_obj.isLocalFile() and url_obj.toLocalFile().lower().endswith('.url'):
+                                        is_url_file = True
+                                        break
+                            
+                            if is_url_file:
+                                # For .url files, just show a status message without error popup
+                                logging.info(f"Steam game with AppID {app_id} not installed, skipping .url file")
+                                mw.status_label.setText(f"Steam game (AppID: {app_id}) not installed. No profile created.")
+                                event.acceptProposedAction()
+                                return
+                            else:
+                                # For direct Steam URLs, use the normal handling with error popup
+                                self.original_steam_url_str = steam_url_str
+                                # Set flag to skip error popup for .url files
+                                self.skip_steam_error_popup = True
+                                self.handle_steam_url_drop(steam_url_str)
+                                # Reset flag after handling
+                                self.skip_steam_error_popup = False
+                                event.acceptProposedAction()
+                                return
+                    else:
+                        # If it's a multi-file drop and the game is installed, we still want to process all files together
+                        if multi_file_drop:
+                            # Don't handle this Steam URL separately, proceed to process all files together
+                            # This ensures consistent behavior for all multi-file drops
+                            logging.info(f"Steam game with AppID {app_id} is installed, but processing it as part of multi-file drop")
+                            # We're not returning here, letting it fall through to the multi-file handling code
+                        else:
+                            # For single file, handle it normally
+                            self.original_steam_url_str = steam_url_str
+                            self.handle_steam_url_drop(steam_url_str)
+                            event.acceptProposedAction()
+                            return
+                else:
+                    # No AppID found
+                    if multi_file_drop:
+                        # For multi-file drop, process all files together
+                        logging.info("No AppID found in Steam URL, processing as part of multi-file drop")
+                        # We're not returning here, letting it fall through to the multi-file handling code
+                    else:
+                        # For single file, handle it normally
+                        self.original_steam_url_str = steam_url_str
+                        self.handle_steam_url_drop(steam_url_str)
+                        event.acceptProposedAction()
+                        return
         
         # Gestione per file locali e collegamenti
         if mime_data.hasUrls():
@@ -539,6 +643,50 @@ class DragDropHandler(QObject):
         else:
             # Processare più file contemporaneamente
             logging.info(f"DragDropHandler.dropEvent: Processing multiple files: {len(files_to_process)}")
+            
+            # Filter out emulators and uninstalled Steam games from files_to_process
+            filtered_files = []
+            for file_path in files_to_process:
+                # Check if it's an emulator
+                emulator_result = self._check_if_emulator(file_path)
+                if emulator_result:
+                    logging.info(f"DragDropHandler.dropEvent: Skipping emulator: {file_path}")
+                    continue
+                
+                # Check if it's a Steam link to an uninstalled game
+                is_uninstalled_steam_game = False
+                
+                # Check if it's a .url file that might contain a Steam URL
+                if file_path.lower().endswith(".url"):
+                    try:
+                        config = configparser.ConfigParser()
+                        config.read(file_path)
+                        if 'InternetShortcut' in config and 'URL' in config['InternetShortcut']:
+                            url_from_file = config['InternetShortcut']['URL']
+                            if "steam://" in url_from_file:
+                                app_id_match = re.search(r'steam://rungameid/(\d+)', url_from_file)
+                                if app_id_match:
+                                    app_id = app_id_match.group(1)
+                                    game_details = self._get_steam_game_details(app_id)
+                                    if not game_details:
+                                        logging.info(f"DragDropHandler.dropEvent: Skipping uninstalled Steam game (AppID: {app_id}): {file_path}")
+                                        is_uninstalled_steam_game = True
+                    except Exception as e:
+                        logging.error(f"Error checking Steam URL in .url file: {e}")
+                
+                # Add the file only if it's not an emulator and not an uninstalled Steam game
+                if not is_uninstalled_steam_game:
+                    filtered_files.append(file_path)
+            
+            # Update files_to_process with filtered list
+            files_to_process = filtered_files
+            
+            # If no files left after filtering, show message and return
+            if not files_to_process:
+                logging.info("DragDropHandler.dropEvent: No valid files to process after filtering out emulators")
+                mw.status_label.setText("No valid game files found (emulators were filtered out).")
+                event.ignore()
+                return
             
             # Crea il dialogo per la gestione dei profili
             dialog = MultiProfileDialog(files_to_process=files_to_process, parent=mw)

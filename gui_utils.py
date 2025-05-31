@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-from PySide6.QtCore import QThread, Signal, QObject, Qt, QTimer # Aggiungi Qt, QTimer, QPoint
-from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout, QApplication, QStyle # Aggiungi QWidget, QLabel, QHBoxLayout, QApplication, QStyle
-from PySide6.QtGui import QPixmap # Aggiungi QPixmap
+from PySide6.QtCore import QThread, Signal, QObject, Qt, QTimer
+from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout, QApplication, QStyle
+from PySide6.QtGui import QPixmap
 
 # Importa core_logic e logging SOLO per la gestione delle eccezioni nel blocco 'except'
 # Se non esistessero quel blocco 'except' specifico, questi import non servirebbero qui.
@@ -9,7 +9,7 @@ import core_logic
 import logging          # Per loggare eventuali errori interni al thread
 import os               # Per os.walk, os.path, ecc.
 import configparser     # Per leggere i file .ini
-import sys
+#import sys
 #import tempfile
 #from datetime import datetime
 
@@ -65,7 +65,7 @@ class DetectionWorkerThread(QThread):
         status = "not_found" # Default
         profile_name = self.profile_name_suggestion
 
-        INI_SCORE_BONUS = 10000 # Score fittizio alto per percorsi trovati da INI
+        INI_SCORE_BONUS = 1000 # Score fittizio alto per percorsi trovati da INI
 
         try:
             self.progress.emit(f"Starting search for '{profile_name}'...")
