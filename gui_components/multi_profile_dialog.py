@@ -187,6 +187,7 @@ class MultiProfileDialog(QDialog):
     
     # Segnale emesso quando viene aggiunto un nuovo profilo
     profileAdded = Signal(dict)
+    analysis_completed = Signal()
     
     def __init__(self, files_to_process, parent=None):
         """

@@ -7,7 +7,7 @@ from pathlib import Path
 import configparser # Per il parsing dei file .url
 
 from PySide6.QtWidgets import QMessageBox, QInputDialog, QApplication, QFileDialog, QDialog
-from PySide6.QtCore import Qt, Slot, QObject
+from PySide6.QtCore import Qt, Slot, QObject, QTimer, QThread
 from PySide6.QtGui import QDropEvent
 
 from dialogs.minecraft_dialog import MinecraftWorldsDialog
@@ -58,17 +58,31 @@ class DragDropHandler(QObject):
         da main_window.installed_steam_games_dict.
         Restituisce un dizionario {'name': game_name, 'install_dir': install_dir} o None.
         """
-        if not hasattr(self.main_window, 'installed_steam_games_dict') or not self.main_window.installed_steam_games_dict:
-            logger.warning("MainWindow.installed_steam_games_dict non disponibile o vuoto.")
+        mw = self.main_window
+        if not hasattr(mw, 'installed_steam_games_dict') or not mw.installed_steam_games_dict:
+            logger.warning(f"Cannot get Steam game details: main_window.installed_steam_games_dict is not available or empty.")
             return None
+        
+        # Ensure app_id is string for dict key
+        app_id = str(app_id)
+        
+        game_info = mw.installed_steam_games_dict.get(app_id)
+        if game_info and isinstance(game_info, dict) and 'name' in game_info:
+            # Check if we have the install_dir directly
+            if 'install_dir' in game_info:
+                return {'name': game_info['name'], 'install_dir': game_info['install_dir']}
             
-        if app_id in self.main_window.installed_steam_games_dict:
-            game_info = self.main_window.installed_steam_games_dict[app_id]
-            if 'name' in game_info and 'installdir' in game_info:
-                # Costruisci il percorso completo della directory di installazione
+            # Otherwise construct it from installdir and library_folder if available
+            elif 'installdir' in game_info:
                 if 'library_folder' in game_info:
                     install_dir = os.path.join(game_info['library_folder'], 'steamapps', 'common', game_info['installdir'])
                     return {'name': game_info['name'], 'install_dir': install_dir}
+                else:
+                    logger.warning(f"Game info for {app_id} does not contain 'library_folder': {game_info}")
+                    # Still return what we have, using installdir as is
+                    return {'name': game_info['name'], 'install_dir': game_info['installdir']}
+        else:
+            logger.warning(f"Details for Steam AppID {app_id} not found or incomplete in installed_steam_games_dict.")
         
         return None
     
@@ -94,15 +108,20 @@ class DragDropHandler(QObject):
             # Imposta il cursore di attesa
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             
-            # Processa ogni file
+            # Inizializza la barra di avanzamento
+            self.profile_dialog.update_progress(0, f"Preparazione analisi per {len(files_to_analyze)} file...")
+            QApplication.processEvents()
+            
+            # Dizionario per tenere traccia dei thread attivi
+            self.active_threads = {}
+            
+            # Prepara i dati per ogni file
             for i, (profile_name, file_path) in enumerate(files_to_analyze):
                 # Aggiorna la barra di avanzamento
-                self.profile_dialog.update_progress(i, f"Analisi di: {os.path.basename(file_path)}")
-                
-                # Aggiorna l'applicazione per mostrare i cambiamenti nell'interfaccia
+                self.profile_dialog.update_progress(i, f"Preparazione: {os.path.basename(file_path)}")
                 QApplication.processEvents()
                 
-                logging.info(f"DragDropHandler._handle_profile_analysis: Processing file: {file_path}")
+                logging.info(f"DragDropHandler._handle_profile_analysis: Preparing file: {file_path}")
                 
                 # Determina la directory di installazione
                 game_install_dir = None
@@ -122,78 +141,211 @@ class DragDropHandler(QObject):
                         logging.debug(f"Resolved shortcut target: {target_path}")
                     except Exception as e:
                         logging.error(f"Error resolving shortcut: {e}")
-                
+            
                 # Se abbiamo risolto il collegamento, usa la directory del target
                 if target_path and os.path.exists(target_path):
                     real_install_dir = os.path.dirname(target_path)
                     logging.info(f"Using resolved target directory: {real_install_dir}")
                     # Usa la directory risolta come directory di installazione
                     game_install_dir = real_install_dir
+            
+                # Verifica se è un gioco Steam per passare installed_steam_games_dict
+                is_steam_game = False
+                steam_app_id = None
+                if file_path.lower().endswith('.url'):
+                    try:
+                        config = configparser.ConfigParser()
+                        config.read(file_path)
+                        if 'InternetShortcut' in config and 'URL' in config['InternetShortcut']:
+                            url_from_file = config['InternetShortcut']['URL']
+                            if "steam://" in url_from_file:
+                                app_id_match = re.search(r'steam://rungameid/(\d+)', url_from_file)
+                                if app_id_match:
+                                    steam_app_id = app_id_match.group(1)
+                                    is_steam_game = True
+                                    logging.info(f"Detected Steam game in multi-profile: {profile_name} (AppID: {steam_app_id})")
+                    except Exception as e:
+                        logging.error(f"Error checking if URL file is a Steam game: {e}")
+            
+                # Per i giochi Steam, passiamo la lista dei giochi installati di Steam
+                steam_games_dict = None
+                game_details = None
+                if is_steam_game and steam_app_id and hasattr(self.main_window, 'installed_steam_games_dict') and self.main_window.installed_steam_games_dict:
+                    steam_games_dict = self.main_window.installed_steam_games_dict
+                    logging.debug(f"Using Steam games list with {len(steam_games_dict)} entries for detection in multi-profile")
                 
-                # Avvia il thread di rilevamento per questo file
+                    # Ottieni i dettagli del gioco Steam
+                    game_details = self._get_steam_game_details(steam_app_id)
+                    if game_details:
+                        # Usa la directory di installazione del gioco Steam
+                        game_install_dir = game_details['install_dir']
+                        logging.info(f"Using Steam game install directory: {game_install_dir} for {profile_name}")
+                    
+                        # Aggiorna il nome del profilo con il nome ufficiale del gioco Steam
+                        profile_name = game_details['name']
+            
+                # Avvia il thread di rilevamento per questo file in modo asincrono
                 detection_thread = DetectionWorkerThread(
                     game_install_dir=game_install_dir,
                     profile_name_suggestion=profile_name,
                     current_settings=self.main_window.current_settings.copy(),
-                    installed_steam_games_dict=None,
-                    emulator_name=None
+                    installed_steam_games_dict=steam_games_dict,
+                    emulator_name=None,
+                    steam_app_id=steam_app_id if is_steam_game else None
                 )
-                
-                # Creiamo un dizionario per memorizzare i risultati
-                results_dict = {}
-                
-                # Creiamo una funzione di callback per gestire i risultati
-                def handle_detection_finished(success, results):
-                    results_dict['success'] = success
-                    results_dict['results'] = results
-                
+            
+                # Salva il riferimento al thread e al nome del profilo
+                thread_id = id(detection_thread)
+                self.active_threads[thread_id] = {
+                    'thread': detection_thread,
+                    'profile_name': profile_name,
+                    'completed': False
+                }
+            
                 # Colleghiamo il segnale finished alla nostra funzione di callback
-                detection_thread.finished.connect(handle_detection_finished)
-                
-                # Esegui il thread in modo sincrono
-                detection_thread.run()
-                
-                # Verifichiamo se abbiamo ricevuto i risultati
-                if 'success' in results_dict and 'results' in results_dict:
-                    success = results_dict['success']
-                    results = results_dict['results']
-                    
-                    if success and results:
-                        # Estrai i percorsi di salvataggio
-                        paths_found = results.get('path_data', [])
-                        
-                        # Usa il percorso con lo score più alto
-                        if paths_found and len(paths_found) > 0:
-                            # Ordina i percorsi per score (dal più alto al più basso)
-                            paths_found.sort(key=lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else 0, reverse=True)
-                            
-                            # Usa il primo percorso (quello con lo score più alto)
-                            best_path, best_score = paths_found[0] if isinstance(paths_found[0], tuple) else (paths_found[0], 0)
-                            
-                            # Aggiorna il profilo nel dialogo
-                            self.profile_dialog.update_profile(profile_name, best_path, best_score)
-                            
-                            # Aggiorna l'applicazione per mostrare i cambiamenti nell'interfaccia
-                            QApplication.processEvents()
-                            
-                            logging.info(f"DragDropHandler._handle_profile_analysis: Detected profile '{profile_name}' with path: {best_path} (score: {best_score})")
-                        else:
-                            logging.warning(f"DragDropHandler._handle_profile_analysis: No save paths found for: {profile_name}")
-                    else:
-                        logging.warning(f"DragDropHandler._handle_profile_analysis: Detection failed for: {profile_name}")
-                else:
-                    logging.warning(f"DragDropHandler._handle_profile_analysis: No results received for: {profile_name}")
+                detection_thread.finished.connect(lambda success, results, tid=thread_id: 
+                                              self._on_detection_thread_finished(success, results, tid))
             
-            # Aggiorna la barra di avanzamento per indicare il completamento
-            self.profile_dialog.update_progress(len(files_to_analyze), "Analisi completata")
+                # Colleghiamo il segnale progress per aggiornare la UI
+                detection_thread.progress.connect(self.on_detection_progress)
             
+                # Avvia il thread in modo asincrono
+                detection_thread.start()
+            
+                # Breve pausa per evitare di sovraccaricare il sistema
+                QThread.msleep(100)
+        
+        # Imposta un timer per controllare periodicamente lo stato dei thread
+        self.check_threads_timer = QTimer()
+        self.check_threads_timer.timeout.connect(self._check_detection_threads_status)
+        self.check_threads_timer.start(500)  # Controlla ogni 500ms
+
+    def _on_detection_thread_finished(self, success, results, thread_id):
+        """Callback chiamato quando un thread di rilevamento termina.
+        
+        Args:
+            success: True se il rilevamento è riuscito, False altrimenti
+            results: Dizionario con i risultati del rilevamento
+            thread_id: ID del thread che ha terminato
+        """
+        if thread_id not in self.active_threads:
+            logging.warning(f"Thread ID {thread_id} not found in active_threads")
+            return
+        
+        thread_info = self.active_threads[thread_id]
+        profile_name = thread_info['profile_name']
+        
+        # Marca il thread come completato
+        thread_info['completed'] = True
+        
+        if success and results:
+            # Estrai i percorsi di salvataggio
+            paths_found = results.get('path_data', [])
+        
+            # Usa il percorso con lo score più alto
+            if paths_found and len(paths_found) > 0:
+                # Ordina i percorsi per score (dal più alto al più basso)
+                paths_found.sort(key=lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else 0, reverse=True)
+            
+                # Usa il primo percorso (quello con lo score più alto)
+                best_path, best_score = paths_found[0] if isinstance(paths_found[0], tuple) else (paths_found[0], 0)
+            
+                # Aggiorna il profilo nel dialogo
+                self.profile_dialog.update_profile(profile_name, best_path, best_score)
+            
+                # Aggiorna l'applicazione per mostrare i cambiamenti nell'interfaccia
+                QApplication.processEvents()
+            
+                logging.info(f"DragDropHandler._on_detection_thread_finished: Detected profile '{profile_name}' with path: {best_path} (score: {best_score})")
+            else:
+                logging.warning(f"DragDropHandler._on_detection_thread_finished: No save paths found for: {profile_name}")
+        else:
+            logging.warning(f"DragDropHandler._on_detection_thread_finished: Detection failed for: {profile_name}")
+
+    def _check_detection_threads_status(self):
+        """Controlla lo stato dei thread di rilevamento attivi."""
+        if not hasattr(self, 'active_threads'):
+            return
+        
+        # Conta quanti thread sono completati
+        completed_count = sum(1 for info in self.active_threads.values() if info['completed'])
+        total_count = len(self.active_threads)
+        
+        # Aggiorna la barra di avanzamento
+        if total_count > 0:
+            progress_percentage = int((completed_count / total_count) * 100)
+            self.profile_dialog.update_progress(
+                progress_percentage, 
+                f"Analisi in corso... {completed_count}/{total_count} completati"
+            )
+        
+        # Se tutti i thread sono completati, notifica il completamento
+        if completed_count == total_count and total_count > 0:
+            # Notifica il completamento dell'analisi
+            self.profile_dialog.update_progress(100, "Analisi completata")
+        
             # Ripristina il cursore
             QApplication.restoreOverrideCursor()
+        
+            # Ferma il timer
+            self.check_threads_timer.stop()
+        
+            # Pulisci i riferimenti ai thread
+            for thread_info in self.active_threads.values():
+                if 'thread' in thread_info and thread_info['thread'] is not None:
+                    thread_info['thread'].deleteLater()
+        
+            self.active_threads = {}
+        
+            logging.info("All detection threads completed.")
+        
+            # Emetti un segnale per notificare il completamento dell'analisi
+            self.profile_dialog.analysis_completed.emit()
 
     def on_detection_progress(self, message):
         """Aggiorna la barra di stato di main_window con i messaggi dal thread."""
         if hasattr(self.main_window, 'status_label'):
             self.main_window.status_label.setText(message)
+
+    def _check_detection_threads_status(self):
+        """Controlla lo stato dei thread di rilevamento attivi."""
+        if not hasattr(self, 'active_threads'):
+            return
+        
+        # Conta quanti thread sono completati
+        completed_count = sum(1 for info in self.active_threads.values() if info['completed'])
+        total_count = len(self.active_threads)
+        
+        # Aggiorna la barra di avanzamento
+        if total_count > 0:
+            progress_percentage = int((completed_count / total_count) * 100)
+            self.profile_dialog.update_progress(
+                progress_percentage, 
+                f"Analisi in corso... {completed_count}/{total_count} completati"
+            )
+        
+        # Se tutti i thread sono completati, notifica il completamento
+        if completed_count == total_count and total_count > 0:
+            # Notifica il completamento dell'analisi
+            self.profile_dialog.update_progress(100, "Analisi completata")
+            
+            # Ripristina il cursore
+            QApplication.restoreOverrideCursor()
+            
+            # Ferma il timer
+            self.check_threads_timer.stop()
+            
+            # Pulisci i riferimenti ai thread
+            for thread_info in self.active_threads.values():
+                if 'thread' in thread_info and thread_info['thread'] is not None:
+                    thread_info['thread'].deleteLater()
+            
+            self.active_threads = {}
+            
+            logging.info("All detection threads completed.")
+            
+            # Emetti un segnale per notificare il completamento dell'analisi
+            self.profile_dialog.analysis_completed.emit()
             
     def _check_if_emulator(self, file_path):
         """Verifica se il file è un emulatore supportato.
@@ -207,10 +359,26 @@ class DragDropHandler(QObject):
         try:
             if not os.path.exists(file_path):
                 return None
-                
+            
+            # Risolvi il collegamento .lnk se necessario
+            target_path = file_path
+            if file_path.lower().endswith('.lnk') and platform.system() == "Windows":
+                try:
+                    import winshell
+                    shortcut = winshell.shortcut(file_path)
+                    resolved_target = shortcut.path
+                    
+                    if resolved_target and os.path.exists(resolved_target):
+                        target_path = resolved_target
+                        logging.info(f"_check_if_emulator: Resolved .lnk target to: {target_path}")
+                    else:
+                        logging.warning(f"_check_if_emulator: Could not resolve .lnk target or target does not exist: {resolved_target}")
+                except Exception as e_lnk:
+                    logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
+            
             # Verifica se è un emulatore utilizzando emulator_manager
             from emulator_utils import emulator_manager
-            emulator_result = emulator_manager.detect_and_find_profiles(file_path)
+            emulator_result = emulator_manager.detect_and_find_profiles(target_path)
             return emulator_result
         except Exception as e:
             logging.error(f"Error checking if file is an emulator: {e}", exc_info=True)
@@ -608,6 +776,40 @@ class DragDropHandler(QObject):
             for url in mime_data.urls():
                 if url.isLocalFile():
                     file_path = url.toLocalFile()
+                    
+                    # Verifica se è un collegamento .lnk che punta a una directory
+                    is_dir_shortcut = False
+                    if file_path.lower().endswith('.lnk') and platform.system() == "Windows":
+                        try:
+                            import winshell
+                            shortcut = winshell.shortcut(file_path)
+                            resolved_target = shortcut.path
+                            
+                            if resolved_target and os.path.exists(resolved_target) and os.path.isdir(resolved_target):
+                                logging.info(f"DragDropHandler.dropEvent: Skipping directory shortcut: {file_path} -> {resolved_target}")
+                                is_dir_shortcut = True
+                        except Exception as e_lnk:
+                            logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
+                    
+                    # Skip directories and directory shortcuts in multi-file processing
+                    if os.path.isdir(file_path) or is_dir_shortcut:
+                        logging.info(f"DragDropHandler.dropEvent: Skipping directory or directory shortcut: {file_path}")
+                        continue
+                        
+                    # Verifica se è un URL Steam valido
+                    if file_path.lower().endswith('.url'):
+                        try:
+                            config = configparser.ConfigParser()
+                            config.read(file_path)
+                            if 'InternetShortcut' in config and 'URL' in config['InternetShortcut']:
+                                url_from_file = config['InternetShortcut']['URL']
+                                # Verifica se è un URL Steam
+                                if not ("store.steampowered.com" in url_from_file or "steam://" in url_from_file):
+                                    logging.info(f"DragDropHandler.dropEvent: Skipping non-Steam URL file: {file_path}")
+                                    continue
+                        except Exception as e:
+                            logging.error(f"Error parsing .url file: {e}")
+                    
                     logging.info(f"DragDropHandler.dropEvent: Added file to process: {file_path}")
                     files_to_process.append(file_path)
         
@@ -637,7 +839,105 @@ class DragDropHandler(QObject):
                     return
                 else:
                     # Gestione generica per altri emulatori
-                    self._handle_generic_emulator(emulator_key, file_path, profiles_data)
+                    # Implementazione inline invece di chiamare un metodo separato
+                    mw = self.main_window
+                    logging.info(f"DragDropHandler: Handling emulator: {emulator_key} with {len(profiles_data)} profiles")
+                    
+                    # Special handling for SameBoy emulator
+                    if emulator_key == 'sameboy' and profiles_data is None:
+                        # Try to find SameBoy profiles manually
+                        try:
+                            from emulator_utils import sameboy_manager
+                            rom_dir = sameboy_manager.get_sameboy_saves_path()
+                            if rom_dir:
+                                profiles_data = sameboy_manager.find_sameboy_profiles(rom_dir)
+                                if profiles_data:
+                                    logging.info(f"Found save files in hardcoded path: {rom_dir}")
+                                    logging.info(f"Found {len(profiles_data)} SameBoy profiles in directory '{rom_dir}'.")
+                                else:
+                                    logging.warning(f"No SameBoy profiles found in directory '{rom_dir}'.")
+                            else:
+                                logging.warning("Could not determine SameBoy ROM directory.")
+                        except Exception as e:
+                            logging.error(f"Error finding SameBoy profiles: {e}")
+                            QMessageBox.warning(
+                                mw, "SameBoy Detection Error",
+                                f"An error occurred while trying to detect SameBoy profiles: {e}\n"
+                                "You can try adding the emulator again or set the path manually via settings (if available).")
+                    
+                    # Handle emulator profiles if found
+                    if emulator_key and profiles_data is not None:  # Check if profiles_data is not None (it could be an empty list)
+                        logging.info(f"Found {emulator_key} profiles: {len(profiles_data)}")
+                        
+                        # Show dialog for selecting which emulator game to create a profile for
+                        selection_dialog = EmulatorGameSelectionDialog(emulator_key, profiles_data, mw)
+                        if selection_dialog.exec():
+                            selected_profile = selection_dialog.get_selected_profile_data()
+                            if selected_profile:
+                                # Extract details from the selected profile
+                                profile_id = selected_profile.get('id', '')
+                                selected_name = selected_profile.get('name', profile_id)
+                                save_paths = selected_profile.get('paths', [])
+                                
+                                # Create a profile name based on the emulator and game
+                                profile_name_base = f"{emulator_key} - {selected_name}"
+                                profile_name = profile_name_base
+                                
+                                # Check if profile already exists
+                                if profile_name in mw.profiles:
+                                    reply = QMessageBox.question(mw, "Existing Profile",
+                                                            f"A profile named '{profile_name}' already exists. Overwrite it?",
+                                                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                                            QMessageBox.StandardButton.No)
+                                    if reply == QMessageBox.StandardButton.No:
+                                        mw.status_label.setText("Profile creation cancelled.")
+                                        event.acceptProposedAction()
+                                        return
+                                    else:
+                                        logging.warning(f"Overwriting existing profile: {profile_name}")
+                                
+                                # Create the profile with the appropriate data
+                                new_profile = {
+                                    'name': profile_name,
+                                    'paths': save_paths,
+                                    'emulator': emulator_key
+                                }
+                                
+                                # Add the profile to the main window's profiles dictionary
+                                mw.profiles[profile_name] = new_profile
+                                
+                                # Save the profiles to disk
+                                if mw.core_logic.save_profiles(mw.profiles):
+                                    if hasattr(mw, 'profile_table_manager'):
+                                        mw.profile_table_manager.update_profile_table()
+                                        mw.profile_table_manager.select_profile_in_table(profile_name)
+                                    mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
+                                    logging.info(f"Emulator game profile '{profile_name}' created/updated with emulator '{emulator_key}'.")
+                                else:
+                                    logging.error(f"Failed to save profiles after adding '{profile_name}'.")
+                                    QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
+                        else:
+                            logging.info("User cancelled emulator game selection.")
+                        
+                        # Hide the overlay if it's visible
+                        self._hide_overlay_if_visible(mw)
+                        mw.set_controls_enabled(True)
+                        QApplication.restoreOverrideCursor()
+                    elif emulator_key:  # Emulator detected but no profiles found
+                        logging.warning(f"{emulator_key} detected, but no profiles found in its standard directory.")
+                        QMessageBox.warning(
+                            mw, f"{emulator_key.capitalize()} Profiles",
+                            f"No game profiles were found for {emulator_key.capitalize()}.\n\n"
+                            "This could be because:\n"
+                            "- You haven't played any games yet\n"
+                            "- The emulator is installed in a non-standard location\n"
+                            "- The save files are stored in a custom location")
+                        
+                        # Hide the overlay if it's visible
+                        self._hide_overlay_if_visible(mw)
+                        mw.set_controls_enabled(True)
+                        QApplication.restoreOverrideCursor()
+                    
                     event.acceptProposedAction()
                     return
         else:

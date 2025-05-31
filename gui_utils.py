@@ -46,13 +46,14 @@ class DetectionWorkerThread(QThread):
     progress = Signal(str)
     finished = Signal(bool, dict) # Segnale emesso alla fine: successo(bool), risultati(dict)
 
-    def __init__(self, game_install_dir, profile_name_suggestion, current_settings, installed_steam_games_dict=None, emulator_name=None):
+    def __init__(self, game_install_dir, profile_name_suggestion, current_settings, installed_steam_games_dict=None, emulator_name=None, steam_app_id=None):
         super().__init__()
         self.game_install_dir = game_install_dir
         self.profile_name_suggestion = profile_name_suggestion
         self.current_settings = current_settings
         self.installed_steam_games_dict = installed_steam_games_dict if installed_steam_games_dict is not None else {}
         self.emulator_name = emulator_name # Store emulator name
+        self.steam_app_id = steam_app_id # Store Steam AppID
         self.is_running = True
         self.setObjectName("DetectionWorkerThread") # Aggiunto ObjectName
 
@@ -266,13 +267,21 @@ class DetectionWorkerThread(QThread):
                     logging.info("INI scan found paths. Starting additional heuristic search...")
 
                 try:
+                    # Determina se è un gioco Steam basato sulla presenza di steam_app_id
+                    is_steam_game = self.steam_app_id is not None
+                    
                     # Chiamata a guess_save_path (ora restituisce lista di tuple)
                     heuristic_guesses_with_scores = core_logic.guess_save_path(
                         game_name=profile_name,
                         game_install_dir=self.game_install_dir,
-                        is_steam_game=False, # Per drag&drop è generico
-                        installed_steam_games_dict=self.installed_steam_games_dict
+                        is_steam_game=is_steam_game, # Usa il flag basato su steam_app_id
+                        installed_steam_games_dict=self.installed_steam_games_dict,
+                        appid=self.steam_app_id # Passa l'AppID di Steam quando disponibile
                     )
+                    
+                    logging.info(f"Heuristic save search for '{profile_name}' (AppID: {self.steam_app_id})")
+                    if is_steam_game:
+                        logging.info(f"Using Steam AppID: {self.steam_app_id} for heuristic search")
                     logging.debug(f"Heuristic search results (with scores): {heuristic_guesses_with_scores}")
 
                     # Aggiungi i risultati dell'euristica se non già presenti
