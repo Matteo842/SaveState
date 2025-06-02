@@ -15,7 +15,8 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QStatusBar,
     QProgressBar, QGroupBox,
-    QStyle, QDockWidget, QPlainTextEdit, QTableWidget, QGraphicsOpacityEffect
+    QStyle, QDockWidget, QPlainTextEdit, QTableWidget, QGraphicsOpacityEffect,
+    QDialog
 )
 from PySide6.QtCore import (
     Slot, Qt, QSize,
@@ -744,21 +745,74 @@ class MainWindow(QMainWindow):
             # else: Il testo di Steam è già stato gestito
 
         if dropped_path:
-            # --- NUOVO CONTROLLO CARTELLE ---
+            # --- GESTIONE CARTELLE ---
             # Verifica se il percorso droppato è una directory (cartella)
-            # `os.path.isdir` è la funzione chiave qui.
-            # Assicurati che `import os` sia presente all'inizio del tuo file (lo è già).
             if os.path.isdir(dropped_path):
-                logging.info(f"MainWindow.dropEvent: Path '{dropped_path}' is a directory. Ignoring for ProfileCreationManager.")
-                # `is_steam_url` è False a questo punto, perché i link Steam sono gestiti e ritornano prima.
-                # L'overlay per i non-Steam URL è già stato nascosto all'inizio con:
-                # if not is_steam_url: self.request_hide_overlay.emit()
-                # Quindi non dovrebbe essere necessario nasconderlo di nuovo qui, ma per sicurezza:
-                if not self.overlay_widget.isHidden() and not is_steam_url: # Controlla se l'overlay è visibile e non era per Steam
-                     self.request_hide_overlay.emit()
-                event.ignore() # Ignora l'evento di drop per le cartelle
-                return         # Interrompi ulteriore elaborazione per questa cartella
-            # --- FINE NUOVO CONTROLLO ---
+                logging.info(f"MainWindow.dropEvent: Path '{dropped_path}' is a directory. Passing to DragDropHandler.")
+                # Nascondi l'overlay se necessario
+                if not self.overlay_widget.isHidden() and not is_steam_url:
+                    self.request_hide_overlay.emit()
+                    
+                # Passa la cartella al DragDropHandler
+                if hasattr(self, 'drag_drop_handler') and self.drag_drop_handler:
+                    logging.debug(f"MainWindow.dropEvent: Passing directory '{dropped_path}' to DragDropHandler.")
+                    
+                    # Invece di creare un nuovo evento, chiamiamo direttamente il metodo che scansiona la cartella
+                    # e processiamo i file trovati
+                    executables = self.drag_drop_handler._scan_directory_for_executables(dropped_path)
+                    
+                    if executables:
+                        logging.info(f"MainWindow.dropEvent: Found {len(executables)} valid files in directory: {dropped_path}")
+                        
+                        # Crea un dialogo per la gestione dei profili con i file trovati
+                        from gui_components.multi_profile_dialog import MultiProfileDialog
+                        dialog = MultiProfileDialog(files_to_process=executables, parent=self)
+                        
+                        # Connetti il segnale profileAdded al metodo che gestisce l'analisi
+                        dialog.profileAdded.connect(self.drag_drop_handler._handle_profile_analysis)
+                        
+                        # Salva il riferimento al dialogo come attributo dell'istanza
+                        self.drag_drop_handler.profile_dialog = dialog
+                        
+                        # Mostra il dialogo e attendi che l'utente faccia la sua scelta
+                        result = dialog.exec()
+                        
+                        # Ripristina lo stato dell'UI
+                        self.set_controls_enabled(True)
+                        
+                        if result == QDialog.Accepted:
+                            # Ottieni i profili accettati
+                            accepted_profiles = dialog.get_accepted_profiles()
+                            
+                            # Aggiungi i profili accettati
+                            for profile_name, profile_data in accepted_profiles.items():
+                                self.profiles[profile_name] = profile_data
+                            
+                            # Salva i profili
+                            if self.core_logic.save_profiles(self.profiles):
+                                self.profile_table_manager.update_profile_table()
+                                self.status_label.setText(f"Aggiunti {len(accepted_profiles)} profili.")
+                                logging.info(f"Saved {len(accepted_profiles)} profiles.")
+                            else:
+                                self.status_label.setText("Errore nel salvataggio dei profili.")
+                                logging.error("Failed to save profiles.")
+                                QMessageBox.critical(self, "Errore", "Impossibile salvare i profili.")
+                        else:
+                            self.status_label.setText("Creazione profili annullata.")
+                            logging.info("MainWindow.dropEvent: Profile creation cancelled by user.")
+                            
+                        # Rimuovi il riferimento al dialogo
+                        self.drag_drop_handler.profile_dialog = None
+                    else:
+                        logging.warning(f"MainWindow.dropEvent: No valid files found in directory: {dropped_path}")
+                        self.status_label.setText("Nessun file valido trovato nella cartella.")
+                    
+                    event.acceptProposedAction()
+                else:
+                    logging.error("MainWindow.dropEvent: DragDropHandler not available for directory drop")
+                    event.ignore()
+                return
+            # --- FINE GESTIONE CARTELLE ---
 
             # Se non è una cartella, allora procedi come prima
             if hasattr(self, 'drag_drop_handler') and self.drag_drop_handler:

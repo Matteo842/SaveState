@@ -160,8 +160,15 @@ class MainWindowHandlers:
             dialog.updateUiText() # Force update text
         except Exception as e_update:
             logging.error(f"Error updating dialog UI text: {e_update}", exc_info=True)
-
-        if dialog.exec() == QDialog.Accepted:
+        
+        # Connect finished signal to handle dialog result
+        dialog.finished.connect(self.on_settings_dialog_finished)
+        dialog.show()
+        
+    def on_settings_dialog_finished(self, result):
+        """Handle settings dialog result."""
+        if result == QDialog.Accepted:
+            dialog = self.sender()
             new_settings = dialog.get_settings()
             logging.debug(f"New settings received from dialog: {new_settings}")
 
@@ -367,19 +374,39 @@ class MainWindowHandlers:
             logging.error(f"Invalid profile data for '{profile_name}': {profile_data}")
             return
 
-        is_pcsx2_selective_profile = (profile_data.get('emulator') == 'PCSX2' and
-                                      'save_dir' in profile_data and
-                                      'paths' in profile_data and
-                                      isinstance(profile_data['paths'], list) and
-                                      len(profile_data['paths']) > 0)
+        # Store profile data for later use in the slot
+        self._restore_profile_data = {
+            'name': profile_name,
+            'data': profile_data
+        }
 
+        # Create and show dialog non-blocking
         dialog = RestoreDialog(profile_name, self.main_window)
-        if dialog.exec():
+        dialog.finished.connect(self.on_restore_dialog_finished)
+        dialog.show()
+        
+    def on_restore_dialog_finished(self, result):
+        """Handle restore dialog result."""
+        if not hasattr(self, '_restore_profile_data'):
+            logging.error("No restore profile data found!")
+            return
+            
+        profile_name = self._restore_profile_data['name']
+        profile_data = self._restore_profile_data['data']
+        dialog = self.sender()
+        
+        if result == QDialog.Accepted:
             archive_to_restore = dialog.get_selected_path()
             if archive_to_restore:
                 if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
                     QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
                     return
+
+                is_pcsx2_selective_profile = (profile_data.get('emulator') == 'PCSX2' and
+                                              'save_dir' in profile_data and
+                                              'paths' in profile_data and
+                                              isinstance(profile_data['paths'], list) and
+                                              len(profile_data['paths']) > 0)
 
                 if is_pcsx2_selective_profile:
                     memcard_path = profile_data['paths'][0]
@@ -387,8 +414,8 @@ class MainWindowHandlers:
                     archive_filename = os.path.basename(archive_to_restore)
 
                     confirm_msg = "WARNING!\nRestoring '{archive}' will overwrite the save folder '{save_folder}' on memory card '{memcard}'.\n\nProceed?".format(
-                        archive=archive_filename, 
-                        save_folder=mc_target_save_dir_name, 
+                        archive=archive_filename,
+                        save_folder=mc_target_save_dir_name,
                         memcard=os.path.basename(memcard_path)
                     )
                     confirm = QMessageBox.warning(self.main_window, "Confirm PCSX2 Restore", confirm_msg,
@@ -485,6 +512,9 @@ class MainWindowHandlers:
                 self.main_window.status_label.setText("No backup selected for restore.")
         else:
             self.main_window.status_label.setText("Backup selection cancelled.")
+            
+        # Clean up temporary storage
+        del self._restore_profile_data
 
     # Opens the manage backups dialog for the selected profile.
     @Slot()
@@ -492,7 +522,11 @@ class MainWindowHandlers:
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
         if not profile_name: QMessageBox.warning(self.main_window, "Error", "No profile selected."); return
         dialog = ManageBackupsDialog(profile_name, self.main_window) # Pass main_window as parent
-        dialog.exec()
+        dialog.finished.connect(self.on_manage_backups_finished)
+        dialog.show()
+        
+    def on_manage_backups_finished(self):
+        """Handle manage backups dialog closing."""
         # Update table in main window after dialog closes
         self.main_window.profile_table_manager.update_profile_table()
 

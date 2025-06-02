@@ -6,9 +6,9 @@ Permette di visualizzare, selezionare ed eliminare i profili prima di aggiungerl
 import os
 import logging
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
-                              QPushButton, QListWidget, QListWidgetItem, 
-                              QWidget, QMessageBox, QProgressBar, QCheckBox)
-from PySide6.QtCore import Qt, Signal, QTimer, QRect, QSize
+                              QPushButton, QListWidget, QListWidgetItem,
+                              QWidget, QMessageBox, QProgressBar, QCheckBox, QLineEdit)
+from PySide6.QtCore import Qt, Signal, QTimer, QRect, QSize, QEvent
 from PySide6.QtGui import QIcon, QFont, QCursor, QPainter, QPen, QColor
 
 # Custom progress bar with smooth segments equal to number of profiles
@@ -79,10 +79,11 @@ class ProfileListItem(QWidget):
         info_layout.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         info_layout.setSpacing(2)  # Riduciamo lo spazio tra gli elementi
         
-        # Nome del profilo (in grassetto)
+        # Nome del profilo (in grassetto e più grande)
         self.name_label = QLabel(profile_name)
         font = QFont()
         font.setBold(True)
+        font.setPointSize(10)  # Increased from default (usually 9)
         self.name_label.setFont(font)
         # Disabilitiamo il word wrap per evitare che i nomi vadano a capo
         self.name_label.setWordWrap(False)
@@ -95,9 +96,9 @@ class ProfileListItem(QWidget):
         # Impostiamo il tooltip per mostrare il nome completo al passaggio del mouse
         self.name_label.setToolTip(profile_name)
         
-        # Define a font for paths
+        # Define a font for paths (slightly larger)
         path_font = QFont()
-        path_font.setPointSize(8)
+        path_font.setPointSize(9)  # Increased from 8
         
         # Keep the file path in memory but don't display it
         self.file_path = file_path
@@ -125,22 +126,30 @@ class ProfileListItem(QWidget):
         # Add the info layout to the main layout
         layout.addLayout(info_layout, 1)  # Stretch factor 1 to give more space
         
-        # Delete button with Unicode trash can icon
+        # Delete button with Unicode trash can icon, now square and 30% larger
         self.delete_button = QPushButton("🗑️")
+        self.delete_button.setObjectName("MinecraftButton")  # Use same style as Minecraft button
         self.delete_button.setToolTip("Remove this profile")
         self.delete_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.delete_button.setFixedSize(39, 39)  # 30% larger than 30x30
+        self.delete_button.setIconSize(QSize(30, 30))  # Match increased button size
         self.delete_button.setStyleSheet("""
-            QPushButton {
+            QPushButton#MinecraftButton {
                 border: none;
-                padding: 5px;
+                padding: 0;
                 background-color: transparent;
-                font-size: 16px;
+                font-size: 18px;  /* Increased from 14px */
                 color: #888;
+                border-radius: 0px;  /* Ensure square shape */
             }
-            QPushButton:hover {
+            QPushButton#MinecraftButton:hover {
                 background-color: rgba(255, 0, 0, 0.1);
-                border-radius: 3px;
+                border-radius: 0px;  /* Ensure square shape */
                 color: #f00;
+            }
+            QPushButton#MinecraftButton:pressed {
+                background-color: rgba(255, 0, 0, 0.2);
+                border-radius: 0px;  /* Ensure square shape */
             }
         """)
         
@@ -246,6 +255,14 @@ class MultiProfileDialog(QDialog):
         self.description_label.setWordWrap(True)
         self.description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.description_label)
+        
+        # Search bar (hidden by default)
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("Search profiles...")
+        self.search_bar.hide()
+        self.search_bar.textChanged.connect(self.filter_profiles)
+        self.search_bar.installEventFilter(self)  # Install event filter for Esc key
+        layout.addWidget(self.search_bar)
         
         # Checkbox to toggle score display
         self.show_scores_checkbox = QCheckBox("Show scores")
@@ -485,10 +502,45 @@ class MultiProfileDialog(QDialog):
             files.append((widget.profile_name, widget.file_path))
         return files
     
+    def eventFilter(self, obj, event):
+        """Handle Esc key to clear and hide search bar."""
+        if obj == self.search_bar and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Escape:
+                self.search_bar.clear()
+                self.search_bar.hide()
+                self.filter_profiles("")  # Reset filter
+                return True
+        return super().eventFilter(obj, event)
+    
+    def keyPressEvent(self, event):
+        """Show search bar when user types printable characters."""
+        if not self.search_bar.isVisible() and event.text().isprintable() and event.text().strip() != '':
+            self.search_bar.show()
+            self.search_bar.setFocus()
+            self.search_bar.setText(event.text())
+        else:
+            super().keyPressEvent(event)
+    
+    def filter_profiles(self, text):
+        """Filter profiles based on search text."""
+        for i in range(self.profile_list.count()):
+            item = self.profile_list.item(i)
+            widget = self.profile_list.itemWidget(item)
+            # Always show items when search is empty
+            if not text:
+                item.setHidden(False)
+            else:
+                # Case-insensitive search
+                search_text = text.lower()
+                profile_name = widget.profile_name.lower()
+                item.setHidden(search_text not in profile_name)
+                
     def toggle_scores_display(self, show):
         """Show or hide score in all profile list items."""
         for i in range(self.profile_list.count()):
             item = self.profile_list.item(i)
+            widget = self.profile_list.itemWidget(item)
+            widget.set_show_score(show)
             widget = self.profile_list.itemWidget(item)
             widget.set_show_score(show)
             # Manteniamo l'altezza fissa impostata nel widget

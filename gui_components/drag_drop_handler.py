@@ -86,6 +86,107 @@ class DragDropHandler(QObject):
         
         return None
     
+    def _scan_directory_for_executables(self, directory_path):
+        """Scansiona una cartella per trovare file eseguibili e potenziali giochi.
+        
+        Args:
+            directory_path: Il percorso della cartella da scansionare
+            
+        Returns:
+            Una lista di percorsi di file potenzialmente validi trovati nella cartella
+        """
+        valid_files = []
+        # Estensioni di file eseguibili e potenziali giochi su Windows
+        valid_extensions = [
+            # Eseguibili standard
+            ".exe", ".bat", ".com", ".lnk", ".url",
+            # Altri tipi di file che potrebbero essere giochi o avere salvataggi
+            ".msi", ".appx", ".appxbundle", ".msix", ".msixbundle",
+            # File di gioco comuni
+            ".iso", ".bin", ".cue", ".nds", ".gba", ".gb", ".gbc", ".nes", ".sfc", ".smc",
+            ".n64", ".z64", ".v64", ".gcm", ".iso", ".wbfs", ".wad", ".3ds", ".cia",
+            ".jar", ".swf"
+        ]
+        
+        try:
+            # Scansiona solo i file nella cartella principale, non nelle sottocartelle
+            for item in os.listdir(directory_path):
+                item_path = os.path.join(directory_path, item)
+                
+                # Salta le sottocartelle
+                if os.path.isdir(item_path):
+                    continue
+                    
+                # Su Windows, controlla le estensioni
+                if platform.system() == "Windows":
+                    # Controlla se il file ha un'estensione valida
+                    file_ext = os.path.splitext(item_path)[1].lower()
+                    
+                    # Se l'estensione non è nella lista, salta il file
+                    if file_ext not in valid_extensions:
+                        continue
+                        
+                    # Per i file .lnk, verifica che non puntino a cartelle
+                    if file_ext == ".lnk":
+                        try:
+                            import winshell
+                            shortcut = winshell.shortcut(item_path)
+                            target_path = shortcut.path
+                            if os.path.isdir(target_path):
+                                # Salta i collegamenti a cartelle
+                                continue
+                                
+                            # Verifica se il target è un file valido
+                            target_ext = os.path.splitext(target_path)[1].lower()
+                            if target_ext not in valid_extensions and not os.access(target_path, os.X_OK):
+                                continue
+                                
+                        except Exception as e:
+                            logging.error(f"Error checking .lnk file: {e}")
+                            continue
+                            
+                    # Per i file .url, verifica che siano URL Steam validi
+                    if file_ext == ".url":
+                        try:
+                            config = configparser.ConfigParser()
+                            config.read(item_path)
+                            if 'InternetShortcut' in config and 'URL' in config['InternetShortcut']:
+                                url_from_file = config['InternetShortcut']['URL']
+                                # Verifica se è un URL Steam
+                                if not ("store.steampowered.com" in url_from_file or "steam://" in url_from_file):
+                                    # Salta i file .url non Steam
+                                    continue
+                            else:
+                                continue
+                        except Exception as e:
+                            logging.error(f"Error parsing .url file: {e}")
+                            continue
+                    
+                    # Verifica se il file è un emulatore conosciuto (solo detection, senza scan dei profili)
+                    is_emulator = self._is_known_emulator(item_path)
+                    if is_emulator:
+                        # Se è un emulatore, lo saltiamo immediatamente senza cercare i profili
+                        logging.info(f"Skipping emulator in directory: {item_path}")
+                        continue
+                    
+                    # Se arriviamo qui, il file non è un emulatore e può essere aggiunto
+                    valid_files.append(item_path)
+                else:  # Linux/Mac
+                    # Su Linux/Mac, controlla se il file è eseguibile
+                    if os.access(item_path, os.X_OK) and os.path.isfile(item_path):
+                        valid_files.append(item_path)
+                    else:
+                        # Controlla anche le estensioni per i file non eseguibili
+                        file_ext = os.path.splitext(item_path)[1].lower()
+                        if file_ext in valid_extensions:
+                            valid_files.append(item_path)
+                        
+            logging.info(f"Found {len(valid_files)} valid files in directory: {directory_path}")
+            return valid_files
+        except Exception as e:
+            logging.error(f"Error scanning directory for valid files: {e}")
+            return []
+    
     def _hide_overlay_if_visible(self, main_window):
         """Nasconde l'overlay se è visibile usando l'animazione fade-out."""
         if hasattr(main_window, 'overlay_widget') and main_window.overlay_widget and main_window.overlay_widget.isVisible():
@@ -250,8 +351,11 @@ class DragDropHandler(QObject):
                 # Usa il primo percorso (quello con lo score più alto)
                 best_path, best_score = paths_found[0] if isinstance(paths_found[0], tuple) else (paths_found[0], 0)
             
-                # Aggiorna il profilo nel dialogo
-                self.profile_dialog.update_profile(profile_name, best_path, best_score)
+                # Check if profile dialog still exists before updating
+                if self.profile_dialog:
+                    self.profile_dialog.update_profile(profile_name, best_path, best_score)
+                else:
+                    logging.warning(f"Cannot update profile '{profile_name}' - profile dialog has been closed")
             
                 # Aggiorna l'applicazione per mostrare i cambiamenti nell'interfaccia
                 QApplication.processEvents()
@@ -271,18 +375,22 @@ class DragDropHandler(QObject):
         completed_count = sum(1 for info in self.active_threads.values() if info['completed'])
         total_count = len(self.active_threads)
         
-        # Aggiorna la barra di avanzamento
-        if total_count > 0:
-            progress_percentage = int((completed_count / total_count) * 100)
-            self.profile_dialog.update_progress(
-                progress_percentage, 
-                f"Analisi in corso... {completed_count}/{total_count} completati"
-            )
-        
-        # Se tutti i thread sono completati, notifica il completamento
-        if completed_count == total_count and total_count > 0:
-            # Notifica il completamento dell'analisi
-            self.profile_dialog.update_progress(100, "Analisi completata")
+        # Aggiorna la barra di avanzamento solo se il dialogo esiste ancora
+        if self.profile_dialog:
+            if total_count > 0:
+                progress_percentage = int((completed_count / total_count) * 100)
+                self.profile_dialog.update_progress(
+                    progress_percentage,
+                    f"Analisi in corso... {completed_count}/{total_count} completati"
+                )
+            
+            # Se tutti i thread sono completati, notifica il completamento
+            if completed_count == total_count and total_count > 0:
+                # Notifica il completamento dell'analisi
+                self.profile_dialog.update_progress(100, "Analisi completata")
+                
+                # Emetti un segnale per notificare il completamento dell'analisi
+                self.profile_dialog.analysis_completed.emit()
         
             # Ripristina il cursore
             QApplication.restoreOverrideCursor()
@@ -316,19 +424,24 @@ class DragDropHandler(QObject):
         completed_count = sum(1 for info in self.active_threads.values() if info['completed'])
         total_count = len(self.active_threads)
         
-        # Aggiorna la barra di avanzamento
-        if total_count > 0:
-            progress_percentage = int((completed_count / total_count) * 100)
-            self.profile_dialog.update_progress(
-                progress_percentage, 
-                f"Analisi in corso... {completed_count}/{total_count} completati"
-            )
-        
-        # Se tutti i thread sono completati, notifica il completamento
-        if completed_count == total_count and total_count > 0:
-            # Notifica il completamento dell'analisi
-            self.profile_dialog.update_progress(100, "Analisi completata")
+        # Aggiorna la barra di avanzamento solo se il dialogo esiste ancora
+        if self.profile_dialog:
+            if total_count > 0:
+                progress_percentage = int((completed_count / total_count) * 100)
+                self.profile_dialog.update_progress(
+                    progress_percentage,
+                    f"Analisi in corso... {completed_count}/{total_count} completati"
+                )
             
+            # Se tutti i thread sono completati, notifica il completamento
+            if completed_count == total_count and total_count > 0:
+                self.profile_dialog.update_progress(100, "Analisi completata")
+                
+                # Emetti un segnale per notificare il completamento dell'analisi
+                self.profile_dialog.analysis_completed.emit()
+        
+        # Pulizia risorse anche se il dialogo è stato chiuso
+        if completed_count == total_count and total_count > 0:
             # Ripristina il cursore
             QApplication.restoreOverrideCursor()
             
@@ -344,22 +457,32 @@ class DragDropHandler(QObject):
             
             logging.info("All detection threads completed.")
             
-            # Emetti un segnale per notificare il completamento dell'analisi
-            self.profile_dialog.analysis_completed.emit()
-            
-    def _check_if_emulator(self, file_path):
-        """Verifica se il file è un emulatore supportato.
+    def _is_known_emulator(self, file_path):
+        """Verifica solo se il file è un emulatore conosciuto, senza cercare i profili di salvataggio.
+        Usa la funzione centralizzata in emulator_manager.
         
         Args:
             file_path: Il percorso del file da verificare
             
+        Returns:
+            bool: True se è un emulatore conosciuto, False altrimenti
+        """
+        from emulator_utils.emulator_manager import is_known_emulator
+        return is_known_emulator(file_path)
+        
+    def _check_if_emulator(self, file_path):
+        """Verifica se il file è un emulatore supportato e cerca i profili di salvataggio.
+        
+        Args:
+            file_path: Il percorso del file da verificare
+        
         Returns:
             tuple: (emulator_key, profiles_data) se è un emulatore, None altrimenti
         """
         try:
             if not os.path.exists(file_path):
                 return None
-            
+        
             # Risolvi il collegamento .lnk se necessario
             target_path = file_path
             if file_path.lower().endswith('.lnk') and platform.system() == "Windows":
@@ -367,7 +490,7 @@ class DragDropHandler(QObject):
                     import winshell
                     shortcut = winshell.shortcut(file_path)
                     resolved_target = shortcut.path
-                    
+                
                     if resolved_target and os.path.exists(resolved_target):
                         target_path = resolved_target
                         logging.info(f"_check_if_emulator: Resolved .lnk target to: {target_path}")
@@ -375,7 +498,7 @@ class DragDropHandler(QObject):
                         logging.warning(f"_check_if_emulator: Could not resolve .lnk target or target does not exist: {resolved_target}")
                 except Exception as e_lnk:
                     logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
-            
+        
             # Verifica se è un emulatore utilizzando emulator_manager
             from emulator_utils import emulator_manager
             emulator_result = emulator_manager.detect_and_find_profiles(target_path)
@@ -791,9 +914,24 @@ class DragDropHandler(QObject):
                         except Exception as e_lnk:
                             logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
                     
-                    # Skip directories and directory shortcuts in multi-file processing
+                    # Gestione speciale per le cartelle
                     if os.path.isdir(file_path) or is_dir_shortcut:
-                        logging.info(f"DragDropHandler.dropEvent: Skipping directory or directory shortcut: {file_path}")
+                        if is_dir_shortcut:
+                            # Per i collegamenti a cartelle, usiamo il percorso risolto
+                            directory_path = resolved_target
+                        else:
+                            directory_path = file_path
+                            
+                        logging.info(f"DragDropHandler.dropEvent: Processing directory: {directory_path}")
+                        # Scansiona la cartella per trovare file eseguibili
+                        executables = self._scan_directory_for_executables(directory_path)
+                        if executables:
+                            # Aggiungi gli eseguibili trovati alla lista dei file da processare
+                            for exe_path in executables:
+                                logging.info(f"DragDropHandler.dropEvent: Found executable in directory: {exe_path}")
+                                files_to_process.append(exe_path)
+                        else:
+                            logging.info(f"DragDropHandler.dropEvent: No executables found in directory: {directory_path}")
                         continue
                         
                     # Verifica se è un URL Steam valido
@@ -944,9 +1082,19 @@ class DragDropHandler(QObject):
             # Processare più file contemporaneamente
             logging.info(f"DragDropHandler.dropEvent: Processing multiple files: {len(files_to_process)}")
             
-            # Filter out emulators and uninstalled Steam games from files_to_process
+            # Filtra i file per escludere emulatori e altri file non validi
             filtered_files = []
             for file_path in files_to_process:
+                # Verifica se il file esiste
+                if not os.path.exists(file_path):
+                    logging.info(f"DragDropHandler.dropEvent: Skipping non-existent file: {file_path}")
+                    continue
+                    
+                # Verifica se è una cartella (non dovrebbe succedere a questo punto)
+                if os.path.isdir(file_path):
+                    logging.info(f"DragDropHandler.dropEvent: Skipping directory: {file_path}")
+                    continue
+                
                 # Check if it's an emulator
                 emulator_result = self._check_if_emulator(file_path)
                 if emulator_result:
@@ -974,8 +1122,21 @@ class DragDropHandler(QObject):
                     except Exception as e:
                         logging.error(f"Error checking Steam URL in .url file: {e}")
                 
-                # Add the file only if it's not an emulator and not an uninstalled Steam game
-                if not is_uninstalled_steam_game:
+                # Per i file .lnk, verifica che non puntino a cartelle
+                is_dir_shortcut = False
+                if file_path.lower().endswith('.lnk') and platform.system() == "Windows":
+                    try:
+                        import winshell
+                        shortcut = winshell.shortcut(file_path)
+                        target_path = shortcut.path
+                        if os.path.isdir(target_path):
+                            logging.info(f"DragDropHandler.dropEvent: Skipping directory shortcut: {file_path} -> {target_path}")
+                            is_dir_shortcut = True
+                    except Exception as e:
+                        logging.error(f"Error checking .lnk file: {e}")
+                
+                # Add the file only if it passes all filters
+                if not is_uninstalled_steam_game and not is_dir_shortcut:
                     filtered_files.append(file_path)
             
             # Update files_to_process with filtered list

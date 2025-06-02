@@ -30,6 +30,25 @@ log = logging.getLogger(__name__)
 # Define a type alias for the profile finder function for clarity
 ProfileFinder = Callable[[Optional[str]], Dict[str, str]]
 
+# Lista completa di emulatori conosciuti, inclusi quelli non ancora supportati
+# Questa lista viene utilizzata per il rilevamento rapido degli emulatori
+# durante la scansione delle cartelle e per eventuali popup informativi
+KNOWN_EMULATORS = [
+    # Emulatori supportati (presenti in EMULATORS)
+    # Questi devono corrispondere esattamente alle chiavi in EMULATORS
+    'rpcs3', 'yuzu', 'eden', 'ppsspp', 'citra', 'azahar', 'ryujinx', 'dolphin',
+    'duckstation', 'mgba', 'snes9x', 'desmume', 'cemu', 'flycast', 'shadps4',
+    'sameboy', 'xenia', 'pcsx2',
+]
+
+UNKNOWN_EMULATORS = [
+    # Emulatori non ancora supportati ma che vogliamo rilevare
+    'retroarch', 'project64', 'zsnes', 'fceux', 'nestopia', 'demul', 'mame',
+    'dosbox', 'scummvm', 'melonds', 'xemu', 'redream', 'epsxe', 'mesen',
+    'bsnes', 'higan', 'mednafen', 'kega', 'fusion', 'vita3k', 'play',
+    'supermodel', 'nulldc', 'mupen64plus', 'bizhawk', 'ares', 'raine',
+    'pcsp', 'cxbx', 'cxbx-reloaded', 'xqemu', 'decaf',
+]
 # Dictionary mapping emulator keys (used internally) to their configuration
 # 'name' is the display name, 'profile_finder' is the function to call
 EMULATORS: Dict[str, Dict[str, Any]] = {
@@ -145,6 +164,54 @@ def find_profiles_for_emulator(emulator_key: str, custom_path: Optional[str] = N
     except Exception as e:
         log.exception(f"Error finding profiles for {emulator_config.get('name', emulator_key)}: {e}")
         return {}
+
+def is_known_emulator(file_path: str) -> bool:
+    """
+    Verifica se il file è un emulatore conosciuto, senza cercare i profili di salvataggio.
+    Usato principalmente per il filtraggio rapido durante la scansione delle cartelle.
+    
+    Args:
+        file_path: Il percorso del file da verificare
+        
+    Returns:
+        bool: True se è un emulatore conosciuto, False altrimenti
+    """
+    try:
+        if not file_path or not os.path.exists(file_path):
+            return False
+        
+        # Risolvi il collegamento .lnk se necessario
+        target_path = file_path
+        if file_path.lower().endswith('.lnk') and os.name == 'nt':  # 'nt' è Windows
+            try:
+                import winshell
+                shortcut = winshell.shortcut(file_path)
+                resolved_target = shortcut.path
+                
+                if resolved_target and os.path.exists(resolved_target):
+                    target_path = resolved_target
+                    log.info(f"is_known_emulator: Resolved .lnk target to: {target_path}")
+                else:
+                    return False
+            except Exception as e:
+                log.error(f"Error resolving shortcut in is_known_emulator: {e}")
+                return False
+        
+        # Verifica se il percorso contiene uno degli emulatori conosciuti
+        target_path_lower = target_path.lower()
+        file_name = os.path.basename(target_path_lower)
+        
+        # Combine known and unknown emulators for exclusion
+        all_emulators = KNOWN_EMULATORS + UNKNOWN_EMULATORS
+        for emulator in all_emulators:
+            if emulator in file_name or f"\\{emulator}\\" in target_path_lower or f"/{emulator}/" in target_path_lower:
+                log.info(f"Detected emulator '{emulator}' in path: {target_path}")
+                return True
+                
+        return False
+    except Exception as e:
+        log.error(f"Error in is_known_emulator: {e}")
+        return False
 
 def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] | None:
     """
