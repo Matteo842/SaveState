@@ -229,6 +229,9 @@ class MultiProfileDialog(QDialog):
         """
         super().__init__(parent)
         
+        # Imposta il dialogo come non modale
+        self.setWindowModality(Qt.NonModal)
+        
         self.files_to_process = files_to_process
         self.total_files = len(files_to_process)
         self.processed_files = 0

@@ -564,7 +564,12 @@ class DragDropHandler(QObject):
 
         app_id_match = re.search(r'steam://rungameid/(\d+)', steam_url_str)
         if not app_id_match:
-            QMessageBox.warning(mw, "Invalid Steam URL", "The provided Steam URL is not valid or could not be parsed.")
+            # Usa un messaggio non modale invece di QMessageBox.warning
+            msg_box = QMessageBox(QMessageBox.Icon.Warning, "Invalid Steam URL", 
+                                 "The provided Steam URL is not valid or could not be parsed.", 
+                                 QMessageBox.StandardButton.Ok, mw)
+            msg_box.setWindowModality(Qt.NonModal)
+            msg_box.show()
             mw.status_label.setText("Invalid Steam URL detected.")
             logger.warning(f"Could not parse AppID from Steam URL: {steam_url_str}")
             self._hide_overlay_if_visible(mw)
@@ -591,7 +596,12 @@ class DragDropHandler(QObject):
 
             if not hasattr(mw, 'current_settings'):
                 logger.error("MainWindow is missing 'current_settings'. Cannot proceed with detection.")
-                QMessageBox.critical(mw, "Internal Error", "Required application settings are missing. Cannot start game detection.")
+                # Usa un messaggio non modale invece di QMessageBox.critical
+                msg_box = QMessageBox(QMessageBox.Icon.Critical, "Internal Error", 
+                                     "Required application settings are missing. Cannot start game detection.", 
+                                     QMessageBox.StandardButton.Ok, mw)
+                msg_box.setWindowModality(Qt.NonModal)
+                msg_box.show()
                 self._hide_overlay_if_visible(mw)
                 # Ripristiniamo i controlli e il cursore normale in caso di errore
                 mw.set_controls_enabled(True)
@@ -652,14 +662,15 @@ class DragDropHandler(QObject):
                 self._hide_overlay_if_visible(mw)
             else:
                 # Show normal error popup
-                QMessageBox.warning(
-                    mw, 
-                    "Steam Game Not Found", 
-                    f"The Steam game with AppID {app_id} does not appear to be installed, "
-                    "or its details could not be retrieved from your Steam library.\n\n"
-                    "Please ensure the game is installed and that SaveState has correctly "
-                    "identified your Steam installation."
-                )
+                # Show normal error popup - make it non-modal
+                msg_box = QMessageBox(QMessageBox.Icon.Warning, "Steam Game Not Found", 
+                                     f"The Steam game with AppID {app_id} does not appear to be installed, "
+                                     "or its details could not be retrieved from your Steam library.\n\n"
+                                     "Please ensure the game is installed and that SaveState has correctly "
+                                     "identified your Steam installation.", 
+                                     QMessageBox.StandardButton.Ok, mw)
+                msg_box.setWindowModality(Qt.NonModal)
+                msg_box.show()
                 mw.status_label.setText(f"Steam game (AppID: {app_id}) not found or not installed.")
                 logger.warning(f"Steam game with AppID {app_id} not found in installed_steam_games_dict.")
                 self._hide_overlay_if_visible(mw)
@@ -1155,23 +1166,31 @@ class DragDropHandler(QObject):
             # Connetti il segnale profileAdded al metodo che gestisce l'analisi
             dialog.profileAdded.connect(self._handle_profile_analysis)
             
+            # Connetti il segnale finished per gestire la chiusura del dialogo
+            dialog.finished.connect(self.on_multi_profile_dialog_finished)
+            
             # Salva il riferimento al dialogo come attributo dell'istanza
             self.profile_dialog = dialog
             
-            # Mostra il dialogo e attendi che l'utente faccia la sua scelta
-            result = dialog.exec()
+            # Mostra il dialogo (non-blocking)
+            dialog.show()
             
-            # Ripristina lo stato dell'UI
-            mw.set_controls_enabled(True)
+    def on_multi_profile_dialog_finished(self, result):
+        """Handle the result of the multi-profile dialog."""
+        mw = self.main_window
+        dialog = self.profile_dialog
+        
+        # Ripristina lo stato dell'UI
+        mw.set_controls_enabled(True)
+        # Nascondi l'overlay se visibile
+        self._hide_overlay_if_visible(mw)
             
-            # Nascondi l'overlay se visibile
-            self._hide_overlay_if_visible(mw)
+        if result == QDialog.Accepted:
+            # Ottieni i profili accettati
+            accepted_profiles = dialog.get_accepted_profiles()
             
-            if result == QDialog.Accepted:
-                # Ottieni i profili accettati
-                accepted_profiles = dialog.get_accepted_profiles()
-                
-                # Aggiungi i profili accettati
+            # Aggiungi i profili accettati
+            if accepted_profiles:
                 for profile_name, profile_data in accepted_profiles.items():
                     mw.profiles[profile_name] = profile_data
                 
@@ -1185,8 +1204,10 @@ class DragDropHandler(QObject):
                     logging.error("Failed to save profiles.")
                     QMessageBox.critical(mw, "Errore", "Impossibile salvare i profili.")
             else:
-                mw.status_label.setText("Creazione profili annullata.")
-                logging.info("DragDropHandler.dropEvent: Profile creation cancelled by user.")
+                mw.status_label.setText("Nessun profilo da aggiungere.")
+        else:
+            mw.status_label.setText("Creazione profili annullata.")
+            logging.info("DragDropHandler: Profile creation cancelled by user.")
                 
             # Rimuovi il riferimento al dialogo
             self.profile_dialog = None
