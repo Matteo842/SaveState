@@ -241,7 +241,7 @@ class DragDropHandler(QObject):
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             
             # Inizializza la barra di avanzamento
-            self.profile_dialog.update_progress(0, f"Preparazione analisi per {len(files_to_analyze)} file...")
+            self.profile_dialog.update_progress(0, f"Preparation of analysis for {len(files_to_analyze)} file...")
             QApplication.processEvents()
             
             # Dizionario per tenere traccia dei thread attivi
@@ -416,13 +416,13 @@ class DragDropHandler(QObject):
                 # Passa il completed_count effettivo, non una percentuale
                 self.profile_dialog.update_progress(
                     completed_count, 
-                    f"Analisi in corso... {completed_count}/{total_count} completati"
+                    f"Analysis in progress... {completed_count}/{total_count} completed"
                 )
         
             # Se tutti i thread sono completati, notifica il completamento
             if completed_count == total_count and total_count > 0:
                 # Notifica il completamento dell'analisi, passando total_count come valore corrente
-                self.profile_dialog.update_progress(total_count, "Analisi completata")
+                self.profile_dialog.update_progress(total_count, "Analysis completed")
                 
                 # Emetti un segnale per notificare il completamento dell'analisi
                 # Questo segnale potrebbe non essere più strettamente necessario se MultiProfileDialog gestisce
@@ -469,13 +469,13 @@ class DragDropHandler(QObject):
                 # Passa il completed_count effettivo, non una percentuale
                 self.profile_dialog.update_progress(
                     completed_count, 
-                    f"Analisi in corso... {completed_count}/{total_count} completati"
+                    f"Analysis in progress... {completed_count}/{total_count} completed"
                 )
             
             # Se tutti i thread sono completati, notifica il completamento
             if completed_count == total_count and total_count > 0:
                 # Notifica il completamento dell'analisi, passando total_count come valore corrente
-                self.profile_dialog.update_progress(total_count, "Analisi completata")
+                self.profile_dialog.update_progress(total_count, "Analysis completed")
                 
                 # Emetti un segnale per notificare il completamento dell'analisi
                 self.profile_dialog.analysis_completed.emit()
