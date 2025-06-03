@@ -928,7 +928,7 @@ class DragDropHandler(QObject):
                         self.original_steam_url_str = steam_url_str
                         self.handle_steam_url_drop(steam_url_str)
                         event.acceptProposedAction()
-                        return
+                        return True
         
         # Gestione per file locali e collegamenti
         if mime_data.hasUrls():
@@ -988,10 +988,10 @@ class DragDropHandler(QObject):
                     files_to_process.append(file_path)
         
         # Verifica se abbiamo file da processare
-        if not files_to_process:
-            logging.warning("DragDropHandler.dropEvent: No valid files to process")
+        if not (mime_data.hasUrls() or mime_data.hasText()):
+            logging.debug("DragDropHandler.dropEvent: Event ignored, no URLs or text.")
             event.ignore()
-            return
+            return False
         
         # Verifica se è un emulatore
         if len(files_to_process) == 1:
@@ -1002,118 +1002,110 @@ class DragDropHandler(QObject):
                 emulator_key, profiles_data = emulator_result
                 logging.info(f"DragDropHandler.dropEvent: Detected emulator: {emulator_key}")
                 
-                # Gestisci l'emulatore in modo specifico
-                if emulator_key == "PCSX2" and profiles_data:
-                    self._handle_pcsx2_emulator(file_path, profiles_data)
-                    event.acceptProposedAction()
-                    return
-                elif emulator_key == "minecraft" and profiles_data:
-                    self._handle_minecraft(file_path, profiles_data)
-                    event.acceptProposedAction()
-                    return
-                else:
-                    # Gestione generica per altri emulatori
-                    # Implementazione inline invece di chiamare un metodo separato
-                    mw = self.main_window
-                    logging.info(f"DragDropHandler: Handling emulator: {emulator_key} with {len(profiles_data)} profiles")
+                # Gestione generica per emulatori
+                # Implementazione inline invece di chiamare un metodo separato
+                mw = self.main_window
+                logging.info(f"DragDropHandler: Handling emulator: {emulator_key} with {len(profiles_data) if profiles_data else 'no'} profiles")
                     
-                    # Special handling for SameBoy emulator
-                    if emulator_key == 'sameboy' and profiles_data is None:
-                        # Try to find SameBoy profiles manually
-                        try:
-                            from emulator_utils import sameboy_manager
-                            rom_dir = sameboy_manager.get_sameboy_saves_path()
-                            if rom_dir:
-                                profiles_data = sameboy_manager.find_sameboy_profiles(rom_dir)
-                                if profiles_data:
-                                    logging.info(f"Found save files in hardcoded path: {rom_dir}")
-                                    logging.info(f"Found {len(profiles_data)} SameBoy profiles in directory '{rom_dir}'.")
-                                else:
-                                    logging.warning(f"No SameBoy profiles found in directory '{rom_dir}'.")
+                # Special handling for SameBoy emulator
+                if emulator_key == 'sameboy' and profiles_data is None:
+                    # Try to find SameBoy profiles manually
+                    try:
+                        from emulator_utils import sameboy_manager
+                        rom_dir = sameboy_manager.get_sameboy_saves_path()
+                        if rom_dir:
+                            profiles_data = sameboy_manager.find_sameboy_profiles(rom_dir)
+                            if profiles_data:
+                                logging.info(f"Found save files in hardcoded path: {rom_dir}")
+                                logging.info(f"Found {len(profiles_data)} SameBoy profiles in directory '{rom_dir}'.")
                             else:
-                                logging.warning("Could not determine SameBoy ROM directory.")
-                        except Exception as e:
-                            logging.error(f"Error finding SameBoy profiles: {e}")
-                            QMessageBox.warning(
-                                mw, "SameBoy Detection Error",
-                                f"An error occurred while trying to detect SameBoy profiles: {e}\n"
-                                "You can try adding the emulator again or set the path manually via settings (if available).")
-                    
-                    # Handle emulator profiles if found
-                    if emulator_key and profiles_data is not None:  # Check if profiles_data is not None (it could be an empty list)
-                        logging.info(f"Found {emulator_key} profiles: {len(profiles_data)}")
-                        
-                        # Show dialog for selecting which emulator game to create a profile for
-                        selection_dialog = EmulatorGameSelectionDialog(emulator_key, profiles_data, mw)
-                        if selection_dialog.exec():
-                            selected_profile = selection_dialog.get_selected_profile_data()
-                            if selected_profile:
-                                # Extract details from the selected profile
-                                profile_id = selected_profile.get('id', '')
-                                selected_name = selected_profile.get('name', profile_id)
-                                save_paths = selected_profile.get('paths', [])
-                                
-                                # Create a profile name based on the emulator and game
-                                profile_name_base = f"{emulator_key} - {selected_name}"
-                                profile_name = profile_name_base
-                                
-                                # Check if profile already exists
-                                if profile_name in mw.profiles:
-                                    reply = QMessageBox.question(mw, "Existing Profile",
-                                                            f"A profile named '{profile_name}' already exists. Overwrite it?",
-                                                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                                            QMessageBox.StandardButton.No)
-                                    if reply == QMessageBox.StandardButton.No:
-                                        mw.status_label.setText("Profile creation cancelled.")
-                                        event.acceptProposedAction()
-                                        return
-                                    else:
-                                        logging.warning(f"Overwriting existing profile: {profile_name}")
-                                
-                                # Create the profile with the appropriate data
-                                new_profile = {
-                                    'name': profile_name,
-                                    'paths': save_paths,
-                                    'emulator': emulator_key
-                                }
-                                
-                                # Add the profile to the main window's profiles dictionary
-                                mw.profiles[profile_name] = new_profile
-                                
-                                # Save the profiles to disk
-                                if mw.core_logic.save_profiles(mw.profiles):
-                                    if hasattr(mw, 'profile_table_manager'):
-                                        mw.profile_table_manager.update_profile_table()
-                                        mw.profile_table_manager.select_profile_in_table(profile_name)
-                                    mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
-                                    logging.info(f"Emulator game profile '{profile_name}' created/updated with emulator '{emulator_key}'.")
-                                else:
-                                    logging.error(f"Failed to save profiles after adding '{profile_name}'.")
-                                    QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
+                                logging.warning(f"No SameBoy profiles found in directory '{rom_dir}'.")
                         else:
-                            logging.info("User cancelled emulator game selection.")
-                        
-                        # Hide the overlay if it's visible
-                        self._hide_overlay_if_visible(mw)
-                        mw.set_controls_enabled(True)
-                        QApplication.restoreOverrideCursor()
-                    elif emulator_key:  # Emulator detected but no profiles found
-                        logging.warning(f"{emulator_key} detected, but no profiles found in its standard directory.")
+                            logging.warning("Could not determine SameBoy ROM directory.")
+                    except Exception as e:
+                        logging.error(f"Error finding SameBoy profiles: {e}")
                         QMessageBox.warning(
-                            mw, f"{emulator_key.capitalize()} Profiles",
-                            f"No game profiles were found for {emulator_key.capitalize()}.\n\n"
-                            "This could be because:\n"
-                            "- You haven't played any games yet\n"
-                            "- The emulator is installed in a non-standard location\n"
-                            "- The save files are stored in a custom location")
-                        
-                        # Hide the overlay if it's visible
-                        self._hide_overlay_if_visible(mw)
-                        mw.set_controls_enabled(True)
-                        QApplication.restoreOverrideCursor()
+                            mw, "SameBoy Detection Error",
+                            f"An error occurred while trying to detect SameBoy profiles: {e}\n"
+                            "You can try adding the emulator again or set the path manually via settings (if available).")
+                
+                # Handle emulator profiles if found
+                if emulator_key and profiles_data is not None:  # Check if profiles_data is not None (it could be an empty list)
+                    logging.info(f"Found {emulator_key} profiles: {len(profiles_data)}")
+                    
+                    # Show dialog for selecting which emulator game to create a profile for
+                    selection_dialog = EmulatorGameSelectionDialog(emulator_key, profiles_data, mw)
+                    if selection_dialog.exec():
+                        selected_profile = selection_dialog.get_selected_profile_data()
+                        if selected_profile:
+                            # Extract details from the selected profile
+                            profile_id = selected_profile.get('id', '')
+                            selected_name = selected_profile.get('name', profile_id)
+                            save_paths = selected_profile.get('paths', [])
+                            
+                            # Create a profile name based on the emulator and game
+                            profile_name_base = f"{emulator_key} - {selected_name}"
+                            profile_name = profile_name_base
+                            
+                            # Check if profile already exists
+                            if profile_name in mw.profiles:
+                                reply = QMessageBox.question(mw, "Existing Profile",
+                                                        f"A profile named '{profile_name}' already exists. Overwrite it?",
+                                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                                        QMessageBox.StandardButton.No)
+                                if reply == QMessageBox.StandardButton.No:
+                                    mw.status_label.setText("Profile creation cancelled.")
+                                    event.acceptProposedAction()
+                                    return True
+                                else:
+                                    logging.warning(f"Overwriting existing profile: {profile_name}")
+                            
+                            # Create the profile with the appropriate data
+                            new_profile = {
+                                'name': profile_name,
+                                'paths': save_paths,
+                                'emulator': emulator_key
+                            }
+                            
+                            # Add the profile to the main window's profiles dictionary
+                            mw.profiles[profile_name] = new_profile
+                            
+                            # Save the profiles to disk
+                            if mw.core_logic.save_profiles(mw.profiles):
+                                if hasattr(mw, 'profile_table_manager'):
+                                    mw.profile_table_manager.update_profile_table()
+                                    mw.profile_table_manager.select_profile_in_table(profile_name)
+                                mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
+                                logging.info(f"Emulator game profile '{profile_name}' created/updated with emulator '{emulator_key}'.")
+                            else:
+                                logging.error(f"Failed to save profiles after adding '{profile_name}'.")
+                                QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
+                    else:
+                        logging.info("User cancelled emulator game selection.")
+                    
+                    # Hide the overlay if it's visible
+                    self._hide_overlay_if_visible(mw)
+                    mw.set_controls_enabled(True)
+                    QApplication.restoreOverrideCursor()
+                    event.acceptProposedAction()
+                    return True # Handled emulator case (profiles found or dialog cancelled)
+                elif emulator_key:  # Emulator detected but no profiles found
+                    logging.warning(f"{emulator_key} detected, but no profiles found in its standard directory.")
+                    QMessageBox.warning(
+                        mw, f"{emulator_key.capitalize()} Profiles",
+                        f"No game profiles were found for {emulator_key.capitalize()}.\n\n"
+                        "This could be because:\n"
+                        "- You haven't played any games yet\n"
+                        "- The emulator is installed in a non-standard location\n"
+                        "- The save files are stored in a custom location")
+                    
+                    # Hide the overlay if it's visible
+                    self._hide_overlay_if_visible(mw)
+                    mw.set_controls_enabled(True)
+                    QApplication.restoreOverrideCursor()
                     
                     event.acceptProposedAction()
-                    return
+                    return True
         else:
             # Processare più file contemporaneamente
             logging.info(f"DragDropHandler.dropEvent: Processing multiple files: {len(files_to_process)}")
@@ -1157,10 +1149,10 @@ class DragDropHandler(QObject):
             
             # If no files left after filtering, show message and return
             if not files_to_process:
-                logging.info("DragDropHandler.dropEvent: No valid files to process after filtering out emulators")
+                logging.warning("DragDropHandler.dropEvent: No valid files to process")
                 mw.status_label.setText("No valid game files found (emulators were filtered out).")
                 event.ignore()
-                return
+                return False
             
             # Crea il dialogo per la gestione dei profili
             dialog = MultiProfileDialog(files_to_process=files_to_process, parent=mw)
@@ -1198,14 +1190,22 @@ class DragDropHandler(QObject):
                     logging.error("Failed to save profiles.")
                     QMessageBox.critical(mw, "Errore", "Impossibile salvare i profili.")
             else:
+                # This 'else' corresponds to dialog.exec() != QDialog.Accepted
                 mw.status_label.setText("Creazione profili annullata.")
                 logging.info("DragDropHandler.dropEvent: Profile creation cancelled by user.")
-                
+            
             # Rimuovi il riferimento al dialogo
             self.profile_dialog = None
-            
+
+            # Whether dialog was accepted or cancelled, or profiles saved/not saved,
+            # the multi-file drop event was handled by DragDropHandler.
             event.acceptProposedAction()
-            return
+            return True
+
+            # If no specific handling caught the event, DragDropHandler did not handle it.
+            # Allow fallback to ProfileCreationManager.
+            event.ignore()
+            return False
             
         # Definiamo le variabili per il tipo di file
         file_path = files_to_process[0]  # A questo punto sappiamo che c'è almeno un file

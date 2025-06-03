@@ -819,9 +819,22 @@ class MainWindow(QMainWindow):
                 logging.debug(f"MainWindow.dropEvent: Passing non-Steam drop event for path '{dropped_path}' to DragDropHandler.")
                 # A questo punto, `is_steam_url` è False. L'overlay per non-Steam URL dovrebbe essere già
                 # stato nascosto. DragDropHandler.dropEvent gestirà l'overlay se necessario per le sue operazioni.
-                self.drag_drop_handler.dropEvent(event) # Utilizziamo il nuovo DragDropHandler
+                handled_by_ddh = self.drag_drop_handler.dropEvent(event) # Utilizziamo il nuovo DragDropHandler
+                if handled_by_ddh:
+                    # DragDropHandler handled the event (e.g., showed a dialog).
+                    # Ensure the event is accepted and stop further processing in MainWindow.dropEvent.
+                    if not event.isAccepted():
+                        event.acceptProposedAction()
+                    logging.info("MainWindow.dropEvent: Event handled by DragDropHandler.")
+                    return # Stop further processing in MainWindow.dropEvent
+                else:
+                    # DragDropHandler returned False, meaning it didn't handle this specific event.
+                    # Log this and allow the event to be ignored (DDH should have called event.ignore()).
+                    logging.info("MainWindow.dropEvent: DragDropHandler returned False. Event likely ignored by DDH.")
+                    # No explicit fallback to ProfileCreationManager here in the original code.
+                    # The 'return' above for True case is the main fix for the double dialog.
             else:
-                logging.error("MainWindow.dropEvent: PCM not init for generic file drop!")
+                logging.error("MainWindow.dropEvent: DragDropHandler not available for generic file drop!")
                 # L'overlay per non-Steam URL dovrebbe essere già stato nascosto.
                 event.ignore()
         else:
