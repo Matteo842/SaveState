@@ -275,7 +275,7 @@ class MultiProfileDialog(QDialog):
         
         # Progress bar (initially hidden)
         self.progress_bar = SegmentedProgressBar()
-        self.progress_bar.setRange(0, 1)  # Will be updated when analysis starts
+        self.progress_bar.setRange(0, self.total_files if self.total_files > 0 else 1)  # Set range based on actual total files
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat("%v/%m file processed (%p%)")
         self.progress_bar.hide()

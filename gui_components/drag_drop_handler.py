@@ -218,6 +218,9 @@ class DragDropHandler(QObject):
             
             # Prepara i dati per ogni file
             for i, (profile_name, file_path) in enumerate(files_to_analyze):
+                # 'profile_name' is the key from MultiProfileDialog and must be preserved for active_threads.
+                # 'name_for_detection_thread' can be updated with the Steam name for better detection if needed.
+                name_for_detection_thread = profile_name
                 # Aggiorna la barra di avanzamento
                 self.profile_dialog.update_progress(i, f"Preparazione: {os.path.basename(file_path)}")
                 QApplication.processEvents()
@@ -282,13 +285,14 @@ class DragDropHandler(QObject):
                         game_install_dir = game_details['install_dir']
                         logging.info(f"Using Steam game install directory: {game_install_dir} for {profile_name}")
                     
-                        # Aggiorna il nome del profilo con il nome ufficiale del gioco Steam
-                        profile_name = game_details['name']
+                        # Usa il nome ufficiale del gioco Steam per il suggerimento al thread di rilevamento,
+                        # ma mantieni 'profile_name' (la chiave del dialogo) invariato.
+                        name_for_detection_thread = game_details['name']
             
                 # Avvia il thread di rilevamento per questo file in modo asincrono
                 detection_thread = DetectionWorkerThread(
                     game_install_dir=game_install_dir,
-                    profile_name_suggestion=profile_name,
+                    profile_name_suggestion=name_for_detection_thread, # Usa il nome (potenzialmente Steam) per il suggerimento
                     current_settings=self.main_window.current_settings.copy(),
                     installed_steam_games_dict=steam_games_dict,
                     emulator_name=None,
@@ -378,35 +382,39 @@ class DragDropHandler(QObject):
         # Aggiorna la barra di avanzamento solo se il dialogo esiste ancora
         if self.profile_dialog:
             if total_count > 0:
-                progress_percentage = int((completed_count / total_count) * 100)
+                # Passa il completed_count effettivo, non una percentuale
                 self.profile_dialog.update_progress(
-                    progress_percentage,
+                    completed_count, 
                     f"Analisi in corso... {completed_count}/{total_count} completati"
                 )
-            
+        
             # Se tutti i thread sono completati, notifica il completamento
             if completed_count == total_count and total_count > 0:
-                # Notifica il completamento dell'analisi
-                self.profile_dialog.update_progress(100, "Analisi completata")
+                # Notifica il completamento dell'analisi, passando total_count come valore corrente
+                self.profile_dialog.update_progress(total_count, "Analisi completata")
                 
                 # Emetti un segnale per notificare il completamento dell'analisi
-                self.profile_dialog.analysis_completed.emit()
-        
+                # Questo segnale potrebbe non essere più strettamente necessario se MultiProfileDialog gestisce
+                # il completamento direttamente in update_progress, ma lo lasciamo per ora.
+                self.profile_dialog.analysis_completed.emit() 
+    
+        # Pulizia risorse anche se il dialogo è stato chiuso
+        if completed_count == total_count and total_count > 0:
             # Ripristina il cursore
             QApplication.restoreOverrideCursor()
-        
+            
             # Ferma il timer
             self.check_threads_timer.stop()
-        
+            
             # Pulisci i riferimenti ai thread
             for thread_info in self.active_threads.values():
                 if 'thread' in thread_info and thread_info['thread'] is not None:
                     thread_info['thread'].deleteLater()
-        
+            
             self.active_threads = {}
-        
+            
             logging.info("All detection threads completed.")
-        
+            
             # Emetti un segnale per notificare il completamento dell'analisi
             self.profile_dialog.analysis_completed.emit()
 
@@ -427,15 +435,16 @@ class DragDropHandler(QObject):
         # Aggiorna la barra di avanzamento solo se il dialogo esiste ancora
         if self.profile_dialog:
             if total_count > 0:
-                progress_percentage = int((completed_count / total_count) * 100)
+                # Passa il completed_count effettivo, non una percentuale
                 self.profile_dialog.update_progress(
-                    progress_percentage,
+                    completed_count, 
                     f"Analisi in corso... {completed_count}/{total_count} completati"
                 )
             
             # Se tutti i thread sono completati, notifica il completamento
             if completed_count == total_count and total_count > 0:
-                self.profile_dialog.update_progress(100, "Analisi completata")
+                # Notifica il completamento dell'analisi, passando total_count come valore corrente
+                self.profile_dialog.update_progress(total_count, "Analisi completata")
                 
                 # Emetti un segnale per notificare il completamento dell'analisi
                 self.profile_dialog.analysis_completed.emit()
@@ -456,7 +465,7 @@ class DragDropHandler(QObject):
             self.active_threads = {}
             
             logging.info("All detection threads completed.")
-            
+
     def _is_known_emulator(self, file_path):
         """Verifica solo se il file è un emulatore conosciuto, senza cercare i profili di salvataggio.
         Usa la funzione centralizzata in emulator_manager.
@@ -900,7 +909,7 @@ class DragDropHandler(QObject):
                 except ImportError:
                     logging.error("The 'winshell' or 'pywin32' library is not installed. Cannot read .lnk files.")
                     QMessageBox.critical(self.main_window, "Dependency Error",
-                                     "The 'winshell' and 'pywin32' libraries are required to read shortcuts (.lnk) on Windows.")
+                                        "The 'winshell' and 'pywin32' libraries are required to read shortcuts (.lnk) on Windows.")
                     return
 
         # Lista per raccogliere i file da processare
@@ -925,24 +934,9 @@ class DragDropHandler(QObject):
                         except Exception as e_lnk:
                             logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
                     
-                    # Gestione speciale per le cartelle
+                    # Skip directories and directory shortcuts in multi-file processing
                     if os.path.isdir(file_path) or is_dir_shortcut:
-                        if is_dir_shortcut:
-                            # Per i collegamenti a cartelle, usiamo il percorso risolto
-                            directory_path = resolved_target
-                        else:
-                            directory_path = file_path
-                            
-                        logging.info(f"DragDropHandler.dropEvent: Processing directory: {directory_path}")
-                        # Scansiona la cartella per trovare file eseguibili
-                        executables = self._scan_directory_for_executables(directory_path)
-                        if executables:
-                            # Aggiungi gli eseguibili trovati alla lista dei file da processare
-                            for exe_path in executables:
-                                logging.info(f"DragDropHandler.dropEvent: Found executable in directory: {exe_path}")
-                                files_to_process.append(exe_path)
-                        else:
-                            logging.info(f"DragDropHandler.dropEvent: No executables found in directory: {directory_path}")
+                        logging.info(f"DragDropHandler.dropEvent: Skipping directory or directory shortcut: {file_path}")
                         continue
                         
                     # Verifica se è un URL Steam valido
@@ -1093,19 +1087,9 @@ class DragDropHandler(QObject):
             # Processare più file contemporaneamente
             logging.info(f"DragDropHandler.dropEvent: Processing multiple files: {len(files_to_process)}")
             
-            # Filtra i file per escludere emulatori e altri file non validi
+            # Filter out emulators and uninstalled Steam games from files_to_process
             filtered_files = []
             for file_path in files_to_process:
-                # Verifica se il file esiste
-                if not os.path.exists(file_path):
-                    logging.info(f"DragDropHandler.dropEvent: Skipping non-existent file: {file_path}")
-                    continue
-                    
-                # Verifica se è una cartella (non dovrebbe succedere a questo punto)
-                if os.path.isdir(file_path):
-                    logging.info(f"DragDropHandler.dropEvent: Skipping directory: {file_path}")
-                    continue
-                
                 # Check if it's an emulator
                 emulator_result = self._check_if_emulator(file_path)
                 if emulator_result:
@@ -1133,21 +1117,8 @@ class DragDropHandler(QObject):
                     except Exception as e:
                         logging.error(f"Error checking Steam URL in .url file: {e}")
                 
-                # Per i file .lnk, verifica che non puntino a cartelle
-                is_dir_shortcut = False
-                if file_path.lower().endswith('.lnk') and platform.system() == "Windows":
-                    try:
-                        import winshell
-                        shortcut = winshell.shortcut(file_path)
-                        target_path = shortcut.path
-                        if os.path.isdir(target_path):
-                            logging.info(f"DragDropHandler.dropEvent: Skipping directory shortcut: {file_path} -> {target_path}")
-                            is_dir_shortcut = True
-                    except Exception as e:
-                        logging.error(f"Error checking .lnk file: {e}")
-                
-                # Add the file only if it passes all filters
-                if not is_uninstalled_steam_game and not is_dir_shortcut:
+                # Add the file only if it's not an emulator and not an uninstalled Steam game
+                if not is_uninstalled_steam_game:
                     filtered_files.append(file_path)
             
             # Update files_to_process with filtered list
@@ -1166,31 +1137,23 @@ class DragDropHandler(QObject):
             # Connetti il segnale profileAdded al metodo che gestisce l'analisi
             dialog.profileAdded.connect(self._handle_profile_analysis)
             
-            # Connetti il segnale finished per gestire la chiusura del dialogo
-            dialog.finished.connect(self.on_multi_profile_dialog_finished)
-            
             # Salva il riferimento al dialogo come attributo dell'istanza
             self.profile_dialog = dialog
             
-            # Mostra il dialogo (non-blocking)
-            dialog.show()
+            # Mostra il dialogo e attendi che l'utente faccia la sua scelta
+            result = dialog.exec()
             
-    def on_multi_profile_dialog_finished(self, result):
-        """Handle the result of the multi-profile dialog."""
-        mw = self.main_window
-        dialog = self.profile_dialog
-        
-        # Ripristina lo stato dell'UI
-        mw.set_controls_enabled(True)
-        # Nascondi l'overlay se visibile
-        self._hide_overlay_if_visible(mw)
+            # Ripristina lo stato dell'UI
+            mw.set_controls_enabled(True)
             
-        if result == QDialog.Accepted:
-            # Ottieni i profili accettati
-            accepted_profiles = dialog.get_accepted_profiles()
+            # Nascondi l'overlay se visibile
+            self._hide_overlay_if_visible(mw)
             
-            # Aggiungi i profili accettati
-            if accepted_profiles:
+            if result == QDialog.Accepted:
+                # Ottieni i profili accettati
+                accepted_profiles = dialog.get_accepted_profiles()
+                
+                # Aggiungi i profili accettati
                 for profile_name, profile_data in accepted_profiles.items():
                     mw.profiles[profile_name] = profile_data
                 
@@ -1204,10 +1167,8 @@ class DragDropHandler(QObject):
                     logging.error("Failed to save profiles.")
                     QMessageBox.critical(mw, "Errore", "Impossibile salvare i profili.")
             else:
-                mw.status_label.setText("Nessun profilo da aggiungere.")
-        else:
-            mw.status_label.setText("Creazione profili annullata.")
-            logging.info("DragDropHandler: Profile creation cancelled by user.")
+                mw.status_label.setText("Creazione profili annullata.")
+                logging.info("DragDropHandler.dropEvent: Profile creation cancelled by user.")
                 
             # Rimuovi il riferimento al dialogo
             self.profile_dialog = None
@@ -1230,11 +1191,11 @@ class DragDropHandler(QObject):
                 working_dir = shortcut.working_directory
 
                 if not resolved_target or not os.path.exists(resolved_target):
-                     logging.error(f"Could not resolve .lnk target or target does not exist: {resolved_target}")
-                     QMessageBox.critical(mw, "Shortcut Error",
-                                          f"Unable to resolve the shortcut path or the target file/folder does not exist:\n'{resolved_target or 'N/A'}'")
-                     event.ignore()
-                     return
+                        logging.error(f"Could not resolve .lnk target or target does not exist: {resolved_target}")
+                        QMessageBox.critical(mw, "Shortcut Error",
+                                            f"Unable to resolve the shortcut path or the target file/folder does not exist:\n'{resolved_target or 'N/A'}'")
+                        event.ignore()
+                        return
 
                 target_path = resolved_target
                 logging.info(f"PCM.dropEvent (Fallback): Resolved .lnk target to: {target_path}")
@@ -1244,7 +1205,7 @@ class DragDropHandler(QObject):
                 elif os.path.isfile(target_path):
                     game_install_dir = os.path.normpath(os.path.dirname(target_path))
                 elif os.path.isdir(target_path):
-                     game_install_dir = os.path.normpath(target_path)
+                        game_install_dir = os.path.normpath(target_path)
                 logging.debug(f"PCM.dropEvent (Fallback): Game folder from resolved shortcut: {game_install_dir}")
             except Exception as e_lnk:
                 logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
@@ -1333,8 +1294,8 @@ class DragDropHandler(QObject):
         elif os.path.isfile(file_path):
             logging.warning(f"PCM.dropEvent: File type not allowed: {file_path}")
             QMessageBox.warning(mw, "File Type Not Supported", 
-                              f"Only Windows shortcuts (.lnk), Linux desktop files (.desktop), Linux executables, or Steam links are supported.\n\n"
-                              f"The file '{os.path.basename(file_path)}' is not a valid shortcut or executable.")
+                                f"Only Windows shortcuts (.lnk), Linux desktop files (.desktop), Linux executables, or Steam links are supported.\n\n"
+                                f"The file '{os.path.basename(file_path)}' is not a valid shortcut or executable.")
             event.ignore()
             return
         elif os.path.isdir(file_path):
@@ -1522,9 +1483,9 @@ class DragDropHandler(QObject):
 
         if profile_name in mw.profiles:
             reply = QMessageBox.question(mw, "Existing Profile",
-                                       f"A profile named '{profile_name}' already exists. Overwrite it?",
-                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                       QMessageBox.StandardButton.No)
+                                        f"A profile named '{profile_name}' already exists. Overwrite it?",
+                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                        QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.No:
                 mw.status_label.setText("Profile creation cancelled.")
                 return
