@@ -156,6 +156,37 @@ class DragDropHandler(QObject):
                                 if not ("store.steampowered.com" in url_from_file or "steam://" in url_from_file):
                                     # Salta i file .url non Steam
                                     continue
+                                
+                                # --- INIZIO LOGICA CONTROLLO INSTALLAZIONE STEAM GAME ---
+                                app_id = None
+                                # Estrai AppID (gestisce entrambi i formati di URL)
+                                match_rungameid = re.search(r'steam://rungameid/(\d+)', url_from_file)
+                                match_store_app = re.search(r'store\.steampowered\.com/app/(\d+)', url_from_file)
+
+                                if match_rungameid:
+                                    app_id = match_rungameid.group(1)
+                                elif match_store_app:
+                                    app_id = match_store_app.group(1)
+                                
+                                if app_id:
+                                    game_details = self._get_steam_game_details(app_id)
+                                    # Se game_details non esiste o non ha un install_dir valido, il gioco non è considerato installato.
+                                    # _get_steam_game_details già logga se i dettagli non sono trovati o incompleti.
+                                    if not game_details or not game_details.get('install_dir'):
+                                        # Aggiungiamo un log specifico per questo scenario di skip durante la scansione
+                                        logging.info(f"Skipping uninstalled/details-missing Steam game (AppID: {app_id}) found in directory scan: {item_path}")
+                                        continue # Salta questo file .url e passa al prossimo item
+                                    else:
+                                        # Verifica esplicita dell'esistenza dell'install_dir per maggiore robustezza
+                                        install_dir_path = Path(game_details['install_dir'])
+                                        if not install_dir_path.exists() or not install_dir_path.is_dir():
+                                            logging.warning(f"Install directory '{install_dir_path}' for Steam game (AppID: {app_id}) not found or not a directory. Skipping: {item_path}")
+                                            continue # Salta se la directory di installazione non è valida
+                                        logging.debug(f"Steam game (AppID: {app_id}, Name: {game_details.get('name', 'N/A')}) is installed. Adding '{item_path}' to valid files.")
+                                else:
+                                    logging.warning(f"Could not extract AppID from Steam URL '{url_from_file}' in file {item_path}. Skipping.")
+                                    continue # Salta se non si può estrarre l'AppID
+                                # --- FINE LOGICA CONTROLLO INSTALLAZIONE STEAM GAME ---
                             else:
                                 continue
                         except Exception as e:
