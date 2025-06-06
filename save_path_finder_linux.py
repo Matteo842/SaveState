@@ -4,6 +4,7 @@ import re
 import logging
 import platform
 from typing import Dict # Aggiunto import per Dict
+import cancellation_utils  # Add import
 
 if 'generate_abbreviations' not in globals():
     def generate_abbreviations(name, install_dir): return [name]
@@ -230,6 +231,8 @@ def are_names_similar(name1_game_variant, name2_path_component,
     # Per i confronti interni qui, potremmo volere una pulizia leggermente diversa
     # da quella usata per generare le abbreviazioni globali.
     # La versione Windows fa una pulizia specifica qui dentro. Adottiamola.
+    # La versione Windows controlla if name1_no_space.startswith(name2_no_space) OR viceversa.
+    # E anche len(nameX_no_space) > len(nameY_no_space) per evitare match parziali troppo corti
     pattern_alphanum_space = r'[^a-zA-Z0-9\s]'
     
     # Pulisci name1_game_variant ulteriormente per questo confronto specifico se non è già minimale
@@ -270,8 +273,6 @@ def are_names_similar(name1_game_variant, name2_path_component,
             # logging.debug(f"ARE_NAMES_SIMILAR (Linux): No-space exact match for '{name1_no_space}' -> True")
             return True
         # Verifica se uno è prefisso dell'altro (con una lunghezza minima ragionevole per il prefisso)
-        # La versione Windows ha una logica di starts_with più dettagliata,
-        # qui la semplifichiamo per il momento, ma tenendo il concetto.
         # La versione Windows controlla if name1_no_space.startswith(name2_no_space) OR viceversa.
         # E anche len(nameX_no_space) > len(nameY_no_space) per evitare match parziali troppo corti
         if len(name1_no_space) > len(name2_no_space) and name1_no_space.startswith(name2_no_space) and len(name2_no_space) >= max(MIN_PREFIX_LEN, len(name1_no_space) // 2):
@@ -730,7 +731,7 @@ def _add_guess(path_found, source_description, has_saves_hint_from_scan):
             _guesses_data[normalized_path]['has_saves_hint'] = True
         logging.debug(f"_add_guess: Updated guess: '{normalized_path}', Added Source: {source_description}, HasSavesHint updated if new is True.")
 
-def _search_recursive(current_path, current_depth, max_search_depth, source_prefix_desc):
+def _search_recursive(current_path, current_depth, max_search_depth, source_prefix_desc, cancellation_manager=None):
     """
     Esplora ricorsivamente le directory per trovare potenziali percorsi di salvataggio.
     CON LOGGING DI DEBUG DETTAGLIATO.
@@ -792,7 +793,7 @@ def _search_recursive(current_path, current_depth, max_search_depth, source_pref
     current_path_name_match_company = False
     current_path_is_common_save_dir_flag = basename_current_path_lower in _linux_common_save_subdirs_lower
 
-    for abbr in _game_abbreviations_lower:
+    for abbr in _game_abbreviations_lower: 
         if are_names_similar(abbr, basename_current_path_lower, 
                              game_title_sig_words_for_seq=_game_title_original_sig_words_for_seq,
                              fuzzy_threshold=_fuzzy_threshold_basename_match): 
@@ -931,10 +932,10 @@ def _search_recursive(current_path, current_depth, max_search_depth, source_pref
             
             if should_recurse_strong:
                 logging.debug(f"DECISION: RECURSING (STRONG - {recursion_decision_reason}) into: '{item_path}' (new_depth {current_depth + 1}) from '{current_path}'")
-                _search_recursive(item_path, current_depth + 1, max_search_depth, f"{source_prefix_desc}/{item_name}")
+                _search_recursive(item_path, current_depth + 1, max_search_depth, f"{source_prefix_desc}/{item_name}", cancellation_manager)
             elif current_depth < _max_shallow_explore_depth_linux:
                 logging.debug(f"DECISION: RECURSING (SHALLOW explore) into: '{item_path}' (new_depth {current_depth + 1}) from '{current_path}'")
-                _search_recursive(item_path, current_depth + 1, max_search_depth, f"{source_prefix_desc}/{item_name}")
+                _search_recursive(item_path, current_depth + 1, max_search_depth, f"{source_prefix_desc}/{item_name}", cancellation_manager)
             else:
                 logging.debug(f"DECISION: NOT RECURSING into: '{item_path}'. from_parent: '{current_path}'. sub_is_potential={sub_is_potential}, item_is_game_match={item_is_game_match}, item_is_company_match={item_is_company_match}, item_is_common_save_dir={item_is_common_save_dir}, current_depth={current_depth}, _max_shallow_explore_depth_linux={_max_shallow_explore_depth_linux}. Reason for no strong: {recursion_decision_reason}")
 
@@ -944,6 +945,10 @@ def _search_recursive(current_path, current_depth, max_search_depth, source_pref
         logging.error(f"_search_recursive GENERIC Loop Error: Path='{current_path}', Error: {e_generic_loop}", exc_info=True)
     
     logging.debug(f"EXITING _search_recursive: Path='{current_path}', Depth={current_depth}")
+
+    if cancellation_manager and cancellation_manager.check_cancelled():
+        logging.debug(f"_search_recursive: Cancellation requested. Stopping search.")
+        return
 
 # Funzione principale di ordinamento per i percorsi trovati
 def _final_sort_key_linux(item_tuple):
@@ -1121,7 +1126,7 @@ def _final_sort_key_linux(item_tuple):
     return (-score, path_lower_for_sorting)
 
 
-def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path=None, steam_id3_to_use=None, is_steam_game=True, installed_steam_games_dict=None):
+def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path=None, steam_id3_to_use=None, is_steam_game=True, installed_steam_games_dict=None, cancellation_manager=None):
     """
     Nuova implementazione di guess_save_path per Linux.
     """
@@ -1145,7 +1150,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                     if os.path.isdir(remote_path):
                         _add_guess(remote_path, f"Steam Userdata/AppID_Base/remote", False)
                         # Esplora un livello dentro 'remote'
-                        _search_recursive(remote_path, 0, _max_depth_steam_userdata, "Steam Userdata/AppID_Base/remote")
+                        _search_recursive(remote_path, 0, _max_depth_steam_userdata, "Steam Userdata/AppID_Base/remote", cancellation_manager)
         except Exception as e:
             logging.error(f"LINUX_GUESS_SAVE_PATH: Error processing Steam Userdata: {e}")
 
@@ -1168,13 +1173,11 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                     if os.path.isdir(proton_save_path):
                         _add_guess(proton_save_path, f"Proton Prefix/{fragment} ({appid})", False)
                         # Potremmo fare una ricerca limitata anche qui dentro
-                        _search_recursive(proton_save_path, 0, _max_depth_proton_compatdata, f"Proton Prefix/{fragment}")
-
+                        _search_recursive(proton_save_path, 0, _max_depth_proton_compatdata, f"Proton Prefix/{fragment}", cancellation_manager)
     # 3. Directory di Installazione del Gioco
     if game_install_dir and os.path.isdir(game_install_dir):
         logging.info(f"LINUX_GUESS_SAVE_PATH: Searching in install_dir '{game_install_dir}' (max_depth={_max_depth_generic})")
-        _search_recursive(game_install_dir, 0, _max_depth_generic, "InstallDir")
-
+        _search_recursive(game_install_dir, 0, _max_depth_generic, "InstallDir", cancellation_manager)
     # 4. Percorsi XDG e Comuni Linux
     # _linux_known_save_locations è un dict { "DescrizioneAmichevole": "/percorso/base", ... }
     for loc_desc, base_path in _linux_known_save_locations.items():
@@ -1186,7 +1189,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                 _add_guess(direct_game_path, f"{loc_desc}/DirectGameName/{abbr_or_name}", False)
             
             # Ricerca ricorsiva generale
-            _search_recursive(base_path, 0, _max_depth_generic, loc_desc)
+            _search_recursive(base_path, 0, _max_depth_generic, loc_desc, cancellation_manager)
     
     # Logica aggiuntiva per Lutris, Bottles, Heroic etc. potrebbe essere aggiunta qui,
     # idealmente guidata da configurazioni in config.py per i loro percorsi base.

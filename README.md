@@ -18,7 +18,7 @@ Furthermore, SaveState features automatic detection of Steam games and even lets
 
 ---
 
-⚠️ Current Status (2025-05-26): This is a personal project currently **under active development.** 
+⚠️ Current Status (2025-06-06): This is a personal project currently **under active development.** 
 
 ---
 
@@ -38,6 +38,10 @@ Furthermore, SaveState features automatic detection of Steam games and even lets
     * Configure backup profiles for Steam games directly from the detected list.
 * **Drag & Drop Profile Creation:** Drag a game's shortcut (`.lnk` file) onto the main window to automatically extract the game name and installation path, then initiates a background search for the save location.
 * **Manual Profile Creation:** Easily add any game by specifying a profile name and the path to its save folder.
+* **Multi Profile Creation:** 
+    * Drag a folder OR multiple shortcuts on the main window. 
+    * You can visualize all the profile of the folder and start searching for the save path; 
+    * You can add all the profile visulizing the save path and add all the profile to the list.
 * **Minecraft Java Edition Support:**
     * Automatically locates the default `.minecraft/saves` folder.
     * Lists all installed worlds, reading the world name from `level.dat` if the optional `nbtlib` library is present (falls back to folder name otherwise).
@@ -51,7 +55,6 @@ Furthermore, SaveState features automatic detection of Steam games and even lets
     * Profile list showing name and basic backup info (count, last backup date).
     * Settings dialog to configure paths, limits, theme, language, and more.
     * Dockable Log Console displaying detailed operation status and errors.
-    * Basic internationalization support (Italian/English currently included).
 * **No Administrator Privileges Required**
 * **Portable:** Runs directly from the `.exe` file without installation.
 
@@ -147,12 +150,13 @@ Get SaveState up and running on your system.
 ## Usage
 
 1.  **Launch** `SaveState.exe` or run `python main.py`.
-2.  **Configure Settings (Recommended on first launch):** Click the Settings button. Set your desired Base Backup Path where all backups will be stored in subfolders named after your profiles. Adjust other settings like max backups, theme, language, etc.
+2.  **Configure Settings (Recommended on first launch):** Click the Settings button. Set your desired Base Backup Path where all backups will be stored in subfolders named after your profiles. Adjust other settings like max backups, Maximum source size, etc.
 3.  **Add Profiles:**
     * **Manually:** Click New Manual Profile, enter a name, and provide the full path to the game's save folder.
     * **Steam:** Click Manage Steam Games. Select a detected game and click Configure Selected Profile. The app will try to guess the save path; confirm or provide it manually.
     * **Minecraft:** Click the Minecraft button. Select a world from the list and click OK. A profile will be created using the world name and its folder path.
     * **Drag & Drop:** Drag a game's `.lnk` shortcut file from your Desktop or elsewhere onto the main application window. The app will suggest a profile name and start searching for the save path; you'll be prompted to confirm or enter it manually.
+    * **Multi Profile:** drop a `folder` containing multiple games on the main window. You can visualize all the profile of the folder and delete the profile you don't need. Then you can add all the profile to the list.
 4.  **Manage Profiles:**
     * Select a profile in the list.
     * Click **Run Backup** to back it up.
@@ -162,6 +166,7 @@ Get SaveState up and running on your system.
     * Click **Delete Profile** to remove the profile entry (this does not delete existing backup files).
 5.  **Other Actions:**
     * Use **Open Backup Folder** to quickly open the base backup location in Explorer.
+    * Double Click on a profile to **open** the **save path** in Explorer.
     * Toggle the **Log Console** visibility using the terminal icon button.
     * Toggle the **Theme** using the sun/moon icon button.
 
@@ -195,34 +200,12 @@ And then run:
 pip install -r requirements.txt
 ```
 
-## Development Tools
+## Development
 
-### SaveState Tool (Helper GUI)
 
-To aid in the development process, particularly with managing translations and creating application packages, a dedicated helper tool with a graphical interface is available within the project repository.
+![why not use development builds on linux?](images/Development.png)
+*(Screenshot: Development.png)*
 
-![SaveState Tool GUI](images/SaveStateTools.png)
-*(Screenshot: SaveStateTools.png)*
-
-This tool provides a user-friendly way to perform common development tasks without directly using the command line:
-
-* **Translation Management:**
-    * Run `pyside6-lupdate` (or standard `lupdate`) to scan the configured Python source files and update the `.ts` translation file (`SaveState_en.ts` by default) with new or changed translatable strings.
-    * Run `pyside6-lrelease` to compile the `.ts` file into the binary `.qm` format required by the application.
-* **Application Packaging:**
-    * Run `PyInstaller` to package the SaveState application for distribution.
-    * Allows choosing between **One-File** mode (using `SaveState-OneFile.spec`) or **One-Folder** mode (using command-line arguments).
-* **Integrated Output:** Displays the real-time output from `lupdate`, `lrelease`, and `PyInstaller` directly within the tool's log window.
-* **Configuration:** Saves its own settings (paths to Qt tools, source file lists) persistently.
-
-**To Use:**
-
-1.  Ensure you have the necessary dependencies installed (`PySide6`, `PyInstaller`, and the Qt SDK containing `lupdate`/`lrelease` accessible in your system or configured in the tool's settings).
-2.  Locate the tool's script (e.g., `SaveStateTool.py` or `Update_Translation.py` - *rename it consistently!*) within the repository. It's recommended to run it from the **root directory** of the SaveState project.
-3.  Run it using `python path/to/your_tool_script.py`.
-4.  Use the buttons to update translations, create `.qm` files, or build the application package.
-
-*(This tool itself requires PySide6 to run).*
 
 ---
 [No time to fate, save your state!](https://www.youtube.com/@MrSujano)

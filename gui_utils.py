@@ -46,7 +46,7 @@ class DetectionWorkerThread(QThread):
     progress = Signal(str)
     finished = Signal(bool, dict) # Segnale emesso alla fine: successo(bool), risultati(dict)
 
-    def __init__(self, game_install_dir, profile_name_suggestion, current_settings, installed_steam_games_dict=None, emulator_name=None, steam_app_id=None):
+    def __init__(self, game_install_dir, profile_name_suggestion, current_settings, installed_steam_games_dict=None, emulator_name=None, steam_app_id=None, cancellation_manager=None):
         super().__init__()
         self.game_install_dir = game_install_dir
         self.profile_name_suggestion = profile_name_suggestion
@@ -55,10 +55,17 @@ class DetectionWorkerThread(QThread):
         self.emulator_name = emulator_name # Store emulator name
         self.steam_app_id = steam_app_id # Store Steam AppID
         self.is_running = True
+        self.cancellation_requested = False  # Add cancellation flag
+        self.cancellation_manager = cancellation_manager
         self.setObjectName("DetectionWorkerThread") # Aggiunto ObjectName
+
+    def request_cancellation(self):
+        self.cancellation_requested = True
 
     def run(self):
         """Contiene la logica di scansione INI e euristica."""
+        if self.cancellation_requested:
+            return
         # --- VARIABILI INIZIALI ---
         final_path_data = [] # Ora conterrà tuple (path, score)
         paths_already_added = set() # Per evitare duplicati di percorsi
@@ -271,12 +278,14 @@ class DetectionWorkerThread(QThread):
                     is_steam_game = self.steam_app_id is not None
                     
                     # Chiamata a guess_save_path (ora restituisce lista di tuple)
+                    c_manager = getattr(self, 'cancellation_manager', None)
                     heuristic_guesses_with_scores = core_logic.guess_save_path(
                         game_name=profile_name,
                         game_install_dir=self.game_install_dir,
                         is_steam_game=is_steam_game, # Usa il flag basato su steam_app_id
                         installed_steam_games_dict=self.installed_steam_games_dict,
-                        appid=self.steam_app_id # Passa l'AppID di Steam quando disponibile
+                        appid=self.steam_app_id, # Passa l'AppID di Steam quando disponibile
+                        cancellation_manager=c_manager
                     )
                     
                     logging.info(f"Heuristic save search for '{profile_name}' (AppID: {self.steam_app_id})")
@@ -313,7 +322,7 @@ class DetectionWorkerThread(QThread):
                     logging.error(f"Error during heuristic search: {e_heuristic}", exc_info=True)
                     # Non cambiare status qui, l'errore è nel messaggio
 
-            elif not self.game_install_dir and self.is_running: # Caso in cui non c'è install_dir
+            elif not self.game_install_dir and self.is_running: # Caso in cui non c'è install dir
                  logging.warning("Unable to perform automatic search: game installation folder not specified.")
                  status = "not_found"
 
@@ -351,11 +360,23 @@ class DetectionWorkerThread(QThread):
             logging.debug(f"DetectionWorkerThread.run() finished. Status: {status}, PathData Count: {len(final_path_data)}")
             if final_path_data and status == 'found':
                 logging.debug(f"Top path found: {final_path_data[0]}")
-    def stop(self):
-        self.is_running = False
-        self.progress.emit("Interruzione ricerca...")
-        logging.info("Richiesta interruzione per DetectionWorkerThread.")
-        
+
+    def __del__(self):
+        try:
+            if self.isRunning():
+                self.terminate()
+                self.wait(100)
+        except RuntimeError:  # C++ object already deleted
+            pass
+
+    def cancel(self):
+        self.is_running = False  # Add cancellation method
+
+    def terminate_immediately(self):
+        if self.isRunning():
+            self.terminate()
+            self.wait(100)  # Wait briefly for thread to stop
+
 # --- Gestore Log Personalizzato per Qt ---
 class QtLogHandler(logging.Handler, QObject):
     # Segnale che emette una stringa (il messaggio di log formattato)
@@ -495,7 +516,7 @@ class SteamSearchWorkerThread(QThread):
     progress = Signal(str)
 
     def __init__(self, game_name, game_install_dir, appid, steam_userdata_path,
-                  steam_id3_to_use, installed_steam_games_dict, profile_name_for_results): # <-- AGGIUNTO ARG
+                  steam_id3_to_use, installed_steam_games_dict, profile_name_for_results, cancellation_manager=None): 
          super().__init__()
          self.game_name = game_name
          self.game_install_dir = game_install_dir
@@ -504,6 +525,7 @@ class SteamSearchWorkerThread(QThread):
          self.steam_id3_to_use = steam_id3_to_use
          self.installed_steam_games_dict = installed_steam_games_dict
          self.profile_name_for_results = profile_name_for_results # <-- MEMORIZZA
+         self.cancellation_manager = cancellation_manager
          self.setObjectName("SteamSearchWorkerThread")
 
     def run(self):

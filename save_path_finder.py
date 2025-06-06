@@ -7,6 +7,7 @@ import re
 import logging
 import config
 import glob
+import cancellation_utils  # Add import
 
 # Importa thefuzz se disponibile
 try:
@@ -252,7 +253,7 @@ def are_names_similar(name1, name2, min_match_words=2, fuzzy_threshold=88, game_
         return False # Ritorna False in caso di errore
 
 # <<< Function to guess save paths >>>
-def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path=None, steam_id3_to_use=None, is_steam_game=True, installed_steam_games_dict=None):
+def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path=None, steam_id3_to_use=None, is_steam_game=True, installed_steam_games_dict=None, cancellation_manager=None):
     """
     Tenta di indovinare i possibili percorsi di salvataggio per un gioco usando varie euristiche.
     Chiama le funzioni esterne `clean_for_comparison` e `final_sort_key` per l'elaborazione e l'ordinamento.
@@ -266,6 +267,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
         is_steam_game (bool): Flag che indica se è un gioco Steam.
         installed_steam_games_dict (dict|None): Dizionario {appid: {'name':..., 'installdir':...}}
                                                 dei giochi Steam installati.
+        cancellation_manager (CancellationManager): Manager per la gestione della cancellazione.
 
     Returns:
         list[tuple[str, int]]: Lista di tuple (percorso_trovato, punteggio) ordinate per probabilità decrescente.
@@ -739,6 +741,9 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
                                 logging.debug(f"          [DEBUG WALK] Match GameName/Abbr! -> Calling add_guess for {potential_path}") # Log Pre-Add
                                 add_guess(potential_path, f"InstallDirWalk/GameMatch/{relative_log_path}")
 
+                # Check for cancellation
+                if cancellation_manager and cancellation_manager.check_cancelled():
+                    return []
         except Exception as e_walk:
             logging.error(f"Unexpected error during os.walk in '{game_install_dir}': {e_walk}")
     # --- FINE Search Inside Install Dir ---

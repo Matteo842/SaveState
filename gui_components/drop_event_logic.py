@@ -6,7 +6,7 @@ import configparser
 from pathlib import Path
 import shortcut_utils  # Import shortcut utilities
 
-from PySide6.QtWidgets import QMessageBox, QApplication  # Import QApplication
+from PySide6.QtWidgets import QMessageBox, QApplication, QDialog  # Import QApplication and QDialog
 from PySide6.QtGui import QDropEvent
 from PySide6.QtCore import Qt  # Import Qt
 from gui_utils import DetectionWorkerThread  # Import DetectionWorkerThread
@@ -19,6 +19,10 @@ class DropEventMixin:
         """Handles the release of a dragged object. Prioritizes Steam URLs, then local files/shortcuts."""
         handler_instance = self
         handler_instance.reset_internal_state() # Reset state at the beginning
+        # Defensive check: Ensure _detection_threads exists and is a list after reset_internal_state()
+        if not hasattr(handler_instance, '_detection_threads') or not isinstance(handler_instance._detection_threads, list):
+            logging.warning("'_detection_threads' was missing or not a list after reset_internal_state(). Re-initializing.")
+            handler_instance._detection_threads = []
         mw = handler_instance.main_window # Alias for main window
         mime_data = event.mimeData()
 
@@ -270,7 +274,7 @@ class DropEventMixin:
                                 if reply == QMessageBox.StandardButton.No:
                                     mw.status_label.setText("Profile creation cancelled.")
                                     event.acceptProposedAction()
-                                    return True
+                                    return
                                 else:
                                     logging.warning(f"Overwriting existing profile: {profile_name}")
                             
@@ -374,6 +378,10 @@ class DropEventMixin:
             # Connetti il segnale profileAdded al metodo che gestisce l'analisi
             dialog.profileAdded.connect(self._handle_profile_analysis)
             
+            # Connetti il segnale di chiusura del dialogo alla cancellazione dei thread
+            # dialog.finished.connect(self._cancel_detection_threads)
+            # dialog.rejected.connect(self._cancel_detection_threads)
+            
             # Salva il riferimento al dialogo come attributo dell'istanza
             self.profile_dialog = dialog
             
@@ -417,9 +425,6 @@ class DropEventMixin:
             return True
 
             # If no specific handling caught the event, DragDropHandler did not handle it.
-            # Allow fallback to ProfileCreationManager.
-            event.ignore()
-            return False
             
         # Definiamo le variabili per il tipo di file
         file_path = files_to_process[0]  # A questo punto sappiamo che c'è almeno un file
@@ -673,8 +678,6 @@ class DropEventMixin:
                     QMessageBox.warning(mw, f"Emulator Detected ({emulator_key})",
                                     f"Detected link to {emulator_key}, but no profiles found in its standard folder.\nCheck the emulator's save location.")
                 return # IMPORTANT: Stop further processing if an emulator was detected
-            
-            logging.debug(f"Path '{target_path}' did not match known emulators, proceeding with standard heuristic path detection.")
 
             # self.game_name_input.setText(game_name) # Temporarily commented out
             # self.executable_path_input.setText(os.path.normpath(target_path)) # Temporarily commented out
@@ -739,6 +742,7 @@ class DropEventMixin:
                 logging.warning(f"Overwriting existing profile: {profile_name}")
 
         # --- Start Heuristic Path Search Thread ---
+        logging.debug(f"Preparing DetectionWorkerThread for single file: game_install_dir='{game_install_dir}', profile_name_suggestion='{profile_name}', current emulator_result='{emulator_result}'")
         if self.detection_thread is not None and self.detection_thread.isRunning():
             QMessageBox.information(mw, "Operation in Progress", "Another path search is already in progress. Please wait.")
             return
@@ -746,6 +750,31 @@ class DropEventMixin:
         mw.set_controls_enabled(False)
         mw.status_label.setText(f"Searching...")
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        
+        # Create cancellation manager for this search
+        from cancellation_utils import CancellationManager
+        cancellation_manager = CancellationManager()
+        
+        # Create thread
+        self.detection_thread = DetectionWorkerThread(
+            game_install_dir=game_install_dir,
+            profile_name_suggestion=profile_name,
+            current_settings=mw.current_settings.copy(),
+            installed_steam_games_dict=None, # Non-Steam game
+            emulator_name=None, # Explicitly None for generic heuristic search
+            cancellation_manager=cancellation_manager
+        )
+        self.detection_thread.progress.connect(self.on_detection_progress)
+        self.detection_thread.finished.connect(self.on_detection_finished)
+        
+        # Store manager in thread
+        self.detection_thread.cancellation_manager = cancellation_manager
+        
+        # Store thread
+        self._detection_threads.append(self.detection_thread)
+        
+        self.detection_thread.start()
+        logging.debug("Heuristic path detection thread started.")
         
         # --- Start Fade/Animation Effect ---
         try:
@@ -786,17 +815,31 @@ class DropEventMixin:
         except Exception as e_fade_start:
             logging.error(f"Error starting fade/animation effect: {e_fade_start}", exc_info=True)
         # --- FINE Start Fade/Animation Effect ---
+        return True
 
-        # Create and start the path detection thread
-        self.detection_thread = DetectionWorkerThread(
-            game_install_dir=game_install_dir, # Use derived install dir
-            profile_name_suggestion=profile_name,
-            current_settings=mw.current_settings.copy(),
-            installed_steam_games_dict=None, # Non-Steam game, no need to pass Steam games list
-            emulator_name=emulator_result[0] if emulator_result else None # Pass the detected emulator name
-        )
-        self.detection_thread.progress.connect(self.on_detection_progress)
-        self.detection_thread.finished.connect(self.on_detection_finished)
-        self.detection_thread.start()
-        logging.debug("Heuristic path detection thread started.")
-    # --- FINE dropEvent ---
+    def _cancel_detection_threads(self):
+        if hasattr(self, '_detection_threads') and self._detection_threads:
+            for thread in self._detection_threads:
+                thread.terminate_immediately()
+            self._detection_threads = []
+
+class DragDropHandler:
+    def __init__(self, parent=None):
+        self._detection_threads = []
+
+class MultiProfileDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # ... rest of initialization ...
+    
+    def closeEvent(self, event):
+        # Restore cursor
+        QApplication.restoreOverrideCursor()
+        
+        # Request cancellation for all threads
+        for thread in self._detection_threads:
+            thread.request_cancellation()
+        # Then terminate immediately
+        for thread in self._detection_threads:
+            thread.terminate_immediately()
+        event.accept()
