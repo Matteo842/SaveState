@@ -9,6 +9,7 @@ import shortcut_utils  # Import shortcut utilities
 from PySide6.QtWidgets import QMessageBox, QApplication, QDialog  # Import QApplication and QDialog
 from PySide6.QtGui import QDropEvent
 from PySide6.QtCore import Qt  # Import Qt
+from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
 from gui_utils import DetectionWorkerThread  # Import DetectionWorkerThread
 
 # It's assumed that DetectionWorkerThread, shortcut_utils, emulator_manager, 

@@ -47,8 +47,8 @@ def load_ps4_game_titles() -> Dict[str, str]:
     log.warning(f"No PS4 game list found (JSON or PKL) at {current_dir}")
     return {}
 
-# Load the game titles when the module is imported
-PS4_GAME_TITLES = load_ps4_game_titles()
+# Initialize as None. Will be loaded on first use.
+PS4_GAME_TITLES: Optional[Dict[str, str]] = None
 
 def find_shadps4_profiles(custom_path: Optional[str]) -> Dict[str, Dict[str, str]]:
     """
@@ -66,6 +66,10 @@ def find_shadps4_profiles(custom_path: Optional[str]) -> Dict[str, Dict[str, str
         and 'paths' (absolute paths to the game's save data directories).
         Returns an empty dictionary if the path is not found or not valid.
     """
+    global PS4_GAME_TITLES
+    if PS4_GAME_TITLES is None:
+        PS4_GAME_TITLES = load_ps4_game_titles()
+
     profiles: Dict[str, Dict[str, str]] = {}
 
     if not custom_path:
