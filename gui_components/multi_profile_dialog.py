@@ -263,8 +263,7 @@ class MultiProfileDialog(QDialog):
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search profiles...")
         self.search_bar.hide()
-        self.search_bar.textChanged.connect(self.filter_profiles)
-        self.search_bar.installEventFilter(self)  # Install event filter for Esc key
+        self.search_bar.textChanged.connect(self._on_search_text_changed)
         layout.addWidget(self.search_bar)
         
         # Checkbox to toggle score display
@@ -505,24 +504,38 @@ class MultiProfileDialog(QDialog):
             files.append((widget.profile_name, widget.file_path))
         return files
     
-    def eventFilter(self, obj, event):
-        """Handle Esc key to clear and hide search bar."""
-        if obj == self.search_bar and event.type() == QEvent.KeyPress:
-            if event.key() == Qt.Key_Escape:
-                self.search_bar.clear()
+    def _on_search_text_changed(self, text):
+        """Handles search bar text changes for filtering and visibility."""
+        # First, apply the filter based on the new text
+        self.filter_profiles(text)
+
+        # Then, handle the visibility of the search bar
+        if not text.strip():  # If text is empty or only whitespace
+            if self.search_bar.isVisible():
                 self.search_bar.hide()
-                self.filter_profiles("")  # Reset filter
-                return True
-        return super().eventFilter(obj, event)
-    
-    def keyPressEvent(self, event):
-        """Show search bar when user types printable characters."""
-        if not self.search_bar.isVisible() and event.text().isprintable() and event.text().strip() != '':
-            self.search_bar.show()
-            self.search_bar.setFocus()
-            self.search_bar.setText(event.text())
         else:
-            super().keyPressEvent(event)
+            # If there is text, ensure the search bar is visible.
+            if not self.search_bar.isVisible():
+                self.search_bar.show()
+    
+    def event(self, event_obj): # event_obj to avoid conflict with 'event' module
+        """Handles events for the dialog, specifically KeyPress to activate search bar."""
+        if event_obj.type() == QEvent.KeyPress:
+            # Only act if the search bar is currently hidden.
+            # If it's visible, key presses should go to it (if it has focus) or other widgets.
+            if not self.search_bar.isVisible():
+                key_text = event_obj.text()
+                # Check if the key produces a printable character and is not just whitespace.
+                if key_text.isprintable() and key_text.strip() != '':
+                    # Show the search bar, set focus to it, and input the typed character.
+                    self.search_bar.show()
+                    self.search_bar.setFocus()
+                    self.search_bar.setText(key_text) # This also triggers _on_search_text_changed
+                    return True # Event handled, stop further processing
+        
+        # For all other events or if the key press wasn't handled above, 
+        # call the base class's event handler.
+        return super().event(event_obj)
     
     def filter_profiles(self, text):
         """Filter profiles based on search text."""
