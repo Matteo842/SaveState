@@ -11,6 +11,7 @@ from PySide6.QtGui import QDropEvent
 from PySide6.QtCore import Qt  # Import Qt
 from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
 from gui_utils import DetectionWorkerThread  # Import DetectionWorkerThread
+from .multi_profile_dialog import MultiProfileDialog
 
 # It's assumed that DetectionWorkerThread, shortcut_utils, emulator_manager, 
 # EmulatorGameSelectionDialog, and MultiProfileDialog will be accessed via handler_instance.main_window or handler_instance directly.
@@ -374,7 +375,7 @@ class DropEventMixin:
                 return False
             
             # Crea il dialogo per la gestione dei profili
-            dialog = MultiProfileDialog(files_to_process=files_to_process, parent=mw)
+            dialog = MultiProfileDialog(files_to_process, parent=mw)
             
             # Connetti il segnale profileAdded al metodo che gestisce l'analisi
             dialog.profileAdded.connect(self._handle_profile_analysis)
@@ -827,20 +828,3 @@ class DropEventMixin:
 class DragDropHandler:
     def __init__(self, parent=None):
         self._detection_threads = []
-
-class MultiProfileDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        # ... rest of initialization ...
-    
-    def closeEvent(self, event):
-        # Restore cursor
-        QApplication.restoreOverrideCursor()
-        
-        # Request cancellation for all threads
-        for thread in self._detection_threads:
-            thread.request_cancellation()
-        # Then terminate immediately
-        for thread in self._detection_threads:
-            thread.terminate_immediately()
-        event.accept()
