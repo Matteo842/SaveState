@@ -14,10 +14,11 @@ import core_logic # Added import
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QStatusBar,
-    QProgressBar, QGroupBox,
+    QProgressBar, QGroupBox, QLineEdit,
     QStyle, QDockWidget, QPlainTextEdit, QTableWidget, QGraphicsOpacityEffect,
     QDialog
 )
+from PySide6.QtGui import QKeyEvent # Added for keyPressEvent
 from PySide6.QtCore import (
     Slot, Qt, QSize,
     QEvent, Signal,
@@ -199,6 +200,12 @@ class MainWindow(QMainWindow):
         self.restore_button = QPushButton()        # Crea pulsante Ripristina
         self.manage_backups_button = QPushButton() # Crea pulsante Gestisci Backup
         self.open_backup_dir_button = QPushButton() # Crea pulsante Apri Cartella
+
+        # Search bar for profiles (initially hidden)
+        self.search_bar = QLineEdit(self)
+        self.search_bar.setPlaceholderText("Type to search profiles...")
+        self.search_bar.hide()
+        self.search_bar.textChanged.connect(self._on_main_search_text_changed)
         
         # Nuovo pulsante per il Log
         self.toggle_log_button = QPushButton()
@@ -330,6 +337,7 @@ class MainWindow(QMainWindow):
         profile_layout.addWidget(self.profile_table_widget)
         profile_group.setLayout(profile_layout)
         main_layout.addWidget(profile_group, stretch=1)
+
         actions_group = QGroupBox("Actions")
         self.actions_group = actions_group
         actions_layout = QHBoxLayout()
@@ -376,13 +384,14 @@ class MainWindow(QMainWindow):
         general_group.setLayout(general_layout)
         main_layout.addWidget(general_group)
         
-        # --- Layout Separato per Pulsante Log ---
-        log_button_corner_layout = QHBoxLayout()
-        log_button_corner_layout.addStretch() # Spinge a destra
-        log_button_corner_layout.addWidget(self.toggle_log_button) # Solo il pulsante Log
+        # --- Layout per Search Bar e Pulsante Log (in basso) ---
+        bottom_controls_layout = QHBoxLayout()
+        bottom_controls_layout.addWidget(self.search_bar) # Search bar first
+        bottom_controls_layout.addStretch(1) # Add stretch to push log button to the right
+        bottom_controls_layout.addWidget(self.toggle_log_button) # Log button last
 
-        main_layout.addLayout(log_button_corner_layout)
-        # --- FINE Layout Separato ---
+        main_layout.addLayout(bottom_controls_layout)
+        # --- FINE Layout Search Bar e Pulsante Log ---
         
         status_bar = QStatusBar()
         status_bar.addWidget(self.status_label, stretch=1)
@@ -436,6 +445,9 @@ class MainWindow(QMainWindow):
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
 
+        # Set initial focus to the MainWindow itself to help with keyPressEvent activation
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocus()
 
         # Inizializza i gestori delle funzionalità
         self.profile_table_manager = ProfileListManager(self.profile_table_widget, self)
@@ -1046,6 +1058,83 @@ class MainWindow(QMainWindow):
         self.delete_profile_button.setEnabled(has_selection)
         self.manage_backups_button.setEnabled(has_selection)
         self.create_shortcut_button.setEnabled(has_selection)
+
+    @Slot(str)
+    def _on_main_search_text_changed(self, text):
+        """Filters the profile table based on the search text and hides search bar if empty."""
+        search_term = text.lower()
+        logging.debug(f"Search term: '{search_term}'")
+
+        if not hasattr(self, 'profile_table_widget') or self.profile_table_widget is None:
+            logging.warning("_on_main_search_text_changed: profile_table_widget not found.")
+            return
+
+        visible_rows = 0
+        for i in range(self.profile_table_widget.rowCount()):
+            item = self.profile_table_widget.item(i, 1)  # Profile name in the SECOND column (index 1)
+            row_should_be_hidden = True # Default to hiding
+
+            if item and item.text():
+                profile_name = item.text().lower()
+                logging.debug(f"  Row {i}: Profile name '{profile_name}'")
+                if search_term:
+                    if search_term in profile_name:
+                        row_should_be_hidden = False
+                        logging.debug(f"    -> Match found. Row {i} will be SHOWN.")
+                    else:
+                        row_should_be_hidden = True
+                        logging.debug(f"    -> No match. Row {i} will be HIDDEN.")
+                else: # No search term, so show all valid rows
+                    row_should_be_hidden = False
+                    logging.debug(f"    -> No search term. Row {i} (valid item) will be SHOWN.")
+            else:
+                logging.debug(f"  Row {i}: No item or item has no text.")
+                if search_term: # If searching and item is invalid, hide it
+                    row_should_be_hidden = True
+                    logging.debug(f"    -> Invalid item and searching. Row {i} will be HIDDEN.")
+                else: # No search term, show even if item is somehow invalid (though ideally shouldn't happen)
+                    row_should_be_hidden = False # Or True, depending on desired behavior for empty/invalid rows with no search
+                    logging.debug(f"    -> Invalid item, no search term. Row {i} will be SHOWN (or HIDDEN based on policy).")
+            
+            self.profile_table_widget.setRowHidden(i, row_should_be_hidden)
+            if not row_should_be_hidden:
+                visible_rows += 1
+        
+        logging.debug(f"Total visible rows after filter: {visible_rows}")
+
+        if not text:
+            logging.debug("Search text is empty, hiding search bar.")
+            self.search_bar.hide()
+            # Optionally, return focus to the table or main window if needed
+            # self.profile_table_widget.setFocus()
+
+    def keyPressEvent(self, event: QKeyEvent):
+        """Handles key presses to show/hide and interact with the search bar."""
+        if self.search_bar.isHidden():
+            # Show search bar on typing a letter or number
+            # Check for actual character input (letters, numbers, common symbols), no modifiers like Ctrl/Alt
+            # and ensure it's not an action key like Enter, Tab, Escape itself.
+            if event.text() and event.text().isprintable() and len(event.text()) == 1 and \
+               not event.modifiers() and \
+               event.key() not in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab, Qt.Key.Key_Backtab, Qt.Key.Key_Escape):
+                self.search_bar.show()
+                self.search_bar.setFocus()
+                self.search_bar.setText(event.text()) # Start with the typed character
+                # To prevent the character from being processed by other widgets if the search bar is now active:
+                # event.accept() # Careful: this might interfere with the QLineEdit getting the event.
+                return # Event handled by showing search bar
+        elif self.search_bar.isVisible() and self.search_bar.hasFocus():
+            if event.key() == Qt.Key.Key_Escape:
+                self.search_bar.clear() # This will trigger textChanged, which will hide it
+                self.profile_table_widget.setFocus() # Return focus to table
+                event.accept()
+                return # Event handled
+            # Let QLineEdit handle other keys like backspace, delete, arrows, etc.
+            # No need to explicitly call super().keyPressEvent(event) if QLineEdit handles it.
+
+        # If the search bar is visible but doesn't have focus, or if it's hidden and the key wasn't for activation,
+        # or if QLineEdit didn't handle the event, pass it to the base class.
+        super().keyPressEvent(event)
 
     # Enables or disables main UI controls, typically during background operations.
     def set_controls_enabled(self, enabled):
