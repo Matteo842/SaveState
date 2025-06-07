@@ -28,7 +28,7 @@ class DropEventMixin:
         mime_data = event.mimeData()
 
         # --- Log MIME Data --- 
-        logging.debug(f"PCM.dropEvent: MimeData formats: {mime_data.formats()}")
+
         if mime_data.hasUrls():
             urls_debug_list = []
             for url_obj_debug in mime_data.urls():

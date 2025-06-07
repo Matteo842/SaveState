@@ -5,11 +5,23 @@ Permette di visualizzare, selezionare ed eliminare i profili prima di aggiungerl
 
 import os
 import logging
+import re
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
                               QPushButton, QListWidget, QListWidgetItem,
                               QWidget, QMessageBox, QProgressBar, QCheckBox, QLineEdit)
 from PySide6.QtCore import Qt, Signal, QTimer, QRect, QSize, QEvent
 from PySide6.QtGui import QIcon, QFont, QCursor, QPainter, QPen, QColor
+
+# Helper function to sanitize display names
+def _sanitize_display_name(name):
+    """Removes .exe (case-insensitive) from the end of a string and strips whitespace."""
+    if name:
+        # Remove .exe (case-insensitive) from the end
+        name = re.sub(r'\.exe$', '', name, flags=re.IGNORECASE)
+        # Strip leading/trailing whitespace
+        name = name.strip()
+    return name
+
 
 # Custom progress bar with smooth segments equal to number of profiles
 class SegmentedProgressBar(QProgressBar):
@@ -59,8 +71,9 @@ class ProfileListItem(QWidget):
     def __init__(self, profile_name, file_path, parent=None):
         super().__init__(parent)
         
-        self.profile_name = profile_name
+        self.profile_name = profile_name  # Original name for logic/keys
         self.file_path = file_path
+        display_name = _sanitize_display_name(profile_name) # Sanitize for display
         self.save_path = ""  # Sarà impostato dopo la ricerca
         self.score = 0  # Sarà impostato dopo la ricerca
         self.analyzed = False  # Flag per indicare se il profilo è stato analizzato
@@ -80,7 +93,7 @@ class ProfileListItem(QWidget):
         info_layout.setSpacing(2)  # Riduciamo lo spazio tra gli elementi
         
         # Nome del profilo (in grassetto e più grande)
-        self.name_label = QLabel(profile_name)
+        self.name_label = QLabel(display_name)
         font = QFont()
         font.setBold(True)
         font.setPointSize(10)  # Increased from default (usually 9)
@@ -94,7 +107,7 @@ class ProfileListItem(QWidget):
         # Allineamento verticale al centro, orizzontale a sinistra
         self.name_label.setAlignment(Qt.AlignLeft)
         # Impostiamo il tooltip per mostrare il nome completo al passaggio del mouse
-        self.name_label.setToolTip(profile_name)
+        self.name_label.setToolTip(display_name)
         
         # Define a font for paths (slightly larger)
         path_font = QFont()

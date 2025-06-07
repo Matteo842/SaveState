@@ -128,21 +128,10 @@ def _extract_titles_from_vmu_dump(vmu_bin_path: str) -> list[str]:
     return titles
 
 
-# Attempt to import the vmu-tools library using the likely installed name
-vmu_library = None # Initialize the library variable
-vmu_library_available = False # Initialize availability flag
-
-try:
-    # Import the package, give it a clear name
-    # We expect it to be installed as 'vmut' based on previous findings
-    import vmut as vmu_library
-    vmu_library_available = True
-    log.info("VMU library 'vmut' found.")
-except ImportError as e:
-    vmu_library_available = False
-    vmu_library = None # Ensure it's None if import fails
-    # Log the specific import error
-    log.warning(f"VMU library 'vmut' not found ({e}). Game titles from Flycast VMU files will not be available; using filenames instead.")
+# VMU library will be loaded on demand
+vmu_library = None
+vmu_library_available = False
+_vmu_import_attempted = False # To ensure we only try to import once
 
 # Ensure the NullHandler is added even if basicConfig was called,
 # if this module is used as part of a larger application.
@@ -240,6 +229,20 @@ def find_flycast_profiles(executable_path: str | None = None) -> list[dict] | No
     Treats the found savedata_dir as a single "profile" containing multiple game save entries.
     Returns a list containing one profile dictionary, or an empty list if no saves are found.
     """
+    global vmu_library, vmu_library_available, _vmu_import_attempted
+    if not _vmu_import_attempted:
+        try:
+            log.debug("Attempting to import 'vmut' library on demand for Flycast.")
+            import vmut as vmu_lib_temp
+            vmu_library = vmu_lib_temp
+            vmu_library_available = True
+            log.info("VMU library 'vmut' found and loaded on demand.")
+        except ImportError as e:
+            vmu_library_available = False
+            vmu_library = None
+            log.warning(f"VMU library 'vmut' not found on demand ({e}). Game titles from Flycast VMU files will not be available via library; using manual parsing.")
+        _vmu_import_attempted = True
+
     log.info("Scanning for Flycast game saves...")
 
     exe_dir_hint = None

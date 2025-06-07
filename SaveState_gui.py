@@ -502,7 +502,7 @@ class MainWindow(QMainWindow):
         event.accept()
     # Called when a dragged item enters the window; accepts if it contains valid URLs.
     def dragEnterEvent(self, event: QDragEnterEvent):
-        logging.debug(f"MainWindow.dragEnterEvent: Entered. MimeData formats: {event.mimeData().formats()}")
+        logging.debug("MainWindow.dragEnterEvent: Entered.")
         if event.mimeData().hasUrls():
             urls_debug_list = []
             for url_obj_debug in event.mimeData().urls():
@@ -551,7 +551,7 @@ class MainWindow(QMainWindow):
 
     def dropEvent(self, event: QDropEvent):
         logging.debug("MainWindow.dropEvent: Event triggered. VERY TOP OF FUNCTION.")
-        logging.debug(f"MainWindow.dropEvent: MimeData formats: {event.mimeData().formats()}")
+
         if event.mimeData().hasUrls():
             urls_debug_list = []
             for url_obj_debug in event.mimeData().urls():
