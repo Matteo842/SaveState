@@ -344,13 +344,13 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
         self.check_threads_timer.timeout.connect(self._check_detection_threads_status)
         self.check_threads_timer.start(500)  # Controlla ogni 500ms
 
-    def _on_detection_thread_finished(self, success, results, thread_id):
-        """Callback chiamato quando un thread di rilevamento termina.
-        
+    def _on_detection_thread_finished(self, success: bool, results: dict, thread_id: str):
+        """
+        Handles the completion of a detection thread.
         Args:
-            success: True se il rilevamento è riuscito, False altrimenti
-            results: Dizionario con i risultati del rilevamento
-            thread_id: ID del thread che ha terminato
+            success: True if detection succeeded, False otherwise
+            results: Dictionary with detection results
+            thread_id: ID of the thread that finished
         """
         if thread_id not in self.active_threads:
             logging.warning(f"Thread ID {thread_id} not found in active_threads")
@@ -359,35 +359,32 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
         thread_info = self.active_threads[thread_id]
         profile_name = thread_info['profile_name']
         
-        # Marca il thread come completato
+        # Mark thread as completed
         thread_info['completed'] = True
         
         if success and results:
-            # Estrai i percorsi di salvataggio
-            paths_found = results.get('path_data', [])
-        
-            # Usa il percorso con lo score più alto
-            if paths_found and len(paths_found) > 0:
-                # Ordina i percorsi per score (dal più alto al più basso)
-                paths_found.sort(key=lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else 0, reverse=True)
+            # Store paths specifically for this profile
+            thread_info['paths_found'] = results.get('path_data', [])
             
-                # Usa il primo percorso (quello con lo score più alto)
-                best_path, best_score = paths_found[0] if isinstance(paths_found[0], tuple) else (paths_found[0], 0)
-            
-                # Check if profile dialog still exists before updating
+            if thread_info['paths_found']:
+                # Sort paths by score (highest first)
+                thread_info['paths_found'].sort(key=lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else 0, reverse=True)
+                
+                # Get best path for this profile
+                best_path, best_score = thread_info['paths_found'][0] if isinstance(thread_info['paths_found'][0], tuple) else (thread_info['paths_found'][0], 0)
+                
+                # Update profile dialog
                 if self.profile_dialog:
                     self.profile_dialog.update_profile(profile_name, best_path, best_score)
                 else:
                     logging.warning(f"Cannot update profile '{profile_name}' - profile dialog has been closed")
-            
-                # Aggiorna l'applicazione per mostrare i cambiamenti nell'interfaccia
+                
                 QApplication.processEvents()
-            
-                logging.info(f"DragDropHandler._on_detection_thread_finished: Detected profile '{profile_name}' with path: {best_path} (score: {best_score})")
+                logging.info(f"Detected profile '{profile_name}' with path: {best_path} (score: {best_score})")
             else:
-                logging.warning(f"DragDropHandler._on_detection_thread_finished: No save paths found for: {profile_name}")
+                logging.warning(f"No save paths found for: {profile_name}")
         else:
-            logging.warning(f"DragDropHandler._on_detection_thread_finished: Detection failed for: {profile_name}")
+            logging.warning(f"Detection failed for: {profile_name}")
 
     def _check_detection_threads_status(self):
         """Controlla lo stato dei thread di rilevamento attivi."""
@@ -413,8 +410,6 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                 self.profile_dialog.update_progress(total_count, "Analysis completed")
                 
                 # Emetti un segnale per notificare il completamento dell'analisi
-                # Questo segnale potrebbe non essere più strettamente necessario se MultiProfileDialog gestisce
-                # il completamento direttamente in update_progress, ma lo lasciamo per ora.
                 self.profile_dialog.analysis_completed.emit() 
     
         # Pulizia risorse anche se il dialogo è stato chiuso
