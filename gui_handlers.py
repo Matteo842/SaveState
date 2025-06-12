@@ -162,13 +162,12 @@ class MainWindowHandlers:
             logging.error(f"Error updating dialog UI text: {e_update}", exc_info=True)
         
         # Connect finished signal to handle dialog result
-        dialog.finished.connect(self.on_settings_dialog_finished)
+        dialog.finished.connect(lambda result: self.on_settings_dialog_finished(result, dialog))
         dialog.show()
         
-    def on_settings_dialog_finished(self, result):
+    def on_settings_dialog_finished(self, result, dialog):
         """Handle settings dialog result."""
         if result == QDialog.Accepted:
-            dialog = self.sender()
             new_settings = dialog.get_settings()
             logging.debug(f"New settings received from dialog: {new_settings}")
 
