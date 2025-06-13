@@ -400,15 +400,27 @@ class DropEventMixin:
                 # Ottieni i profili accettati
                 accepted_profiles = dialog.get_accepted_profiles()
                 
-                # Aggiungi i profili accettati
+                # Aggiungi i profili accettati, sanificando i nomi
+                added_count = 0
                 for profile_name, profile_data in accepted_profiles.items():
-                    mw.profiles[profile_name] = profile_data
+                    # Applica la stessa sanificazione usata per i profili singoli
+                    sanitized_name = shortcut_utils.sanitize_profile_name(profile_name)
+                    
+                    # Gestisci nomi duplicati
+                    final_name = sanitized_name
+                    counter = 2
+                    while final_name in mw.profiles:
+                        final_name = f"{sanitized_name} ({counter})"
+                        counter += 1
+                    
+                    mw.profiles[final_name] = profile_data
+                    added_count += 1
                 
                 # Salva i profili
                 if mw.core_logic.save_profiles(mw.profiles):
                     mw.profile_table_manager.update_profile_table()
-                    mw.status_label.setText(f"Aggiunti {len(accepted_profiles)} profili.")
-                    logging.info(f"Saved {len(accepted_profiles)} profiles.")
+                    mw.status_label.setText(f"Aggiunti {added_count} profili.")
+                    logging.info(f"Saved {added_count} profiles.")
                 else:
                     mw.status_label.setText("Errore nel salvataggio dei profili.")
                     logging.error("Failed to save profiles.")
