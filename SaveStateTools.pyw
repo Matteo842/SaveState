@@ -29,6 +29,8 @@ SCRIPT_DIR = Path(__file__).parent.resolve() # Directory dello script corrente
 # Nome del file .spec per la build one-file (relativo allo SCRIPT_DIR)
 SPEC_FILE_ONEFILE_WINDOWS = "SaveState-OneFile.spec"
 SPEC_FILE_ONEFILE_LINUX = "SaveState-OneFile-Linux.spec"
+SPEC_FILE_ONEDIR_WINDOWS = "SaveState-OneDir.spec"
+SPEC_FILE_ONEDIR_LINUX = "SaveState-OneDir-Linux.spec"
 # Nome dell'eseguibile/applicazione che verrà creato
 PACKAGER_APP_NAME = "SaveState"
 # Script Python principale del tuo progetto SaveState
@@ -1018,250 +1020,141 @@ class TranslatorToolWindow(QMainWindow):
 
     def _build_pyinstaller_command_preview(self, package_type: str) -> str:
         """Crea una stringa di anteprima del comando pyinstaller."""
-        # NOTA: Questa è solo una preview, il comando reale viene costruito dopo
         pyinstaller_exe = "pyinstaller" # Nome base
-        
-        # Seleziona il file spec appropriato in base al sistema operativo
         is_windows = platform.system() == "Windows"
         is_linux = platform.system() == "Linux"
-        
-        if is_windows:
-            spec_file = SPEC_FILE_ONEFILE_WINDOWS
-        elif is_linux:
-            spec_file = SPEC_FILE_ONEFILE_LINUX
-        else:
-            spec_file = SPEC_FILE_ONEFILE_WINDOWS
-        
-        if package_type == "onefile":
-             return f"{pyinstaller_exe} --clean {spec_file}"
-        else: # onefolder
-             # Mostra solo le parti principali per la preview
-             return f"{pyinstaller_exe} --onedir --name {PACKAGER_APP_NAME} --windowed --icon=... --add-data=... {PACKAGER_ENTRY_SCRIPT}"
 
+        spec_file = "" # Inizializza la variabile
+
+        if package_type == "onefile":
+            if is_windows:
+                spec_file = SPEC_FILE_ONEFILE_WINDOWS
+            elif is_linux:
+                spec_file = SPEC_FILE_ONEFILE_LINUX
+            else: # Fallback
+                spec_file = SPEC_FILE_ONEFILE_WINDOWS
+        
+        # --- MODIFICA ---
+        # Aggiunta la logica per trovare il file .spec anche per onefolder
+        elif package_type == "onefolder":
+            if is_windows:
+                spec_file = SPEC_FILE_ONEDIR_WINDOWS
+            elif is_linux:
+                spec_file = SPEC_FILE_ONEDIR_LINUX
+            else: # Fallback
+                spec_file = SPEC_FILE_ONEDIR_WINDOWS
+        
+        # Ritorna sempre il comando basato su spec file, se definito
+        if spec_file:
+            return f"{pyinstaller_exe} --clean {spec_file}"
+        else:
+            # Fallback nel caso di tipo non valido (non dovrebbe accadere)
+            return f"Comando non definito per il tipo: {package_type}"
+    
     @Slot()
     def run_pyinstaller(self, package_type: str):
         """Prepara ed esegue il processo PyInstaller."""
         self.log_output.clear()
         self.log_message(f"Start package creation '{PACKAGER_APP_NAME}' ({package_type})...")
-        self.current_process_type = "pyinstaller" # Imposta tipo processo
+        self.current_process_type = "pyinstaller"
 
-        # Trova l'eseguibile di pyinstaller
+        # Trova l'eseguibile di pyinstaller (questa parte è corretta e rimane)
         import shutil
-        
-        # Prima controlla nella directory venv, se esiste
         pyinstaller_path_obj = None
-        venv_paths = []
-        
-        # Controlla se esiste una cartella venv nella directory del progetto
         venv_dirs = ["venv", "env", ".venv", ".env"]
         for venv_name in venv_dirs:
             venv_dir = SCRIPT_DIR / venv_name
-            if venv_dir.exists() and venv_dir.is_dir():
-                self.log_message(f"Found virtual environment directory: {venv_dir}")
-                # Controlla il percorso degli script nella venv in base al sistema operativo
-                if platform.system() == "Windows":
-                    venv_script_dir = venv_dir / "Scripts"
-                    venv_pyinstaller = venv_script_dir / "pyinstaller.exe"
-                else:  # Linux/macOS
-                    venv_script_dir = venv_dir / "bin"
-                    venv_pyinstaller = venv_script_dir / "pyinstaller"
-                
-                venv_paths.append((venv_script_dir, venv_pyinstaller))
+            if venv_dir.is_dir():
+                script_subdir = "Scripts" if platform.system() == "Windows" else "bin"
+                venv_pyinstaller = venv_dir / script_subdir / ("pyinstaller.exe" if platform.system() == "Windows" else "pyinstaller")
+                if venv_pyinstaller.is_file():
+                    pyinstaller_path_obj = str(venv_pyinstaller)
+                    self.log_message(f"Found PyInstaller in virtual environment: {pyinstaller_path_obj}")
+                    break
         
-        # Controlla se PyInstaller esiste in uno dei percorsi venv trovati
-        for venv_script_dir, venv_pyinstaller in venv_paths:
-            if venv_pyinstaller.exists() and venv_pyinstaller.is_file():
-                pyinstaller_path_obj = str(venv_pyinstaller)
-                self.log_message(f"Found PyInstaller in virtual environment: {pyinstaller_path_obj}")
-                break
-        
-        # Se non trovato nella venv, cerca nel PATH di sistema
         if not pyinstaller_path_obj:
             pyinstaller_path_obj = shutil.which("pyinstaller")
-            
-        # Se ancora non trovato, mostra un errore
+
         if not pyinstaller_path_obj:
-            msg = "ERROR: Executable 'pyinstaller' not found in virtual environment or system PATH.\n"
-            msg += "Make sure PyInstaller is installed (pip install pyinstaller) in your virtual environment or system Python."
-            self.log_message(msg)
+            msg = "ERROR: Executable 'pyinstaller' not found in virtual environment or system PATH."
+            self.log_message(msg, level="error")
             QMessageBox.critical(self, "PyInstaller Error", msg)
-            self.current_process_type = None # Resetta
+            self.current_process_type = None
             return
             
         pyinstaller_path = str(Path(pyinstaller_path_obj))
         self.log_message(f"Using PyInstaller from: {pyinstaller_path}")
 
         command_parts: List[str] = [pyinstaller_path]
-        
-        # Seleziona il file spec appropriato in base al sistema operativo
         is_windows = platform.system() == "Windows"
         is_linux = platform.system() == "Linux"
         
-        if is_windows:
-            spec_file_path = SCRIPT_DIR / SPEC_FILE_ONEFILE_WINDOWS
-            hidden_imports = PACKAGER_HIDDEN_IMPORTS_WINDOWS
-        elif is_linux:
-            spec_file_path = SCRIPT_DIR / SPEC_FILE_ONEFILE_LINUX
-            hidden_imports = PACKAGER_HIDDEN_IMPORTS_LINUX
-        else:
-            # Fallback per altri sistemi operativi (macOS, ecc.)
-            spec_file_path = SCRIPT_DIR / SPEC_FILE_ONEFILE_WINDOWS
-            hidden_imports = PACKAGER_HIDDEN_IMPORTS_WINDOWS
-            self.log_message("Warning: Using Windows spec file for non-Windows/Linux system", level="warning")
+        spec_file_path = None # Inizializza
 
-        # Costruisci il comando specifico
+        # --- MODIFICA PRINCIPALE: UNIFICATA LA LOGICA PER USARE SEMPRE UN .SPEC ---
         try:
+            # Seleziona il file .spec corretto in base al tipo di pacchetto e al sistema operativo
             if package_type == "onefile":
-                if not spec_file_path.is_file():
-                    # Se il file spec non esiste, mostra un messaggio di errore più chiaro
-                    system_name = "Windows" if is_windows else "Linux" if is_linux else "Unknown"
-                    msg = f"ERRORE: File .spec per One-File non trovato: {spec_file_path}\n\n" + \
-                          f"Per la modalità 'One-File' è necessario un file .spec specifico per {system_name}.\n" + \
-                          f"Questo file contiene tutte le configurazioni di build necessarie per PyInstaller."
-                    self.log_message(msg)
-                    
-                    # Offri la possibilità di creare un file spec di base
-                    if QMessageBox.question(self, "File Spec Missing", 
-                                           f"Il file spec '{spec_file_path.name}' è necessario ma non è stato trovato.\n\n" + \
-                                           f"Nota: Per la modalità One-File è consigliabile avere un file .spec personalizzato " + \
-                                           f"con tutte le configurazioni necessarie.\n\n" + \
-                                           f"Vuoi creare un file .spec di base? (Potrebbe richiedere modifiche manuali successive)", 
-                                           QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
-                        # Crea un file spec di base usando pyinstaller --onefile --name
-                        self.log_message("Creating basic spec file...")
-                        try:
-                            # Crea un processo temporaneo per generare il file spec
-                            temp_process = QProcess()
-                            temp_process.setWorkingDirectory(str(SCRIPT_DIR))
-                            
-                            # Costruisci il comando per generare il file spec
-                            spec_gen_cmd = [pyinstaller_path, "--onefile", "--name", PACKAGER_APP_NAME]
-                            
-                            # Aggiungi icona se appropriato per il sistema
-                            if is_windows:
-                                icon_path = SCRIPT_DIR / PACKAGER_ICON_ICO
-                                if icon_path.is_file():
-                                    spec_gen_cmd.extend(["--icon", str(icon_path)])
-                            elif is_linux:
-                                icon_path = SCRIPT_DIR / PACKAGER_ICON_PNG
-                                if icon_path.is_file():
-                                    spec_gen_cmd.extend(["--icon", str(icon_path)])
-                            
-                            # Aggiungi lo script principale
-                            entry_script_path = SCRIPT_DIR / PACKAGER_ENTRY_SCRIPT
-                            spec_gen_cmd.append(str(entry_script_path))
-                            
-                            # Esegui il comando
-                            temp_process.start(spec_gen_cmd[0], spec_gen_cmd[1:])
-                            if not temp_process.waitForFinished(30000):  # 30 secondi di timeout
-                                raise RuntimeError("Timeout while generating spec file")
-                            
-                            # Rinomina il file spec generato
-                            generated_spec = SCRIPT_DIR / f"{PACKAGER_APP_NAME}.spec"
-                            if generated_spec.exists():
-                                generated_spec.rename(spec_file_path)
-                                self.log_message(f"Basic spec file created: {spec_file_path}", level="info")
-                            else:
-                                raise FileNotFoundError(f"Generated spec file not found: {generated_spec}")
-                                
-                        except Exception as e:
-                            error_msg = f"Failed to create spec file: {e}"
-                            self.log_message(error_msg, level="error")
-                            QMessageBox.critical(self, "Spec Creation Error", error_msg)
-                            self.current_process_type = None
-                            return
-                    else:
-                        # L'utente ha scelto di non creare un file spec
-                        QMessageBox.critical(self, "File Spec Error", msg)
-                        self.current_process_type = None
-                        return
-                
-                command_parts.extend(["--clean", str(spec_file_path)])
-                self.log_message(f"Using the spec file: {spec_file_path}")
-
+                spec_file_name = SPEC_FILE_ONEFILE_WINDOWS if is_windows else SPEC_FILE_ONEFILE_LINUX
             elif package_type == "onefolder":
-                command_parts.extend([
-                    "--noconfirm",
-                    "--clean",
-                    "--onedir",
-                    "--name", PACKAGER_APP_NAME,
-                    "--windowed",
-                ])
-                # Aggiungi icona (assicurati che esista)
-                icon_path = SCRIPT_DIR / PACKAGER_ICON_ICO
-                if icon_path.is_file():
-                    command_parts.extend(["--icon", str(icon_path)])
-                else:
-                    self.log_message(f"WARNING: Icon file .ico not found in {icon_path}, the executable will have no icon.")
-
-                # Aggiungi --add-data
-                for source, dest in PACKAGER_ADD_DATA:
-                    source_path = SCRIPT_DIR / source
-                    if not source_path.exists():
-                         # Logga un avviso ma continua, PyInstaller darà errore se critico
-                         self.log_message(f"WARNING: Source for --add-data not found: {source_path}")
-                    # Aggiungi il separatore corretto per PyInstaller (varia per OS, ma ; di solito funziona)
-                    command_parts.extend(["--add-data", f"{str(source_path)}{os.pathsep}{dest}"])
-
-                # Aggiungi --hidden-import
-                for hidden_import in hidden_imports:
-                    command_parts.extend(["--hidden-import", hidden_import])
-
-                # Aggiungi lo script di ingresso
-                entry_script_path = SCRIPT_DIR / PACKAGER_ENTRY_SCRIPT
-                if not entry_script_path.is_file():
-                     msg = f"ERROR: Input script '{PACKAGER_ENTRY_SCRIPT}' not found in {SCRIPT_DIR}"
-                     self.log_message(msg)
-                     QMessageBox.critical(self, "Script Input Error", msg)
-                     self.current_process_type = None
-                     return
-                command_parts.append(str(entry_script_path))
+                spec_file_name = SPEC_FILE_ONEDIR_WINDOWS if is_windows else SPEC_FILE_ONEDIR_LINUX
             else:
-                 raise ValueError(f"Invalid package type: {package_type}")
+                raise ValueError(f"Invalid package type: {package_type}")
+            
+            spec_file_path = SCRIPT_DIR / spec_file_name
+
+            # Controlla se il file .spec necessario esiste
+            if not spec_file_path.is_file():
+                msg = f"ERRORE: File .spec necessario non trovato:\n{spec_file_path}\n\n" + \
+                      f"Assicurati che il file '{spec_file_name}' esista nella cartella del progetto."
+                self.log_message(msg, level="error")
+                QMessageBox.critical(self, "File .spec non trovato", msg)
+                self.current_process_type = None # Resetta
+                return
+
+            # Se il file esiste, costruisci il comando per usarlo
+            command_parts.extend(["--noconfirm", "--clean", str(spec_file_path)])
+            self.log_message(f"Using the spec file: {spec_file_path}")
 
         except Exception as e:
             error_msg = f"Error building PyInstaller command: {e}"
-            self.log_message(error_msg)
+            self.log_message(error_msg, level="error")
             logging.error(error_msg, exc_info=True)
             QMessageBox.critical(self, "Internal Error", error_msg)
             self.current_process_type = None
             return
 
-        # Log comando finale (può essere molto lungo)
+        # Il resto della funzione per eseguire il processo rimane identico
         self.log_message("-" * 30)
         self.log_message(f"Working directory (CWD): {SCRIPT_DIR}")
         self.log_message(f"PyInstaller command to run:")
-        # Stampa comando in modo più leggibile nel log
         log_cmd = f'"{command_parts[0]}"'
         current_line = log_cmd
         for part in command_parts[1:]:
             quoted_part = f'"{part}"' if ' ' in part else part
-            if len(current_line) + len(quoted_part) + 1 > 100: # Vai a capo se troppo lungo
+            if len(current_line) + len(quoted_part) + 1 > 100:
                 self.log_message(current_line + " \\")
                 current_line = "  " + quoted_part
             else:
                 current_line += " " + quoted_part
-        self.log_message(current_line) # Stampa ultima riga
+        self.log_message(current_line)
         self.log_message("-" * 30)
 
-        # Disabilita i pulsanti e avvia
         self._set_buttons_enabled(False)
 
-        # Avvia il processo PyInstaller (USANDO self.process_runner)
-        self.process_runner.setWorkingDirectory(str(SCRIPT_DIR)) # Esegui dalla cartella dello script (progetto)
+        self.process_runner.setWorkingDirectory(str(SCRIPT_DIR))
         try:
             self.log_message("Starting PyInstaller process... (may take some time)")
             self.process_runner.start(command_parts[0], command_parts[1:])
-            if not self.process_runner.waitForStarted(10000): # Timeout più lungo per PyInstaller
-                 raise RuntimeError(f"PyInstaller process not started ({self.process_runner.error()}): {self.process_runner.errorString()}")
+            if not self.process_runner.waitForStarted(10000):
+                raise RuntimeError(f"PyInstaller process not started ({self.process_runner.error()}): {self.process_runner.errorString()}")
             self.log_message("PyInstaller process started...")
         except Exception as e:
             error_msg = f"FATAL ERROR while starting PyInstaller: {e}"
-            self.log_message(error_msg)
+            self.log_message(error_msg, level="error")
             logging.error(error_msg, exc_info=True)
             QMessageBox.critical(self, "PyInstaller Startup Error", error_msg)
-            # Chiama process_finished per riabilitare bottoni etc.
-            self.process_finished( -1, QProcess.ExitStatus.CrashExit)
+            self.process_finished(-1, QProcess.ExitStatus.CrashExit)
             
     @Slot()
     def run_lrelease(self):

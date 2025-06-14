@@ -294,8 +294,8 @@ class MainWindowHandlers:
             elif isinstance(path_data, str) and path_data:
                 source_paths = [path_data]
             else:
-                QMessageBox.critical(self.main_window, self.tr("Profile Data Error"),
-                                     self.tr("No valid source path ('paths' or 'path') found in profile '{0}'. Unable to backup.").format(profile_name))
+                QMessageBox.critical(self.main_window, "Profile Data Error",
+                                     "No valid source path ('paths' or 'path') found in profile '{0}'. Unable to backup.".format(profile_name))
                 logging.error(f"Invalid source path data for profile '{profile_name}': paths={paths_data}, path={path_data}")
                 self.main_window.set_controls_enabled(True)
                 return
@@ -381,10 +381,10 @@ class MainWindowHandlers:
 
         # Create and show dialog non-blocking
         dialog = RestoreDialog(profile_name, self.main_window)
-        dialog.finished.connect(self.on_restore_dialog_finished)
+        dialog.finished.connect(lambda result, d=dialog: self.on_restore_dialog_finished(result, d))
         dialog.show()
         
-    def on_restore_dialog_finished(self, result):
+    def on_restore_dialog_finished(self, result, dialog):
         """Handle restore dialog result."""
         if not hasattr(self, '_restore_profile_data'):
             logging.error("No restore profile data found!")
@@ -392,7 +392,6 @@ class MainWindowHandlers:
             
         profile_name = self._restore_profile_data['name']
         profile_data = self._restore_profile_data['data']
-        dialog = self.sender()
         
         if result == QDialog.Accepted:
             archive_to_restore = dialog.get_selected_path()
