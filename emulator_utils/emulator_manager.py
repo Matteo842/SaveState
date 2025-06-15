@@ -43,11 +43,18 @@ KNOWN_EMULATORS = [
 
 UNKNOWN_EMULATORS = [
     # Emulatori non ancora supportati ma che vogliamo rilevare
-    'retroarch', 'project64', 'zsnes', 'fceux', 'nestopia', 'demul', 'mame',
-    'dosbox', 'scummvm', 'melonds', 'xemu', 'redream', 'epsxe', 'mesen',
-    'bsnes', 'higan', 'mednafen', 'kega', 'fusion', 'vita3k', 'play',
-    'supermodel', 'nulldc', 'mupen64plus', 'bizhawk', 'ares', 'raine',
-    'pcsp', 'cxbx', 'cxbx-reloaded', 'xqemu', 'decaf',
+    # Yuzu/Ryujinx forks
+    'suyu', 'sudachi', 'ryubing', 'lime3ds', 'folium', 'strato', 'ryujinx-ldn', 'power-emu',
+    # Altri emulatori
+    'aethersx2', 'ares', 'blastem', 'bsnes', 'beetle-psx', 'bizhawk', 'cxbx',
+    'cxbx-reloaded', 'decaf', 'demul', 'dosbox', 'dosbox-staging', 'dosbox-x',
+    'epsxe', 'fceux', 'fusion', 'genesisplusgx', 'higan', 'ideas', 'kega',
+    'kronos', 'mame', 'mednafen', 'melonds', 'mesen', 'mikage', 'mupen64plus',
+    'nestopia', 'nether_sx2', 'no$gba', 'nulldc', 'panda3ds', 'pcsp',
+    'pcsx-rearmed', 'pcsx-reloaded', 'play', 'project64', 'puNES', 'raine',
+    'redream', 'retroarch', 'rmg', 'scummvm', 'simple64', 'ssantanshiro',
+    'supermodel', 'swanstation', 'vba-m', 'vita3k', 'xemu', 'xqemu',
+    'yabause', 'zsnes',
 ]
 # Dictionary mapping emulator keys (used internally) to their configuration
 # 'name' is the display name, 'profile_finder' is the function to call
@@ -165,20 +172,20 @@ def find_profiles_for_emulator(emulator_key: str, custom_path: Optional[str] = N
         log.exception(f"Error finding profiles for {emulator_config.get('name', emulator_key)}: {e}")
         return {}
 
-def is_known_emulator(file_path: str) -> bool:
+def is_known_emulator(file_path: str) -> tuple[str, str | None]:
     """
-    Verifica se il file è un emulatore conosciuto, senza cercare i profili di salvataggio.
-    Usato principalmente per il filtraggio rapido durante la scansione delle cartelle.
-    
+    Verifica se il file è un emulatore conosciuto e il suo stato di supporto.
+
     Args:
-        file_path: Il percorso del file da verificare
-        
+        file_path: Il percorso del file da verificare.
+
     Returns:
-        bool: True se è un emulatore conosciuto, False altrimenti
+        tuple[str, str | None]: Una tupla contenente lo stato ('supported',
+        'unsupported', 'not_found') e il nome dell'emulatore rilevato (o None).
     """
     try:
         if not file_path or not os.path.exists(file_path):
-            return False
+            return 'not_found', None
         
         # Risolvi il collegamento .lnk se necessario
         target_path = file_path
@@ -192,26 +199,31 @@ def is_known_emulator(file_path: str) -> bool:
                     target_path = resolved_target
                     log.info(f"is_known_emulator: Resolved .lnk target to: {target_path}")
                 else:
-                    return False
+                    return 'not_found', None
             except Exception as e:
                 log.error(f"Error resolving shortcut in is_known_emulator: {e}")
-                return False
+                return 'not_found', None
         
         # Verifica se il percorso contiene uno degli emulatori conosciuti
         target_path_lower = target_path.lower()
         file_name = os.path.basename(target_path_lower)
         
-        # Combine known and unknown emulators for exclusion
-        all_emulators = KNOWN_EMULATORS + UNKNOWN_EMULATORS
-        for emulator in all_emulators:
+        # Controlla prima gli emulatori supportati
+        for emulator in KNOWN_EMULATORS:
             if emulator in file_name or f"\\{emulator}\\" in target_path_lower or f"/{emulator}/" in target_path_lower:
-                log.info(f"Detected emulator '{emulator}' in path: {target_path}")
-                return True
-                
-        return False
+                log.info(f"Detected supported emulator '{emulator}' in path: {target_path}")
+                return 'supported', emulator
+
+        # Controlla gli emulatori non supportati
+        for emulator in UNKNOWN_EMULATORS:
+            if emulator in file_name or f"\\{emulator}\\" in target_path_lower or f"/{emulator}/" in target_path_lower:
+                log.info(f"Detected unsupported emulator '{emulator}' in path: {target_path}")
+                return 'unsupported', emulator
+
+        return 'not_found', None
     except Exception as e:
         log.error(f"Error in is_known_emulator: {e}")
-        return False
+        return 'not_found', None
 
 def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] | None:
     """

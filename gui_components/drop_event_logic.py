@@ -216,6 +216,18 @@ class DropEventMixin:
         # Verifica se è un emulatore
         if len(files_to_process) == 1:
             file_path = files_to_process[0]
+
+            # Controlla prima se è un emulatore conosciuto ma non supportato
+            emulator_status, emulator_name = handler_instance._is_known_emulator(file_path)
+            if emulator_status == 'unsupported':
+                QMessageBox.information(handler_instance.main_window,
+                                        "Emulatore Riconosciuto",
+                                        f"L'emulatore '{emulator_name}' è stato riconosciuto ma non è ancora supportato da SaveState.\n\n"
+                                        "Il supporto per nuovi emulatori viene aggiunto regolarmente.")
+                event.acceptProposedAction()
+                return
+
+            # Se non è 'unsupported', procedi con la normale verifica per emulatori supportati
             emulator_result = handler_instance._check_if_emulator(file_path)
             
             if emulator_result:
@@ -333,10 +345,10 @@ class DropEventMixin:
             # Filter out emulators and uninstalled Steam games from files_to_process
             filtered_files = []
             for file_path in files_to_process:
-                # Check if it's an emulator
-                emulator_result = handler_instance._check_if_emulator(file_path)
-                if emulator_result:
-                    logging.info(f"DragDropHandler.dropEvent: Skipping emulator: {file_path}")
+                # Controlla se è un emulatore (supportato o meno) per escluderlo
+                emulator_status, emulator_name = handler_instance._is_known_emulator(file_path)
+                if emulator_status in ['supported', 'unsupported']:
+                    logging.info(f"DragDropHandler.dropEvent: Skipping emulator '{emulator_name}' in multi-file drop: {file_path}")
                     continue
                 
                 # Check if it's a Steam link to an uninstalled game

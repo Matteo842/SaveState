@@ -182,10 +182,10 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                             continue
                     
                     # Verifica se il file è un emulatore conosciuto (solo detection, senza scan dei profili)
-                    is_emulator = self._is_known_emulator(item_path)
-                    if is_emulator:
-                        # Se è un emulatore, lo saltiamo immediatamente senza cercare i profili
-                        logging.info(f"Skipping emulator in directory: {item_path}")
+                    # Verifica se il file è un emulatore conosciuto per escluderlo dalla scansione
+                    emulator_status, _ = self._is_known_emulator(item_path)
+                    if emulator_status in ['supported', 'unsupported']:
+                        logging.info(f"Skipping emulator file found during directory scan: {item_path}")
                         continue
                     
                     # Se arriviamo qui, il file non è un emulatore e può essere aggiunto
@@ -480,19 +480,15 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
             
             logging.info("All detection threads completed.")
 
-    def _is_known_emulator(self, file_path):
-        """Verifica solo se il file è un emulatore conosciuto, senza cercare i profili di salvataggio.
-        Usa la funzione centralizzata in emulator_manager.
-        
-        Args:
-            file_path: Il percorso del file da verificare
-            
-        Returns:
-            bool: True se è un emulatore conosciuto, False altrimenti
-        """
-        from emulator_utils.emulator_manager import is_known_emulator
-        return is_known_emulator(file_path)
-        
+    def _is_known_emulator(self, file_path) -> tuple[str, str | None]:
+        """Controlla se il file è un emulatore conosciuto e restituisce il suo stato."""
+        try:
+            from emulator_utils.emulator_manager import is_known_emulator
+            return is_known_emulator(file_path)
+        except ImportError:
+            log.error("Failed to import is_known_emulator. Check circular dependencies or project structure.")
+            return 'not_found', None
+
     def _check_if_emulator(self, file_path):
         """Verifica se il file è un emulatore supportato e cerca i profili di salvataggio.
         
