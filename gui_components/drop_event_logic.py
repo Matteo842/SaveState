@@ -221,9 +221,9 @@ class DropEventMixin:
             emulator_status, emulator_name = handler_instance._is_known_emulator(file_path)
             if emulator_status == 'unsupported':
                 QMessageBox.information(handler_instance.main_window,
-                                        "Emulatore Riconosciuto",
-                                        f"L'emulatore '{emulator_name}' è stato riconosciuto ma non è ancora supportato da SaveState.\n\n"
-                                        "Il supporto per nuovi emulatori viene aggiunto regolarmente.")
+                                        "Emulator Recognized",
+                                        f"The emulator '{emulator_name}' is recognized but not yet supported by SaveState.\n\n"
+                                        "Support for new emulators is added regularly.")
                 event.acceptProposedAction()
                 return
 
