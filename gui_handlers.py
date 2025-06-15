@@ -256,9 +256,9 @@ class MainWindowHandlers:
 
             def pcsx2_backup_task(p_name_worker, mc_path_worker, mc_save_dir_worker):
                 try:
-                    # Carica le impostazioni per ottenere i parametri necessari
-                    settings, _ = settings_manager.load_settings()
-                    backup_dir = settings.get('backup_dir', config.BACKUP_BASE_DIR) # Usa get_default_backup_dir come fallback
+                    # Use the main window's current settings, don't reload from file
+                    settings = self.main_window.current_settings
+                    backup_dir = settings.get('backup_base_dir', config.BACKUP_BASE_DIR) # CORRECTED KEY
                     max_bks = settings.get('max_backups', config.MAX_BACKUPS)
                     max_size_mb = settings.get('max_source_size_mb', config.MAX_SOURCE_SIZE_MB)
                     compress_mode = settings.get('compression_mode', config.COMPRESSION_MODE)
@@ -307,7 +307,7 @@ class MainWindowHandlers:
                 self.main_window.set_controls_enabled(True)
                 return
 
-            backup_base_dir = self.main_window.current_settings.get('backup_dir', config.BACKUP_BASE_DIR)
+            backup_base_dir = self.main_window.current_settings.get('backup_base_dir', config.BACKUP_BASE_DIR) # CORRECTED KEY
             max_backups = self.main_window.current_settings.get('max_backups', config.MAX_BACKUPS)
             max_source_size_mb = self.main_window.current_settings.get('max_source_size_mb', 200) # Corretto fallback
             compression_mode = self.main_window.current_settings.get('compression_mode', "standard") # Corretto fallback
