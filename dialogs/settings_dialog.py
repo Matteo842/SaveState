@@ -197,6 +197,31 @@ class SettingsDialog(QDialog):
         if 0 <= selected_size_index < len(self.size_options):
             _, new_max_src_size_mb = self.size_options[selected_size_index]
 
+        # --- Path Creation ---
+        # If the path does not exist, ask the user to create it
+        if new_path and not os.path.isdir(new_path):
+            reply = QMessageBox.question(
+                self,
+                "Create Directory?",
+                f"The path '{new_path}' does not exist.\nDo you want to create it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                try:
+                    os.makedirs(new_path, exist_ok=True)
+                    logging.info(f"Created backup directory: {new_path}")
+                except OSError as e:
+                    QMessageBox.critical(
+                        self,
+                        "Creation Failed",
+                        f"Failed to create directory '{new_path}'.\n\nError: {e}"
+                    )
+                    return  # Stop processing
+            else:
+                # User chose not to create. The validation below will fail and show a message.
+                pass
+
         # --- PATH VALIDATION (Now uses ProfileCreationManager) ---
         main_window = self.parent()
         # Check if main_window and its profile_creation_manager exist,
