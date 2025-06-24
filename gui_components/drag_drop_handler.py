@@ -133,48 +133,53 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                             logging.error(f"Error checking .lnk file: {e}")
                             continue
                             
-                    # Per i file .url, verifica che siano URL Steam validi
+                    # Per i file .url, verifica che siano URL di launcher validi
                     if file_ext == ".url":
                         try:
                             config = configparser.ConfigParser()
                             config.read(item_path)
                             if 'InternetShortcut' in config and 'URL' in config['InternetShortcut']:
                                 url_from_file = config['InternetShortcut']['URL']
-                                # Verifica se è un URL Steam
-                                if not ("store.steampowered.com" in url_from_file or "steam://" in url_from_file):
-                                    # Salta i file .url non Steam
-                                    continue
                                 
-                                # --- INIZIO LOGICA CONTROLLO INSTALLAZIONE STEAM GAME ---
-                                app_id = None
-                                # Estrai AppID (gestisce entrambi i formati di URL)
-                                match_rungameid = re.search(r'steam://rungameid/(\d+)', url_from_file)
-                                match_store_app = re.search(r'store\.steampowered\.com/app/(\d+)', url_from_file)
+                                is_steam_url = "store.steampowered.com" in url_from_file or "steam://" in url_from_file
+                                # Aggiungi altri launcher qui per il riconoscimento
+                                is_known_launcher = is_steam_url or any(proto in url_from_file for proto in [
+                                    "com.epicgames.launcher://", "uplay://", "goggalaxy://", "battlenet://", "origin://"
+                                ])
 
-                                if match_rungameid:
-                                    app_id = match_rungameid.group(1)
-                                elif match_store_app:
-                                    app_id = match_store_app.group(1)
-                                
-                                if app_id:
-                                    game_details = self._get_steam_game_details(app_id)
-                                    # Se game_details non esiste o non ha un install_dir valido, il gioco non è considerato installato.
-                                    # _get_steam_game_details già logga se i dettagli non sono trovati o incompleti.
-                                    if not game_details or not game_details.get('install_dir'):
-                                        # Aggiungiamo un log specifico per questo scenario di skip durante la scansione
-                                        logging.info(f"Skipping uninstalled/details-missing Steam game (AppID: {app_id}) found in directory scan: {item_path}")
-                                        continue # Salta questo file .url e passa al prossimo item
+                                if not is_known_launcher:
+                                    # Salta i file .url non riconosciuti
+                                    continue
+
+                                # Se è un URL Steam, esegui il controllo di installazione
+                                if is_steam_url:
+                                    # --- INIZIO LOGICA CONTROLLO INSTALLAZIONE STEAM GAME ---
+                                    app_id = None
+                                    # Estrai AppID (gestisce entrambi i formati di URL)
+                                    match = re.search(r'steam://rungameid/(\d+)|store\.steampowered\.com/app/(\d+)', url_from_file)
+
+                                    if match:
+                                        app_id = match.group(1) or match.group(2)
+                                    
+                                    if app_id:
+                                        game_details = self._get_steam_game_details(app_id)
+                                        # Se game_details non esiste o non ha un install_dir valido, il gioco non è installato.
+                                        if not game_details or not game_details.get('install_dir'):
+                                            logging.info(f"Skipping uninstalled/details-missing Steam game (AppID: {app_id}) found in directory scan: {item_path}")
+                                            continue # Salta questo file .url e passa al prossimo item
+                                        else:
+                                            # Verifica esplicita dell'esistenza dell'install_dir per maggiore robustezza
+                                            install_dir_path = Path(game_details['install_dir'])
+                                            if not install_dir_path.exists() or not install_dir_path.is_dir():
+                                                logging.warning(f"Install directory '{install_dir_path}' for Steam game (AppID: {app_id}) not found or not a directory. Skipping: {item_path}")
+                                                continue # Salta se la directory di installazione non è valida
+                                            logging.debug(f"Steam game (AppID: {app_id}, Name: {game_details.get('name', 'N/A')}) is installed. Adding '{item_path}' to valid files.")
                                     else:
-                                        # Verifica esplicita dell'esistenza dell'install_dir per maggiore robustezza
-                                        install_dir_path = Path(game_details['install_dir'])
-                                        if not install_dir_path.exists() or not install_dir_path.is_dir():
-                                            logging.warning(f"Install directory '{install_dir_path}' for Steam game (AppID: {app_id}) not found or not a directory. Skipping: {item_path}")
-                                            continue # Salta se la directory di installazione non è valida
-                                        logging.debug(f"Steam game (AppID: {app_id}, Name: {game_details.get('name', 'N/A')}) is installed. Adding '{item_path}' to valid files.")
-                                else:
-                                    logging.warning(f"Could not extract AppID from Steam URL '{url_from_file}' in file {item_path}. Skipping.")
-                                    continue # Salta se non si può estrarre l'AppID
-                                # --- FINE LOGICA CONTROLLO INSTALLAZIONE STEAM GAME ---
+                                        logging.warning(f"Could not extract AppID from Steam URL '{url_from_file}' in file {item_path}. Skipping.")
+                                        continue # Salta se non si può estrarre l'AppID
+                                    # --- FINE LOGICA CONTROLLO INSTALLAZIONE STEAM GAME ---
+                                # Per gli altri launcher, per ora li accettiamo senza controlli aggiuntivi.
+                                # L'esecuzione continua e il file verrà aggiunto a valid_files.
                             else:
                                 continue
                         except Exception as e:
@@ -281,12 +286,22 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                         config.read(file_path)
                         if 'InternetShortcut' in config and 'URL' in config['InternetShortcut']:
                             url_from_file = config['InternetShortcut']['URL']
-                            if "steam://" in url_from_file:
-                                app_id_match = re.search(r'steam://rungameid/(\d+)', url_from_file)
-                                if app_id_match:
-                                    steam_app_id = app_id_match.group(1)
-                                    is_steam_game = True
-                                    logging.info(f"Detected Steam game in multi-profile: {profile_name} (AppID: {steam_app_id})")
+                            is_steam_url = "store.steampowered.com" in url_from_file or "steam://" in url_from_file
+                            
+                            if is_steam_url:
+                                is_steam_game = True
+                                # Estrai AppID (gestisce entrambi i formati di URL)
+                                match = re.search(r'steam://rungameid/(\d+)|store\.steampowered\.com/app/(\d+)', url_from_file)
+                                if match:
+                                    # group(1) è per rungameid, group(2) per store/app.
+                                    steam_app_id = match.group(1) or match.group(2)
+                                    if steam_app_id:
+                                        logging.info(f"Detected Steam game in multi-profile: {profile_name} (AppID: {steam_app_id})")
+                                else:
+                                    logging.warning(f"Could not extract AppID from Steam URL '{url_from_file}' in multi-profile analysis.")
+                            # Per altri URL di launcher (Epic, Ubi, etc.), is_steam_game rimane False.
+                            # Il file verrà processato dal thread di rilevamento senza logica specifica per Steam,
+                            # che è il comportamento desiderato.
                     except Exception as e:
                         logging.error(f"Error checking if URL file is a Steam game: {e}")
             

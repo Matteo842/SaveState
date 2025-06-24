@@ -6,9 +6,9 @@ import logging
 import argparse
 import config
 # --- PySide6 Imports ---
-from PySide6.QtWidgets import QApplication, QMessageBox, QDialog, QSplashScreen
+from PySide6.QtWidgets import QApplication, QMessageBox, QDialog
 from PySide6.QtCore import QSharedMemory
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QIcon
 from PySide6.QtNetwork import QLocalSocket, QLocalServer
 
 # --- App Imports ---
@@ -16,7 +16,7 @@ import settings_manager
 import backup_runner
 from gui_utils import QtLogHandler
 from utils import resource_path # <--- Import from utils
-from SaveState_gui import MainWindow # , ENGLISH_TRANSLATOR, CURRENT_TRANSLATOR
+from SaveState_gui import MainWindow
 from SaveState_gui import SHARED_MEM_KEY, LOCAL_SERVER_NAME # Importa costanti
 
 try:

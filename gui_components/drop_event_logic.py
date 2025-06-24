@@ -11,6 +11,7 @@ from PySide6.QtGui import QDropEvent
 from PySide6.QtCore import Qt  # Import Qt
 from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
 from gui_utils import DetectionWorkerThread  # Import DetectionWorkerThread
+from shortcut_utils import sanitize_profile_name  # Import sanitize_profile_name
 from .multi_profile_dialog import MultiProfileDialog
 
 # It's assumed that DetectionWorkerThread, shortcut_utils, emulator_manager, 
@@ -60,7 +61,7 @@ class DropEventMixin:
                         logging.debug(f"PCM.dropEvent: Found Steam URL in URL: {steam_url_str}")
                         break
                     
-                    # Controlla se è un file .url che potrebbe contenere un URL Steam
+                    # Controlla se è un file .url che potrebbe contenere un URL Steam o di altri launcher
                     if url_str.endswith(".url") and url_obj.isLocalFile():
                         local_path = url_obj.toLocalFile()
                         try:
@@ -68,10 +69,18 @@ class DropEventMixin:
                             config.read(local_path)
                             if 'InternetShortcut' in config and 'URL' in config['InternetShortcut']:
                                 url_from_file = config['InternetShortcut']['URL']
+                                # Controlla se è un URL Steam
                                 if "store.steampowered.com" in url_from_file or "steam://" in url_from_file:
                                     steam_url_str = url_from_file
                                     logging.debug(f"PCM.dropEvent: Found Steam URL in .url file: {steam_url_str}")
                                     break
+                                # Se non è Steam, potrebbe essere un altro launcher, quindi non impostiamo
+                                # steam_url_str e lasciamo che la logica successiva gestisca il file come un normale eseguibile.
+                                # Questo permette a _handle_dropped_files di processarlo.
+                                else:
+                                    # È un URL ma non di Steam, non fare nulla qui, sarà gestito dopo
+                                    logging.debug(f"PCM.dropEvent: Found non-Steam URL in .url file: {url_from_file}. Will be handled by generic file processing.")
+
                         except Exception as e:
                             logging.error(f"Error parsing .url file: {e}")
             
@@ -167,53 +176,83 @@ class DropEventMixin:
         files_to_process = []
         
         if mime_data.hasUrls(): # Raccoglie tutti i file/URL validi
-            for url in mime_data.urls():
-                if url.isLocalFile():
-                    file_path = url.toLocalFile()
-                    
-                    # Verifica se è un collegamento .lnk che punta a una directory
-                    is_dir_shortcut = False
-                    if file_path.lower().endswith('.lnk') and platform.system() == "Windows":
-                        try:
-                            import winshell
-                            shortcut = winshell.shortcut(file_path)
-                            resolved_target = shortcut.path
-                            
-                            if resolved_target and os.path.exists(resolved_target) and os.path.isdir(resolved_target):
-                                logging.info(f"DragDropHandler.dropEvent: Skipping directory shortcut: {file_path} -> {resolved_target}")
-                                is_dir_shortcut = True
-                        except Exception as e_lnk:
-                            logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
-                    
-                    # Skip directories and directory shortcuts in multi-file processing
-                    if os.path.isdir(file_path) or is_dir_shortcut:
-                        logging.info(f"DragDropHandler.dropEvent: Skipping directory or directory shortcut: {file_path}")
-                        continue
+            urls = mime_data.urls()
+
+            # Gestione per drop singolo (file, cartella, o collegamento a cartella)
+            if len(urls) == 1 and urls[0].isLocalFile():
+                path = urls[0].toLocalFile()
+                
+                # Controlla se è un collegamento a una cartella
+                is_dir_shortcut = False
+                if path.lower().endswith('.lnk') and platform.system() == "Windows":
+                    try:
+                        import winshell
+                        shortcut = winshell.shortcut(path)
+                        resolved_target = shortcut.path
+                        if resolved_target and os.path.exists(resolved_target) and os.path.isdir(resolved_target):
+                            logging.info(f"DragDropHandler.dropEvent: Ignoring single directory shortcut: {path}")
+                            is_dir_shortcut = True
+                    except Exception as e_lnk:
+                        logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
+                
+                if is_dir_shortcut:
+                    QMessageBox.warning(mw, "Folder Shortcut Not Supported",
+                                        "Shortcuts pointing to folders are not supported.\n\n"
+                                        "Please drag and drop the game's executable, its shortcut, or a launcher's .url file directly.")
+                    event.ignore()
+                    return False
+
+                # Se è una cartella vera e propria, scansionala
+                if os.path.isdir(path):
+                    logging.info(f"DragDropHandler.dropEvent: Single directory dropped: {path}")
+                    executables = self._scan_directory_for_executables(path)
+                    if executables:
+                        logging.info(f"DragDropHandler.dropEvent: Found {len(executables)} executables in directory.")
+                        files_to_process.extend(executables)
+                    else:
+                        logging.warning(f"DragDropHandler.dropEvent: No executables found in directory: {path}")
+                        event.ignore()
+                        return False
+                else:
+                    # Altrimenti, è un singolo file
+                    files_to_process.append(path)
+
+            else: # Gestione per file multipli
+                for url in urls:
+                    if url.isLocalFile():
+                        file_path = url.toLocalFile()
                         
-                    # Verifica se è un URL Steam valido
-                    if file_path.lower().endswith('.url'):
-                        try:
-                            config = configparser.ConfigParser()
-                            config.read(file_path)
-                            if 'InternetShortcut' in config and 'URL' in config['InternetShortcut']:
-                                url_from_file = config['InternetShortcut']['URL']
-                                # Verifica se è un URL Steam
-                                if not ("store.steampowered.com" in url_from_file or "steam://" in url_from_file):
-                                    logging.info(f"DragDropHandler.dropEvent: Skipping non-Steam URL file: {file_path}")
-                                    continue
-                        except Exception as e:
-                            logging.error(f"Error parsing .url file: {e}")
-                    
-                    logging.info(f"DragDropHandler.dropEvent: Added file to process: {file_path}")
-                    files_to_process.append(file_path)
+                        # Salta le cartelle nel multi-drop
+                        if os.path.isdir(file_path):
+                            logging.info(f"DragDropHandler.dropEvent: Skipping directory in multi-file drop: {file_path}")
+                            continue
+
+                        # Salta i collegamenti a cartelle
+                        is_dir_shortcut = False
+                        if file_path.lower().endswith('.lnk') and platform.system() == "Windows":
+                            try:
+                                import winshell
+                                shortcut = winshell.shortcut(file_path)
+                                resolved_target = shortcut.path
+                                if resolved_target and os.path.exists(resolved_target) and os.path.isdir(resolved_target):
+                                    logging.info(f"DragDropHandler.dropEvent: Skipping directory shortcut: {file_path} -> {resolved_target}")
+                                    is_dir_shortcut = True
+                            except Exception as e_lnk:
+                                logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
+                        if is_dir_shortcut:
+                            continue
+                        
+                        files_to_process.append(file_path)
         
-        # Verifica se abbiamo file da processare
-        if not (mime_data.hasUrls() or mime_data.hasText()):
-            logging.debug("DragDropHandler.dropEvent: Event ignored, no URLs or text.")
+        # Se dopo il filtraggio non ci sono file validi, esci
+        if not files_to_process:
+            logging.warning("DragDropHandler.dropEvent: No valid files to process after filtering.")
             event.ignore()
             return False
+
+        # --- GESTIONE DROP SINGOLO O MULTIPLO ---
         
-        # Verifica se è un emulatore
+        # Se c'è un solo file, procedi con la logica di rilevamento per singolo profilo
         if len(files_to_process) == 1:
             file_path = files_to_process[0]
 
@@ -416,7 +455,7 @@ class DropEventMixin:
                 added_count = 0
                 for profile_name, profile_data in accepted_profiles.items():
                     # Applica la stessa sanificazione usata per i profili singoli
-                    sanitized_name = shortcut_utils.sanitize_profile_name(profile_name)
+                    sanitized_name = sanitize_profile_name(profile_name)
                     
                     # Gestisci nomi duplicati
                     final_name = sanitized_name
@@ -561,12 +600,22 @@ class DropEventMixin:
 
         elif is_linux_executable: # Already checked it's not a .desktop and is a file
             logging.debug(f"PCM.dropEvent (Fallback): Detected Linux executable: {file_path}")
-            target_path = file_path
-            game_install_dir = os.path.normpath(os.path.dirname(file_path))
+            # Prepara il nome del gioco suggerito, pulendolo per ottenere un risultato migliore
+            # specialmente per i collegamenti .url (es. "Alan Wake 2.url" -> "Alan Wake 2")
+            profile_name = sanitize_profile_name(Path(file_path).stem)
+            game_install_dir = os.path.dirname(file_path)
             logging.debug(f"PCM.dropEvent (Fallback): Game folder from Linux executable: {game_install_dir}")
 
-        # Se è un file ma non è un collegamento di Windows (.lnk), un file desktop di Linux (.desktop) o un file eseguibile di Linux
-        # lo rifiutiamo per motivi di sicurezza (per evitare che l'applicazione accetti file non validi come immagini)
+        # Gestisce i file .url non-Steam
+        elif file_path.lower().endswith('.url'):
+            target_path = file_path
+            game_install_dir = os.path.normpath(os.path.dirname(file_path))
+            
+            # Prepara il nome del gioco suggerito, pulendolo
+            profile_name = sanitize_profile_name(Path(file_path).stem)
+            logging.debug(f"PCM.dropEvent (Fallback): Game name from .url file: {profile_name}")
+
+        # Se è un file ma non è un tipo supportato, lo rifiutiamo per motivi di sicurezza
         elif os.path.isfile(file_path):
             logging.warning(f"PCM.dropEvent: File type not allowed: {file_path}")
             QMessageBox.warning(mw, "File Type Not Supported", 
