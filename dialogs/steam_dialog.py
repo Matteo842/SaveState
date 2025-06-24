@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 from PySide6.QtWidgets import (
     QDialog, QListWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QApplication, QInputDialog, QMessageBox, QListWidgetItem
+    QApplication, QInputDialog, QMessageBox, QListWidgetItem, QLineEdit
 )
-from PySide6.QtCore import Signal, Slot, Qt, QTimer
+from PySide6.QtCore import Signal, Slot, Qt, QTimer, QEvent
 
 # Import necessary logic
 import core_logic
@@ -26,45 +26,52 @@ class SteamDialog(QDialog):
         self.setMinimumHeight(400)
 
         # Internal references
-        self.steam_search_thread = None # Not used here anymore
-        # Get profiles and steam_games_data from parent to populate the list
+        self.steam_search_thread = None 
         self.profiles = parent.profiles if parent and hasattr(parent, 'profiles') else {}
-        self.steam_games_data = parent.steam_games_data if parent and hasattr(parent, 'steam_games_data') else {} # Assume MainWindow has it
-        self.steam_userdata_info = parent.steam_userdata_info if parent and hasattr(parent, 'steam_userdata_info') else {} # Assume MainWindow has it
+        self.steam_games_data = parent.steam_games_data if parent and hasattr(parent, 'steam_games_data') else {} 
+        self.steam_userdata_info = parent.steam_userdata_info if parent and hasattr(parent, 'steam_userdata_info') else {} 
 
         # --- Create UI Widgets ---
         self.game_list_widget = QListWidget()
         self.status_label = QLabel("Select a game and click Configure.")
+        
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("Search...")
+        self.search_bar.setVisible(False)
+
         self.configure_button = QPushButton("Configure Selected Profile")
         self.refresh_button = QPushButton("Refresh Games List")
         self.close_button = QPushButton("Close")
         self.configure_button.setEnabled(False)
 
-       # --- Layout ---
+        # --- Layout ---
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Installed Steam Games:"))
         layout.addWidget(self.game_list_widget)
         layout.addWidget(self.status_label)
+        
         h_layout = QHBoxLayout()
         h_layout.addWidget(self.refresh_button)
+        h_layout.addWidget(self.search_bar)
         h_layout.addStretch()
         h_layout.addWidget(self.configure_button)
         h_layout.addWidget(self.close_button)
         layout.addLayout(h_layout)
 
-
-        # # --- Signal/Slot connections ---
-        # configure_button now calls a different method or directly emits+accepts
+        # --- Signal/Slot connections ---
         self.configure_button.clicked.connect(self._emit_selection_and_accept)
         self.refresh_button.clicked.connect(self.start_steam_scan)
         self.close_button.clicked.connect(self.reject)
+        self.search_bar.textChanged.connect(self.filter_game_list)
         self.game_list_widget.currentItemChanged.connect(
             lambda item: self.configure_button.setEnabled(item is not None)
         )
-        # Add double-click handler for automatic selection
         self.game_list_widget.itemDoubleClicked.connect(self._handle_double_click)
 
-        # Populate the list immediately with the data passed from the parent
+        # Install event filter to capture key presses on the list widget
+        self.game_list_widget.installEventFilter(self)
+
+        # Populate the list
         self.populate_game_list()
     
     @Slot()
@@ -74,7 +81,7 @@ class SteamDialog(QDialog):
          if parent_window:
              parent_window.steam_games_data = self.steam_games_data
              parent_window.steam_userdata_info = self.steam_userdata_info
-         self.populate_game_list() # Update the list in this dialog
+         self.populate_game_list() 
          self.status_label.setText(f"List updated. {len(self.steam_games_data)} games found.")
 
 
@@ -82,10 +89,10 @@ class SteamDialog(QDialog):
         self.game_list_widget.clear()
         if not self.steam_games_data:
              self.game_list_widget.addItem("No games found.")
-             self.configure_button.setEnabled(False) # Disable if no games
+             self.configure_button.setEnabled(False) 
              return
 
-        self.configure_button.setEnabled(self.game_list_widget.currentItem() is not None) # Enable if there is a selection
+        self.configure_button.setEnabled(self.game_list_widget.currentItem() is not None) 
         sorted_games = sorted(self.steam_games_data.items(), key=lambda item: item[1]['name'])
         for appid, game_data in sorted_games:
             profile_exists_marker = "[EXISTING PROFILE]" if game_data['name'] in self.profiles else ""
@@ -111,7 +118,7 @@ class SteamDialog(QDialog):
         profile_name = game_data['name']
         logging.info(f"[SteamDialog] Game selected: '{profile_name}' (AppID: {appid}). Emitting signal and closing.")
         self.game_selected_for_config.emit(appid, profile_name)
-        self.accept() # Close the dialog immediately
+        self.accept() 
         
     # --- METHOD to handle double-click on game list ---
     @Slot(QListWidgetItem)
@@ -134,8 +141,8 @@ class SteamDialog(QDialog):
         
         # Emit the signal and close the dialog, just like clicking the Configure button
         self.game_selected_for_config.emit(appid, profile_name)
-        self.accept() # Close the dialog immediately
-
+        self.accept() 
+        
     @Slot(list, bool)
     def on_steam_search_finished(self, guesses_with_scores, effect_was_shown):
         """Slot called when SteamSearchWorkerThread has finished the search."""
@@ -180,15 +187,15 @@ class SteamDialog(QDialog):
             logging.error("[SteamDialog] Could not retrieve profile name in on_steam_search_finished. Aborting config.")
             QMessageBox.critical(self, "Internal Error",
                                  "Unable to retrieve the profile name being configured.")
-            self.reject() # Close the Steam dialog with 'reject'
+            self.reject() 
             return
 
-        confirmed_path = None # Final path that will be saved
+        confirmed_path = None 
         existing_path = self.profiles.get(profile_name)
         logging.debug(f"ON_SEARCH_FINISHED: Existing path for '{profile_name}' is '{existing_path}'")
 
         # --- Logic to choose/confirm the path ---
-        if not guesses_with_scores: # The search found nothing
+        if not guesses_with_scores: 
             logging.info("ON_SEARCH_FINISHED: No paths guessed by core_logic.")
             if not existing_path:
                 # No suggestions and no existing profile -> Force manual input
@@ -196,7 +203,7 @@ class SteamDialog(QDialog):
                 QMessageBox.information(self, "Path Not Found",
                                         f"Unable to automatically find a path for '{profile_name}'.\n"
                                         "Please enter it manually.")
-                confirmed_path = self._ask_for_manual_path(profile_name, existing_path) # Call helper for manual input
+                confirmed_path = self._ask_for_manual_path(profile_name, existing_path) 
             else:
                 # No suggestions, but profile exists -> Ask if to keep or enter manually
                 logging.debug(f"  Existing path '{existing_path}' found. Asking user.")
@@ -210,15 +217,15 @@ class SteamDialog(QDialog):
                     confirmed_path = existing_path
                 elif reply == QMessageBox.StandardButton.No:
                      logging.debug("  User chose to enter path manually.")
-                     confirmed_path = self._ask_for_manual_path(profile_name, existing_path) # Call helper
-                else: # Cancel
+                     confirmed_path = self._ask_for_manual_path(profile_name, existing_path) 
+                else: 
                     logging.debug("  User cancelled.")
                     self.status_label.setText("Configuration cancelled.")
                     self.reject()
-                    return # Exit the function
+                    return 
         # --- END RESTORED BLOCK ---
 
-        else: # Found one or more suggestions (Block with deduplication)
+        else: 
             path_choices = []
             display_text_to_original_path = {}
             added_normalized_paths_for_display = set()
@@ -289,7 +296,7 @@ class SteamDialog(QDialog):
                         logging.error(f"Error mapping selected choice '{chosen_display_str}' back to path.")
                         QMessageBox.critical(self, "Internal Error", "Error in path selection.")
                         self.reject(); return
-            else: # User cancelled
+            else: 
                 self.status_label.setText("Configuration cancelled.")
                 self.reject(); return
 
@@ -300,22 +307,21 @@ class SteamDialog(QDialog):
              if core_logic.save_profiles(self.profiles):
                   self.status_label.setText(f"Profile '{profile_name}' configured.")
                   self.profile_configured.emit(profile_name, confirmed_path)
-                  self.accept() # Close this dialog with success
+                  self.accept() 
              else:
                   QMessageBox.critical(self, "Save Error",
                                          "Unable to save the profiles file.")
                   self.status_label.setText("Error while saving profiles.")
-                  self.reject() # Close if it fails
+                  self.reject() 
         else:
              # confirmed_path è None (manuale annullato o errore validazione nel blocco 'if not guesses')
              logging.warning(f"Configuration cancelled or failed for profile '{profile_name}' (confirmed_path is empty/None).")
              # The status label is already set in the blocks above in case of cancellation
-             self.reject() # Close without saving
+             self.reject() 
 
     def _get_validator_func(self):
         """Returns the path validation function, taking it from MainWindow if possible."""
         main_window = self.main_window_ref
-        #main_window = self.parent()
         validator_func = None
         if main_window and hasattr(main_window, 'profile_creation_manager') and \
            hasattr(main_window.profile_creation_manager, 'validate_save_path'):
@@ -326,10 +332,10 @@ class SteamDialog(QDialog):
             logging.warning("[SteamDialog] MainWindow validator not found, using basic os.path.isdir validation.")
             def basic_validator(path_to_validate, _profile_name):
                 if not path_to_validate or not os.path.isdir(path_to_validate):
-                     QMessageBox.warning(self, "Path Error", # Translate
-                                         "The specified path does not exist or is not a valid folder.") # Translate
+                     QMessageBox.warning(self, "Path Error", 
+                                         "The specified path does not exist or is not a valid folder.") 
                      return None
-                return path_to_validate # Return the path if valid
+                return path_to_validate 
             validator_func = basic_validator
         return validator_func
 
@@ -337,34 +343,56 @@ class SteamDialog(QDialog):
         """Ask the user to enter a path manually and validate it."""
         validator_func = self._get_validator_func()
         manual_path, ok = QInputDialog.getText(
-            self, "Manual Path", # Translate
-            f"Enter the COMPLETE save path for '{profile_name}':", # Translate
-            text=existing_path if existing_path else "" # Precompile with the current path if it exists
+            self, "Manual Path", 
+            f"Enter the COMPLETE save path for '{profile_name}':", 
+            text=existing_path if existing_path else "" 
         )
 
         if ok and manual_path:
             # Use the validator to check the entered path
-            validated_path = validator_func(manual_path, profile_name) # Also pass the profile name
+            validated_path = validator_func(manual_path, profile_name) 
             if validated_path:
-                return validated_path # Return the validated path
+                return validated_path 
             else:
                 # The validator has failed (and should have shown a message)
                 return None
-        elif ok and not manual_path: # Empty input
-             QMessageBox.warning(self, "Path Error", "The path cannot be empty.") # Translate
-             return None # Indicate failure/cancellation
-        else: # User pressed Cancel on QInputDialog
-            return None # Indicate cancellation
+        elif ok and not manual_path: 
+             QMessageBox.warning(self, "Path Error", "The path cannot be empty.") 
+             return None 
+        else: 
+            return None 
 
-    # Override reject to ensure the thread is handled if active
+    def eventFilter(self, source, event):
+        """
+        Event filter to capture key presses on child widgets (like the list)
+        to activate the search bar.
+        """
+        if source is self.game_list_widget and event.type() == QEvent.Type.KeyPress:
+            if not self.search_bar.isVisible() and len(event.text()) > 0 and event.text().isalnum():
+                self.search_bar.setVisible(True)
+                self.search_bar.setFocus()
+                self.search_bar.setText(event.text())
+                return True  # Event handled, don't pass it to the list widget
+
+        return super().eventFilter(source, event)
+
+    def filter_game_list(self, text):
+        """Filters the game list based on the search text."""
+        if not text:
+            self.search_bar.setVisible(False)
+            self.game_list_widget.setFocus()
+
+        for i in range(self.game_list_widget.count()):
+            item = self.game_list_widget.item(i)
+            # Make item visible if text is found in the item's text, case-insensitive
+            item.setHidden(text.lower() not in item.text().lower())
+
     def reject(self):
         logging.debug("[SteamDialog] Dialog rejected.")
         super().reject()
 
-    # Override accept to log
     def accept(self):
-        logging.debug("[SteamDialog] Dialog accepted (configuration successful).")
-        super().accept() # Call the base implementation of accept
+        super().accept() 
 
 # --- FINE CLASSE SteamDialog ---
 
