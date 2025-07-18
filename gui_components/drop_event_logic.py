@@ -966,6 +966,20 @@ class DropEventMixin:
             self.check_threads_timer.stop()
             self.check_threads_timer = None
         
+        # 4. Disconnetti il segnale profileAdded per impedire nuove elaborazioni
+        if hasattr(self, 'profile_dialog') and self.profile_dialog:
+            try:
+                logging.info("Disconnecting profileAdded signal to prevent new file processing")
+                self.profile_dialog.profileAdded.disconnect()
+                logging.info("profileAdded signal disconnected successfully")
+            except Exception as e:
+                logging.warning(f"Error disconnecting profileAdded signal: {e}")
+        
+        # 5. Imposta flag per impedire nuove elaborazioni
+        if hasattr(self, 'processing_cancelled'):
+            self.processing_cancelled = True
+            logging.info("Set processing_cancelled flag to prevent new thread creation")
+        
         logging.info(f"Total threads cancelled: {total_cancelled}")
         
         if total_cancelled == 0:

@@ -330,7 +330,8 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                     current_settings=self.main_window.current_settings.copy(),
                     installed_steam_games_dict=steam_games_dict,
                     emulator_name=None,
-                    steam_app_id=steam_app_id if is_steam_game else None
+                    steam_app_id=steam_app_id if is_steam_game else None,
+                    cancellation_manager=getattr(self.main_window, 'cancellation_manager', None)  # <-- FIX: passa il cancellation_manager
                 )
             
                 # Salva il riferimento al thread e al nome del profilo
@@ -681,7 +682,8 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                 profile_name_suggestion=self.game_name_suggestion,
                 game_install_dir=self.game_install_dir,
                 current_settings=mw.current_settings,
-                installed_steam_games_dict=steam_games_dict
+                installed_steam_games_dict=steam_games_dict,
+                cancellation_manager=getattr(mw, 'cancellation_manager', None)  # <-- FIX: passa il cancellation_manager
             )
             self.detection_thread.progress.connect(self.on_detection_progress)
             self.detection_thread.finished.connect(self.on_detection_finished)

@@ -184,3 +184,5 @@ IMPROVEMENTS_SUMMARY.md
 save_path_finder_original.py
 /tester
 test_real_scenario.py
+test_fast_cancellation.py
+test_ini_cancellation.py

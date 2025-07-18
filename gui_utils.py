@@ -100,16 +100,29 @@ class DetectionWorkerThread(QThread):
                 logging.debug(f"Starting INI scan in {self.game_install_dir}...")
                 for root, dirs, files in os.walk(self.game_install_dir, topdown=True):
                     if not self.is_running: break
+                    # Controlla cancellazione durante la ricerca INI - controllo frequente
+                    if hasattr(self, 'cancellation_manager') and self.cancellation_manager and self.cancellation_manager.check_cancelled():
+                        logging.info("DetectionWorkerThread: INI scan cancelled by user during directory walk")
+                        return
                     # Ottimizzazione: Non scendere in cartelle comuni non utili (es. '.git', 'engine')
                     dirs[:] = [d for d in dirs if d.lower() not in ['__pycache__', '.git', '.svn', 'engine', 'binaries', 'intermediates', 'logs']]
 
                     for filename in files:
                         if not self.is_running: break
+                        # Controlla cancellazione durante l'iterazione dei file INI
+                        if hasattr(self, 'cancellation_manager') and self.cancellation_manager and self.cancellation_manager.check_cancelled():
+                            logging.info("DetectionWorkerThread: INI file iteration cancelled by user")
+                            return
                         filename_lower = filename.lower()
                         if filename_lower in ini_blacklist_lower: continue
 
                         # Processa solo se nella whitelist
                         if filename_lower in ini_whitelist_lower:
+                            # Controlla cancellazione prima di processare ogni file INI
+                            if hasattr(self, 'cancellation_manager') and self.cancellation_manager and self.cancellation_manager.check_cancelled():
+                                logging.info("DetectionWorkerThread: INI scan cancelled by user before processing file")
+                                return
+                            
                             ini_path = os.path.join(root, filename)
                             logging.debug(f"  Processing potential INI: {ini_path}")
                             try:
@@ -120,10 +133,25 @@ class DetectionWorkerThread(QThread):
 
                                 for enc in possible_encodings:
                                     if not self.is_running: break
+                                    # Controlla cancellazione prima di ogni tentativo di encoding
+                                    if hasattr(self, 'cancellation_manager') and self.cancellation_manager and self.cancellation_manager.check_cancelled():
+                                        logging.info("DetectionWorkerThread: INI scan cancelled by user during encoding attempt")
+                                        return
                                     try:
+                                        # Controlla cancellazione prima di leggere il file
+                                        if hasattr(self, 'cancellation_manager') and self.cancellation_manager and self.cancellation_manager.check_cancelled():
+                                            logging.info("DetectionWorkerThread: INI scan cancelled by user before file read")
+                                            return
+                                        
                                         parser.clear()
                                         with open(ini_path, 'r', encoding=enc) as f_content:
                                             ini_content = f_content.read()
+                                        
+                                        # Controlla cancellazione subito dopo la lettura del file
+                                        if hasattr(self, 'cancellation_manager') and self.cancellation_manager and self.cancellation_manager.check_cancelled():
+                                            logging.info("DetectionWorkerThread: INI scan cancelled by user after file read")
+                                            return
+                                            
                                         parser.read_string(ini_content) # Usa read_string
                                         parsed_successfully = True
                                         used_encoding = enc
@@ -217,12 +245,20 @@ class DetectionWorkerThread(QThread):
 
                     for ini_path_to_check, encoding_to_use, ini_content in sorted_decoded_inis:
                         if not self.is_running: break
+                        # Controlla cancellazione durante la ricerca INI fallback
+                        if hasattr(self, 'cancellation_manager') and self.cancellation_manager and self.cancellation_manager.check_cancelled():
+                            logging.info("DetectionWorkerThread: INI fallback scan cancelled by user")
+                            return
                         logging.debug(f"  Scanning for fallback prefixes in: {os.path.basename(ini_path_to_check)}")
                         try:
                             lines = ini_content.splitlines() # Usa contenuto già letto
                             found_in_this_file_fallback = False
                             for line_num, line in enumerate(lines):
                                 if not self.is_running: break
+                                # Controlla cancellazione durante l'iterazione delle righe INI
+                                if hasattr(self, 'cancellation_manager') and self.cancellation_manager and self.cancellation_manager.check_cancelled():
+                                    logging.info("DetectionWorkerThread: INI line iteration cancelled by user")
+                                    return
                                 cleaned_line = line.strip()
                                 if not cleaned_line or cleaned_line.startswith('['): continue # Salta vuote e sezioni
 
@@ -373,9 +409,34 @@ class DetectionWorkerThread(QThread):
         self.is_running = False  # Add cancellation method
 
     def terminate_immediately(self):
+        """Termina il thread in modo sicuro."""
         if self.isRunning():
+            # Prima prova a impostare il flag di cancellazione
+            self.cancellation_requested = True
+            
+            # Se abbiamo un cancellation_manager, cancellalo anche
+            if hasattr(self, 'cancellation_manager') and self.cancellation_manager:
+                self.cancellation_manager.cancel()
+                logging.debug("Cancellation manager cancelled")
+            
+            # Aspetta più tempo per operazioni I/O (lettura file INI)
+            if self.wait(500):  # Aspetta 500ms per operazioni I/O
+                logging.debug("Thread terminated gracefully")
+                return
+                
+            # Prova ancora con un timeout più lungo per file grandi
+            logging.debug("Thread still running, waiting longer for I/O operations...")
+            if self.wait(1000):  # Aspetta altri 1000ms per file grandi
+                logging.debug("Thread terminated gracefully after extended wait")
+                return
+                
+            # Se il thread è ancora in esecuzione, usa terminate() come ultima risorsa
+            logging.warning("Thread did not terminate gracefully after 1.5s, using terminate()")
             self.terminate()
-            self.wait(100)  # Wait briefly for thread to stop
+            
+            # Aspetta che terminate() abbia effetto
+            if not self.wait(100):
+                logging.error("Thread failed to terminate even with terminate() call")
 
 # --- Gestore Log Personalizzato per Qt ---
 class QtLogHandler(logging.Handler, QObject):
