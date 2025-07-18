@@ -432,8 +432,12 @@ class DropEventMixin:
             dialog.profileAdded.connect(self._handle_profile_analysis)
             
             # Connetti il segnale di chiusura del dialogo alla cancellazione dei thread
-            # dialog.finished.connect(self._cancel_detection_threads)
-            # dialog.rejected.connect(self._cancel_detection_threads)
+            logging.info("Connecting MultiProfileDialog signals to _cancel_detection_threads")
+            # Usiamo solo rejected per evitare chiamate doppie (reject emette sia rejected che finished)
+            dialog.rejected.connect(self._cancel_detection_threads)
+            # Aggiungiamo anche finished per gestire la chiusura con la X
+            dialog.finished.connect(self._cancel_detection_threads)
+            logging.info("MultiProfileDialog signals connected successfully")
             
             # Salva il riferimento al dialogo come attributo dell'istanza
             self.profile_dialog = dialog
@@ -892,11 +896,80 @@ class DropEventMixin:
         # --- FINE Start Fade/Animation Effect ---
         return True
 
-    def _cancel_detection_threads(self):
+    def _cancel_detection_threads(self, *args):
+        """Cancella tutti i thread di rilevamento in corso."""
+        logging.info(f"MultiProfileDialog closed: Cancelling all detection threads... (args: {args})")
+        
+        total_cancelled = 0
+        
+        # 1. Cancella i thread nella lista _detection_threads (DropEventMixin)
         if hasattr(self, '_detection_threads') and self._detection_threads:
-            for thread in self._detection_threads:
+            thread_count = len(self._detection_threads)
+            logging.info(f"Found {thread_count} threads in _detection_threads to cancel")
+            
+            for i, thread in enumerate(self._detection_threads):
+                logging.info(f"Cancelling _detection_threads[{i+1}/{thread_count}]: {thread}")
+                
+                # Cancella il cancellation_manager se presente
+                if hasattr(thread, 'cancellation_manager') and thread.cancellation_manager:
+                    thread.cancellation_manager.cancel()
+                    logging.info(f"Cancelled cancellation_manager for _detection_threads[{i+1}]")
+                else:
+                    logging.warning(f"_detection_threads[{i+1}] has no cancellation_manager!")
+                
+                # Termina il thread
+                logging.info(f"Terminating _detection_threads[{i+1}]...")
                 thread.terminate_immediately()
+                logging.info(f"_detection_threads[{i+1}] terminated")
+                
             self._detection_threads = []
+            total_cancelled += thread_count
+            logging.info(f"Cleared _detection_threads list ({thread_count} threads)")
+        else:
+            logging.info("No threads in _detection_threads to cancel")
+        
+        # 2. Cancella i thread nella lista active_threads (DragDropHandler)
+        if hasattr(self, 'active_threads') and self.active_threads:
+            thread_count = len(self.active_threads)
+            logging.info(f"Found {thread_count} threads in active_threads to cancel")
+            
+            for i, (thread_id, thread_info) in enumerate(self.active_threads.items()):
+                thread = thread_info.get('thread')
+                profile_name = thread_info.get('profile_name', 'Unknown')
+                
+                if thread:
+                    logging.info(f"Cancelling active_threads[{i+1}/{thread_count}] (ID: {thread_id}, Profile: {profile_name}): {thread}")
+                    
+                    # Cancella il cancellation_manager se presente
+                    if hasattr(thread, 'cancellation_manager') and thread.cancellation_manager:
+                        thread.cancellation_manager.cancel()
+                        logging.info(f"Cancelled cancellation_manager for active_threads[{i+1}] ({profile_name})")
+                    else:
+                        logging.warning(f"active_threads[{i+1}] ({profile_name}) has no cancellation_manager!")
+                    
+                    # Termina il thread
+                    logging.info(f"Terminating active_threads[{i+1}] ({profile_name})...")
+                    thread.terminate_immediately()
+                    logging.info(f"active_threads[{i+1}] ({profile_name}) terminated")
+                else:
+                    logging.warning(f"active_threads[{i+1}] has no thread object!")
+            
+            self.active_threads = {}
+            total_cancelled += thread_count
+            logging.info(f"Cleared active_threads dict ({thread_count} threads)")
+        else:
+            logging.info("No threads in active_threads to cancel")
+        
+        # 3. Ferma il timer di controllo se esiste
+        if hasattr(self, 'check_threads_timer') and self.check_threads_timer:
+            logging.info("Stopping check_threads_timer")
+            self.check_threads_timer.stop()
+            self.check_threads_timer = None
+        
+        logging.info(f"Total threads cancelled: {total_cancelled}")
+        
+        if total_cancelled == 0:
+            logging.warning("No detection threads found to cancel! This might indicate a timing issue.")
 
 class DragDropHandler:
     def __init__(self, parent=None):

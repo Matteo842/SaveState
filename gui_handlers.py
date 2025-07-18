@@ -673,11 +673,18 @@ class MainWindowHandlers:
             steam_userdata_path=steam_userdata_path,
             steam_id3_to_use=steam_id_to_use,
             installed_steam_games_dict=self.main_window.steam_games_data,
-            profile_name_for_results=profile_name
+            profile_name_for_results=profile_name,
+            cancellation_manager=self.main_window.cancellation_manager  # <-- FIX: passa il cancellation_manager
         )
         # Connect thread finished signal to handler method
         thread.finished.connect(self.handle_steam_search_results)
         self.main_window.current_search_thread = thread
+        
+        # Reset del cancellation_manager prima di avviare una nuova ricerca
+        if hasattr(self.main_window, 'cancellation_manager') and self.main_window.cancellation_manager:
+            self.main_window.cancellation_manager.reset()
+            logging.debug("Cancellation manager reset before starting new search thread")
+        
         self.main_window.set_controls_enabled(False)
         thread.start()
 

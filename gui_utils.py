@@ -543,7 +543,8 @@ class SteamSearchWorkerThread(QThread):
                 steam_userdata_path=self.steam_userdata_path,
                 steam_id3_to_use=self.steam_id3_to_use,
                 is_steam_game=True, # Importante per la logica interna di guess_save_path
-                installed_steam_games_dict=self.installed_steam_games_dict # <-- NUOVO: passa l'argomento
+                installed_steam_games_dict=self.installed_steam_games_dict, # <-- NUOVO: passa l'argomento
+                cancellation_manager=self.cancellation_manager # <-- FIX: passa il cancellation_manager
             )
             logging.info(f"[Steam Worker] guess_save_path finished, found {len(results)} potential paths.")
             self.progress.emit(f"Search complete for '{self.game_name}'.") # Messaggio finale

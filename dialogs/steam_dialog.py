@@ -389,6 +389,18 @@ class SteamDialog(QDialog):
 
     def reject(self):
         logging.debug("[SteamDialog] Dialog rejected.")
+        
+        # Cancella tutti i thread di ricerca in corso quando la dialog viene chiusa
+        if self.main_window_ref and hasattr(self.main_window_ref, 'cancellation_manager'):
+            logging.info("[SteamDialog] Cancelling all running search threads...")
+            self.main_window_ref.cancellation_manager.cancel()
+            
+            # Ferma il thread di ricerca corrente se esiste
+            if hasattr(self.main_window_ref, 'current_search_thread') and self.main_window_ref.current_search_thread:
+                if self.main_window_ref.current_search_thread.isRunning():
+                    logging.info("[SteamDialog] Waiting for current search thread to finish...")
+                    self.main_window_ref.current_search_thread.wait(3000)  # Aspetta max 3 secondi
+        
         super().reject()
 
     def accept(self):

@@ -88,6 +88,10 @@ class MainWindow(QMainWindow):
         self.settings_manager = settings_manager_instance # Assign settings_manager instance
         self.core_logic = core_logic # Assign core_logic module to an instance attribute
         
+        # Inizializza il cancellation manager per i thread di ricerca
+        from cancellation_utils import CancellationManager
+        self.cancellation_manager = CancellationManager()
+        
         # Variabili per il rilevamento del drag globale
         self.is_drag_operation_active = False
         self.mouse_pressed = False            # True se il tasto sinistro è attualmente premuto
@@ -1011,5 +1015,23 @@ class MainWindow(QMainWindow):
                     
         except Exception as e:
             logging.error(f"Errore durante la gestione dell'evento click del mouse: {e}", exc_info=True)
+
+    def closeEvent(self, event):
+        """Gestisce l'evento di chiusura della finestra principale."""
+        logging.info("MainWindow closeEvent: Cancelling all running search threads...")
+        
+        # Cancella tutti i thread di ricerca in corso
+        if hasattr(self, 'cancellation_manager') and self.cancellation_manager:
+            self.cancellation_manager.cancel()
+            
+        # Ferma il thread di ricerca corrente se esiste
+        if hasattr(self, 'current_search_thread') and self.current_search_thread:
+            if self.current_search_thread.isRunning():
+                logging.info("Waiting for current search thread to finish...")
+                self.current_search_thread.wait(3000)  # Aspetta max 3 secondi
+                
+        # Chiama il closeEvent della classe base
+        super().closeEvent(event)
+        logging.info("MainWindow closed.")
 
 # --- End of MainWindow class definition ---

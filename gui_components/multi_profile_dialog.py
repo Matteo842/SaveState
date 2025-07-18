@@ -577,3 +577,26 @@ class MultiProfileDialog(QDialog):
             current_height = widget.height()
             size = QSize(widget.sizeHint().width(), current_height)
             item.setSizeHint(size)
+
+    def reject(self):
+        """Gestisce la chiusura della dialog e cancella tutti i thread di ricerca."""
+        logging.info("MultiProfileDialog.reject() called: User clicked Cancel or closed dialog")
+        
+        # Emetti il segnale rejected per notificare la cancellazione
+        # Questo dovrebbe attivare _cancel_detection_threads in drop_event_logic.py
+        logging.info("MultiProfileDialog.reject(): About to call super().reject() which should emit rejected signal")
+        super().reject()
+        logging.info("MultiProfileDialog.reject(): super().reject() completed")
+
+    def closeEvent(self, event):
+        """Gestisce la chiusura della dialog con la X in alto a destra."""
+        logging.info("MultiProfileDialog.closeEvent() called: User closed dialog with X button")
+        
+        # Emetti manualmente il segnale finished per notificare la cancellazione
+        logging.info("MultiProfileDialog.closeEvent(): Emitting finished signal manually")
+        self.finished.emit(0)  # Emetti il segnale finished con codice 0 (rejected)
+        
+        # Chiama il closeEvent della classe base
+        logging.info("MultiProfileDialog.closeEvent(): About to call super().closeEvent()")
+        super().closeEvent(event)
+        logging.info("MultiProfileDialog.closeEvent(): super().closeEvent() completed")
