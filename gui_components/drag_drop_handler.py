@@ -22,16 +22,20 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
     Supporta URL Steam, collegamenti Windows (.lnk), file desktop Linux (.desktop) e cartelle.
     """
     def __init__(self, main_window):
-        super().__init__()
+        super().__init__()  # Questo chiamerà sia QObject.__init__ che DropEventMixin.__init__
         self.main_window = main_window
         self.detection_thread = None
-        self.profile_dialog = None  # Riferimento al dialogo dei profili
+        # self.profile_dialog è già inizializzato in DropEventMixin.__init__
         
         # Inizializza le variabili di stato che saranno gestite da reset_internal_state
         self.reset_internal_state()
     
     def reset_internal_state(self):
         """Reimposta le variabili di stato interne prima di elaborare un nuovo elemento."""
+        # Prima chiama il reset del mixin per resettare processing_cancelled
+        super().reset_internal_state()
+        
+        # Poi resetta le variabili specifiche del DragDropHandler
         self.game_name_suggestion = None
         self.game_install_dir = None
         self.is_steam_game = False
@@ -225,6 +229,12 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
         Args:
             profile_data: Dizionario con i dati del profilo
         """
+        # Controlla se l'elaborazione è stata cancellata (controlla sia self che main_window)
+        if (hasattr(self, 'processing_cancelled') and self.processing_cancelled) or \
+           (hasattr(self.main_window, 'processing_cancelled') and self.main_window.processing_cancelled):
+            logging.info("_handle_profile_analysis: Processing cancelled, skipping file analysis")
+            return
+            
         # Verifica se è una richiesta di avvio dell'analisi
         if 'action' in profile_data and profile_data['action'] == 'start_analysis':
             # Ottieni la lista dei file da analizzare
@@ -242,12 +252,24 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
             
             # Prepara i dati per ogni file
             for i, (profile_name, file_path) in enumerate(files_to_analyze):
+                # Controlla se l'elaborazione è stata cancellata prima di ogni file
+                if (hasattr(self, 'processing_cancelled') and self.processing_cancelled) or \
+                   (hasattr(self.main_window, 'processing_cancelled') and self.main_window.processing_cancelled):
+                    logging.info(f"_handle_profile_analysis: Processing cancelled, stopping file processing at file {i+1}/{len(files_to_analyze)}")
+                    break
+                
                 # 'profile_name' is the key from MultiProfileDialog and must be preserved for active_threads.
                 # 'name_for_detection_thread' can be updated with the Steam name for better detection if needed.
                 name_for_detection_thread = profile_name
                 # Aggiorna la barra di avanzamento
                 self.profile_dialog.update_progress(i, f"Preparazione: {os.path.basename(file_path)}")
                 QApplication.processEvents()
+                
+                # Controlla di nuovo dopo processEvents (potrebbero essere arrivati segnali)
+                if (hasattr(self, 'processing_cancelled') and self.processing_cancelled) or \
+                   (hasattr(self.main_window, 'processing_cancelled') and self.main_window.processing_cancelled):
+                    logging.info(f"_handle_profile_analysis: Processing cancelled after processEvents, stopping at file {i+1}/{len(files_to_analyze)}")
+                    break
                 
                 logging.info(f"DragDropHandler._handle_profile_analysis: Preparing file: {file_path}")
                 
@@ -323,6 +345,12 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                         # ma mantieni 'profile_name' (la chiave del dialogo) invariato.
                         name_for_detection_thread = game_details['name']
             
+                # Controlla di nuovo prima di creare il thread
+                if (hasattr(self, 'processing_cancelled') and self.processing_cancelled) or \
+                   (hasattr(self.main_window, 'processing_cancelled') and self.main_window.processing_cancelled):
+                    logging.info(f"_handle_profile_analysis: Processing cancelled before creating thread for file {i+1}/{len(files_to_analyze)}")
+                    break
+                
                 # Avvia il thread di rilevamento per questo file in modo asincrono
                 detection_thread = DetectionWorkerThread(
                     game_install_dir=game_install_dir,
@@ -341,6 +369,24 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                     'profile_name': profile_name,
                     'completed': False
                 }
+                
+                # IMPORTANTE: Aggiungi il thread anche alle liste del DropEventMixin per la cancellazione
+                if hasattr(self.main_window, '_detection_threads'):
+                    self.main_window._detection_threads.append(detection_thread)
+                    logging.debug(f"Added thread to _detection_threads list (total: {len(self.main_window._detection_threads)})")
+                else:
+                    logging.warning("_detection_threads not found in main_window, thread won't be tracked for cancellation")
+                
+                if hasattr(self.main_window, 'active_threads'):
+                    if self.main_window.active_threads is None:
+                        self.main_window.active_threads = {}
+                    self.main_window.active_threads[thread_id] = {
+                        'thread': detection_thread,
+                        'profile_name': profile_name
+                    }
+                    logging.debug(f"Added thread to main_window.active_threads (total: {len(self.main_window.active_threads)})")
+                else:
+                    logging.warning("active_threads not found in main_window, thread won't be tracked for cancellation")
             
                 # Colleghiamo il segnale finished alla nostra funzione di callback
                 detection_thread.finished.connect(lambda success, results, tid=thread_id: 

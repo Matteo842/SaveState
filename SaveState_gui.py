@@ -92,6 +92,11 @@ class MainWindow(QMainWindow):
         from cancellation_utils import CancellationManager
         self.cancellation_manager = CancellationManager()
         
+        # Inizializza le liste per il tracciamento dei thread
+        self._detection_threads = []
+        self.active_threads = {}
+        self.processing_cancelled = False
+        
         # Variabili per il rilevamento del drag globale
         self.is_drag_operation_active = False
         self.mouse_pressed = False            # True se il tasto sinistro è attualmente premuto
@@ -487,6 +492,24 @@ class MainWindow(QMainWindow):
         self.worker_thread = None
         self.updateUiText()
         self.setWindowIcon(QIcon(resource_path("icon.png"))) # Icona finestra principale
+    
+    def reset_internal_state(self):
+        """Resetta lo stato interno per le operazioni di drag & drop."""
+        # Resetta le liste dei thread
+        if not hasattr(self, '_detection_threads'):
+            self._detection_threads = []
+        else:
+            self._detection_threads.clear()
+            
+        if not hasattr(self, 'active_threads'):
+            self.active_threads = {}
+        else:
+            self.active_threads.clear()
+            
+        # Resetta il flag di cancellazione
+        self.processing_cancelled = False
+            
+        logging.debug("Internal state reset: _detection_threads, active_threads cleared, processing_cancelled reset")
     
     # --- UI and Event Handling ---
     # Centers the loading label within the overlay widget.

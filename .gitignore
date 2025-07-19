@@ -186,3 +186,10 @@ save_path_finder_original.py
 test_real_scenario.py
 test_fast_cancellation.py
 test_ini_cancellation.py
+test_simple_cancellation.py
+test_self_flag.py
+test_race_condition.py
+test_processing_cancelled.py
+test_multiple_checks.py
+test_loop_cancellation.py
+test_flag_reset.py

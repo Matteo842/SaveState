@@ -18,6 +18,123 @@ from .multi_profile_dialog import MultiProfileDialog
 # EmulatorGameSelectionDialog, and MultiProfileDialog will be accessed via handler_instance.main_window or handler_instance directly.
 
 class DropEventMixin:
+    def __init__(self):
+        # Inizializza il flag per la cancellazione
+        self.processing_cancelled = False
+        self.profile_dialog = None
+    
+    def reset_internal_state(self):
+        """Resetta lo stato interno per le operazioni di drag & drop."""
+        # Resetta il flag di cancellazione per permettere nuove operazioni
+        self.processing_cancelled = False
+        logging.debug("DropEventMixin: processing_cancelled flag reset to False")
+        
+        # Resetta anche il flag nella main_window se esiste
+        if hasattr(self, 'main_window') and hasattr(self.main_window, 'processing_cancelled'):
+            self.main_window.processing_cancelled = False
+            logging.debug("DropEventMixin: main_window.processing_cancelled flag reset to False")
+        
+        # Chiama il reset della classe padre se esiste
+        if hasattr(super(), 'reset_internal_state'):
+            super().reset_internal_state()
+    
+    def _cancel_detection_threads(self, *args):
+        """Cancella tutti i thread di rilevamento attivi."""
+        print("=== INIZIO _cancel_detection_threads ===")
+        logging.info(f"MultiProfileDialog closed: Cancelling all detection threads... (args: {args})")
+        print(f"DEBUG: self = {self}")
+        print(f"DEBUG: type(self) = {type(self)}")
+        print(f"DEBUG: hasattr(self, 'main_window') = {hasattr(self, 'main_window')}")
+        
+        total_cancelled = 0
+        
+        # Cancella i thread nella lista _detection_threads della main_window
+        logging.info(f"DEBUG: Checking for _detection_threads: hasattr(self, 'main_window')={hasattr(self, 'main_window')}")
+        if hasattr(self, 'main_window'):
+            logging.info(f"DEBUG: main_window exists, checking for _detection_threads: hasattr(main_window, '_detection_threads')={hasattr(self.main_window, '_detection_threads')}")
+            if hasattr(self.main_window, '_detection_threads'):
+                logging.info(f"DEBUG: _detection_threads exists, length: {len(self.main_window._detection_threads)}")
+        
+        if hasattr(self, 'main_window') and hasattr(self.main_window, '_detection_threads'):
+            threads_to_cancel = self.main_window._detection_threads.copy()
+            logging.info(f"Found {len(threads_to_cancel)} threads in _detection_threads to cancel")
+            
+            for i, thread in enumerate(threads_to_cancel, 1):
+                logging.info(f"Cancelling _detection_threads[{i}/{len(threads_to_cancel)}]: {thread}")
+                
+                # Cancella il cancellation_manager se presente
+                if hasattr(thread, 'cancellation_manager') and thread.cancellation_manager:
+                    thread.cancellation_manager.cancel()
+                    logging.info(f"Cancelled cancellation_manager for _detection_threads[{i}]")
+                
+                # Termina il thread
+                logging.info(f"Terminating _detection_threads[{i}]...")
+                thread.terminate_immediately()
+                logging.info(f"_detection_threads[{i}] terminated")
+                total_cancelled += 1
+            
+            # Svuota la lista
+            self.main_window._detection_threads.clear()
+            logging.info(f"Cleared _detection_threads list ({len(threads_to_cancel)} threads)")
+        else:
+            logging.info("No threads in _detection_threads to cancel")
+        
+        # Cancella i thread nel dizionario active_threads della main_window
+        logging.info(f"DEBUG: Checking for active_threads: hasattr(main_window, 'active_threads')={hasattr(self.main_window, 'active_threads') if hasattr(self, 'main_window') else 'No main_window'}")
+        if hasattr(self, 'main_window') and hasattr(self.main_window, 'active_threads'):
+            logging.info(f"DEBUG: active_threads exists, value: {self.main_window.active_threads}")
+            logging.info(f"DEBUG: active_threads is truthy: {bool(self.main_window.active_threads)}")
+        
+        if hasattr(self, 'main_window') and hasattr(self.main_window, 'active_threads') and self.main_window.active_threads:
+            threads_to_cancel = list(self.main_window.active_threads.items())
+            logging.info(f"Found {len(threads_to_cancel)} threads in active_threads to cancel")
+            
+            for i, (thread_id, thread_info) in enumerate(threads_to_cancel, 1):
+                thread = thread_info['thread']
+                profile_name = thread_info['profile_name']
+                logging.info(f"Cancelling active_threads[{i}/{len(threads_to_cancel)}] (ID: {thread_id}, Profile: {profile_name}): {thread}")
+                
+                # Cancella il cancellation_manager se presente
+                if hasattr(thread, 'cancellation_manager') and thread.cancellation_manager:
+                    thread.cancellation_manager.cancel()
+                    logging.info(f"Cancelled cancellation_manager for active_threads[{i}] ({profile_name})")
+                
+                # Termina il thread
+                logging.info(f"Terminating active_threads[{i}] ({profile_name})...")
+                thread.terminate_immediately()
+                logging.info(f"active_threads[{i}] ({profile_name}) terminated")
+                total_cancelled += 1
+            
+            # Svuota il dizionario
+            self.main_window.active_threads.clear()
+            logging.info(f"Cleared active_threads dict ({len(threads_to_cancel)} threads)")
+        else:
+            logging.info("No threads in active_threads to cancel")
+        
+        # Disconnetti il segnale profileAdded per impedire nuove elaborazioni
+        if hasattr(self, 'profile_dialog') and self.profile_dialog:
+            try:
+                logging.info("Disconnecting profileAdded signal to prevent new file processing")
+                self.profile_dialog.profileAdded.disconnect()
+                logging.info("profileAdded signal disconnected successfully")
+            except Exception as e:
+                logging.warning(f"Error disconnecting profileAdded signal: {e}")
+        
+        # Imposta il flag per impedire nuove elaborazioni
+        self.processing_cancelled = True
+        logging.info("Set processing_cancelled flag to prevent new thread creation")
+        
+        # Imposta anche il flag nella main_window se esiste
+        if hasattr(self, 'main_window'):
+            self.main_window.processing_cancelled = True
+            logging.info("Set processing_cancelled flag in main_window to prevent new thread creation")
+        
+        logging.info(f"Total threads cancelled: {total_cancelled}")
+        
+        # Se non abbiamo trovato thread da cancellare, potrebbe essere una race condition
+        if total_cancelled == 0:
+            logging.warning("No detection threads found to cancel! This might indicate a timing issue.")
+    
     def dropEvent(self, event: QDropEvent):
         """Handles the release of a dragged object. Prioritizes Steam URLs, then local files/shortcuts."""
         handler_instance = self
