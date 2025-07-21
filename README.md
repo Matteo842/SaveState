@@ -79,7 +79,7 @@ SaveState includes experimental support for automatically detecting save data lo
 | Snes9x        | DeSmuME      | Cemu       |
 | Flycast       | ShadPs4      | SameBoy    |
 | PCSX2 \*      | xenia        | Eden (yuzu)|
-| xemu          |              |            | 
+| xemu (not yet)|              |            | 
 
 ---
 \* PlayStation 2 memory card functionality in `SaveState` utilizes and adapts code from the [mymcplusplus](https://github.com/Adubbz/mymcplusplus) project, which is based on mymc+ by Florian Märkl and the original mymc by Ross Ridge. The mymcplusplus source code is distributed under the GNU General Public License v3.0. `SaveState`, including these derived components, is also licensed under GPLv3.
