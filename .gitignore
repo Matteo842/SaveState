@@ -193,3 +193,5 @@ test_processing_cancelled.py
 test_multiple_checks.py
 test_loop_cancellation.py
 test_flag_reset.py
+emulator_utils/build_xbox_title_db.py
+emulator_utils/test_xbox_reader.py
