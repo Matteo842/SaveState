@@ -12,9 +12,9 @@ def extract_xbox_saves_final(raw_path: str = None, output_dir: str = None, game_
     """Extract Xbox saves using known offsets."""
     
     if raw_path is None:
-        raw_path = r'D:\GitHub\xemu_work_dir\xbox_hdd.raw'
+        raise ValueError("raw_path is required - no default path available")
     if output_dir is None:
-        output_dir = r'D:\GitHub\xemu_work_dir\extracted_saves_final'
+        raise ValueError("output_dir is required - no default path available")
     
     print("🎮 Xbox Save Final Extraction")
     print("=" * 40)
@@ -27,12 +27,9 @@ def extract_xbox_saves_final(raw_path: str = None, output_dir: str = None, game_
     print(f"📁 File: {raw_path}")
     print(f"📊 Size: {file_size / (1024**3):.2f} GB")
     
-    # Known game positions from previous scan (use provided or default)
+    # Game positions must be provided - no hardcoded defaults
     if game_positions is None:
-        game_positions = [
-            {'tid': '4c410015', 'name': 'Mercenaries', 'offset': 0xabfb7002},
-            {'tid': '5345000f', 'name': 'HouseOfTheDead3', 'offset': 0xabfb7042}
-        ]
+        raise ValueError("game_positions is required - no hardcoded game positions available")
     
     os.makedirs(output_dir, exist_ok=True)
     

@@ -230,7 +230,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     
     qcow2_path = sys.argv[1]
-    qemu_path = sys.argv[2] if len(sys.argv) > 2 else r"D:\qemu"
+    qemu_path = sys.argv[2] if len(sys.argv) > 2 else None
     
     converter = get_qemu_converter(qemu_path)
     

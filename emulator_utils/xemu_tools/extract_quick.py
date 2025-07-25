@@ -12,9 +12,9 @@ def extract_known_games(raw_path: str = None, output_dir: str = None, known_game
     """Extract saves for known games from XboxHDDReader."""
     
     if raw_path is None:
-        raw_path = r'D:\GitHub\xemu_work_dir\xbox_hdd.raw'
+        raise ValueError("raw_path is required - no default path available")
     if output_dir is None:
-        output_dir = r'D:\GitHub\xemu_work_dir\extracted_saves'
+        raise ValueError("output_dir is required - no default path available")
     
     print("🎮 Quick Xbox Save Extraction")
     print("=" * 40)
@@ -115,12 +115,9 @@ def find_game_offset(raw_path: str, target_game_id: str, known_games: dict = Non
     
     file_size = os.path.getsize(raw_path)
     
-    # Use provided games or default
+    # Use provided games - no hardcoded defaults
     if known_games is None:
-        known_games = {
-            '4c410015': 'Mercenaries: Playground of Destruction',
-            '5345000f': 'The House of the Dead III'
-        }
+        raise ValueError("known_games is required - no hardcoded game list available")
     
     # Only look for the target game
     if target_game_id not in known_games:
