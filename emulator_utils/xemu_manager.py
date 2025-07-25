@@ -318,24 +318,39 @@ def backup_xbox_save(profile_id: str, backup_dir: str, executable_path: str | No
             if eeprom_path:
                 backup_file = os.path.join(backup_dir, 'eeprom.bin')
                 shutil.copy2(eeprom_path, backup_file)
-                msg = f"EEPROM backup completed successfully"
                 log.info(f"EEPROM backed up to: {backup_file}")
-                return True, msg
+                
+                # Create ZIP archive
+                success_zip, zip_message = _create_simple_backup_zip('xbox_eeprom', backup_dir, 'eeprom.bin')
+                if success_zip:
+                    return True, f"EEPROM backup completed successfully"
+                else:
+                    return False, f"Failed to create EEPROM ZIP: {zip_message}"
             return False, "EEPROM file not found"
         
         elif profile_id == 'xbox_hdd':
             # Full HDD backup
             backup_file = os.path.join(backup_dir, 'xbox_hdd.qcow2')
             shutil.copy2(hdd_path, backup_file)
-            msg = f"Full HDD backup completed successfully"
             log.info(f"Full HDD backed up to: {backup_file}")
-            return True, msg
+            
+            # Create ZIP archive
+            success_zip, zip_message = _create_simple_backup_zip('xbox_hdd', backup_dir, 'xbox_hdd.qcow2')
+            if success_zip:
+                return True, f"Full HDD backup completed successfully"
+            else:
+                return False, f"Failed to create HDD ZIP: {zip_message}"
         
         else:
             # Individual game save extraction
             success = _extract_game_save(profile_id, hdd_path, backup_dir)
             if success:
-                return True, f"Xbox game save backup completed successfully"
+                # Create ZIP archive like other emulators
+                success_zip, zip_message = _create_xbox_backup_zip(profile_id, backup_dir)
+                if success_zip:
+                    return True, f"Xbox game save backup completed successfully"
+                else:
+                    return False, f"Failed to create backup ZIP: {zip_message}"
             else:
                 return False, f"Failed to extract game save for {profile_id}"
     
@@ -394,6 +409,96 @@ def restore_xbox_save(profile_id: str, backup_dir: str, executable_path: str | N
     except Exception as e:
         log.error(f"Error restoring Xbox save '{profile_id}': {e}", exc_info=True)
         return False
+
+
+def _create_simple_backup_zip(profile_id: str, backup_dir: str, filename: str) -> tuple[bool, str]:
+    """
+    Create a ZIP archive from a single file (EEPROM or HDD).
+    
+    Args:
+        profile_id: Profile ID for naming
+        backup_dir: Directory containing the file
+        filename: Name of the file to zip
+        
+    Returns:
+        Tuple of (success: bool, message: str)
+    """
+    import zipfile
+    from datetime import datetime
+    
+    try:
+        file_path = os.path.join(backup_dir, filename)
+        if not os.path.isfile(file_path):
+            return False, f"File not found: {filename}"
+        
+        # Create ZIP filename following core_logic format
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_name = f"Backup_{profile_id}_{timestamp}.zip"
+        archive_path = os.path.join(backup_dir, archive_name)
+        
+        # Create ZIP archive
+        with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zipf:
+            zipf.write(file_path, arcname=filename)
+        
+        # Remove the original file after creating ZIP
+        os.remove(file_path)
+        
+        log.info(f"Created Xbox backup ZIP: {archive_name}")
+        return True, f"Backup ZIP created: {archive_name}"
+        
+    except Exception as e:
+        log.error(f"Error creating simple backup ZIP: {e}", exc_info=True)
+        return False, f"Error creating ZIP: {e}"
+
+
+def _create_xbox_backup_zip(profile_id: str, backup_dir: str) -> tuple[bool, str]:
+    """
+    Create a ZIP archive from extracted Xbox save files, following the same format as core_logic.
+    
+    Args:
+        profile_id: Game ID for naming
+        backup_dir: Directory containing extracted files
+        
+    Returns:
+        Tuple of (success: bool, message: str)
+    """
+    import zipfile
+    from datetime import datetime
+    
+    try:
+        # Find the extracted game directory
+        game_dirs = [d for d in os.listdir(backup_dir) if os.path.isdir(os.path.join(backup_dir, d)) and d.startswith(profile_id)]
+        
+        if not game_dirs:
+            return False, "No extracted game directory found"
+        
+        game_dir = os.path.join(backup_dir, game_dirs[0])
+        
+        # Create ZIP filename following core_logic format
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Use the directory name as profile name for consistency
+        profile_name = game_dirs[0]  # e.g., "4c410015_Mercenaries__Playground_of_Destruction"
+        archive_name = f"Backup_{profile_name}_{timestamp}.zip"
+        archive_path = os.path.join(backup_dir, archive_name)
+        
+        # Create ZIP archive
+        with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zipf:
+            for root, dirs, files in os.walk(game_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    # Create arcname relative to the game directory
+                    arcname = os.path.relpath(file_path, game_dir)
+                    zipf.write(file_path, arcname=arcname)
+        
+        # Remove the extracted directory after creating ZIP
+        shutil.rmtree(game_dir)
+        
+        log.info(f"Created Xbox backup ZIP: {archive_name}")
+        return True, f"Backup ZIP created: {archive_name}"
+        
+    except Exception as e:
+        log.error(f"Error creating Xbox backup ZIP: {e}", exc_info=True)
+        return False, f"Error creating ZIP: {e}"
 
 
 def _extract_game_save(game_id: str, hdd_path: str, output_dir: str) -> bool:
