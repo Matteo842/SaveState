@@ -312,10 +312,13 @@ def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] 
                     for profile_id, profile_data in profiles.items():
                         # If profile_data is already a dict with 'id', use it as is
                         if isinstance(profile_data, dict) and 'id' in profile_data:
+                            # Ensure emulator field is set
+                            if 'emulator' not in profile_data:
+                                profile_data['emulator'] = keyword
                             profiles_list.append(profile_data)
                         # If profile_data is a string or dict without 'id', create a new dict
                         else:
-                            profile_dict = {'id': profile_id}
+                            profile_dict = {'id': profile_id, 'emulator': keyword}
                             if isinstance(profile_data, dict):
                                 # Merge the existing dict with our new one
                                 profile_dict.update(profile_data)

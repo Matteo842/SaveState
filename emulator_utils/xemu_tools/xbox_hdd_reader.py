@@ -202,15 +202,15 @@ class XboxHDDReader:
 
         final_saves = []
         for game_name, data in game_scores.items():
-            safe_id = re.sub(r'[^a-zA-Z0-9_]', '_', game_name.lower())
-            safe_id = re.sub(r'_+', '_', safe_id).strip('_')
+            # Use the real Xbox Title ID instead of generating a fake one
+            title_id = data['title_id']
             final_saves.append({
                 'name': game_name,
-                'id': f"xbox_game_{safe_id}",
+                'id': title_id,  # Use real Xbox Title ID (e.g., '4c410015')
                 'path': self.hdd_path,
-                'dir_name': data['title_id']
+                'dir_name': title_id
             })
-            log.debug(f"Created save profile for '{game_name}' with score {data['score']}")
+            log.debug(f"Created save profile for '{game_name}' (ID: {title_id}) with score {data['score']}")
 
         log.info(f"Filtered to {len(final_saves)} meaningful game saves.")
         return final_saves

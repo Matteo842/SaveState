@@ -455,6 +455,11 @@ class DropEventMixin:
                                 'emulator': emulator_key
                             }
                             
+                            # Copy additional fields from selected_profile (like 'id', 'type', etc.)
+                            for key, value in selected_profile.items():
+                                if key not in ['name', 'paths']:  # Don't overwrite name and paths
+                                    new_profile[key] = value
+                            
                             # Add the profile to the main window's profiles dictionary
                             mw.profiles[profile_name] = new_profile
                             
@@ -836,6 +841,11 @@ class DropEventMixin:
                                 'paths': save_paths,
                                 'emulator': emulator_key
                             }
+                            
+                            # Copy additional fields from selected_profile (like 'id', 'type', etc.)
+                            for key, value in selected_profile.items():
+                                if key not in ['name', 'paths']:  # Don't overwrite name and paths
+                                    new_profile[key] = value
                             
                             # Add save_dir to new_profile if it was automatically determined and present in selected_profile
                             if 'save_dir' in selected_profile and selected_profile['save_dir']:

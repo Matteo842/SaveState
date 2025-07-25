@@ -541,6 +541,35 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path):
     logging.info(f"Starting perform_restore for profile: '{profile_name}'")
     logging.info(f"Archive selected for restoration: '{archive_to_restore_path}'")
 
+    # SPECIAL HANDLING FOR XEMU PROFILES
+    # Check if this is an xemu profile by loading profile data
+    try:
+        profiles = load_profiles()
+        if profile_name in profiles:
+            profile_data = profiles[profile_name]
+            if isinstance(profile_data, dict) and profile_data.get('type') == 'xbox_game_save':
+                logging.info(f"Detected xemu game save profile for restore: {profile_name}")
+                try:
+                    from emulator_utils.xemu_manager import restore_xbox_save
+                    
+                    # Extract backup directory from archive path
+                    backup_dir = os.path.dirname(archive_to_restore_path)
+                    
+                    # Use xemu's specialized restore function
+                    success = restore_xbox_save(profile_data['id'], backup_dir)
+                    
+                    if success:
+                        return True, f"Xbox save restore completed successfully for: {profile_name}"
+                    else:
+                        return False, f"Xbox save restore failed for: {profile_name}"
+                        
+                except Exception as e:
+                    logging.error(f"Error during xemu restore for '{profile_name}': {e}", exc_info=True)
+                    return False, f"Xbox save restore error: {e}"
+    except Exception as e:
+        logging.warning(f"Could not check for xemu profile type: {e}")
+        # Continue with standard restore logic
+
     is_multiple_paths = isinstance(destination_paths, list)
     # Normalize all paths immediately
     paths_to_process = [os.path.normpath(p) for p in (destination_paths if is_multiple_paths else [destination_paths])]
