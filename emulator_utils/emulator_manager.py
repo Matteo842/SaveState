@@ -22,7 +22,7 @@ from .shadps4_manager import find_shadps4_profiles
 from .sameboy_manager import find_sameboy_profiles
 from .xenia_manager import find_xenia_profiles
 from .pcsx2_manager import find_pcsx2_profiles
-from .xemu_manager import find_xemu_profiles
+#from .xemu_manager import find_xemu_profiles
 # Eden è un fork di Yuzu, quindi utilizza lo stesso codice
 
 # Configure basic logging for this module
@@ -39,7 +39,7 @@ KNOWN_EMULATORS = [
     # Questi devono corrispondere esattamente alle chiavi in EMULATORS
     'rpcs3', 'yuzu', 'eden', 'ppsspp', 'citra', 'azahar', 'ryujinx', 'dolphin',
     'duckstation', 'mgba', 'snes9x', 'desmume', 'cemu', 'flycast', 'shadps4',
-    'sameboy', 'xenia', 'pcsx2', 'xemu',
+    'sameboy', 'xenia', 'pcsx2',
 ]
 
 UNKNOWN_EMULATORS = [
@@ -55,7 +55,7 @@ UNKNOWN_EMULATORS = [
     'pcsx-rearmed', 'pcsx-reloaded', 'play', 'project64', 'puNES', 'raine',
     'redream', 'retroarch', 'rmg', 'scummvm', 'simple64', 'ssantanshiro',
     'supermodel', 'swanstation', 'vba-m', 'vita3k', 'xqemu',
-    'yabause', 'zsnes',
+    'yabause', 'zsnes','xemu',
 ]
 # Dictionary mapping emulator keys (used internally) to their configuration
 # 'name' is the display name, 'profile_finder' is the function to call
@@ -131,10 +131,6 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'pcsx2': {
         'name': 'PCSX2',
         'profile_finder': lambda path: find_pcsx2_profiles(path)
-    },
-    'xemu': {
-        'name': 'xemu',
-        'profile_finder': lambda path: find_xemu_profiles(path)
     },
 }
 
