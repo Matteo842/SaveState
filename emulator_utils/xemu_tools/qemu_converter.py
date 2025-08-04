@@ -94,8 +94,12 @@ class QEMUConverter:
             log.error(f"QEMU tools not found at: {self.qemu_img_path}")
             return None
 
-        # Determine output path - use temporary directory for production
-        output_filename = "xbox_hdd.raw"
+        # Determine output path - generate unique filename to avoid conflicts
+        import uuid
+        base_name = os.path.splitext(os.path.basename(qcow2_path))[0]
+        unique_id = str(uuid.uuid4())[:8]
+        output_filename = f"{base_name}_{unique_id}.raw"
+        
         if output_dir:
             output_path = os.path.join(output_dir, output_filename)
         else:

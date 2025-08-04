@@ -552,16 +552,45 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path):
                 try:
                     from emulator_utils.xemu_manager import restore_xbox_save
                     
-                    # Extract backup directory from archive path
-                    backup_dir = os.path.dirname(archive_to_restore_path)
+                    # Get executable path from profile data
+                    executable_path = None
                     
-                    # Use xemu's specialized restore function
-                    success = restore_xbox_save(profile_data['id'], backup_dir)
+                    # Helper function to extract executable path
+                    def extract_executable_path(path_str):
+                        if not path_str:
+                            return None
+                        if path_str.endswith('.exe'):
+                            return path_str
+                        elif path_str.endswith('.qcow2'):
+                            # If it's an HDD file, the executable might be in the same directory
+                            hdd_dir = os.path.dirname(path_str)
+                            # Look for xemu.exe in the same directory
+                            potential_exe = os.path.join(hdd_dir, 'xemu.exe')
+                            if os.path.isfile(potential_exe):
+                                return potential_exe
+                            # Otherwise return the directory
+                            return hdd_dir
+                        elif os.path.isdir(path_str):
+                            # If it's a directory, look for xemu.exe inside
+                            potential_exe = os.path.join(path_str, 'xemu.exe')
+                            if os.path.isfile(potential_exe):
+                                return potential_exe
+                            return path_str
+                        return path_str
+                    
+                    # Try to find executable path from profile
+                    if 'paths' in profile_data and profile_data['paths']:
+                        executable_path = extract_executable_path(profile_data['paths'][0])
+                    elif 'path' in profile_data:
+                        executable_path = extract_executable_path(profile_data['path'])
+                    
+                    # Use xemu's specialized restore function with direct ZIP file path
+                    success, message = restore_xbox_save(profile_data['id'], archive_to_restore_path, executable_path)
                     
                     if success:
-                        return True, f"Xbox save restore completed successfully for: {profile_name}"
+                        return True, f"Xbox save restore completed successfully for: {profile_name}\n{message}"
                     else:
-                        return False, f"Xbox save restore failed for: {profile_name}"
+                        return False, f"Xbox save restore failed for: {profile_name}\n{message}"
                         
                 except Exception as e:
                     logging.error(f"Error during xemu restore for '{profile_name}': {e}", exc_info=True)
