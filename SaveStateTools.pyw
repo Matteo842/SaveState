@@ -1058,22 +1058,41 @@ class TranslatorToolWindow(QMainWindow):
         self.log_message(f"Start package creation '{PACKAGER_APP_NAME}' ({package_type})...")
         self.current_process_type = "pyinstaller"
 
-        # Trova l'eseguibile di pyinstaller (questa parte è corretta e rimane)
+        # Trova l'eseguibile di pyinstaller usando Python attivo (3.13) invece di 3.10
         import shutil
-        pyinstaller_path_obj = None
-        venv_dirs = ["venv", "env", ".venv", ".env"]
-        for venv_name in venv_dirs:
-            venv_dir = SCRIPT_DIR / venv_name
-            if venv_dir.is_dir():
-                script_subdir = "Scripts" if platform.system() == "Windows" else "bin"
-                venv_pyinstaller = venv_dir / script_subdir / ("pyinstaller.exe" if platform.system() == "Windows" else "pyinstaller")
-                if venv_pyinstaller.is_file():
-                    pyinstaller_path_obj = str(venv_pyinstaller)
-                    self.log_message(f"Found PyInstaller in virtual environment: {pyinstaller_path_obj}")
-                    break
         
-        if not pyinstaller_path_obj:
-            pyinstaller_path_obj = shutil.which("pyinstaller")
+        # Commento: Versione precedente con percorso hardcoded (Python 3.10):
+        # pyinstaller_path_obj = r"C:\Users\Matteo842\AppData\Roaming\Python\Python310\Scripts\pyinstaller.EXE"
+        
+        # USA python -m PyInstaller per forzare l'uso della versione Python attiva
+        # Questo evita di usare pyinstaller installato in Python 3.10
+        python_exe = sys.executable  # Ottiene il percorso dell'interprete Python corrente
+        self.log_message(f"Using Python interpreter: {python_exe}")
+        
+        # Verifica che PyInstaller sia installato nella versione Python corrente
+        try:
+            import subprocess
+            result = subprocess.run([python_exe, "-m", "PyInstaller", "--version"], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                pyinstaller_path_obj = python_exe
+                self.log_message(f"PyInstaller found in current Python: {result.stdout.strip()}")
+            else:
+                raise Exception("PyInstaller not found in current Python")
+        except Exception as e:
+            self.log_message(f"PyInstaller not available in current Python ({python_exe}): {e}")
+            # Fallback: cerca nelle virtual environments locali
+            pyinstaller_path_obj = None
+            venv_dirs = ["venv", "env", ".venv", ".env"]
+            for venv_name in venv_dirs:
+                venv_dir = SCRIPT_DIR / venv_name
+                if venv_dir.is_dir():
+                    script_subdir = "Scripts" if platform.system() == "Windows" else "bin"
+                    venv_pyinstaller = venv_dir / script_subdir / ("pyinstaller.exe" if platform.system() == "Windows" else "pyinstaller")
+                    if venv_pyinstaller.is_file():
+                        pyinstaller_path_obj = str(venv_pyinstaller)
+                        self.log_message(f"Found PyInstaller in virtual environment: {pyinstaller_path_obj}")
+                        break
 
         if not pyinstaller_path_obj:
             msg = "ERROR: Executable 'pyinstaller' not found in virtual environment or system PATH."
@@ -1085,7 +1104,14 @@ class TranslatorToolWindow(QMainWindow):
         pyinstaller_path = str(Path(pyinstaller_path_obj))
         self.log_message(f"Using PyInstaller from: {pyinstaller_path}")
 
-        command_parts: List[str] = [pyinstaller_path]
+        # Costruisci il comando in base al tipo di pyinstaller trovato
+        if pyinstaller_path == sys.executable:
+            # Usa python -m PyInstaller per forzare la versione Python corrente
+            command_parts: List[str] = [pyinstaller_path, "-m", "PyInstaller"]
+            self.log_message("Using 'python -m PyInstaller' to force current Python version")
+        else:
+            # Usa il percorso diretto di pyinstaller
+            command_parts: List[str] = [pyinstaller_path]
         is_windows = platform.system() == "Windows"
         is_linux = platform.system() == "Linux"
         
