@@ -19,7 +19,7 @@ Furthermore, SaveState features automatic detection of Steam games and even lets
 
 ---
 
-⚠️ Current Status (2025-06-12): This is a personal project currently **under active development.** 
+⚠️ Current Status (2025-08-05): This is a personal project currently **under active development.** 
 
 ---
 
