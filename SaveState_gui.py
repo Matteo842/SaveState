@@ -923,6 +923,51 @@ class MainWindow(QMainWindow):
     def activateExistingInstance(self):
         # Connected to QLocalServer signal in main.py
         logging.info("Received signal to activate existing instance (slot in MainWindow).")
+        
+        # Get the server that emitted the signal
+        server = self.sender()
+        if server and hasattr(server, 'nextPendingConnection'):
+            # Get the incoming connection
+            connection = server.nextPendingConnection()
+            if connection:
+                # Read the data to confirm it's a 'show' command
+                if connection.waitForReadyRead(1000):  # Wait up to 1 second
+                    data = connection.readAll().data().decode('utf-8').strip()
+                    logging.debug(f"Received data from new instance: '{data}'")
+                    
+                    if data == 'show':
+                        self._bringWindowToFront()
+                    
+                # Close the connection
+                connection.close()
+        else:
+            # Fallback: just bring window to front
+            self._bringWindowToFront()
+    
+    def _bringWindowToFront(self):
+        """Helper method to bring the window to front and activate it."""
+        try:
+            # If the window is minimized, restore it
+            if self.isMinimized():
+                self.showNormal()
+                logging.debug("Window was minimized, restored to normal state.")
+            
+            # Bring window to front and activate it
+            self.raise_()  # Bring window to front
+            self.activateWindow()  # Give focus to the window
+            self.show()  # Ensure window is visible
+            
+            # On some systems, we need to force the window to be on top temporarily
+            # This is especially important on Linux and some Windows configurations
+            current_state = self.windowState()
+            # Remove minimized state and ensure window is active
+            new_state = current_state & ~Qt.WindowState.WindowMinimized
+            self.setWindowState(new_state)
+            
+            logging.info("Existing instance window activated and brought to front.")
+            
+        except Exception as e:
+            logging.error(f"Error activating existing instance window: {e}", exc_info=True)
 
     # --- Global Mouse Drag Detection Callbacks (pynput) ---
     def update_global_drag_listener_state(self):
