@@ -29,12 +29,6 @@ def cleanup_instance_lock(local_server, shared_memory):
     """Closes the local server and releases the shared memory."""
     logging.debug("Executing instance cleanup (detach shared memory, close server)...")
     
-    # Clean up temporary Xbox files
-    try:
-        from emulator_utils.xemu_tools.qemu_converter import cleanup_temp_xbox_files
-        cleanup_temp_xbox_files()
-    except Exception as e_xbox:
-        logging.warning(f"Error cleaning up Xbox temp files: {e_xbox}")
     
     try:
         if local_server and local_server.isListening():

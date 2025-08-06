@@ -65,9 +65,25 @@ from gui_handlers import MainWindowHandlers
 
 # --- COSTANTI GLOBALI PER IDENTIFICARE L'ISTANZA ---
 # Usa stringhe univoche per la tua applicazione
+def sanitize_server_name(name):
+    """
+    Sanitizes server name to be compatible with Linux/Unix systems.
+    Removes or replaces problematic characters that can cause issues with local sockets.
+    """
+    import re
+    # Replace spaces with underscores
+    name = name.replace(' ', '_')
+    # Remove or replace other problematic characters, keeping only alphanumeric, underscores, hyphens, and dots
+    name = re.sub(r'[^a-zA-Z0-9_\-.]', '_', name)
+    # Remove multiple consecutive underscores
+    name = re.sub(r'_+', '_', name)
+    # Remove leading/trailing underscores
+    name = name.strip('_')
+    return name
+
 APP_GUID = "SaveState_App_Unique_GUID_6f459a83-4f6a-4e3e-8c1e-7a4d5e3d2b1a" 
-SHARED_MEM_KEY = f"{APP_GUID}_SharedMem"
-LOCAL_SERVER_NAME = f"{APP_GUID}_LocalServer"
+SHARED_MEM_KEY = sanitize_server_name(f"{APP_GUID}_SharedMem")
+LOCAL_SERVER_NAME = sanitize_server_name(f"{APP_GUID}_LocalServer")
 # --- FINE COSTANTI ---
 
 
