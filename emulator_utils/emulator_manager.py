@@ -16,6 +16,7 @@ from .duckstation_manager import find_duckstation_profiles
 from .mgba_manager import find_mgba_profiles
 from .snes9x_manager import find_snes9x_profiles
 from .desmume_manager import find_desmume_profiles
+from .melonds_manager import find_melonds_profiles
 from .cemu_manager import find_cemu_profiles
 from .flycast_manager import find_flycast_profiles
 from .shadps4_manager import find_shadps4_profiles
@@ -38,7 +39,7 @@ KNOWN_EMULATORS = [
     # Emulatori supportati (presenti in EMULATORS)
     # Questi devono corrispondere esattamente alle chiavi in EMULATORS
     'rpcs3', 'yuzu', 'eden', 'ppsspp', 'citra', 'azahar', 'ryujinx', 'dolphin',
-    'duckstation', 'mgba', 'snes9x', 'desmume', 'cemu', 'flycast', 'shadps4',
+    'duckstation', 'mgba', 'snes9x', 'desmume', 'melonds', 'cemu', 'flycast', 'shadps4',
     'sameboy', 'xenia', 'pcsx2',
 ]
 
@@ -50,7 +51,7 @@ UNKNOWN_EMULATORS = [
     'aethersx2', 'ares', 'blastem', 'bsnes', 'beetle-psx', 'bizhawk', 'cxbx',
     'cxbx-reloaded', 'decaf', 'demul', 'dosbox', 'dosbox-staging', 'dosbox-x',
     'epsxe', 'fceux', 'fusion', 'genesisplusgx', 'higan', 'ideas', 'kega',
-    'kronos', 'mame', 'mednafen', 'melonds', 'mesen', 'mikage', 'mupen64plus',
+    'kronos', 'mame', 'mednafen', 'mesen', 'mikage', 'mupen64plus',
     'nestopia', 'nether_sx2', 'no$gba', 'nulldc', 'panda3ds', 'pcsp',
     'pcsx-rearmed', 'pcsx-reloaded', 'play', 'project64', 'puNES', 'raine',
     'redream', 'retroarch', 'rmg', 'scummvm', 'simple64', 'ssantanshiro',
@@ -107,6 +108,10 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'desmume': {
         'name': 'DeSmuME',
         'profile_finder': lambda path: find_desmume_profiles(path)
+    },
+    'melonds': {
+        'name': 'melonDS',
+        'profile_finder': lambda path: find_melonds_profiles(path)
     },
     'cemu': {
         'name': 'Cemu',

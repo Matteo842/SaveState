@@ -2,13 +2,125 @@
 import os
 import re
 import logging
+from dataclasses import dataclass, field
 import platform
 from typing import Dict # Aggiunto import per Dict
 import cancellation_utils  # Add import
 import threading
+from typing import Optional, Any
 
 # Thread-local storage for per-thread state
 _thread_local = threading.local()
+
+# --- Class-based facade (additive, no behavior change) ---
+class LinuxGameContext:
+    def __init__(self, game_name, game_install_dir=None, appid=None, steam_userdata_path=None,
+                 steam_id3_to_use=None, is_steam_game=True, installed_steam_games_dict=None):
+        self.game_name = game_name
+        self.game_install_dir = game_install_dir
+        self.appid = appid
+        self.steam_userdata_path = steam_userdata_path
+        self.steam_id3_to_use = steam_id3_to_use
+        self.is_steam_game = is_steam_game
+        self.installed_steam_games_dict = installed_steam_games_dict
+
+    def to_params(self):
+        return {
+            "game_name": self.game_name,
+            "game_install_dir": self.game_install_dir,
+            "appid": self.appid,
+            "steam_userdata_path": self.steam_userdata_path,
+            "steam_id3_to_use": self.steam_id3_to_use,
+            "is_steam_game": self.is_steam_game,
+            "installed_steam_games_dict": self.installed_steam_games_dict,
+        }
+
+class LinuxSavePathFinder:
+    def __init__(self, context: 'LinuxGameContext', cancellation_manager=None):
+        self.context = context
+        self.cancellation_manager = cancellation_manager
+
+    def find_save_paths(self):
+        engine = LinuxPathSearchEngine(self.context)
+        return engine.run(self.cancellation_manager)
+
+class LinuxPathSearchEngine:
+    """
+    Thin, compatibility-preserving engine wrapper for Linux save-path discovery.
+    For now it simply delegates to the existing module function `guess_save_path`.
+    This provides an instance-oriented seam for future refactors without changing behavior.
+    """
+    def __init__(self, context: 'LinuxGameContext'):
+        self.context = context
+
+    def run(self, cancellation_manager=None):
+        return guess_save_path(
+            game_name=self.context.game_name,
+            game_install_dir=self.context.game_install_dir,
+            appid=self.context.appid,
+            steam_userdata_path=self.context.steam_userdata_path,
+            steam_id3_to_use=self.context.steam_id3_to_use,
+            is_steam_game=self.context.is_steam_game,
+            installed_steam_games_dict=self.context.installed_steam_games_dict,
+            cancellation_manager=cancellation_manager,
+        )
+
+# Lightweight container for configured state (created during initialization phase).
+@dataclass
+class LinuxSearchState:
+    game_name_cleaned: str
+    game_abbreviations_lower: set = field(default_factory=set)
+    game_title_original_sig_words_for_seq: list = field(default_factory=list)
+    known_companies_lower: list = field(default_factory=list)
+    linux_common_save_subdirs_lower: set = field(default_factory=set)
+    linux_banned_path_fragments_lower: set = field(default_factory=set)
+    common_save_extensions: set = field(default_factory=set)
+    common_save_extensions_nodot: set = field(default_factory=set)
+    common_save_filenames_lower: set = field(default_factory=set)
+    proton_user_path_fragments: list = field(default_factory=list)
+    linux_known_save_locations: dict = field(default_factory=dict)
+    installed_steam_games_dict: Optional[Dict] = None
+    other_cleaned_game_names: set = field(default_factory=set)
+    other_game_abbreviations: set = field(default_factory=set)
+    current_steam_app_id: Optional[str] = None
+    max_files_to_scan_linux_hint: int = 0
+    min_save_files_for_bonus_linux: int = 0
+    max_sub_items_to_scan_linux: int = 0
+    max_shallow_explore_depth_linux: int = 0
+    max_search_depth_linux: int = 0
+    fuzzy_threshold_basename_match: int = 0
+    fuzzy_threshold_path_match: int = 0
+    THEFUZZ_AVAILABLE: bool = False
+    fuzz: Optional[Any] = None
+
+def _build_state_from_thread_locals() -> LinuxSearchState:
+    """Create an immutable snapshot of the current thread-local configuration."""
+    return LinuxSearchState(
+        game_name_cleaned=_thread_local._game_name_cleaned,
+        game_abbreviations_lower=_thread_local._game_abbreviations_lower,
+        game_title_original_sig_words_for_seq=_thread_local._game_title_original_sig_words_for_seq,
+        known_companies_lower=_thread_local._known_companies_lower,
+        linux_common_save_subdirs_lower=_thread_local._linux_common_save_subdirs_lower,
+        linux_banned_path_fragments_lower=_thread_local._linux_banned_path_fragments_lower,
+        common_save_extensions=_thread_local._common_save_extensions,
+        common_save_extensions_nodot=_thread_local._common_save_extensions_nodot,
+        common_save_filenames_lower=_thread_local._common_save_filenames_lower,
+        proton_user_path_fragments=_thread_local._proton_user_path_fragments,
+        linux_known_save_locations=_thread_local._linux_known_save_locations,
+        installed_steam_games_dict=getattr(_thread_local, '_installed_steam_games_dict', None),
+        other_cleaned_game_names=_thread_local._other_cleaned_game_names,
+        other_game_abbreviations=_thread_local._other_game_abbreviations,
+        current_steam_app_id=_thread_local._current_steam_app_id,
+        max_files_to_scan_linux_hint=_thread_local._max_files_to_scan_linux_hint,
+        min_save_files_for_bonus_linux=_thread_local._min_save_files_for_bonus_linux,
+        max_sub_items_to_scan_linux=_thread_local._max_sub_items_to_scan_linux,
+        max_shallow_explore_depth_linux=_thread_local._max_shallow_explore_depth_linux,
+        max_search_depth_linux=_thread_local._max_search_depth_linux,
+        fuzzy_threshold_basename_match=_thread_local._fuzzy_threshold_basename_match,
+        fuzzy_threshold_path_match=_thread_local._fuzzy_threshold_path_match,
+        THEFUZZ_AVAILABLE=_thread_local._THEFUZZ_AVAILABLE,
+        fuzz=_thread_local._fuzz,
+    )
 
 if 'generate_abbreviations' not in globals():
     def generate_abbreviations(name, install_dir): return [name]
@@ -79,15 +191,10 @@ def generate_abbreviations(game_name_raw, game_install_dir_raw=None):
         if name_no_space != base_name_cleaned and len(name_no_space) > 1:
             abbreviations.add(name_no_space)
 
-        # Solo alfanumerico (es. "grandtheftautoiv" -> "grandtheftautoiv")
-        # La nostra clean_for_comparison attuale non rimuove tutti i non-alphanum,
-        # ma solo ™®©:. Se volessimo una versione solo alfanumerica qui,
-        # dovremmo aggiungerla. Windows fa: re.sub(r'[^a-zA-Z0-9]', '', sanitized_name)
-        # Per ora, la omettiamo per mantenere la modifica più semplice e vedere l'effetto
-        # delle altre modifiche. Potremo aggiungerla se necessario.
-        # name_alphanum_only = re.sub(r'[^a-z0-9]', '', base_name_cleaned) # base_name_cleaned è già lower
-        # if name_alphanum_only != name_no_space and name_alphanum_only != base_name_cleaned and len(name_alphanum_only) > 1:
-        # abbreviations.add(name_alphanum_only)
+        # Solo alfanumerico (stile Windows)
+        name_alphanum_only = re.sub(r'[^a-z0-9]', '', base_name_cleaned)
+        if name_alphanum_only != name_no_space and name_alphanum_only != base_name_cleaned and len(name_alphanum_only) > 1:
+            abbreviations.add(name_alphanum_only)
 
     # 2. Logica per Acronimi basata su parole significative (stile Windows)
     ignore_words_default = {
@@ -352,7 +459,16 @@ def _scan_dir_for_save_evidence_linux(dir_path: str, max_files_to_scan: int, com
     return has_evidence, save_file_count
 
 
-def _is_potential_save_dir(dir_path, game_name_clean, game_abbreviations_lower, linux_common_save_subdirs_lower, min_save_files_for_bonus_linux):
+def _is_potential_save_dir(
+    dir_path: str,
+    game_name_clean: str,
+    game_abbreviations_lower: set,
+    linux_common_save_subdirs_lower: set,
+    min_save_files_for_bonus_linux: int,
+    max_files_to_scan_linux_hint: int,
+    common_save_extensions_nodot: set,
+    common_save_filenames_lower: set,
+):
     """
     Determina se una directory è un potenziale percorso di salvataggio.
     Più restrittivo: richiede una corrispondenza del nome del gioco/abbreviazione, 
@@ -392,13 +508,19 @@ def _is_potential_save_dir(dir_path, game_name_clean, game_abbreviations_lower, 
                 break
 
     if not name_match_game_or_common_save_dir:
-        if dir_path.lower() in linux_common_save_subdirs_lower:
+        # Compare only the basename against known common save directory names
+        if os.path.basename(dir_path).lower() in linux_common_save_subdirs_lower:
             name_match_game_or_common_save_dir = True
             logging.debug(f"_is_potential_save_dir: Name match (common save dir '{dir_path.lower()}') for '{dir_path}'")
     
     # 2. Controllo basato sull'evidenza dei file (eseguito se il nome matcha o come fallback)
     #    Scansiona la directory per file che sembrano salvataggi.
-    has_save_files_evidence, save_file_count_for_bonus = _scan_dir_for_save_evidence_linux(dir_path, 100, set(), set())
+    has_save_files_evidence, save_file_count_for_bonus = _scan_dir_for_save_evidence_linux(
+        dir_path,
+        max_files_to_scan_linux_hint,
+        common_save_extensions_nodot,
+        common_save_filenames_lower,
+    )
 
     if name_match_game_or_common_save_dir:
         is_potential = True # Se il nome matcha, è potenziale indipendentemente dai file (per ora, lo score lo gestirà)
@@ -437,8 +559,8 @@ _game_title_original_sig_words_for_seq = []
 # Costanti di punteggio e profondità (internalizzate)
 _score_game_name_match = 1200
 _score_company_name_match = 150
-_score_save_dir_match = 400
-_score_has_save_files = 700
+_score_save_dir_match = 800
+_score_has_save_files = 1500
 _score_perfect_match_bonus = 600
 _score_steam_userdata_bonus = 1000
 _score_proton_path_bonus = 800
@@ -459,8 +581,8 @@ _fuzzy_threshold_basename_match = 90
 
 # Bonus specifici per tipo di sorgente (internalizzati)
 _score_installdir_bonus = 50 
-_score_xdg_data_home_bonus = 30
-_score_xdg_config_home_bonus = 20
+_score_xdg_data_home_bonus = 500
+_score_xdg_config_home_bonus = 600
 _score_publisher_match_bonus = 10
 _score_wine_prefix_generic_bonus = 15 
 
@@ -514,6 +636,7 @@ def _initialize_globals_from_config(game_name_raw, game_install_dir_raw, install
     _thread_local._linux_common_save_subdirs_lower = {csd.lower() for csd in getattr(config, 'LINUX_COMMON_SAVE_SUBDIRS', [])}
     _thread_local._linux_banned_path_fragments_lower = {bps.lower() for bps in getattr(config, 'LINUX_BANNED_PATH_FRAGMENTS', getattr(config, 'BANNED_FOLDER_NAMES_LOWER', []))}
     _thread_local._common_save_extensions = {e.lower() for e in getattr(config, 'COMMON_SAVE_EXTENSIONS', set())}
+    _thread_local._common_save_extensions_nodot = {e.lstrip('.').lower() for e in getattr(config, 'COMMON_SAVE_EXTENSIONS', set())}
     _thread_local._common_save_filenames_lower = {f.lower() for f in getattr(config, 'COMMON_SAVE_FILENAMES', set())}
     _thread_local._proton_user_path_fragments = getattr(config, 'PROTON_USER_PATH_FRAGMENTS', [])
     
@@ -566,6 +689,7 @@ def _initialize_globals_from_config(game_name_raw, game_install_dir_raw, install
     _thread_local._max_search_depth_linux = getattr(config, 'MAX_SEARCH_DEPTH_LINUX', 10) # Default a 10 se non definito
 
     _thread_local._current_steam_app_id = steam_app_id_raw
+    _thread_local._installed_steam_games_dict = installed_steam_games_dict
 
     # Add fuzzy thresholds to thread-local storage
     _thread_local._fuzzy_threshold_basename_match = getattr(config, 'FUZZY_THRESHOLD_BASENAME_MATCH', 85)
@@ -607,6 +731,9 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     
     logging.info(f"LINUX_GUESS_SAVE_PATH: Starting search for '{game_name}' (AppID: {appid})")
 
+    # Build a snapshot of state once and reuse it through the search
+    state = _build_state_from_thread_locals()
+
     # 1. Steam Userdata (Priorità Alta)
     if is_steam_game and appid and steam_userdata_path and steam_id3_to_use:
         try:
@@ -614,12 +741,12 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
             if os.path.isdir(user_data_for_id):
                 app_specific_userdata = os.path.join(user_data_for_id, appid)
                 if os.path.isdir(app_specific_userdata):
-                    _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, app_specific_userdata, "Steam Userdata/AppID_Base", False, _thread_local._game_abbreviations_lower, _thread_local._current_steam_app_id, _thread_local._linux_common_save_subdirs_lower, _thread_local._other_cleaned_game_names, _thread_local._other_game_abbreviations, _thread_local._game_name_cleaned)
+                    _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, app_specific_userdata, "Steam Userdata/AppID_Base", False, state.game_abbreviations_lower, state.current_steam_app_id, state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, state.other_game_abbreviations, state.game_name_cleaned, state)
                     remote_path = os.path.join(app_specific_userdata, 'remote')
                     if os.path.isdir(remote_path):
-                        _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, remote_path, f"Steam Userdata/AppID_Base/remote", False, _thread_local._game_abbreviations_lower, _thread_local._current_steam_app_id, _thread_local._linux_common_save_subdirs_lower, _thread_local._other_cleaned_game_names, _thread_local._other_game_abbreviations, _thread_local._game_name_cleaned)
+                        _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, remote_path, f"Steam Userdata/AppID_Base/remote", False, state.game_abbreviations_lower, state.current_steam_app_id, state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, state.other_game_abbreviations, state.game_name_cleaned, state)
                         # Esplora un livello dentro 'remote'
-                        _search_recursive(remote_path, 0, _thread_local._guesses_data, _thread_local._checked_paths, cancellation_manager)
+                        _search_recursive(remote_path, 0, _thread_local._guesses_data, _thread_local._checked_paths, cancellation_manager, state)
         except Exception as e:
             logging.error(f"LINUX_GUESS_SAVE_PATH: Error processing Steam Userdata: {e}")
 
@@ -632,42 +759,42 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
         for steam_base in steam_base_paths_for_compat:
             compatdata_path = os.path.join(steam_base, 'steamapps', 'compatdata', appid, 'pfx')
             if os.path.isdir(compatdata_path):
-                _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, compatdata_path, f"Proton Prefix ({appid})", False, _thread_local._game_abbreviations_lower, _thread_local._current_steam_app_id, _thread_local._linux_common_save_subdirs_lower, _thread_local._other_cleaned_game_names, _thread_local._other_game_abbreviations, _thread_local._game_name_cleaned)
-                for fragment in _thread_local._proton_user_path_fragments:
+                _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, compatdata_path, f"Proton Prefix ({appid})", False, state.game_abbreviations_lower, state.current_steam_app_id, state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, state.other_game_abbreviations, state.game_name_cleaned, state)
+                for fragment in state.proton_user_path_fragments:
                     proton_save_path = os.path.join(compatdata_path, fragment)
                     if os.path.isdir(proton_save_path):
-                        _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, proton_save_path, f"Proton Prefix/{fragment} ({appid})", False, _thread_local._game_abbreviations_lower, _thread_local._current_steam_app_id, _thread_local._linux_common_save_subdirs_lower, _thread_local._other_cleaned_game_names, _thread_local._other_game_abbreviations, _thread_local._game_name_cleaned)
-                        _search_recursive(proton_save_path, 0, _thread_local._guesses_data, _thread_local._checked_paths, cancellation_manager)
+                        _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, proton_save_path, f"Proton Prefix/{fragment} ({appid})", False, state.game_abbreviations_lower, state.current_steam_app_id, state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, state.other_game_abbreviations, state.game_name_cleaned, state)
+                        _search_recursive(proton_save_path, 0, _thread_local._guesses_data, _thread_local._checked_paths, cancellation_manager, state)
 
     # 3. Directory di Installazione del Gioco
     if game_install_dir and os.path.isdir(game_install_dir):
         logging.info(f"LINUX_GUESS_SAVE_PATH: Searching in install_dir '{game_install_dir}' (max_depth={_max_depth_generic})")
-        _search_recursive(game_install_dir, 0, _thread_local._guesses_data, _thread_local._checked_paths, cancellation_manager)
+        _search_recursive(game_install_dir, 0, _thread_local._guesses_data, _thread_local._checked_paths, cancellation_manager, state)
     
     # 4. Percorsi XDG e Comuni Linux
-    for loc_desc, base_path in _thread_local._linux_known_save_locations.items():
+    for loc_desc, base_path in state.linux_known_save_locations.items():
         if os.path.isdir(base_path):
             # Add the base path itself as a guess
-            _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, base_path, loc_desc, True, _thread_local._game_abbreviations_lower, _thread_local._current_steam_app_id, _thread_local._linux_common_save_subdirs_lower, _thread_local._other_cleaned_game_names, _thread_local._other_game_abbreviations, _thread_local._game_name_cleaned)
+            _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, base_path, loc_desc, True, state.game_abbreviations_lower, state.current_steam_app_id, state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, state.other_game_abbreviations, state.game_name_cleaned, state)
             
             # Also search for direct game name/abbreviation subdirectories
             for abbr_or_name in _thread_local._game_abbreviations:
                 direct_game_path = os.path.join(base_path, abbr_or_name)
-                _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, direct_game_path, f"{loc_desc}/DirectGameName/{abbr_or_name}", False, _thread_local._game_abbreviations_lower, _thread_local._current_steam_app_id, _thread_local._linux_common_save_subdirs_lower, _thread_local._other_cleaned_game_names, _thread_local._other_game_abbreviations, _thread_local._game_name_cleaned)
+                _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, direct_game_path, f"{loc_desc}/DirectGameName/{abbr_or_name}", False, state.game_abbreviations_lower, state.current_steam_app_id, state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, state.other_game_abbreviations, state.game_name_cleaned, state)
 
             # Recursively search within the base path
-            _search_recursive(base_path, 0, _thread_local._guesses_data, _thread_local._checked_paths, cancellation_manager)
+            _search_recursive(base_path, 0, _thread_local._guesses_data, _thread_local._checked_paths, cancellation_manager, state)
 
     # 5. User's Home Directory (fallback)
     user_home = os.path.expanduser('~')
-    _search_recursive(user_home, 0, _thread_local._guesses_data, _thread_local._checked_paths, cancellation_manager)
+    _search_recursive(user_home, 0, _thread_local._guesses_data, _thread_local._checked_paths, cancellation_manager, state)
 
     
     if not _thread_local._guesses_data:
         logging.warning(f"LINUX_GUESS_SAVE_PATH: No potential save paths found for '{game_name}'.")
         return []
 
-    sorted_guesses = sorted(_thread_local._guesses_data.items(), key=_final_sort_key_linux)
+    sorted_guesses = sorted(_thread_local._guesses_data.items(), key=lambda item: _final_sort_key_linux(item, state))
     
     globals()['logging'].info(f"LINUX_GUESS_SAVE_PATH: Found {len(sorted_guesses)} potential paths for '{game_name}'. Top 5 (or less):")
     for i, item_tuple in enumerate(sorted_guesses[:5]):
@@ -676,10 +803,10 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
         source_description_set = data_dict.get('sources', set())
         source = next(iter(source_description_set)) if source_description_set else "UnknownSource"
         has_saves = data_dict.get('has_saves_hint', False)
-        actual_score = -_final_sort_key_linux(item_tuple)[0]
+        actual_score = -_final_sort_key_linux(item_tuple, state)[0]
         globals()['logging'].info(f"  {i+1}. {original_path} (Source: {source}, HasSaves: {has_saves}, Score: {actual_score})")
 
-    return [(item[0], -_final_sort_key_linux(item)[0]) for item in sorted_guesses]
+    return [(item[0], -_final_sort_key_linux(item, state)[0]) for item in sorted_guesses]
 
 def _add_guess(
     guesses_data: dict,
@@ -692,7 +819,8 @@ def _add_guess(
     linux_common_save_subdirs_lower: set,
     other_cleaned_game_names: set,
     other_game_abbreviations: set,
-    game_name_cleaned: str
+    game_name_cleaned: str,
+    state: Optional[LinuxSearchState] = None
 ) -> None:
     """
     Adds a found path to the guesses_data dictionary after applying a strict filter.
@@ -748,13 +876,39 @@ def _add_guess(
             passes_strict_filter = True
             reason_for_pass = f"Cleaned game name '{game_name_cleaned}' in path."
     
+    # Conservative fuzzy filter against other installed games (like Windows)
+    if passes_strict_filter and state and state.installed_steam_games_dict and state.fuzz and state.THEFUZZ_AVAILABLE:
+        try:
+            path_basename = os.path.basename(normalized_path)
+            cleaned_folder = re.sub(r'[^a-zA-Z0-9\s]', '', path_basename).lower()
+            cleaned_folder = re.sub(r'\s+', ' ', cleaned_folder).strip()
+            if cleaned_folder:
+                for other_appid, other_info in state.installed_steam_games_dict.items():
+                    if other_appid == str(current_steam_app_id):
+                        continue
+                    other_name = (other_info or {}).get('name', '')
+                    if not other_name:
+                        continue
+                    cleaned_other = re.sub(r'[^a-zA-Z0-9\s]', '', other_name).lower()
+                    cleaned_other = re.sub(r'\s+', ' ', cleaned_other).strip()
+                    ratio = state.fuzz.token_set_ratio(cleaned_other, cleaned_folder)
+                    if ratio >= 95:
+                        # Reject this guess as it very likely belongs to another game
+                        passes_strict_filter = False
+                        reason_for_pass = f"Rejected: fuzzy matches other game '{other_name}' (ratio {ratio})"
+                        break
+        except Exception as e:
+            logging.warning(f"Other-games fuzzy filter error for '{normalized_path}': {e}")
+
     # Add to guesses_data if passed filter
     if passes_strict_filter:
         guesses_data[normalized_path] = {
             "source": source_description,
+            "sources": {source_description},
             "reason": reason_for_pass,
             "has_saves_hint": has_saves_hint_from_scan,
-            "explicit_name_match": current_game_name_explicitly_in_path
+            "explicit_name_match": current_game_name_explicitly_in_path,
+            "steam_app_id": str(current_steam_app_id) if current_steam_app_id else None
         }
     
     # Add to checked paths regardless of filter
@@ -766,17 +920,21 @@ def _search_recursive(
     guesses_data: dict,
     checked_paths: set,
     cancellation_manager: cancellation_utils.CancellationManager = None,
+    state: Optional[LinuxSearchState] = None,
 ) -> None:
-    # Access thread-local storage
-    linux_common_save_subdirs_lower = _thread_local._linux_common_save_subdirs_lower
-    min_save_files_for_bonus_linux = _thread_local._min_save_files_for_bonus_linux
-    known_companies_lower = _thread_local._known_companies_lower
-    fuzzy_threshold_basename_match = _thread_local._fuzzy_threshold_basename_match
-    fuzzy_threshold_path_match = _thread_local._fuzzy_threshold_path_match
-    game_title_original_sig_words_for_seq = _thread_local._game_title_original_sig_words_for_seq
-    max_sub_items_to_scan_linux = _thread_local._max_sub_items_to_scan_linux
-    max_search_depth = _thread_local._max_search_depth_linux
-    max_shallow_explore_depth_linux = _thread_local._max_shallow_explore_depth_linux
+    # Access state (prefer passed state; fallback to thread-local for compatibility)
+    if state is None:
+        state = _build_state_from_thread_locals()
+
+    linux_common_save_subdirs_lower = state.linux_common_save_subdirs_lower
+    min_save_files_for_bonus_linux = state.min_save_files_for_bonus_linux
+    known_companies_lower = state.known_companies_lower
+    fuzzy_threshold_basename_match = state.fuzzy_threshold_basename_match
+    fuzzy_threshold_path_match = state.fuzzy_threshold_path_match
+    game_title_original_sig_words_for_seq = state.game_title_original_sig_words_for_seq
+    max_sub_items_to_scan_linux = state.max_sub_items_to_scan_linux
+    max_search_depth = state.max_search_depth_linux
+    max_shallow_explore_depth_linux = state.max_shallow_explore_depth_linux
     
     # LOG SUBITO ALL'INGRESSO DELLA FUNZIONE
     logging.debug(f"ENTERED _search_recursive: Path='{start_dir}', Depth={depth}, MaxDepthLimit={max_search_depth}")
@@ -801,15 +959,21 @@ def _search_recursive(
     # Tentativo di aggiungere la directory corrente se rilevante
     basename_current_path_lower = os.path.basename(start_dir.lower()) 
     is_potential_current, has_saves_hint_current = _is_potential_save_dir(
-        start_dir, _thread_local._game_name_cleaned, _thread_local._game_abbreviations_lower, 
-        linux_common_save_subdirs_lower, min_save_files_for_bonus_linux
+        start_dir,
+        state.game_name_cleaned,
+        state.game_abbreviations_lower,
+        linux_common_save_subdirs_lower,
+        min_save_files_for_bonus_linux,
+        state.max_files_to_scan_linux_hint,
+        state.common_save_extensions_nodot,
+        state.common_save_filenames_lower,
     )
     
     current_path_name_match_game = False
     current_path_name_match_company = False
     current_path_is_common_save_dir_flag = basename_current_path_lower in linux_common_save_subdirs_lower
 
-    for abbr in _thread_local._game_abbreviations_lower: 
+    for abbr in state.game_abbreviations_lower: 
         if are_names_similar(abbr, basename_current_path_lower, 
                              game_title_sig_words_for_seq=game_title_original_sig_words_for_seq,
                              fuzzy_threshold=fuzzy_threshold_basename_match): 
@@ -837,10 +1001,18 @@ def _search_recursive(
         elif is_potential_current: specific_source_desc += " (PotentialDirEvidence)"
         
         _add_guess(
-            guesses_data, checked_paths, start_dir, specific_source_desc, 
-            has_saves_hint_current, _thread_local._game_abbreviations_lower, _thread_local._current_steam_app_id, 
-            linux_common_save_subdirs_lower, _thread_local._other_cleaned_game_names, 
-            _thread_local._other_game_abbreviations, _thread_local._game_name_cleaned
+            guesses_data,
+            checked_paths,
+            start_dir,
+            specific_source_desc,
+            has_saves_hint_current,
+            state.game_abbreviations_lower,
+            state.current_steam_app_id,
+            linux_common_save_subdirs_lower,
+            state.other_cleaned_game_names,
+            state.other_game_abbreviations,
+            state.game_name_cleaned,
+            state,
         )
 
     logging.debug(f"LISTDIR_ATTEMPT _search_recursive: Listing sub-items of '{start_dir}'")
@@ -878,8 +1050,14 @@ def _search_recursive(
                 
             # Check if this subdirectory is potentially a save directory
             sub_is_potential, _ = _is_potential_save_dir(
-                item_path, _thread_local._game_name_cleaned, _thread_local._game_abbreviations_lower, 
-                linux_common_save_subdirs_lower, min_save_files_for_bonus_linux
+                item_path,
+                state.game_name_cleaned,
+                state.game_abbreviations_lower,
+                linux_common_save_subdirs_lower,
+                min_save_files_for_bonus_linux,
+                state.max_files_to_scan_linux_hint,
+                state.common_save_extensions_nodot,
+                state.common_save_filenames_lower,
             )
             
             # Check name matches
@@ -888,7 +1066,7 @@ def _search_recursive(
                 are_names_similar(abbr, item_name_lower, 
                                 game_title_sig_words_for_seq=game_title_original_sig_words_for_seq,
                                 fuzzy_threshold=fuzzy_threshold_basename_match) 
-                for abbr in _thread_local._game_abbreviations_lower
+                for abbr in state.game_abbreviations_lower
             )
             
             item_is_company_match = any(
@@ -924,7 +1102,7 @@ def _search_recursive(
             elif depth < max_shallow_explore_depth_linux:
                 logging.debug(f"DECISION: RECURSING (SHALLOW explore) into: '{item_path}' (new_depth {depth + 1}) from '{start_dir}'")
                 _search_recursive(
-                    item_path, depth + 1, guesses_data, checked_paths, cancellation_manager
+                    item_path, depth + 1, guesses_data, checked_paths, cancellation_manager, state
                 )
             else:
                 logging.debug(f"DECISION: NOT RECURSING into: '{item_path}'. from_parent: '{start_dir}'. sub_is_potential={sub_is_potential}, item_is_game_match={item_is_game_match}, item_is_company_match={item_is_company_match}, item_is_common_save_dir={item_is_common_save_dir}, depth={depth}, max_shallow_explore_depth_linux={max_shallow_explore_depth_linux}. Reason for no strong: {recursion_decision_reason}")
@@ -937,19 +1115,22 @@ def _search_recursive(
     logging.debug(f"EXITING _search_recursive: Path='{start_dir}', Depth={depth}")
 
 # Funzione principale di ordinamento per i percorsi trovati
-def _final_sort_key_linux(item_tuple):
+def _final_sort_key_linux(item_tuple, state: Optional[LinuxSearchState] = None):
     """
     Genera una chiave di ordinamento per i percorsi trovati
     """
-    # Access thread-local storage
-    game_name_cleaned = _thread_local._game_name_cleaned
-    game_abbreviations_lower = _thread_local._game_abbreviations_lower
-    game_title_original_sig_words_for_seq = _thread_local._game_title_original_sig_words_for_seq
-    linux_common_save_subdirs_lower = _thread_local._linux_common_save_subdirs_lower
-    known_companies_lower = _thread_local._known_companies_lower
-    THEFUZZ_AVAILABLE = _thread_local._THEFUZZ_AVAILABLE
-    fuzz = _thread_local._fuzz if THEFUZZ_AVAILABLE else None
-    linux_banned_path_fragments_lower = _thread_local._linux_banned_path_fragments_lower
+    # Access state (prefer passed state; fallback to thread-local compatibility)
+    if state is None:
+        state = _build_state_from_thread_locals()
+
+    game_name_cleaned = state.game_name_cleaned
+    game_abbreviations_lower = state.game_abbreviations_lower
+    game_title_original_sig_words_for_seq = state.game_title_original_sig_words_for_seq
+    linux_common_save_subdirs_lower = state.linux_common_save_subdirs_lower
+    known_companies_lower = state.known_companies_lower
+    THEFUZZ_AVAILABLE = state.THEFUZZ_AVAILABLE
+    fuzz = state.fuzz if THEFUZZ_AVAILABLE else None
+    linux_banned_path_fragments_lower = state.linux_banned_path_fragments_lower
 
     normalized_path_key, data_dict = item_tuple
     original_path = normalized_path_key 
@@ -977,9 +1158,9 @@ def _final_sort_key_linux(item_tuple):
 
     # --- 1. PUNTEGGIO BASE PER LOCAZIONE ---
     if xdg_config_home.lower() in path_lower_for_sorting:
-        score += 800 
+        score += _score_xdg_config_home_bonus
     elif xdg_data_home.lower() in path_lower_for_sorting:
-        score += 700 
+        score += _score_xdg_data_home_bonus
     elif steam_compatdata_generic_part in path_lower_for_sorting and "pfx" in path_lower_for_sorting:
         score += 600 
     elif steam_userdata_generic_part in path_lower_for_sorting:
@@ -993,20 +1174,29 @@ def _final_sort_key_linux(item_tuple):
 
     # --- 2. BONUS PER CONTENUTO DI SALVATAGGIO (has_saves_hint_from_scan) ---
     if has_saves_hint_from_scan: 
-        score += 800
+        score += _score_has_save_files
 
     # --- 3. BONUS PER NOMI DI CARTELLE RILEVANTI (BASENAME) ---
     is_common_save_subdir_basename = basename_lower in linux_common_save_subdirs_lower
+    awarded_parent_bonus_in_common_save = False
     if is_common_save_subdir_basename:
-        score += 600
-        parent_matches_game_or_company = False
-        if parent_basename_lower in game_abbreviations_lower:
-             parent_matches_game_or_company = True
-        elif parent_basename_lower in known_companies_lower:
-             parent_matches_game_or_company = True
+        # Stronger base for actual 'saves' directories
+        score += _score_save_dir_match
 
-        if parent_matches_game_or_company:
-            score += 150 
+        # Evaluate parent folder context; handle hidden dot-folders gracefully
+        parent_basename_stripped = parent_basename_lower.lstrip('.')
+        parent_is_game_abbr = (
+            parent_basename_lower in game_abbreviations_lower or
+            parent_basename_stripped in game_abbreviations_lower
+        )
+        parent_is_company = parent_basename_lower in known_companies_lower
+
+        if parent_is_game_abbr:
+            score += _score_perfect_match_bonus
+            awarded_parent_bonus_in_common_save = True
+        elif parent_is_company:
+            score += _score_company_name_match
+            awarded_parent_bonus_in_common_save = True
 
     # --- 4. BONUS PER SIMILARITÀ NOME GIOCO (SUL BASENAME) ---
     cleaned_folder_basename = clean_for_comparison(basename)
@@ -1032,12 +1222,14 @@ def _final_sort_key_linux(item_tuple):
         score += 200
 
     # --- 7. BONUS PER MATCH CON AZIENDA (PARENT BASENAME) ---
-    if parent_basename_lower in known_companies_lower:
+    if not awarded_parent_bonus_in_common_save and parent_basename_lower in known_companies_lower:
         score += 100
 
     # --- 8. BONUS PER MATCH CON GIOCO (PARENT BASENAME) ---
-    if parent_basename_lower in game_abbreviations_lower:
-        score += 150
+    if not awarded_parent_bonus_in_common_save:
+        parent_basename_stripped = parent_basename_lower.lstrip('.')
+        if parent_basename_lower in game_abbreviations_lower or parent_basename_stripped in game_abbreviations_lower:
+            score += 150
 
     # --- 9. BONUS PER PATH CONTENENTE GAME_NAME_CLEANED ---
     if game_name_cleaned and game_name_cleaned.lower() in path_lower_for_sorting:
