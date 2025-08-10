@@ -416,6 +416,50 @@ class DropEventMixin:
                             mw, "SameBoy Detection Error",
                             f"An error occurred while trying to detect SameBoy profiles: {e}\n"
                             "You can try adding the emulator again or set the path manually via settings (if available).")
+
+                # Special handling for melonDS emulator
+                if emulator_key == 'melonds' and profiles_data is None:
+                    try:
+                        from emulator_utils import melonds_manager
+                        # Get a suggested starting path for the dialog
+                        suggested_rom_dir = melonds_manager.get_melonds_rom_dir(os.path.dirname(file_path) if os.path.isfile(file_path) else file_path)
+                        
+                        # Use SavePathDialog for a more robust path selection with browse button
+                        from gui_components.profile_creation_manager import SavePathDialog
+                        path_dialog = SavePathDialog(
+                            parent=mw,
+                            window_title=mw.tr("Select melonDS ROMs Folder"),
+                            prompt_text=mw.tr("Please select the folder where your melonDS ROMs are stored:"),
+                            initial_path=suggested_rom_dir if suggested_rom_dir else "",
+                            browse_dialog_title=mw.tr("Select melonDS ROMs Folder")
+                        )
+                        
+                        if path_dialog.exec() == QDialog.DialogCode.Accepted:
+                            user_selected_path = path_dialog.get_path()
+                            if user_selected_path and os.path.isdir(user_selected_path):
+                                logging.info(f"User selected melonDS ROM directory: {user_selected_path}. Re-scanning for profiles.")
+                                # Re-run the profile finder with the user-selected path
+                                profiles_data = melonds_manager.find_melonds_profiles(user_selected_path)
+                                if profiles_data:
+                                    logging.info(f"Found {len(profiles_data)} melonDS profiles in user-selected directory '{user_selected_path}'.")
+                                else:
+                                    logging.warning(f"No melonDS profiles found in user-selected directory '{user_selected_path}'.")
+                            else:
+                                logging.warning("User selected an invalid path or cancelled the dialog after initial OK.")
+                                QMessageBox.warning(mw, "Invalid Path", "The selected path is not a valid directory.")
+                                mw.status_label.setText("melonDS profile creation cancelled (invalid path).")
+                                return # Exit if path is invalid
+                        else:
+                            logging.info("User cancelled melonDS ROM directory selection.")
+                            mw.status_label.setText("melonDS profile creation cancelled.")
+                            return # Exit if user cancels dialog
+                    except Exception as e:
+                        logging.error(f"Error handling melonDS manual path selection: {e}", exc_info=True)
+                        QMessageBox.warning(
+                            mw, "melonDS Detection Error",
+                            f"An error occurred while trying to detect melonDS profiles: {e}\n"
+                            "You can try adding the emulator again or set the path manually via settings (if available)."
+                        )
                 
                 # Handle emulator profiles if found
                 if emulator_key and profiles_data is not None:  # Check if profiles_data is not None (it could be an empty list)

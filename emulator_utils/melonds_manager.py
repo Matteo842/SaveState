@@ -438,7 +438,45 @@ def _collect_profile_banned_dirs() -> list[str]:
     return list(banned)
 
 
-def find_melonds_profiles(executable_path: str | None = None) -> list[dict]:
+def get_melonds_rom_dir(executable_path: str | None = None) -> str | None:
+    """
+    Returns a best-guess ROM directory for melonDS using the same heuristics
+    used by the profile finder, but without scanning. Useful for seeding a
+    user prompt default path.
+    """
+    try:
+        config_dirs: list[str] = _read_melonds_config_dirs(executable_path)
+    except Exception as e:
+        log.debug(f"get_melonds_rom_dir: error reading config dirs: {e}")
+        config_dirs = []
+
+    try:
+        guessed_dirs: list[str] = _guess_common_rom_dirs(executable_path)
+    except Exception as e:
+        log.debug(f"get_melonds_rom_dir: error building guessed dirs: {e}")
+        guessed_dirs = []
+
+    filtered_guessed_dirs = [d for d in guessed_dirs if _is_likely_ds_dir(d) or _contains_sav_quick(d)]
+    candidate_dirs: list[str] = _unique_existing_paths([*config_dirs, *filtered_guessed_dirs])
+
+    # Apply profile-based bans
+    profile_banned_dirs = _collect_profile_banned_dirs()
+    if profile_banned_dirs:
+        candidate_dirs = [d for d in candidate_dirs if not any(_is_subpath(d, b) for b in profile_banned_dirs)]
+
+    # Prefer directories that already contain .sav quickly
+    for d in candidate_dirs:
+        if _contains_sav_quick(d):
+            return d
+    # Otherwise return the first DS-likely directory if present
+    for d in candidate_dirs:
+        if _is_likely_ds_dir(d):
+            return d
+    # Fallback: first candidate if any
+    return candidate_dirs[0] if candidate_dirs else None
+
+
+def find_melonds_profiles(executable_path: str | None = None) -> list[dict] | None:
     """
     Finds melonDS save files (.sav). Since melonDS stores saves next to ROMs by default,
     this function infers likely ROM directories and scans for .sav files efficiently.
@@ -482,7 +520,7 @@ def find_melonds_profiles(executable_path: str | None = None) -> list[dict]:
 
     if not candidate_dirs:
         log.warning("No plausible ROM directories found for melonDS; cannot scan for .sav files.")
-        return []
+        return None
 
     deep_priority_names = {"nds", "nintendo ds", "nintendo_ds", "ds"}
 
@@ -559,12 +597,19 @@ def find_melonds_profiles(executable_path: str | None = None) -> list[dict]:
         except Exception as e:
             log.debug(f"Failed scanning directory '{root}': {e}")
 
-    log.info(
-        f"Found {len(profiles)} melonDS profiles (.sav) across {len(candidate_dirs)} candidate dirs; "
-        f"total_sav_seen={total_sav_seen}, matched_with_rom={total_sav_matched_rom}"
-    )
-    profiles.sort(key=lambda p: p.get("name", ""))
-    return profiles
+    if profiles:
+        log.info(
+            f"Found {len(profiles)} melonDS profiles (.sav) across {len(candidate_dirs)} candidate dirs; "
+            f"total_sav_seen={total_sav_seen}, matched_with_rom={total_sav_matched_rom}"
+        )
+        profiles.sort(key=lambda p: p.get("name", ""))
+        return profiles
+    else:
+        log.info(
+            f"No melonDS profiles found across {len(candidate_dirs)} candidate dirs; "
+            f"total_sav_seen={total_sav_seen}, matched_with_rom={total_sav_matched_rom}. Signalling for user prompt."
+        )
+        return None
 
 
 # Example usage (optional)
