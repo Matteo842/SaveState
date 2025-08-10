@@ -37,6 +37,57 @@ class DropEventMixin:
         # Chiama il reset della classe padre se esiste
         if hasattr(super(), 'reset_internal_state'):
             super().reset_internal_state()
+
+    # --- Generic helper: prompt for ROM directory and rescan profiles for any emulator ---
+    def _prompt_for_emulator_rom_dir_and_find_profiles(self, mw, emulator_key: str, target_path: str | None):
+        """
+        Shows a custom SavePathDialog allowing the user to type/paste a path or browse.
+        Attempts to use manager-specific hint function get_{emu}_rom_dir if available to pre-fill.
+        Then reruns find_{emu}_profiles with the chosen directory.
+        Returns a tuple (attempted_prompt: bool, profiles_or_none).
+        """
+        try:
+            # Dynamically import the corresponding manager module
+            module_name = f"emulator_utils.{emulator_key}_manager"
+            manager = __import__(module_name, fromlist=['*'])
+
+            # Suggested path
+            suggested_dir = None
+            hint_fn_name = f"get_{emulator_key}_rom_dir"
+            hint_fn = getattr(manager, hint_fn_name, None)
+            try:
+                if callable(hint_fn):
+                    base = None
+                    if target_path and os.path.exists(target_path):
+                        base = os.path.dirname(target_path) if os.path.isfile(target_path) else target_path
+                    suggested_dir = hint_fn(base)
+            except Exception:
+                suggested_dir = None
+
+            # Show custom dialog
+            from gui_components.profile_creation_manager import SavePathDialog
+            title = mw.tr(f"Select {emulator_key.capitalize()} ROMs Folder")
+            prompt = mw.tr("Please select the folder where your ROMs are stored for this emulator:")
+            dlg = SavePathDialog(
+                parent=mw,
+                window_title=title,
+                prompt_text=prompt,
+                initial_path=suggested_dir if suggested_dir else "",
+                browse_dialog_title=title,
+            )
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                chosen = dlg.get_path()
+                if chosen and os.path.isdir(chosen):
+                    find_fn_name = f"find_{emulator_key}_profiles"
+                    find_fn = getattr(manager, find_fn_name, None)
+                    if callable(find_fn):
+                        return True, find_fn(chosen)
+                return True, None
+            else:
+                return True, None
+        except Exception as e:
+            logging.error(f"Error in generic ROM path prompt for '{emulator_key}': {e}", exc_info=True)
+        return False, None
     
     def _cancel_detection_threads(self, *args):
         """Cancella tutti i thread di rilevamento attivi."""
@@ -417,52 +468,28 @@ class DropEventMixin:
                             f"An error occurred while trying to detect SameBoy profiles: {e}\n"
                             "You can try adding the emulator again or set the path manually via settings (if available).")
 
-                # Special handling for melonDS emulator
-                if emulator_key == 'melonds' and profiles_data is None:
+                # Generic manual prompt for emulators that store saves next to ROMs (return None to request user input)
+                if profiles_data is None and emulator_key in {'melonds', 'mgba', 'snes9x'}:
+                    # Safely derive a base path for hinting; target_path may not always be set
+                    base_hint = None
                     try:
-                        from emulator_utils import melonds_manager
-                        # Get a suggested starting path for the dialog
-                        suggested_rom_dir = melonds_manager.get_melonds_rom_dir(os.path.dirname(file_path) if os.path.isfile(file_path) else file_path)
-                        
-                        # Use SavePathDialog for a more robust path selection with browse button
-                        from gui_components.profile_creation_manager import SavePathDialog
-                        path_dialog = SavePathDialog(
-                            parent=mw,
-                            window_title=mw.tr("Select melonDS ROMs Folder"),
-                            prompt_text=mw.tr("Please select the folder where your melonDS ROMs are stored:"),
-                            initial_path=suggested_rom_dir if suggested_rom_dir else "",
-                            browse_dialog_title=mw.tr("Select melonDS ROMs Folder")
-                        )
-                        
-                        if path_dialog.exec() == QDialog.DialogCode.Accepted:
-                            user_selected_path = path_dialog.get_path()
-                            if user_selected_path and os.path.isdir(user_selected_path):
-                                logging.info(f"User selected melonDS ROM directory: {user_selected_path}. Re-scanning for profiles.")
-                                # Re-run the profile finder with the user-selected path
-                                profiles_data = melonds_manager.find_melonds_profiles(user_selected_path)
-                                if profiles_data:
-                                    logging.info(f"Found {len(profiles_data)} melonDS profiles in user-selected directory '{user_selected_path}'.")
-                                else:
-                                    logging.warning(f"No melonDS profiles found in user-selected directory '{user_selected_path}'.")
-                            else:
-                                logging.warning("User selected an invalid path or cancelled the dialog after initial OK.")
-                                QMessageBox.warning(mw, "Invalid Path", "The selected path is not a valid directory.")
-                                mw.status_label.setText("melonDS profile creation cancelled (invalid path).")
-                                return # Exit if path is invalid
-                        else:
-                            logging.info("User cancelled melonDS ROM directory selection.")
-                            mw.status_label.setText("melonDS profile creation cancelled.")
-                            return # Exit if user cancels dialog
-                    except Exception as e:
-                        logging.error(f"Error handling melonDS manual path selection: {e}", exc_info=True)
-                        QMessageBox.warning(
-                            mw, "melonDS Detection Error",
-                            f"An error occurred while trying to detect melonDS profiles: {e}\n"
-                            "You can try adding the emulator again or set the path manually via settings (if available)."
-                        )
+                        base_hint = target_path
+                    except UnboundLocalError:
+                        base_hint = None
+                    if base_hint is None:
+                        try:
+                            base_hint = file_path
+                        except UnboundLocalError:
+                            base_hint = None
+                    prompted, result_profiles = self._prompt_for_emulator_rom_dir_and_find_profiles(mw, emulator_key, base_hint)
+                    if prompted:
+                        # If we showed a prompt, use its result and skip the generic 'no profiles' popup
+                        profiles_data = result_profiles if result_profiles is not None else []
+                    else:
+                        profiles_data = result_profiles
                 
-                # Handle emulator profiles if found
-                if emulator_key and profiles_data is not None:  # Check if profiles_data is not None (it could be an empty list)
+                # Handle emulator profiles if found (non-empty list only)
+                if emulator_key and bool(profiles_data):  # Only proceed when there are profiles to show
                     logging.info(f"Found {emulator_key} profiles: {len(profiles_data)}")
                     
                     # Show dialog for selecting which emulator game to create a profile for
@@ -527,14 +554,23 @@ class DropEventMixin:
                     event.acceptProposedAction()
                     return True # Handled emulator case (profiles found or dialog cancelled)
                 elif emulator_key:  # Emulator detected but no profiles found
-                    logging.warning(f"{emulator_key} detected, but no profiles found in its standard directory.")
-                    QMessageBox.warning(
-                        mw, f"{emulator_key.capitalize()} Profiles",
-                        f"No game profiles were found for {emulator_key.capitalize()}.\n\n"
-                        "This could be because:\n"
-                        "- You haven't played any games yet\n"
-                        "- The emulator is installed in a non-standard location\n"
-                        "- The save files are stored in a custom location")
+                    # If we already prompted the user for a path, avoid showing an extra 'no profiles' popup
+                    skip_no_profiles_popup = False
+                    try:
+                        # If profiles_data is [] because of a user cancel/prompt path invalidation, we skip popup
+                        skip_no_profiles_popup = True if isinstance(profiles_data, list) and len(profiles_data) == 0 else False
+                    except Exception:
+                        skip_no_profiles_popup = False
+
+                    if not skip_no_profiles_popup and profiles_data is not None:
+                        logging.warning(f"{emulator_key} detected, but no profiles found in its standard directory.")
+                        QMessageBox.warning(
+                            mw, f"{emulator_key.capitalize()} Profiles",
+                            f"No game profiles were found for {emulator_key.capitalize()}.\n\n"
+                            "This could be because:\n"
+                            "- You haven't played any games yet\n"
+                            "- The emulator is installed in a non-standard location\n"
+                            "- The save files are stored in a custom location")
                     
                     # Hide the overlay if it's visible
                     self._hide_overlay_if_visible(mw)

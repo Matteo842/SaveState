@@ -100,7 +100,7 @@ def get_mgba_saves_path():
     log.warning(f"Could not find a valid mGBA save directory (Checked config savedir: '{config_save_dir}', config lastDir: '{last_rom_dir}', Default: '{default_save_dir}').")
     return None
 
-def find_mgba_profiles(executable_path: str | None = None) -> list[dict]:
+def find_mgba_profiles(executable_path: str | None = None) -> list[dict] | None:
     """
     Finds mGBA save files (.sav) in the standard save directory.
     Note: This currently does NOT find saves stored next to ROM files.
@@ -111,13 +111,13 @@ def find_mgba_profiles(executable_path: str | None = None) -> list[dict]:
     Returns:
         List of profile dicts: [{'id': 'save_name', 'name': 'save_name', 'paths': [full_path]}, ...]
     """
-    profiles = []
+    profiles: list[dict] = []
     log.info("Attempting to find mGBA profiles in standard save directory...")
 
     saves_dir = get_mgba_saves_path()
     if not saves_dir:
-        log.warning("Could not determine or find standard mGBA saves directory. No profiles found via this method.")
-        return profiles # Empty list
+        log.warning("Could not determine or find standard mGBA saves directory. Signalling for user prompt.")
+        return None
 
     try:
         # Look for .sav files directly within the saves directory
@@ -151,8 +151,12 @@ def find_mgba_profiles(executable_path: str | None = None) -> list[dict]:
     except Exception as e:
         log.error(f"Unexpected error finding mGBA profiles: {e}", exc_info=True)
 
-    log.info(f"Found {len(profiles)} mGBA profiles in standard directory.")
-    return profiles
+    if profiles:
+        log.info(f"Found {len(profiles)} mGBA profiles in standard directory.")
+        return profiles
+    else:
+        log.info("No mGBA profiles found. Signalling for user prompt.")
+        return None
 
 # Example Usage (Optional)
 if __name__ == "__main__":

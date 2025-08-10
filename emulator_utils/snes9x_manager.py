@@ -88,7 +88,7 @@ def _get_snes9x_save_dirs(executable_path: str | None = None) -> list[str]:
         log.warning("Could not find any potential Snes9x save directories (portable or standard).")
     return potential_dirs
 
-def find_snes9x_profiles(executable_path: str | None = None) -> list[dict]:
+def find_snes9x_profiles(executable_path: str | None = None) -> list[dict] | None:
     """
     Finds Snes9x save files (.srm) by checking various locations.
     Locations include portable (near executable) and standard OS paths.
@@ -100,14 +100,14 @@ def find_snes9x_profiles(executable_path: str | None = None) -> list[dict]:
     Returns:
         List of profile dicts: [{'id': 'save_name', 'name': 'save_name', 'paths': [full_path]}, ...]
     """
-    profiles = []
+    profiles: list[dict] = []
     log.info(f"Attempting to find Snes9x profiles... Executable path: {executable_path if executable_path else 'Not provided'}")
 
     save_dirs_to_check = _get_snes9x_save_dirs(executable_path)
 
     if not save_dirs_to_check:
-        log.warning("No Snes9x save directories found to scan. Cannot find profiles.")
-        return profiles
+        log.warning("No Snes9x save directories found to scan. Signalling for user prompt.")
+        return None
 
     all_found_files = {} # Per gestire duplicati da più percorsi che puntano allo stesso file
 
@@ -152,9 +152,13 @@ def find_snes9x_profiles(executable_path: str | None = None) -> list[dict]:
         except Exception as e:
             log.error(f"Unexpected error finding Snes9x profiles in '{saves_dir}': {e}", exc_info=True)
 
-    log.info(f"Found {len(profiles)} unique Snes9x profiles (.srm) across all checked directories.")
-    profiles.sort(key=lambda p: p.get('name', '')) # Sort for consistent output
-    return profiles
+    if profiles:
+        log.info(f"Found {len(profiles)} unique Snes9x profiles (.srm) across all checked directories.")
+        profiles.sort(key=lambda p: p.get('name', '')) # Sort for consistent output
+        return profiles
+    else:
+        log.info("No Snes9x profiles found. Signalling for user prompt.")
+        return None
 
 # Example Usage (Optional)
 if __name__ == "__main__":
