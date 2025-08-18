@@ -198,3 +198,4 @@ emulator_utils/test_xbox_reader.py
 SaveState-OneDir-Linux.spec
 SaveState-OneDir.spec
 new_ui_demo.py
+save_path_finder_old.py

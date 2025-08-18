@@ -37,11 +37,11 @@ class ScoreWeight(Enum):
     INSTALL_DIR_WALK = -500
     DEFAULT_LOCATION = 100
     CONTAINS_SAVES = 600
-    COMMON_SAVE_SUBDIR = 350
+    COMMON_SAVE_SUBDIR = 400  # Aumentato da 350 a 500 per dare più priorità alle cartelle save/saves
     DIRECT_MATCH = 100
     PARENT_MATCH = 100
     EXACT_NAME_MATCH = 400
-    DATA_FOLDER_PENALTY = -350
+    DATA_FOLDER_PENALTY = -500
     GENERIC_FOLDER_PENALTY = -150
     SHORT_NAME_PENALTY = -30
     INSTALL_DIR_NO_SAVES_PENALTY = -300
@@ -87,6 +87,12 @@ class PathScore:
         
         # Applica cap per userdata (ma non per Steam remote che ha priorità speciale)
         if self._is_in_userdata(path_lower) and not path_type['is_steam_remote']:
+            score = min(score, self.MAX_USERDATA_SCORE)
+            
+        # NUOVO: Applica cap anche alla cartella remote per "ucciderla" come nel vecchio codice
+        if path_type['is_steam_remote']:
+            # La cartella remote riceve 1500 punti ma viene limitata dal cap
+            # Questo la "uccide" e la fa scendere sotto i percorsi corretti
             score = min(score, self.MAX_USERDATA_SCORE)
             
         return score
