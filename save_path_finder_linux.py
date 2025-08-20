@@ -92,6 +92,7 @@ class LinuxSearchState:
     fuzzy_threshold_path_match: int = 0
     THEFUZZ_AVAILABLE: bool = False
     fuzz: Optional[Any] = None
+    MAX_USERDATA_SCORE: int = 1100  # Cap per Steam userdata (come Windows)
 
 def _build_state_from_thread_locals() -> LinuxSearchState:
     """Create an immutable snapshot of the current thread-local configuration."""
@@ -120,6 +121,7 @@ def _build_state_from_thread_locals() -> LinuxSearchState:
         fuzzy_threshold_path_match=_thread_local._fuzzy_threshold_path_match,
         THEFUZZ_AVAILABLE=_thread_local._THEFUZZ_AVAILABLE,
         fuzz=_thread_local._fuzz,
+        MAX_USERDATA_SCORE=_thread_local._MAX_USERDATA_SCORE,
     )
 
 if 'generate_abbreviations' not in globals():
@@ -543,6 +545,60 @@ def _is_potential_save_dir(
         logging.debug(f"_is_potential_save_dir: Determined '{dir_path}' as NOT potential.")
     return is_potential, has_actual_save_files_for_bonus
 
+def _is_in_userdata(path_lower: str, steam_userdata_path: str = None) -> bool:
+    """
+    Controlla se un percorso è all'interno di Steam userdata.
+    """
+    if not steam_userdata_path:
+        return False
+    
+    # Normalizza i percorsi per confronto cross-platform
+    userdata_check = steam_userdata_path.lower().replace('\\', '/')
+    path_check = path_lower.replace('\\', '/')
+    
+    return path_check.startswith(userdata_check)
+
+def _identify_path_type(path_lower: str, source_lower: str, steam_userdata_path: str = None) -> Dict[str, bool]:
+    """
+    Identifica il tipo di percorso per applicare le penalità appropriate.
+    """
+    # Controlla se è un percorso Steam remote
+    is_steam_remote = False
+    if steam_userdata_path:
+        # Normalizza source_lower e path per confronto cross-platform
+        source_check = source_lower.replace('\\', '/').lower()
+        path_check = path_lower.replace('\\', '/')
+        # Controlla sia nel source che nel path stesso
+        is_steam_remote = (('steam userdata' in source_check and '/remote' in source_check) or
+                         (steam_userdata_path.lower() in path_check and
+                          '/remote' in path_check))
+    
+    # Controlla se è un percorso Steam base (non remote)
+    is_steam_base = False
+    if steam_userdata_path:
+        path_check = path_lower.replace('\\', '/')
+        userdata_base = steam_userdata_path.lower().replace('\\', '/')
+        is_steam_base = (path_check.startswith(userdata_base) and not is_steam_remote)
+    
+    # Controlla se è in una posizione privilegiata (AppData, Documents, etc.)
+    is_prime_location = any(loc in path_lower for loc in [
+        '/home/', '/.local/share/', '/.config/', '/.steam/steam/userdata/',
+        'appdata', 'documents', 'saved games'
+    ])
+    
+    # Controlla se è un percorso di installazione (walk)
+    is_install_dir_walk = any(loc in path_lower for loc in [
+        '/usr/local/', '/opt/', '/snap/', '/var/', '/usr/share/',
+        'steamapps/common', 'steamapps/common'
+    ])
+    
+    return {
+        'is_steam_remote': is_steam_remote,
+        'is_steam_base': is_steam_base,
+        'is_prime_location': is_prime_location,
+        'is_install_dir_walk': is_install_dir_walk
+    }
+
 # Variabili globali per il modulo (caricate da config)
 _guesses_data = {}
 _checked_paths = set()
@@ -591,6 +647,14 @@ _other_cleaned_game_names = set()
 
 # Variabile per i percorsi noti, caricata da config
 _linux_known_save_locations: Dict[str, str] = {} 
+
+# Costanti per le penalità aggressive (come Windows)
+DATA_FOLDER_PENALTY = -800  # Penalità per cartella 'data'
+GENERIC_FOLDER_PENALTY = -400  # Penalità per altre cartelle generiche
+INSTALL_DIR_NO_SAVES_PENALTY = -800  # Penalità per install dir senza saves
+INSTALL_DIR_GENERIC_PENALTY = -600  # Penalità per cartelle generiche nell'install dir
+INSTALL_DIR_MCC_PENALTY = -1000  # Penalità specifica per cartelle problematiche come MCC
+BACKUP_DIRECTORY_PENALTY = -9999  # Penalità massima per cartelle dei backup del programma
 
 def _initialize_globals_from_config(game_name_raw, game_install_dir_raw, installed_steam_games_dict=None, steam_app_id_raw=None):
     """Carica le configurazioni e inizializza le variabili globali del modulo."""
@@ -697,6 +761,7 @@ def _initialize_globals_from_config(game_name_raw, game_install_dir_raw, install
 
     _thread_local._THEFUZZ_AVAILABLE = THEFUZZ_AVAILABLE
     _thread_local._fuzz = fuzz
+    _thread_local._MAX_USERDATA_SCORE = getattr(config, 'MAX_USERDATA_SCORE', 1100) # Carica il valore da config
 
     logging.debug(f"Linux Path Finder Initialized. Game: '{_thread_local._game_name_cleaned}', Abbreviations: {_thread_local._game_abbreviations_lower}")
 
@@ -828,6 +893,20 @@ def _add_guess(
     """
     normalized_path = os.path.normpath(os.path.abspath(path_found))
     path_found_lower = normalized_path.lower()
+
+    # NUOVO: Controllo immediato per cartelle dei backup del programma
+    try:
+        import config
+        backup_base_dir = config.get_default_backup_dir()
+        if backup_base_dir and backup_base_dir.lower() in path_found_lower:
+            logging.debug(f"Rejecting backup directory path: {normalized_path}")
+            # Aggiungi solo ai checked_paths per evitare di riprocessarlo
+            checked_paths.add(normalized_path)
+            return  # Esci immediatamente, non aggiungere ai risultati
+    except ImportError:
+        logging.warning("Could not import config for backup directory check")
+    except Exception as e:
+        logging.warning(f"Error checking backup directory: {e}")
 
     passes_strict_filter = False
     reason_for_pass = ""
@@ -1137,6 +1216,7 @@ def _final_sort_key_linux(item_tuple, state: Optional[LinuxSearchState] = None):
     source_description_set = data_dict.get('sources', set())
     source_description = next(iter(source_description_set)) if source_description_set else "UnknownSource"
     has_saves_hint_from_scan = data_dict.get('has_saves_hint', False)
+    steam_userdata_path = getattr(_thread_local, '_steam_userdata_path', None)
 
     score = 0
     path_lower_for_sorting = original_path.lower()
@@ -1155,6 +1235,16 @@ def _final_sort_key_linux(item_tuple, state: Optional[LinuxSearchState] = None):
     xdg_data_home = os.getenv('XDG_DATA_HOME', os.path.join(home_dir, ".local", "share"))
     steam_compatdata_generic_part = os.path.join("steamapps", "compatdata") 
     steam_userdata_generic_part = "userdata"
+
+    # Identifica il tipo di percorso per le penalità
+    path_type = _identify_path_type(path_lower_for_sorting, source_description.lower(), steam_userdata_path)
+    
+    # Calcola le penalità aggressive
+    penalties = _get_penalties(
+        basename_lower, has_saves_hint_from_scan,
+        path_type['is_prime_location'], path_type['is_steam_remote'], 
+        path_type['is_install_dir_walk'], path_lower_for_sorting
+    )
 
     # --- 1. PUNTEGGIO BASE PER LOCAZIONE ---
     if xdg_config_home.lower() in path_lower_for_sorting:
@@ -1240,23 +1330,38 @@ def _final_sort_key_linux(item_tuple, state: Optional[LinuxSearchState] = None):
     if steam_app_id and steam_app_id in path_lower_for_sorting:
         score += 300
 
-    # --- 11. MALUS PER PATH CONTENENTE FRAMMENTI BANNATI ---
+    # --- 11. APPLICA PENALITÀ AGGRESSIVE ---
+    score += penalties
+
+    # --- 12. MALUS PER PATH CONTENENTE FRAMMENTI BANNATI ---
     for banned_fragment in linux_banned_path_fragments_lower:
         if banned_fragment in path_lower_for_sorting:
             score -= 1000
             break
 
-    # --- 12. MALUS PER PATH TROPPO LUNGO ---
+    # --- 13. MALUS PER PATH TROPPO LUNGO ---
     path_length = len(original_path)
     if path_length > 200:
         score -= 50 * (path_length - 200) // 10
 
-    # --- 13. MALUS PER PATH TROPPO PROFONDO ---
+    # --- 14. MALUS PER PATH TROPPO PROFONDO ---
     path_depth = original_path.count(os.sep)
     if path_depth > 10:
         score -= 20 * (path_depth - 10)
 
-    # --- 14. BONUS PER SOURCE DESCRIPTION ---
+    # --- 15. APPLICA CAP PER STEAM USERDATA (come Windows) ---
+    if _is_in_userdata(path_lower_for_sorting, steam_userdata_path):
+        # Applica cap per userdata (ma non per Steam remote che ha priorità speciale)
+        if not path_type['is_steam_remote']:
+            score = min(score, state.MAX_USERDATA_SCORE)
+            
+        # NUOVO: Applica cap anche alla cartella remote per "ucciderla" come nel vecchio codice
+        if path_type['is_steam_remote']:
+            # La cartella remote riceve punti ma viene limitata dal cap
+            # Questo la "uccide" e la fa scendere sotto i percorsi corretti
+            score = min(score, state.MAX_USERDATA_SCORE)
+
+    # --- 16. BONUS PER SOURCE DESCRIPTION ---
     if "Proton" in source_description:
         score += 100
     elif "Steam" in source_description:
@@ -1265,3 +1370,56 @@ def _final_sort_key_linux(item_tuple, state: Optional[LinuxSearchState] = None):
         score += 50
 
     return (-score, path_lower_for_sorting)
+
+def _get_penalties(
+    basename_lower: str, contains_saves: bool, 
+    is_prime_location: bool, is_steam_remote: bool, is_install_dir_walk: bool,
+    path_lower: str = None
+) -> int:
+    """
+    Calcola le penalità aggressive per cartelle problematiche (come Windows).
+    """
+    penalty = 0
+    
+    # NUOVO: Penalità massima per cartelle dei backup del programma
+    if path_lower:
+        try:
+            # Importa config solo quando necessario per evitare dipendenze circolari
+            import config
+            backup_base_dir = config.get_default_backup_dir()
+            if backup_base_dir and backup_base_dir.lower() in path_lower:
+                penalty += BACKUP_DIRECTORY_PENALTY
+                logging.debug(f"Applied backup directory penalty (-9999) to: {path_lower}")
+                return penalty  # Ritorna subito, non serve controllare altro
+        except ImportError:
+            logging.warning("Could not import config for backup directory check")
+        except Exception as e:
+            logging.warning(f"Error checking backup directory: {e}")
+    
+    # Penalità per cartella 'data'
+    if (basename_lower == 'data' and not contains_saves and 
+        not is_prime_location and not is_steam_remote):
+        penalty += DATA_FOLDER_PENALTY
+        
+    # Penalità per altre cartelle generiche
+    elif (basename_lower in ['settings', 'config', 'cache', 'logs'] and 
+          not contains_saves and not is_prime_location and not is_steam_remote):
+        penalty += GENERIC_FOLDER_PENALTY
+        
+    # Penalità per cartelle di installazione
+    if is_install_dir_walk:
+        penalty += -500  # Penalità base per install dir walk
+        
+        # Penalità aggiuntiva se non contiene saves
+        if not contains_saves:
+            penalty += INSTALL_DIR_NO_SAVES_PENALTY
+            
+        # Penalità per cartelle generiche nell'install dir
+        if basename_lower in ['data', 'config', 'settings', 'cache']:
+            penalty += INSTALL_DIR_GENERIC_PENALTY
+            
+        # Penalità specifica per cartelle problematiche note
+        if basename_lower in ['mcc', 'halo', 'minecraft']:
+            penalty += INSTALL_DIR_MCC_PENALTY
+    
+    return penalty
