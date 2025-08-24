@@ -278,6 +278,9 @@ COMMON_PUBLISHERS = [
     'Kalypso Media',
     'Marvelous',
     'Nacon',
+    'Aspyr Media',
+    'aspyr-media',  # Formato Linux con trattino
+    'Aspyr',
     'NCSOFT',
     'Nexon',
     'NIS America',
@@ -372,6 +375,7 @@ COMMON_PUBLISHERS = [
     'Two and Thirty Software',
     'nomada studio' # GRIS
     'NBGI' # DarkSouls Remastered
+    'Ludeon Studios' # RimWorld
     
     # Aggiungi qui altri nomi che ti vengono in mente o che noti mancare!
 ]

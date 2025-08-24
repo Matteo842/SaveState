@@ -788,7 +788,8 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     _thread_local._linux_known_save_locations = {}
     _thread_local._current_steam_app_id = None
     _thread_local._game_title_original_sig_words_for_seq = []
-    _thread_local._guesses_data = {}
+    # NON inizializzare guesses_data qui - viene gestita separatamente per mantenere i percorsi Proton
+    # _thread_local._guesses_data = {}
     _thread_local._checked_paths = set()
     
     # Initialize fresh state for this search
@@ -796,6 +797,11 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     
     logging.info(f"LINUX_GUESS_SAVE_PATH: Starting search for '{game_name}' (AppID: {appid})")
 
+    # Inizializza guesses_data per tutti i giochi (Steam e non-Steam) - DEVE ESSERE PRIMA DI TUTTO
+    if not hasattr(_thread_local, '_guesses_data') or _thread_local._guesses_data is None:
+        _thread_local._guesses_data = {}
+    logging.info(f"LINUX_GUESS_SAVE_PATH: At start, guesses_data has {len(_thread_local._guesses_data)} items")
+    
     # Build a snapshot of state once and reuse it through the search
     state = _build_state_from_thread_locals()
 
@@ -815,7 +821,7 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
         except Exception as e:
             logging.error(f"LINUX_GUESS_SAVE_PATH: Error processing Steam Userdata: {e}")
 
-    # 2. Proton Compatdata (per giochi Windows via Proton)
+    # 2. Proton Compatdata (per giochi Windows via Proton) - MIGLIORATO
     if is_steam_game and appid:
         steam_base_paths_for_compat = [
             os.path.join(os.path.expanduser("~"), ".steam", "steam"),
@@ -825,18 +831,40 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
             compatdata_path = os.path.join(steam_base, 'steamapps', 'compatdata', appid, 'pfx')
             if os.path.isdir(compatdata_path):
                 _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, compatdata_path, f"Proton Prefix ({appid})", False, state.game_abbreviations_lower, state.current_steam_app_id, state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, state.other_game_abbreviations, state.game_name_cleaned, state)
+                
+                # NUOVO: Ricerca più profonda nella struttura Wine prefix
+                _search_proton_prefix_deep(compatdata_path, appid, state, cancellation_manager)
+                
+                # Ricerca standard per i frammenti esistenti
                 for fragment in state.proton_user_path_fragments:
                     proton_save_path = os.path.join(compatdata_path, fragment)
                     if os.path.isdir(proton_save_path):
                         _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, proton_save_path, f"Proton Prefix/{fragment} ({appid})", False, state.game_abbreviations_lower, state.current_steam_app_id, state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, state.other_game_abbreviations, state.game_name_cleaned, state)
                         _search_recursive(proton_save_path, 0, _thread_local._guesses_data, _thread_local._checked_paths, cancellation_manager, state)
 
+    # NUOVO: Ricerca Proton per giochi non-Steam (cerca in tutti i compatdata disponibili)
+    if not is_steam_game or not appid:
+        # Inizializza guesses_data PRIMA della ricerca Proton
+        if not hasattr(_thread_local, '_guesses_data') or _thread_local._guesses_data is None:
+            _thread_local._guesses_data = {}
+        logging.info(f"LINUX_GUESS_SAVE_PATH: Before Proton search, guesses_data has {len(_thread_local._guesses_data)} items")
+            
+        logging.info(f"LINUX_GUESS_SAVE_PATH: Starting Proton search for non-Steam game '{game_name}' (is_steam_game={is_steam_game}, appid={appid})")
+        _search_proton_for_non_steam_games(state, cancellation_manager)
+        logging.info(f"LINUX_GUESS_SAVE_PATH: Completed Proton search for non-Steam game '{game_name}'")
+        logging.info(f"LINUX_GUESS_SAVE_PATH: After Proton search, found {len(_thread_local._guesses_data)} total paths")
+    else:
+        logging.info(f"LINUX_GUESS_SAVE_PATH: Skipping Proton search for Steam game '{game_name}' (is_steam_game={is_steam_game}, appid={appid})")
+
     # 3. Directory di Installazione del Gioco
     if game_install_dir and os.path.isdir(game_install_dir):
+        logging.info(f"LINUX_GUESS_SAVE_PATH: Before install_dir search, guesses_data has {len(_thread_local._guesses_data)} items")
         logging.info(f"LINUX_GUESS_SAVE_PATH: Searching in install_dir '{game_install_dir}' (max_depth={_max_depth_generic})")
         _search_recursive(game_install_dir, 0, _thread_local._guesses_data, _thread_local._checked_paths, cancellation_manager, state)
+        logging.info(f"LINUX_GUESS_SAVE_PATH: After install_dir search, guesses_data has {len(_thread_local._guesses_data)} items")
     
     # 4. Percorsi XDG e Comuni Linux
+    logging.info(f"LINUX_GUESS_SAVE_PATH: Before XDG search, guesses_data has {len(_thread_local._guesses_data)} items")
     for loc_desc, base_path in state.linux_known_save_locations.items():
         if os.path.isdir(base_path):
             # Add the base path itself as a guess
@@ -849,10 +877,13 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
 
             # Recursively search within the base path
             _search_recursive(base_path, 0, _thread_local._guesses_data, _thread_local._checked_paths, cancellation_manager, state)
+    logging.info(f"LINUX_GUESS_SAVE_PATH: After XDG search, guesses_data has {len(_thread_local._guesses_data)} items")
 
     # 5. User's Home Directory (fallback)
+    logging.info(f"LINUX_GUESS_SAVE_PATH: Before home search, guesses_data has {len(_thread_local._guesses_data)} items")
     user_home = os.path.expanduser('~')
     _search_recursive(user_home, 0, _thread_local._guesses_data, _thread_local._checked_paths, cancellation_manager, state)
+    logging.info(f"LINUX_GUESS_SAVE_PATH: After home search, guesses_data has {len(_thread_local._guesses_data)} items")
 
     
     if not _thread_local._guesses_data:
@@ -893,6 +924,8 @@ def _add_guess(
     """
     normalized_path = os.path.normpath(os.path.abspath(path_found))
     path_found_lower = normalized_path.lower()
+    
+    logging.info(f"_add_guess: Processing path '{normalized_path}' with source '{source_description}'")
 
     # NUOVO: Controllo immediato per cartelle dei backup del programma
     try:
@@ -912,19 +945,120 @@ def _add_guess(
     reason_for_pass = ""
     current_game_name_explicitly_in_path = False
 
+    # NUOVO: Controllo speciale per percorsi Proton - essere più permissivi
+    is_proton_path = ("proton" in source_description.lower() or "pfx" in source_description.lower())
+    logging.info(f"_add_guess: Is Proton path: {is_proton_path}")
+    
+    # NUOVO: Controllo aggiuntivo per percorsi Proton con parole chiave specifiche del gioco
+    if is_proton_path and not passes_strict_filter:
+        logging.info(f"_add_guess: Checking Proton path for game keywords...")
+        logging.info(f"_add_guess: Game abbreviations: {game_abbreviations_lower}")
+        logging.info(f"_add_guess: Game name cleaned: {game_name_cleaned}")
+        logging.info(f"_add_guess: Source description: {source_description}")
+        
+        # Se il source_description contiene parole chiave del gioco, aggiungi sempre
+        for abbr in game_abbreviations_lower:
+            # Controlla sia l'abbreviazione pulita che la versione originale
+            if abbr.lower() in source_description.lower():
+                passes_strict_filter = True
+                reason_for_pass = f"Proton path with game keyword '{abbr}' in source description"
+                logging.info(f"Proton path '{normalized_path}' passed filter due to game keyword '{abbr}' in source")
+                break
+        
+        # NUOVO: Controllo aggiuntivo per nomi con spazi e caratteri speciali
+        if not passes_strict_filter and game_name_cleaned:
+            logging.info(f"_add_guess: Checking cleaned game name in source...")
+            # Normalizza il source_description per il confronto
+            source_clean = re.sub(r'[^a-zA-Z0-9\s]', '', source_description).lower()
+            source_clean = re.sub(r'\s+', ' ', source_clean).strip()
+            logging.info(f"_add_guess: Cleaned source: '{source_clean}'")
+            logging.info(f"_add_guess: Game name cleaned: '{game_name_cleaned}'")
+            
+            # Controlla se il nome del gioco pulito è nel source_description pulito
+            if game_name_cleaned in source_clean:
+                passes_strict_filter = True
+                reason_for_pass = f"Proton path with game name '{game_name_cleaned}' in source description"
+                logging.info(f"Proton path '{normalized_path}' passed filter due to game name '{game_name_cleaned}' in source")
+            
+            # NUOVO: Controlla anche se le parole del nome del gioco sono nel source
+            elif not passes_strict_filter:
+                logging.info(f"_add_guess: Checking individual words from game name...")
+                # Dividi il nome del gioco in parole
+                game_words = game_name_cleaned.split()
+                logging.info(f"_add_guess: Game words: {game_words}")
+                
+                # Controlla se almeno 2 parole del gioco sono nel source
+                matching_words = 0
+                for word in game_words:
+                    if len(word) > 2 and word in source_clean:  # Solo parole significative (>2 caratteri)
+                        matching_words += 1
+                        logging.info(f"_add_guess: Found matching word '{word}' in source")
+                
+                if matching_words >= 2:  # Richiedi almeno 2 parole per evitare falsi positivi
+                    passes_strict_filter = True
+                    reason_for_pass = f"Proton path with {matching_words} matching game words in source description"
+                    logging.info(f"Proton path '{normalized_path}' passed filter due to {matching_words} matching game words")
+            
+            # Controlla anche le abbreviazioni pulite
+            elif not passes_strict_filter:
+                logging.info(f"_add_guess: Checking cleaned abbreviations...")
+                for abbr in game_abbreviations_lower:
+                    abbr_clean = re.sub(r'[^a-zA-Z0-9\s]', '', abbr).lower()
+                    abbr_clean = re.sub(r'\s+', ' ', abbr_clean).strip()
+                    logging.info(f"_add_guess: Checking abbreviation '{abbr}' -> cleaned '{abbr_clean}'")
+                    if abbr_clean in source_clean:
+                        passes_strict_filter = True
+                        reason_for_pass = f"Proton path with cleaned game keyword '{abbr_clean}' in source description"
+                        logging.info(f"Proton path '{normalized_path}' passed filter due to cleaned game keyword '{abbr_clean}' in source")
+                        break
+    
     # Use passed argument instead of global variable
     for abbr in game_abbreviations_lower:
+        # NUOVO: Evita di aggiungere percorsi solo perché contengono numeri o parole troppo corte
+        if len(abbr) <= 2:
+            continue  # Salta abbreviazioni troppo corte (numeri, parole singole)
+            
         if abbr in path_found_lower:
             current_game_name_explicitly_in_path = True
             passes_strict_filter = True
             reason_for_pass = f"Current game name/abbr '{abbr}' in path."
+            logging.info(f"_add_guess: Path passed filter due to game name/abbr '{abbr}' in path")
             break
+    
+    # NUOVO: Controllo aggiuntivo per percorsi Proton - controlla le variazioni del nome del gioco
+    if not passes_strict_filter and is_proton_path:
+        logging.info(f"_add_guess: Checking for game name variations in Proton source...")
+        
+        # Controlla se il source_description contiene variazioni del nome del gioco
+        # Per "Baldur's Gate 3", cerca "baldur", "gate", "3" separatamente
+        game_name_variations = []
+        if game_name_cleaned:
+            # Dividi il nome pulito in parole
+            words = game_name_cleaned.split()
+            for word in words:
+                if len(word) > 2:  # Solo parole significative
+                    game_name_variations.append(word)
+        
+        logging.info(f"_add_guess: Game name variations to check: {game_name_variations}")
+        
+        # Controlla se almeno 2 parole del gioco sono nel source_description
+        matching_variations = 0
+        for variation in game_name_variations:
+            if variation in source_description.lower():
+                matching_variations += 1
+                logging.info(f"_add_guess: Found matching variation '{variation}' in source")
+        
+        if matching_variations >= 2:  # Richiedi almeno 2 parole per evitare falsi positivi
+            passes_strict_filter = True
+            reason_for_pass = f"Proton path with {matching_variations} matching game name variations in source"
+            logging.info(f"Proton path '{normalized_path}' passed filter due to {matching_variations} matching variations")
     
     # Check for common save subdirectories
     if not passes_strict_filter:
         if path_found_lower in linux_common_save_subdirs_lower:
             passes_strict_filter = True
             reason_for_pass = "Common save subdirectory."
+            logging.info(f"_add_guess: Path passed filter due to common save subdirectory")
     
     # Check for other cleaned game names
     if not passes_strict_filter:
@@ -932,6 +1066,7 @@ def _add_guess(
             if other_name in path_found_lower:
                 passes_strict_filter = True
                 reason_for_pass = f"Other game name '{other_name}' in path."
+                logging.info(f"_add_guess: Path passed filter due to other game name '{other_name}' in path")
                 break
     
     # Check for other game abbreviations
@@ -940,6 +1075,7 @@ def _add_guess(
             if other_abbr in path_found_lower:
                 passes_strict_filter = True
                 reason_for_pass = f"Other game abbreviation '{other_abbr}' in path."
+                logging.info(f"_add_guess: Path passed filter due to other game abbreviation '{other_abbr}' in path")
                 break
     
     # Check for Steam AppID
@@ -948,12 +1084,44 @@ def _add_guess(
         if appid_str in path_found_lower:
             passes_strict_filter = True
             reason_for_pass = f"Steam AppID '{appid_str}' in path."
+            logging.info(f"_add_guess: Path passed filter due to Steam AppID '{appid_str}' in path")
     
     # Final check for cleaned game name
     if not passes_strict_filter and game_name_cleaned:
         if game_name_cleaned in path_found_lower:
             passes_strict_filter = True
             reason_for_pass = f"Cleaned game name '{game_name_cleaned}' in path."
+            logging.info(f"_add_guess: Path passed filter due to cleaned game name '{game_name_cleaned}' in path")
+    
+    # NUOVO: Per percorsi Proton, essere più permissivi se non abbiamo ancora passato il filtro
+    if not passes_strict_filter and is_proton_path:
+        logging.info(f"_add_guess: Proton path '{normalized_path}' didn't pass initial filters, checking similarity...")
+        # Controlla se il basename del percorso ha una similarità decente con il nome del gioco
+        if state and state.fuzz and state.THEFUZZ_AVAILABLE:
+            try:
+                path_basename = os.path.basename(normalized_path)
+                cleaned_folder = re.sub(r'[^a-zA-Z0-9\s]', '', path_basename).lower()
+                cleaned_folder = re.sub(r'\s+', ' ', cleaned_folder).strip()
+                if cleaned_folder:
+                    # Calcola similarità con il nome del gioco pulito
+                    similarity = state.fuzz.ratio(game_name_cleaned, cleaned_folder)
+                    logging.info(f"_add_guess: Proton path similarity: {similarity}% for '{cleaned_folder}' vs '{game_name_cleaned}'")
+                    if similarity >= 70:  # Soglia più bassa per Proton
+                        passes_strict_filter = True
+                        reason_for_pass = f"Proton path with game name similarity ({similarity}%)"
+                        logging.debug(f"Proton path '{normalized_path}' passed filter with similarity {similarity}%")
+                    
+                    # NUOVO: Per percorsi Proton con alta similarità (>90%), aggiungi sempre
+                    if similarity >= 90:
+                        passes_strict_filter = True
+                        reason_for_pass = f"Proton path with HIGH similarity ({similarity}%) - ALWAYS ADD"
+                        logging.info(f"Proton path '{normalized_path}' ALWAYS ADDED with HIGH similarity {similarity}%")
+            except Exception as e:
+                logging.warning(f"Error calculating Proton path similarity for '{normalized_path}': {e}")
+        else:
+            logging.info(f"_add_guess: Fuzzy matching not available for Proton path '{normalized_path}'")
+    
+    logging.info(f"_add_guess: Final filter result for '{normalized_path}': {passes_strict_filter} (Reason: {reason_for_pass})")
     
     # Conservative fuzzy filter against other installed games (like Windows)
     if passes_strict_filter and state and state.installed_steam_games_dict and state.fuzz and state.THEFUZZ_AVAILABLE:
@@ -975,6 +1143,7 @@ def _add_guess(
                         # Reject this guess as it very likely belongs to another game
                         passes_strict_filter = False
                         reason_for_pass = f"Rejected: fuzzy matches other game '{other_name}' (ratio {ratio})"
+                        logging.info(f"_add_guess: Path rejected due to fuzzy match with other game '{other_name}' (ratio {ratio})")
                         break
         except Exception as e:
             logging.warning(f"Other-games fuzzy filter error for '{normalized_path}': {e}")
@@ -989,6 +1158,9 @@ def _add_guess(
             "explicit_name_match": current_game_name_explicitly_in_path,
             "steam_app_id": str(current_steam_app_id) if current_steam_app_id else None
         }
+        logging.info(f"Added Proton path to guesses: {normalized_path} (Reason: {reason_for_pass})")
+    else:
+        logging.info(f"Proton path rejected by filter: {normalized_path} (Source: {source_description})")
     
     # Add to checked paths regardless of filter
     checked_paths.add(normalized_path)
@@ -1361,7 +1533,20 @@ def _final_sort_key_linux(item_tuple, state: Optional[LinuxSearchState] = None):
             # Questo la "uccide" e la fa scendere sotto i percorsi corretti
             score = min(score, state.MAX_USERDATA_SCORE)
 
-    # --- 16. BONUS PER SOURCE DESCRIPTION ---
+    # --- 16. BONUS PER PERCORSI PROTON (NUOVO) ---
+    if "proton" in source_description.lower() or "pfx" in path_lower_for_sorting:
+        score += 200  # Bonus per percorsi Proton
+        logging.debug(f"Applied Proton bonus (+200) to: {original_path}")
+        
+        # Bonus extra per percorsi Windows standard trovati in Proton
+        if any(windows_path in path_lower_for_sorting for windows_path in [
+            'appdata/local', 'appdata/roaming', 'appdata/locallow',
+            'documents', 'saved games', 'my games', 'my documents'
+        ]):
+            score += 150  # Bonus per percorsi Windows standard
+            logging.debug(f"Applied Windows standard path bonus (+150) to: {original_path}")
+
+    # --- 17. BONUS PER SOURCE DESCRIPTION ---
     if "Proton" in source_description:
         score += 100
     elif "Steam" in source_description:
@@ -1423,3 +1608,264 @@ def _get_penalties(
             penalty += INSTALL_DIR_MCC_PENALTY
     
     return penalty
+
+def _search_proton_prefix_deep(compatdata_path: str, appid: str, state: LinuxSearchState, cancellation_manager=None):
+    """
+    Ricerca profonda nella struttura Wine prefix per trovare percorsi di salvataggio Windows.
+    """
+    try:
+        # Percorsi Windows standard da cercare nel Wine prefix
+        windows_standard_paths = [
+            "drive_c/users/steamuser/AppData/Local",
+            "drive_c/users/steamuser/AppData/Roaming", 
+            "drive_c/users/steamuser/Documents",
+            "drive_c/users/steamuser/Saved Games",
+            "drive_c/users/steamuser/My Documents",
+            "drive_c/users/steamuser/AppData/LocalLow",
+            "drive_c/users/steamuser/AppData/Roaming",
+            "drive_c/users/steamuser/My Games",
+            "drive_c/users/steamuser/My Documents/My Games"
+        ]
+        
+        # Cerca anche varianti del nome utente
+        wine_user_variants = ["steamuser", "steam", "user", "default", "wine"]
+        
+        for user_variant in wine_user_variants:
+            for windows_path in windows_standard_paths:
+                # Sostituisci 'steamuser' con la variante corrente
+                path_with_variant = windows_path.replace("steamuser", user_variant)
+                full_path = os.path.join(compatdata_path, path_with_variant)
+                
+                if os.path.isdir(full_path):
+                    logging.debug(f"Found Windows path in Proton: {full_path}")
+                    
+                    # Aggiungi il percorso base
+                    _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, 
+                              full_path, f"Proton Windows Path/{path_with_variant} ({appid})", 
+                              False, state.game_abbreviations_lower, state.current_steam_app_id, 
+                              state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, 
+                              state.other_game_abbreviations, state.game_name_cleaned, state)
+                    
+                    # Ricerca ricorsiva più profonda per questo percorso Windows
+                    _search_recursive(full_path, 0, _thread_local._guesses_data, 
+                                   _thread_local._checked_paths, cancellation_manager, state)
+                    
+                    # Cerca direttamente per il nome del gioco in questo percorso
+                    for abbr_or_name in _thread_local._game_abbreviations:
+                        game_specific_path = os.path.join(full_path, abbr_or_name)
+                        if os.path.isdir(game_specific_path):
+                            _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, 
+                                      game_specific_path, f"Proton Windows Path/{path_with_variant}/{abbr_or_name} ({appid})", 
+                                      False, state.game_abbreviations_lower, state.current_steam_app_id, 
+                                      state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, 
+                                      state.other_game_abbreviations, state.game_name_cleaned, state)
+                            
+                            # Ricerca ricorsiva anche nella cartella specifica del gioco
+                            _search_recursive(game_specific_path, 0, _thread_local._guesses_data, 
+                                           _thread_local._checked_paths, cancellation_manager, state)
+        
+        # Ricerca aggiuntiva per cartelle specifiche del gioco in posizioni comuni
+        common_game_locations = [
+            "drive_c/Program Files",
+            "drive_c/Program Files (x86)", 
+            "drive_c/Users/steamuser/AppData/Local",
+            "drive_c/Users/steamuser/AppData/Roaming",
+            "drive_c/Users/steamuser/Documents",
+            "drive_c/Users/steamuser/Saved Games"
+        ]
+        
+        for location in common_game_locations:
+            for user_variant in wine_user_variants:
+                location_with_variant = location.replace("steamuser", user_variant)
+                full_location = os.path.join(compatdata_path, location_with_variant)
+                
+                if os.path.isdir(full_location):
+                    # Cerca per il nome del gioco in questa posizione
+                    for abbr_or_name in _thread_local._game_abbreviations:
+                        game_path = os.path.join(full_location, abbr_or_name)
+                        if os.path.isdir(game_path):
+                            _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, 
+                                      game_path, f"Proton Game Location/{location_with_variant}/{abbr_or_name} ({appid})", 
+                                      False, state.game_abbreviations_lower, state.current_steam_app_id, 
+                                      state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, 
+                                      state.other_game_abbreviations, state.game_name_cleaned, state)
+                            
+                            # Ricerca ricorsiva nella cartella del gioco
+                            _search_recursive(game_path, 0, _thread_local._guesses_data, 
+                                           _thread_local._checked_paths, cancellation_manager, state)
+                            
+    except Exception as e:
+        logging.error(f"Error in _search_proton_prefix_deep for {compatdata_path}: {e}")
+
+def _search_proton_for_non_steam_games(state: LinuxSearchState, cancellation_manager=None):
+    """
+    Cerca percorsi Proton per giochi non-Steam, esplorando tutti i compatdata disponibili.
+    """
+    try:
+        steam_base_paths_for_compat = [
+            os.path.join(os.path.expanduser("~"), ".steam", "steam"),
+            os.path.join(os.path.expanduser("~"), ".local", "share", "Steam")
+        ]
+        
+        for steam_base in steam_base_paths_for_compat:
+            compatdata_base = os.path.join(steam_base, 'steamapps', 'compatdata')
+            if not os.path.isdir(compatdata_base):
+                continue
+                
+            # Lista tutti i compatdata disponibili
+            try:
+                compatdata_folders = [d for d in os.listdir(compatdata_base) 
+                                    if d.isdigit() and os.path.isdir(os.path.join(compatdata_base, d))]
+            except (OSError, PermissionError):
+                continue
+                
+            for appid_folder in compatdata_folders:
+                if cancellation_manager and cancellation_manager.check_cancelled():
+                    return
+                    
+                pfx_path = os.path.join(compatdata_base, appid_folder, 'pfx')
+                if os.path.isdir(pfx_path):
+                    # Cerca percorsi Windows standard in questo prefix
+                    _search_proton_prefix_deep(pfx_path, appid_folder, state, cancellation_manager)
+                    
+                    # Cerca anche direttamente per il nome del gioco corrente
+                    _search_game_specific_in_proton(pfx_path, appid_folder, state, cancellation_manager)
+                
+    except Exception as e:
+        logging.error(f"Error in _search_proton_for_non_steam_games: {e}")
+
+def _search_fuzzy_matches_in_proton_dir(base_path: str, path_variant: str, appid: str, state: LinuxSearchState, cancellation_manager=None):
+    """Helper function per la ricerca fuzzy in directory Proton (versione ottimizzata)."""
+    try:
+        import thefuzz
+        items_found = os.listdir(base_path)
+        
+        for item in items_found:
+            item_path = os.path.join(base_path, item)
+            if not os.path.isdir(item_path):
+                continue
+                
+            # Calcola similarità con tutte le varianti del nome del gioco
+            best_match_score = 0
+            for game_name_variant in _thread_local._game_abbreviations:
+                normalized_item = item.lower().replace(' ', '').replace('-', '').replace('_', '').replace("'", '')
+                normalized_game = game_name_variant.lower().replace(' ', '').replace('-', '').replace('_', '').replace("'", '')
+                similarity = thefuzz.fuzz.ratio(normalized_item, normalized_game)
+                if similarity > best_match_score:
+                    best_match_score = similarity
+            
+            # Se la similarità è alta (>70%), considera una corrispondenza
+            if best_match_score > 70:
+                _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, 
+                          item_path, f"Proton Fuzzy Match/{path_variant}/{item} (AppID: {appid}, Score: {best_match_score}%)", 
+                          False, state.game_abbreviations_lower, state.current_steam_app_id, 
+                          state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, 
+                          state.other_game_abbreviations, state.game_name_cleaned, state)
+                
+                _search_recursive(item_path, 0, _thread_local._guesses_data, 
+                               _thread_local._checked_paths, cancellation_manager, state)
+                
+                # Cerca sottocartelle di salvataggio
+                for save_subdir in state.linux_common_save_subdirs_lower:
+                    save_path = os.path.join(item_path, save_subdir)
+                    if os.path.isdir(save_path):
+                        _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, 
+                                  save_path, f"Proton Fuzzy Match/{path_variant}/{item}/{save_subdir} (AppID: {appid})", 
+                                  False, state.game_abbreviations_lower, state.current_steam_app_id, 
+                                  state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, 
+                                  state.other_game_abbreviations, state.game_name_cleaned, state)
+                        _search_recursive(save_path, 0, _thread_local._guesses_data, 
+                                       _thread_local._checked_paths, cancellation_manager, state)
+            
+            # Cerca anche nelle sottocartelle (per casi come "Larian Studios/Baldur's Gate 3")
+            try:
+                sub_items = os.listdir(item_path)
+                for sub_item in sub_items:
+                    sub_item_path = os.path.join(item_path, sub_item)
+                    if os.path.isdir(sub_item_path):
+                        best_sub_match_score = 0
+                        for game_name_variant in _thread_local._game_abbreviations:
+                            normalized_sub_item = sub_item.lower().replace(' ', '').replace('-', '').replace('_', '').replace("'", '')
+                            normalized_game = game_name_variant.lower().replace(' ', '').replace('-', '').replace('_', '').replace("'", '')
+                            sub_similarity = thefuzz.fuzz.ratio(normalized_sub_item, normalized_game)
+                            if sub_similarity > best_sub_match_score:
+                                best_sub_match_score = sub_similarity
+                        
+                        if best_sub_match_score > 70:
+                            _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, 
+                                      sub_item_path, f"Proton Sub-Dir Match/{path_variant}/{item}/{sub_item} (AppID: {appid}, Score: {best_sub_match_score}%)", 
+                                      False, state.game_abbreviations_lower, state.current_steam_app_id, 
+                                      state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, 
+                                      state.other_game_abbreviations, state.game_name_cleaned, state)
+                            _search_recursive(sub_item_path, 0, _thread_local._guesses_data, 
+                                           _thread_local._checked_paths, cancellation_manager, state)
+            except OSError:
+                continue
+                
+    except ImportError:
+        pass  # thefuzz non disponibile
+    except OSError:
+        pass  # Errore nell'accesso alla directory
+
+def _search_game_specific_in_proton(pfx_path: str, appid: str, state: LinuxSearchState, cancellation_manager=None):
+    """
+    Cerca specificamente per il gioco corrente in un prefix Proton.
+    """
+    try:
+        # Ricerca specifica del gioco nel prefix Proton
+        # Percorsi Windows dove cercare il gioco specifico
+        game_search_paths = [
+            "drive_c/users/steamuser/AppData/Local",
+            "drive_c/users/steamuser/AppData/Roaming",
+            "drive_c/users/steamuser/Documents",
+            "drive_c/users/steamuser/Saved Games",
+            "drive_c/users/steamuser/My Games",
+            "drive_c/Program Files",
+            "drive_c/Program Files (x86)"
+        ]
+        
+        # Varianti del nome utente
+        user_variants = ["steamuser", "steam", "user", "default", "wine"]
+        
+        for user_variant in user_variants:
+            for base_path in game_search_paths:
+                path_with_variant = base_path.replace("steamuser", user_variant)
+                full_base_path = os.path.join(pfx_path, path_with_variant)
+                
+                if not os.path.isdir(full_base_path):
+                    continue
+                
+                # Cerca per il nome del gioco corrente
+                for game_name_variant in _thread_local._game_abbreviations:
+                    game_path = os.path.join(full_base_path, game_name_variant)
+                    if os.path.isdir(game_path):
+                        # Aggiungi il percorso principale del gioco
+                        _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, 
+                                  game_path, f"Proton Non-Steam Game/{path_with_variant}/{game_name_variant} (AppID: {appid})", 
+                                  False, state.game_abbreviations_lower, state.current_steam_app_id, 
+                                  state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, 
+                                  state.other_game_abbreviations, state.game_name_cleaned, state)
+                        
+                        # Ricerca ricorsiva nella cartella del gioco
+                        _search_recursive(game_path, 0, _thread_local._guesses_data, 
+                                       _thread_local._checked_paths, cancellation_manager, state)
+                        
+                        # Cerca anche sottocartelle comuni di salvataggio
+                        common_save_subdirs = ['Saves', 'Save', 'Savegames', 'SaveGames', 'PlayerProfiles', 'Profiles']
+                        for save_subdir in common_save_subdirs:
+                            save_path = os.path.join(game_path, save_subdir)
+                            if os.path.isdir(save_path):
+                                _add_guess(_thread_local._guesses_data, _thread_local._checked_paths, 
+                                          save_path, f"Proton Non-Steam Game/{path_with_variant}/{game_name_variant}/{save_subdir} (AppID: {appid})", 
+                                          False, state.game_abbreviations_lower, state.current_steam_app_id, 
+                                          state.linux_common_save_subdirs_lower, state.other_cleaned_game_names, 
+                                          state.other_game_abbreviations, state.game_name_cleaned, state)
+                                
+                                # Ricerca ricorsiva anche nelle sottocartelle di salvataggio
+                                _search_recursive(save_path, 0, _thread_local._guesses_data, 
+                                               _thread_local._checked_paths, cancellation_manager, state)
+                
+                # Cerca anche per corrispondenze fuzzy
+                _search_fuzzy_matches_in_proton_dir(full_base_path, path_with_variant, appid, state, cancellation_manager)
+    except Exception as e:
+        logging.error(f"Error in _search_game_specific_in_proton for {pfx_path}: {e}")
