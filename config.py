@@ -574,6 +574,44 @@ MAX_SHALLOW_EXPLORE_DEPTH_LINUX = 1
 
 # <<< FINE COSTANTI LINUX SCORING & DEPTH >>>
 
+# --- Performance toggles for Linux save-path scanning (safe defaults) ---
+# These allow dialing search breadth/depth depending on environment (e.g., VM with synthetic folders).
+LINUX_ENABLE_STEAM_USERDATA_REMOTE_SCAN = True
+LINUX_ENABLE_PROTON_DEEP_SCAN_STEAM = True
+LINUX_ENABLE_PROTON_SCAN_NONSTEAM = True
+LINUX_MAX_COMPATDATA_APPIDS_NONSTEAM = 8  # Limit how many compatdata prefixes to scan for non-Steam
+LINUX_SKIP_HOME_FALLBACK = False          # Set True to skip scanning the entire home directory
+LINUX_SKIP_KNOWN_LOCATIONS_COMPAT_RECURSE_IF_PROTON_ENABLED = True  # Avoid double-recursing compatdata if Proton scan is on
+LINUX_ENABLE_SNAP_SEARCH = True
+LINUX_ENABLE_FUZZY_FILTER_OTHER_GAMES = True
+LINUX_MAX_DIRECTORIES_TO_EXPLORE = 200    # Global cap across a single search run
+
+# Default directories to skip during Linux recursive search (basenames, lowercased match)
+LINUX_SKIP_DIRECTORIES = {
+    # Desktop/user clutter
+    'downloads', 'pictures', 'videos', 'music', 'templates', 'public', 'trash', 'screenshots',
+    # Generic caches and system dirs
+    '.cache', 'cache', 'caches', 'logs', 'log', 'gpucache', 'shadercache', 'blob_storage',
+    'code cache', 'local storage', 'session storage', 'videoDecodestats'.lower(), 'gpuCache'.lower(),
+    # GNOME/system bits
+    'gnome-shell', 'gnome-session', 'dconf', 'ibus', 'ibus-table', 'keyrings', 'tracker3', 'pulse', 'thumbnails',
+    # Snap/Flatpak helpers
+    'snap-store', 'snapd-desktop-integration', 'flatpak',
+    # Editors/browsers heavy trees
+    'code', 'vscode', 'extensions', 'workspaceStorage'.lower(), 'globalStorage'.lower(), 'resources', 'dist', 'out', 'node_modules',
+    'firefox', 'chromium',
+}
+
+# Strict save evidence patterns to avoid false positives in generic app folders
+LINUX_STRICT_EVIDENCE_MODE = True
+LINUX_STRICT_SAVE_EXTENSIONS = {
+    'sav', 'save', 'sl2', 'state', 'gci', 'srm', 'mcr', 'mc', 'ess', 'fos', 'lsf', 'lsb', 'eep', 'fla'
+}
+LINUX_STRICT_SAVE_FILENAME_KEYWORDS = {
+    'save', 'saves', 'slot', 'slots', 'profile', 'profiles', 'player', 'players',
+    'world', 'character', 'quicksave', 'autosave', 'persistent'
+}
+
 # Set di sottostringhe comuni (minuscole) trovate nei nomi dei file di salvataggio
 # Usato per il check euristico del contenuto di una cartella
 COMMON_SAVE_FILENAMES = {
