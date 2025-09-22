@@ -1114,6 +1114,29 @@ def _add_guess(
             reason_for_pass = f"Current game name/abbr '{abbr}' in path."
             # logging.info(f"_add_guess: Path passed filter due to game name/abbr '{abbr}' in path")
             break
+
+    # NUOVO: Consenti match tramite acronimo del basename (es. 'FasterThanLight' -> 'FTL')
+    if not passes_strict_filter:
+        try:
+            base_raw = os.path.basename(normalized_path)
+            # Prima prova tokenizzazione su separatori
+            parts = re.split(r'[\s_\-]+', base_raw)
+            initials = ''
+            if len(parts) > 1:
+                initials = ''.join(p[0] for p in parts if p and p[0].isascii())
+            else:
+                # CamelCase tokens
+                camel_tokens = re.findall(r'[A-Z0-9][a-z0-9]*', base_raw)
+                if camel_tokens:
+                    initials = ''.join(t[0] for t in camel_tokens if t and t[0].isascii())
+            if initials:
+                initials_lower = initials.lower()
+                game_compact = (game_name_cleaned or '').replace(' ', '')
+                if initials_lower in game_abbreviations_lower or initials_lower == game_compact:
+                    passes_strict_filter = True
+                    reason_for_pass = f"Basename acronym '{initials}' matches game"
+        except Exception:
+            pass
     
     # NUOVO: Controllo aggiuntivo per percorsi Proton - controlla le variazioni del nome del gioco
     if not passes_strict_filter and is_proton_path:
@@ -1368,6 +1391,7 @@ def _search_recursive(
 
     # Tentativo di aggiungere la directory corrente se rilevante
     basename_current_path_lower = os.path.basename(start_dir.lower()) 
+    basename_current_path_raw = os.path.basename(start_dir)
     is_potential_current, has_saves_hint_current = _is_potential_save_dir(
         start_dir,
         state.game_name_cleaned,
@@ -1384,7 +1408,7 @@ def _search_recursive(
     current_path_is_common_save_dir_flag = basename_current_path_lower in linux_common_save_subdirs_lower
 
     for abbr in state.game_abbreviations_lower: 
-        if are_names_similar(abbr, basename_current_path_lower, 
+        if are_names_similar(abbr, basename_current_path_raw, 
                              game_title_sig_words_for_seq=game_title_original_sig_words_for_seq,
                              fuzzy_threshold=fuzzy_threshold_basename_match): 
             current_path_name_match_game = True
@@ -1508,10 +1532,10 @@ def _search_recursive(
                     item_is_game_match = True
                     logging.info(f"FOUND GAME MATCH: '{item_name}' matches abbreviation '{abbr}' (substring)")
                     break
-                # Then try fuzzy matching
-                elif are_names_similar(abbr, item_name_lower, 
-                                   game_title_sig_words_for_seq=game_title_original_sig_words_for_seq,
-                                   fuzzy_threshold=fuzzy_threshold_basename_match):
+                # Then try fuzzy/acronym-CamelCase matching using RAW name
+                elif are_names_similar(abbr, item_name, 
+                                       game_title_sig_words_for_seq=game_title_original_sig_words_for_seq,
+                                       fuzzy_threshold=fuzzy_threshold_basename_match):
                     item_is_game_match = True
                     logging.info(f"FOUND GAME MATCH: '{item_name}' matches abbreviation '{abbr}' (fuzzy)")
                     break
@@ -1713,7 +1737,15 @@ def _final_sort_key_linux(item_tuple, state: Optional[LinuxSearchState] = None):
             cleaned_folder_basename == game_name_cleaned or
             basename_lower in game_abbreviations_lower
         )
-        if in_home_but_not_xdg and basename_is_game and not has_saves_hint_from_scan:
+        # Inoltre, se l'acronimo delle iniziali del basename corrisponde esattamente al nome breve (es. 'FTL'), considera "nuda"
+        acronym_basename = ''.join([w[0] for w in re.findall(r'[A-Za-z0-9]+', os.path.basename(original_path)) if w])
+        acronym_matches_game = False
+        try:
+            if game_name_cleaned and 2 <= len(acronym_basename) <= 6:
+                acronym_matches_game = (acronym_basename.upper() == game_name_cleaned.replace(' ', '').upper())
+        except Exception:
+            acronym_matches_game = False
+        if in_home_but_not_xdg and (basename_is_game or acronym_matches_game) and not has_saves_hint_from_scan:
             score -= 700
     except Exception:
         pass
