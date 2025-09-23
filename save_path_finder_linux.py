@@ -1590,6 +1590,10 @@ def _search_recursive(
             elif item_is_container_dir:
                 should_recurse_strong = True
                 recursion_decision_reason = "item_is_container_dir"
+            # NEW: Under Unity3D container (Company/Game structure), always go one level deeper
+            elif 'unity3d' in start_dir.lower():
+                should_recurse_strong = True
+                recursion_decision_reason = "under_unity3d_container"
             elif sub_is_potential: 
                 should_recurse_strong = True
                 recursion_decision_reason = "sub_is_potential_itself"

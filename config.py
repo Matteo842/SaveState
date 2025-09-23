@@ -374,6 +374,7 @@ COMMON_PUBLISHERS = [
     'NBGI' # DarkSouls Remastered
     'aspyr-media' # civilization 6
     'Ludeon Studios' # RimWorld
+    'Dodge Roll' # enter the gungeon
     
     # Aggiungi qui altri nomi che ti vengono in mente o che noti mancare!
 ]
