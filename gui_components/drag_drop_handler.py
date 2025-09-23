@@ -4,6 +4,8 @@ import platform
 import re # Per il parsing degli URL Steam
 from pathlib import Path
 import configparser # Per il parsing dei file .url
+import shlex
+import shutil
 
 from PySide6.QtWidgets import QMessageBox, QApplication
 from PySide6.QtCore import Qt, Slot, QObject, QTimer, QThread
@@ -275,10 +277,50 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                 
                 # Determina la directory di installazione
                 game_install_dir = None
-                if os.path.isfile(file_path):
-                    game_install_dir = os.path.normpath(os.path.dirname(file_path))
-                elif os.path.isdir(file_path):
-                    game_install_dir = os.path.normpath(file_path)
+                # Caso speciale Linux: se è un .desktop, risolvi 'Exec' come nel flow singolo
+                if platform.system() == "Linux" and file_path.lower().endswith('.desktop') and os.path.isfile(file_path):
+                    try:
+                        parsed_exec = None
+                        parsed_path_field = None
+                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as fdesk:
+                            for raw_line in fdesk:
+                                line = raw_line.strip()
+                                if not line or line.startswith('#'):
+                                    continue
+                                if line.startswith('Path=') and parsed_path_field is None:
+                                    parsed_path_field = line[len('Path='):].strip().strip('"')
+                                elif line.startswith('Exec=') and parsed_exec is None:
+                                    parsed_exec = line[len('Exec='):].strip()
+                                    # Rimuovi placeholder tipo %u, %U, %f, %F
+                                    parsed_exec = re.sub(r'%[fFuUdDnNkvVmMic]', '', parsed_exec).strip()
+                        if parsed_exec:
+                            # Usa shlex per gestire quote/spazi
+                            parts = shlex.split(parsed_exec)
+                            if parts:
+                                cand = parts[0]
+                                # Espandi variabili/tilde
+                                cand = os.path.expandvars(os.path.expanduser(cand))
+                                # Se relativo e Path= presente, risolvi rispetto a Path
+                                if not os.path.isabs(cand) and parsed_path_field:
+                                    base_dir = os.path.expandvars(os.path.expanduser(parsed_path_field))
+                                    cand = os.path.normpath(os.path.join(base_dir, cand))
+                                # Se ancora non assoluto, prova PATH
+                                if not os.path.isabs(cand):
+                                    which = shutil.which(cand)
+                                    if which:
+                                        cand = which
+                                if os.path.isabs(cand) and os.path.exists(cand):
+                                    game_install_dir = os.path.normpath(os.path.dirname(cand))
+                                    logging.info(f"DragDropHandler: .desktop Exec resolved to '{cand}'. Using install dir: '{game_install_dir}' for '{profile_name}'")
+                    except Exception as e_desktop_multi:
+                        logging.warning(f"Error resolving .desktop Exec in multi analysis for '{file_path}': {e_desktop_multi}")
+
+                # Fallback generico
+                if game_install_dir is None:
+                    if os.path.isfile(file_path):
+                        game_install_dir = os.path.normpath(os.path.dirname(file_path))
+                    elif os.path.isdir(file_path):
+                        game_install_dir = os.path.normpath(file_path)
                     
                 # Risolvi il percorso del collegamento se è un .lnk o .url
                 target_path = None
@@ -345,6 +387,17 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                         # ma mantieni 'profile_name' (la chiave del dialogo) invariato.
                         name_for_detection_thread = game_details['name']
             
+                # Se non Steam e il nome profilo è troppo breve (acronimo), prova a usare la cartella padre come nome per detection
+                name_for_detection_thread = name_for_detection_thread
+                try:
+                    if not is_steam_game and name_for_detection_thread and len(name_for_detection_thread) <= 4:
+                        # Deriva un nome più descrittivo dalla cartella di installazione (se CamelCase o contiene cifre)
+                        base_install = os.path.basename(game_install_dir) if game_install_dir else ''
+                        if base_install and len(base_install) > len(name_for_detection_thread):
+                            name_for_detection_thread = base_install
+                except Exception:
+                    pass
+
                 # Controlla di nuovo prima di creare il thread
                 if (hasattr(self, 'processing_cancelled') and self.processing_cancelled) or \
                    (hasattr(self.main_window, 'processing_cancelled') and self.main_window.processing_cancelled):
