@@ -245,6 +245,19 @@ def generate_abbreviations(game_name_raw, game_install_dir_raw=None):
             abbreviations.add(acr_caps)
             abbreviations.add(acr_caps.lower()) # Aggiungiamo anche la versione minuscola per Linux
 
+    # 2.5. Acronimo da CamelCase e cifre finali (es. ElectronicSuperJoy2 -> ESJ2)
+    # Suddivide il nome originale in token CamelCase e numerici, quindi costruisce l'acronimo
+    try:
+        tokens = re.findall(r'[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|\d+', name_for_caps_check)
+        tokens_filtered = [t for t in tokens if t and t.lower() not in ignore_words_lower]
+        if tokens_filtered:
+            acr_cam = ''.join([t if t.isdigit() else t[0].upper() for t in tokens_filtered])
+            if len(acr_cam) >= 2:
+                abbreviations.add(acr_cam)
+                abbreviations.add(acr_cam.lower())
+    except Exception:
+        pass
+
     # 3. Abbreviazione dalla directory di installazione (logica Linux esistente, leggermente adattata)
     if game_install_dir_raw and os.path.isdir(game_install_dir_raw): # Aggiunto check os.path.isdir
         install_dir_basename = os.path.basename(game_install_dir_raw)
