@@ -239,6 +239,13 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
             
         # Verifica se è una richiesta di avvio dell'analisi
         if 'action' in profile_data and profile_data['action'] == 'start_analysis':
+            # Assicurati che il CancellationManager non sia in stato cancellato da una run precedente
+            try:
+                if hasattr(self.main_window, 'cancellation_manager') and self.main_window.cancellation_manager:
+                    self.main_window.cancellation_manager.reset()
+                    logging.debug("DragDropHandler: cancellation_manager.reset() before starting multi-profile analysis")
+            except Exception as e:
+                logging.warning(f"DragDropHandler: Failed to reset cancellation_manager before analysis: {e}")
             # Ottieni la lista dei file da analizzare
             files_to_analyze = self.profile_dialog.get_files_to_analyze()
             
@@ -601,7 +608,7 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
             from emulator_utils.emulator_manager import is_known_emulator
             return is_known_emulator(file_path)
         except ImportError:
-            log.error("Failed to import is_known_emulator. Check circular dependencies or project structure.")
+            logging.error("Failed to import is_known_emulator. Check circular dependencies or project structure.")
             return 'not_found', None
 
     def _check_if_emulator(self, file_path):

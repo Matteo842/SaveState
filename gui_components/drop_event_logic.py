@@ -33,6 +33,14 @@ class DropEventMixin:
         if hasattr(self, 'main_window') and hasattr(self.main_window, 'processing_cancelled'):
             self.main_window.processing_cancelled = False
             logging.debug("DropEventMixin: main_window.processing_cancelled flag reset to False")
+
+        # Reset del CancellationManager condiviso per evitare stato di cancellazione persistente
+        try:
+            if hasattr(self, 'main_window') and hasattr(self.main_window, 'cancellation_manager') and self.main_window.cancellation_manager:
+                self.main_window.cancellation_manager.reset()
+                logging.debug("DropEventMixin: main_window.cancellation_manager.reset() called")
+        except Exception as e:
+            logging.warning(f"DropEventMixin: Failed to reset cancellation_manager: {e}")
         
         # Chiama il reset della classe padre se esiste
         if hasattr(super(), 'reset_internal_state'):
