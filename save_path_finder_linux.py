@@ -149,7 +149,7 @@ except ImportError:
 
 # Importa il modulo config effettivo
 import config # CORRETTO: import diretto
-import re # Aggiunto per clean_for_comparison
+import re
 
 # HELPER FUNCTIONS (Definite qui per garantire che siano disponibili)
 
@@ -642,7 +642,7 @@ def _identify_path_type(path_lower: str, source_lower: str, steam_userdata_path:
     # Controlla se è un percorso di installazione (walk)
     is_install_dir_walk = any(loc in path_lower for loc in [
         '/usr/local/', '/opt/', '/snap/', '/var/', '/usr/share/',
-        'steamapps/common', 'steamapps/common'
+        'steamapps/common'
     ])
     
     return {
@@ -890,7 +890,10 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
     if is_steam_game and appid:
         steam_base_paths_for_compat = [
             os.path.join(os.path.expanduser("~"), ".steam", "steam"),
-            os.path.join(os.path.expanduser("~"), ".local", "share", "Steam")
+            os.path.join(os.path.expanduser("~"), ".local", "share", "Steam"),
+            os.path.join(os.path.expanduser("~"), ".steam", "root"),
+            os.path.join(os.path.expanduser("~"), ".steam", "debian-installation"),
+            os.path.join(os.path.expanduser("~"), ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam")
         ]
         for steam_base in steam_base_paths_for_compat:
             compatdata_path = os.path.join(steam_base, 'steamapps', 'compatdata', appid, 'pfx')
@@ -2084,7 +2087,10 @@ def _search_proton_for_non_steam_games(state: LinuxSearchState, cancellation_man
     try:
         steam_base_paths_for_compat = [
             os.path.join(os.path.expanduser("~"), ".steam", "steam"),
-            os.path.join(os.path.expanduser("~"), ".local", "share", "Steam")
+            os.path.join(os.path.expanduser("~"), ".local", "share", "Steam"),
+            os.path.join(os.path.expanduser("~"), ".steam", "root"),
+            os.path.join(os.path.expanduser("~"), ".steam", "debian-installation"),
+            os.path.join(os.path.expanduser("~"), ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam")
         ]
         
         for steam_base in steam_base_paths_for_compat:

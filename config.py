@@ -324,7 +324,7 @@ COMMON_PUBLISHERS = [
     'Gaslamp Games', # Dungeons of Dredmor
     'Introversion Software', # Prison Architect
     'Klei Entertainment', # Don't Starve, Oxygen Not Included
-    'klei'
+    'klei',
     'Larian Studios', # Divinity, Baldur's Gate 3
     'Motion Twin', # Dead Cells
     'Ninja Kiwi', # Bloons
@@ -336,7 +336,7 @@ COMMON_PUBLISHERS = [
     'Supergiant Games', # Bastion, Hades
     'ZAUM', # Disco Elysium
     'sandfall', # Expedition 33
-    'RedCandleGames' # Nine Souls
+    'RedCandleGames', # Nine Souls
     'Studio MDHR', # Cuphead
     'Dogubomb', # BluePrince
     'Pineapple', # Spongebob
@@ -370,11 +370,11 @@ COMMON_PUBLISHERS = [
     'ZAUM Studio', # Disco Elysium
     'Nerial',
     'Two and Thirty Software',
-    'nomada studio' # GRIS
-    'NBGI' # DarkSouls Remastered
-    'aspyr-media' # civilization 6
-    'Ludeon Studios' # RimWorld
-    'Dodge Roll' # enter the gungeon
+    'nomada studio', # GRIS
+    'NBGI', # DarkSouls Remastered
+    'aspyr-media', # civilization 6
+    'Ludeon Studios', # RimWorld
+    'Dodge Roll', # enter the gungeon
     
     # Aggiungi qui altri nomi che ti vengono in mente o che noti mancare!
 ]
