@@ -19,7 +19,7 @@ Furthermore, SaveState features automatic detection of Steam games and even lets
 
 ---
 
-⚠️ Current Status (2025-08-05): This is a personal project currently **under active development.** 
+⚠️ Current Status (2025-10-04): This is a personal project currently **under active development.** 
 
 ---
 
@@ -69,7 +69,7 @@ Furthermore, SaveState features automatic detection of Steam games and even lets
 
 SaveState includes experimental support for automatically detecting save data locations for certain emulators, simplifying the profile creation process.
 
-**Currently Supported in version 1.4.2:**
+**Currently Supported in version 1.4.4:**
 
 |               |              |            |
 |---------------|--------------|------------|
@@ -79,7 +79,7 @@ SaveState includes experimental support for automatically detecting save data lo
 | Snes9x        | DeSmuME      | Cemu       |
 | Flycast       | ShadPs4      | SameBoy    |
 | PCSX2 \*      | xenia        | Eden (yuzu)|
-|               |              |            | 
+| melonDS       | Gopher64     |            | 
 
 ---
 \* PlayStation 2 memory card functionality in `SaveState` utilizes and adapts code from the [mymcplusplus](https://github.com/Adubbz/mymcplusplus) project, which is based on mymc+ by Florian Märkl and the original mymc by Ross Ridge. The mymcplusplus source code is distributed under the GNU General Public License v3.0. `SaveState`, including these derived components, is also licensed under GPLv3.
