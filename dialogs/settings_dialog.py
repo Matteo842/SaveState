@@ -3,7 +3,7 @@ import os
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QGroupBox,
     QComboBox, QSpinBox, QDialogButtonBox, QFileDialog, QStyle, QApplication,
-    QCheckBox, QMessageBox
+    QCheckBox, QMessageBox, QLabel
 )
 from PySide6.QtCore import Slot, QEvent
 
@@ -113,6 +113,25 @@ class SettingsDialog(QDialog):
         self.ui_settings_group.setLayout(ui_settings_layout)
         layout.addWidget(self.ui_settings_group)
 
+        # --- Restore JSON Backups Group ---
+        self.restore_json_group = QGroupBox() # Saved reference
+        restore_json_layout = QVBoxLayout()
+        
+        # Add info label
+        info_label = QLabel("If you lose your profiles or settings, you can restore them from the backup directory.")
+        info_label.setWordWrap(True)
+        restore_json_layout.addWidget(info_label)
+        
+        # Add restore button
+        self.restore_json_button = QPushButton()
+        restore_icon = style.standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
+        self.restore_json_button.setIcon(restore_icon)
+        self.restore_json_button.clicked.connect(self.handle_restore_json_backup)
+        restore_json_layout.addWidget(self.restore_json_button)
+        
+        self.restore_json_group.setLayout(restore_json_layout)
+        layout.addWidget(self.restore_json_group)
+
         layout.addStretch()
 
         # --- Dialog Buttons ---
@@ -145,6 +164,10 @@ class SettingsDialog(QDialog):
         # UI Settings Texts
         self.ui_settings_group.setTitle("UI Settings")
         self.enable_global_drag_checkbox.setText("Enable global mouse drag-to-show effect")
+        
+        # Restore JSON Texts
+        self.restore_json_group.setTitle("Restore Configuration Backups")
+        self.restore_json_button.setText("Restore Profiles and Settings from Backup")
 
         # Update texts in the compression combobox
         current_key_comp = self.comp_combobox.currentData() # Save current key
@@ -252,3 +275,47 @@ class SettingsDialog(QDialog):
 
         # Accept the dialog
         super().accept()
+    
+    @Slot()
+    def handle_restore_json_backup(self):
+        """Handle restoring JSON backups from the backup directory."""
+        import core_logic
+        
+        # Ask for confirmation
+        reply = QMessageBox.question(
+            self,
+            "Restore Configuration Backups",
+            "This will restore your profiles, settings, and favorites from the backup directory.\n\n"
+            "Current files will be backed up before restoration.\n\n"
+            "Do you want to proceed?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # Attempt to restore
+        try:
+            success = core_logic.restore_json_from_backup_root()
+            if success:
+                QMessageBox.information(
+                    self,
+                    "Restore Successful",
+                    "Configuration files have been restored successfully.\n\n"
+                    "Please restart the application for changes to take effect."
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Restore Failed",
+                    "Could not restore configuration files.\n\n"
+                    "Please check that backup files exist in the .savestate folder."
+                )
+        except Exception as e:
+            logging.error(f"Error restoring JSON backups: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred while restoring backups:\n\n{str(e)}"
+            )

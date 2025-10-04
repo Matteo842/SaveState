@@ -816,7 +816,8 @@ class MainWindow(QMainWindow):
         """Aggiorna lo stato abilitato/disabilitato dei pulsanti Azioni."""
         has_selection = self.profile_table_manager.has_selection()
         self.backup_button.setEnabled(has_selection)
-        self.restore_button.setEnabled(has_selection)
+        # Restore button is always enabled now - can restore from ZIP without a profile
+        self.restore_button.setEnabled(True)
         self.delete_profile_button.setEnabled(has_selection)
         self.manage_backups_button.setEnabled(has_selection)
         self.create_shortcut_button.setEnabled(has_selection)
@@ -904,7 +905,8 @@ class MainWindow(QMainWindow):
         self.profile_table_widget.setEnabled(enabled)
         has_selection = self.profile_table_manager.has_selection()
         self.backup_button.setEnabled(enabled and has_selection)
-        self.restore_button.setEnabled(enabled and has_selection)
+        # Restore button is always enabled - can restore from ZIP without a profile
+        self.restore_button.setEnabled(enabled)
         self.delete_profile_button.setEnabled(enabled and has_selection)
         self.manage_backups_button.setEnabled(enabled and has_selection)
         self.create_shortcut_button.setEnabled(enabled and has_selection)

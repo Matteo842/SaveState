@@ -453,36 +453,46 @@ class MainWindowHandlers:
     # Opens the restore dialog and starts the restore process if confirmed.
     @Slot()
     def handle_restore(self):
+        """Handle restore operation - can work with or without a selected profile."""
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
-        if not profile_name: return
+        
+        # If we have a profile selected, validate it
+        if profile_name:
+            profile_data = self.main_window.profiles.get(profile_name)
+            if not profile_data or not isinstance(profile_data, dict):
+                QMessageBox.critical(self.main_window, "Internal Error", "Corrupted or missing profile data for '{0}'.".format(profile_name))
+                logging.error(f"Invalid profile data for '{profile_name}': {profile_data}")
+                return
 
-        profile_data = self.main_window.profiles.get(profile_name)
-        if not profile_data or not isinstance(profile_data, dict):
-            QMessageBox.critical(self.main_window, "Internal Error", "Corrupted or missing profile data for '{0}'.".format(profile_name))
-            logging.error(f"Invalid profile data for '{profile_name}': {profile_data}")
-            return
+            # Store profile data for later use in the slot
+            self._restore_profile_data = {
+                'name': profile_name,
+                'data': profile_data
+            }
+        else:
+            # No profile selected - will use standalone ZIP restore mode
+            self._restore_profile_data = None
 
-        # Store profile data for later use in the slot
-        self._restore_profile_data = {
-            'name': profile_name,
-            'data': profile_data
-        }
-
-        # Create and show dialog non-blocking
+        # Create and show dialog (can be with or without profile_name)
         dialog = RestoreDialog(profile_name, self.main_window)
         dialog.finished.connect(lambda result, d=dialog: self.on_restore_dialog_finished(result, d))
         dialog.show()
         
     def on_restore_dialog_finished(self, result, dialog):
         """Handle restore dialog result."""
-        if not hasattr(self, '_restore_profile_data'):
-            logging.error("No restore profile data found!")
+        if result != QDialog.Accepted:
+            return
+        
+        # Check if we're restoring from a standalone ZIP (no profile selected)
+        if not hasattr(self, '_restore_profile_data') or self._restore_profile_data is None:
+            # Standalone ZIP restore mode
+            self._handle_standalone_zip_restore(dialog)
             return
             
         profile_name = self._restore_profile_data['name']
         profile_data = self._restore_profile_data['data']
         
-        if result == QDialog.Accepted:
+        if True:  # Changed from "if result == QDialog.Accepted:" since we already checked above
             archive_to_restore = dialog.get_selected_path()
             if archive_to_restore:
                 if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
@@ -602,6 +612,86 @@ class MainWindowHandlers:
             
         # Clean up temporary storage
         del self._restore_profile_data
+
+    def _handle_standalone_zip_restore(self, dialog):
+        """Handle restore from a standalone ZIP file (no profile selected)."""
+        archive_to_restore = dialog.get_selected_path()
+        manifest = dialog.get_manifest()
+        
+        if not archive_to_restore or not manifest:
+            QMessageBox.warning(self.main_window, "Restore Error", "No valid backup ZIP selected.")
+            return
+        
+        # Get info from manifest
+        profile_name_from_zip = manifest.get("profile_name", "Unknown")
+        paths_from_zip = manifest.get("paths", [])
+        
+        if not paths_from_zip:
+            QMessageBox.warning(
+                self.main_window, 
+                "Invalid Backup", 
+                "The backup ZIP does not contain valid path information."
+            )
+            return
+        
+        # Ask user for confirmation and destination
+        msg = (
+            f"This backup contains save data for:\n"
+            f"Profile: {profile_name_from_zip}\n\n"
+            f"The backup will be restored to the original location(s):\n"
+        )
+        
+        for i, path in enumerate(paths_from_zip[:3]):  # Show max 3 paths
+            msg += f"  • {path}\n"
+        if len(paths_from_zip) > 3:
+            msg += f"  ... and {len(paths_from_zip) - 3} more\n"
+        
+        msg += "\nDo you want to proceed with the restoration?"
+        
+        reply = QMessageBox.question(
+            self.main_window,
+            "Confirm Restore",
+            msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # Perform the restore using core_logic
+        if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
+            QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+            return
+        
+        # Start restore in background thread
+        self.main_window.set_controls_enabled(False)
+        self.main_window.status_label.setText(f"Restoring backup from ZIP...")
+        
+        def do_restore_work():
+            """Worker function for restore."""
+            return core_logic.perform_restore(
+                profile_name_from_zip,
+                paths_from_zip,
+                archive_to_restore
+            )
+        
+        def on_restore_finished(result):
+            """Callback when restore is finished."""
+            self.main_window.set_controls_enabled(True)
+            success, message = result
+            if success:
+                QMessageBox.information(self.main_window, "Restore Successful", message)
+                self.main_window.status_label.setText("Restore completed successfully.")
+            else:
+                QMessageBox.critical(self.main_window, "Restore Failed", message)
+                self.main_window.status_label.setText("Restore failed.")
+        
+        # Create and start worker thread
+        self.main_window.worker_thread = WorkerThread(do_restore_work)
+        self.main_window.worker_thread.result_ready.connect(on_restore_finished)
+        self.main_window.worker_thread.start()
+        logging.info(f"Started standalone ZIP restore from: {archive_to_restore}")
 
     # Opens the manage backups dialog for the selected profile.
     @Slot()

@@ -1352,6 +1352,112 @@ def get_display_name_from_backup_filename(filename):
              return filename[:-4] if filename.endswith('.zip') else filename
     return filename # Restituisci l'input originale se non è una stringa o non finisce per .zip
 
+# --- JSON Backup Restore Functions ---
+def restore_json_from_backup_root() -> bool:
+    """Restore JSON files (profiles, settings, etc.) from backup_root/.savestate/ directory."""
+    backup_root = _get_backup_root_from_settings()
+    if not backup_root:
+        logging.error("Cannot restore JSONs: backup root not found")
+        return False
+    
+    mirror_dir = os.path.join(backup_root, ".savestate")
+    if not os.path.isdir(mirror_dir):
+        logging.warning(f"Mirror directory does not exist: {mirror_dir}")
+        return False
+    
+    # Files to restore
+    files_to_restore = ["game_save_profiles.json", "settings.json", "favorites.json"]
+    restored_count = 0
+    
+    for filename in files_to_restore:
+        source_file = os.path.join(mirror_dir, filename)
+        if not os.path.isfile(source_file):
+            logging.warning(f"Backup file not found: {source_file}")
+            continue
+        
+        # Determine destination based on file type
+        if filename == "game_save_profiles.json":
+            dest_path = PROFILES_FILE_PATH
+        elif filename == "settings.json":
+            dest_path = os.path.join(APP_DATA_FOLDER, filename)
+        elif filename == "favorites.json":
+            dest_path = os.path.join(APP_DATA_FOLDER, filename)
+        else:
+            continue
+        
+        try:
+            import shutil
+            # Create backup of current file before overwriting
+            if os.path.exists(dest_path):
+                backup_path = dest_path + ".before_restore"
+                shutil.copy2(dest_path, backup_path)
+                logging.info(f"Created backup of current file: {backup_path}")
+            
+            # Copy the backup file to destination
+            shutil.copy2(source_file, dest_path)
+            logging.info(f"Restored {filename} from {source_file} to {dest_path}")
+            restored_count += 1
+        except Exception as e:
+            logging.error(f"Failed to restore {filename}: {e}", exc_info=True)
+    
+    return restored_count > 0
+
+def read_manifest_from_zip(zip_path: str) -> dict:
+    """Read and parse manifest.json from savestate/ folder inside a ZIP archive.
+    Returns manifest dict if found and valid, None otherwise."""
+    import zipfile
+    
+    if not os.path.isfile(zip_path):
+        logging.error(f"ZIP file not found: {zip_path}")
+        return None
+    
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zipf:
+            manifest_path = "savestate/manifest.json"
+            
+            # Check if manifest exists in ZIP
+            if manifest_path not in zipf.namelist():
+                logging.warning(f"No manifest.json found in {zip_path}")
+                return None
+            
+            # Read and parse manifest
+            with zipf.open(manifest_path) as manifest_file:
+                manifest_data = json.load(manifest_file)
+                logging.info(f"Successfully read manifest from {zip_path}")
+                return manifest_data
+                
+    except zipfile.BadZipFile:
+        logging.error(f"Invalid ZIP file: {zip_path}")
+        return None
+    except json.JSONDecodeError as e:
+        logging.error(f"Invalid JSON in manifest: {e}")
+        return None
+    except Exception as e:
+        logging.error(f"Error reading manifest from ZIP: {e}", exc_info=True)
+        return None
+
+def validate_backup_zip(zip_path: str) -> tuple:
+    """Validate a backup ZIP file and return (is_valid: bool, manifest: dict or None, error_msg: str)."""
+    import zipfile
+    
+    if not os.path.isfile(zip_path):
+        return False, None, f"File not found: {zip_path}"
+    
+    if not zipfile.is_zipfile(zip_path):
+        return False, None, "Not a valid ZIP file"
+    
+    manifest = read_manifest_from_zip(zip_path)
+    if manifest is None:
+        return False, None, "No valid manifest.json found in savestate/ folder"
+    
+    # Validate manifest has required fields
+    required_fields = ["profile_name", "created_at"]
+    for field in required_fields:
+        if field not in manifest:
+            return False, manifest, f"Manifest missing required field: {field}"
+    
+    return True, manifest, ""
+
 def _get_actual_total_source_size(source_paths_list):
     """Calculates the total actual size of source paths, resolving .lnk shortcuts on Windows."""
     total_size = 0
