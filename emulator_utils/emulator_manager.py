@@ -39,7 +39,7 @@ ProfileFinder = Callable[[Optional[str]], Dict[str, str]]
 KNOWN_EMULATORS = [
     # Emulatori supportati (presenti in EMULATORS)
     # Questi devono corrispondere esattamente alle chiavi in EMULATORS
-    'rpcs3', 'yuzu', 'eden', 'ppsspp', 'citra', 'azahar', 'ryujinx', 'dolphin',
+    'rpcs3', 'yuzu', 'eden', 'citron', 'ppsspp', 'citra', 'azahar', 'ryujinx', 'dolphin',
     'duckstation', 'mgba', 'snes9x', 'desmume', 'melonds', 'cemu', 'flycast', 'shadps4',
     'sameboy', 'xenia', 'pcsx2', 'gopher64',
 ]
@@ -73,6 +73,10 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'eden': {
         'name': 'Eden',
         'profile_finder': lambda path: find_yuzu_profiles(path)  # Eden usa lo stesso codice di Yuzu
+    },
+    'citron': {
+        'name': 'Citron',
+        'profile_finder': lambda path: find_yuzu_profiles(path)  # Citron usa lo stesso codice di Yuzu
     },
     'ppsspp': {
         'name': 'PPSSPP',

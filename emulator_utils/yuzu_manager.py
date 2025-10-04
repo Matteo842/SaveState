@@ -74,58 +74,85 @@ def parse_nacp(filepath: str):
         return None
 
 def get_yuzu_appdata_path(executable_dir=None):
-    """Gets the default Yuzu AppData path based on the OS or from the executable directory for portable installations."""
+    """Gets the default Yuzu/Citron AppData path based on the OS or from the executable directory for portable installations."""
     # Check for portable installation if executable_dir is provided
     if executable_dir:
         # Check if there's a 'nand' directory in the executable directory (portable installation)
         portable_nand_path = os.path.join(executable_dir, "nand")
         if os.path.isdir(portable_nand_path):
-            log.info(f"Found Yuzu portable installation at: {executable_dir}")
+            log.info(f"Found Yuzu/Citron portable installation at: {executable_dir}")
             return executable_dir
         
-        # Check if there's a 'user' directory in the executable directory (another portable structure)
+        # Check for Citron's Release/user structure (e.g., E:\Citron\Release\user)
+        # where 'user' directory contains nand/saves (like AppData)
+        release_path = None
+        if executable_dir.endswith("Release"):
+            release_path = executable_dir
+        else:
+            # Check if there's a Release subdirectory
+            potential_release_path = os.path.join(executable_dir, "Release")
+            if os.path.isdir(potential_release_path):
+                release_path = potential_release_path
+        
+        if release_path:
+            release_user_path = os.path.join(release_path, "user")
+            if os.path.isdir(release_user_path):
+                # Check if this user directory contains nand (Citron structure)
+                release_nand_path = os.path.join(release_user_path, "nand")
+                if os.path.isdir(release_nand_path):
+                    log.info(f"Found Citron portable installation with Release/user directory at: {release_user_path}")
+                    return release_user_path  # Return user dir, not Release dir
+        
+        # Check if there's a 'user' directory in the executable directory (standard portable structure)
         portable_user_path = os.path.join(executable_dir, "user")
         if os.path.isdir(portable_user_path):
-            log.info(f"Found Yuzu portable installation with user directory at: {executable_dir}")
+            log.info(f"Found Yuzu/Citron portable installation with user directory at: {executable_dir}")
             return executable_dir
     
     # If not portable or portable path not found, proceed with standard paths
     system = platform.system()
     user_home = os.path.expanduser("~")
-    path_to_check = None
+    paths_to_check = []
 
     if system == "Windows":
         appdata = os.getenv('APPDATA')
         if appdata:
-            path_to_check = os.path.join(appdata, "yuzu")
+            # Check for Citron first, then Yuzu
+            paths_to_check = [
+                os.path.join(appdata, "citron"),
+                os.path.join(appdata, "yuzu")
+            ]
         else:
             log.error("APPDATA environment variable not found on Windows.")
             return None
     elif system == "Linux":
         xdg_config_home = os.getenv('XDG_CONFIG_HOME', os.path.join(user_home, ".config"))
-        path_to_check = os.path.join(xdg_config_home, "yuzu")
-        flatpak_path = os.path.join(user_home, ".var", "app", "org.yuzu_emu.yuzu", "config", "yuzu")
-        if os.path.isdir(flatpak_path):
-             log.info(f"Found Yuzu Flatpak config directory: {flatpak_path}")
-             return flatpak_path
-
+        # Check for Citron and Yuzu in various locations
+        paths_to_check = [
+            os.path.join(xdg_config_home, "citron"),
+            os.path.join(xdg_config_home, "yuzu"),
+            os.path.join(user_home, ".var", "app", "org.yuzu_emu.yuzu", "config", "yuzu"),
+            os.path.join(user_home, ".local", "share", "citron"),
+            os.path.join(user_home, ".local", "share", "yuzu")
+        ]
     elif system == "Darwin": # macOS
-        path_to_check = os.path.join(user_home, "Library", "Application Support", "yuzu")
+        paths_to_check = [
+            os.path.join(user_home, "Library", "Application Support", "citron"),
+            os.path.join(user_home, "Library", "Application Support", "yuzu")
+        ]
     else:
-        log.error(f"Unsupported operating system for Yuzu path detection: {system}")
+        log.error(f"Unsupported operating system for Yuzu/Citron path detection: {system}")
         return None
 
-    if path_to_check and os.path.isdir(path_to_check):
-        log.info(f"Found Yuzu AppData directory: {path_to_check}")
-        return path_to_check
-    else:
-        log.warning(f"Yuzu AppData directory not found at expected location: {path_to_check}")
-        if system == "Linux":
-             legacy_path = os.path.join(user_home, ".local", "share", "yuzu")
-             if os.path.isdir(legacy_path):
-                 log.info(f"Found legacy Yuzu data directory: {legacy_path}")
-                 return legacy_path
-        return None
+    # Try each path until we find one that exists
+    for path_to_check in paths_to_check:
+        if path_to_check and os.path.isdir(path_to_check):
+            emulator_name = "Citron" if "citron" in path_to_check.lower() else "Yuzu"
+            log.info(f"Found {emulator_name} AppData directory: {path_to_check}")
+            return path_to_check
+    
+    log.warning(f"Yuzu/Citron AppData directory not found in any expected location")
+    return None
 
 def get_yuzu_game_title_map(yuzu_appdata_dir: str):
     """
@@ -195,21 +222,21 @@ def get_yuzu_game_title_map(yuzu_appdata_dir: str):
 
 def find_yuzu_profiles(executable_dir: str | None = None):
     """
-    Finds Yuzu game profiles/saves by scanning the save directory structure.
+    Finds Yuzu/Citron game profiles/saves by scanning the save directory structure.
     NOTE: Currently uses TitleID as the profile name if JSON lookup fails.
 
     Args:
-        executable_dir: Path to Yuzu executable directory for portable installations.
+        executable_dir: Path to Yuzu/Citron executable directory for portable installations.
 
     Returns:
         List of profile dicts: [{'id': TitleID, 'paths': [full_path_to_titleid_folder], 'name': GameName or TitleID}, ...]
     """
     profiles = []
-    log.info("Attempting to find Yuzu profiles...")
+    log.info("Attempting to find Yuzu/Citron profiles...")
 
     yuzu_appdata_dir = get_yuzu_appdata_path(executable_dir)
     if not yuzu_appdata_dir:
-        log.error("Could not determine Yuzu AppData path. Cannot find profiles.")
+        log.error("Could not determine Yuzu/Citron AppData path. Cannot find profiles.")
         return profiles
 
     nand_path = os.path.join(yuzu_appdata_dir, "nand")
@@ -217,12 +244,12 @@ def find_yuzu_profiles(executable_dir: str | None = None):
     user_save_root = os.path.join(nand_path, "user", "save", "0000000000000000")
 
     if not os.path.isdir(user_save_root):
-        log.error(f"Yuzu user save root directory not found: {user_save_root}")
+        log.error(f"Yuzu/Citron user save root directory not found: {user_save_root}")
         return profiles
 
     game_title_map = get_yuzu_game_title_map(yuzu_appdata_dir)
 
-    log.info(f"Scanning Yuzu user save directory: {user_save_root}")
+    log.info(f"Scanning Yuzu/Citron user save directory: {user_save_root}")
     found_profiles_count = 0
     try:
         # Now iterates through the actual user profile ID folders inside '0000000000000000'
@@ -263,9 +290,9 @@ def find_yuzu_profiles(executable_dir: str | None = None):
                             found_profiles_count += 1
 
     except OSError as e:
-        log.error(f"Error listing Yuzu save directory '{user_save_root}': {e}")
+        log.error(f"Error listing Yuzu/Citron save directory '{user_save_root}': {e}")
     except Exception as e:
-        log.error(f"Unexpected error scanning Yuzu save directory: {e}", exc_info=True)
+        log.error(f"Unexpected error scanning Yuzu/Citron save directory: {e}", exc_info=True)
 
-    log.info(f"Found {found_profiles_count} Yuzu profiles across all user hashes.")
+    log.info(f"Found {found_profiles_count} Yuzu/Citron profiles across all user hashes.")
     return profiles
