@@ -8,6 +8,7 @@ import config
 import re
 import platform
 import glob
+from datetime import datetime
 
 # Import the appropriate guess_save_path function based on platform
 if platform.system() == "Linux":
@@ -38,6 +39,52 @@ else:
     PROFILES_FILE_PATH = os.path.abspath(PROFILES_FILENAME)
 logging.info(f"Profile file path in use: {PROFILES_FILE_PATH}")
 # --- End definition ---
+
+# --- Helper: Mirror JSONs to backup root with rotation ---
+def _get_backup_root_from_settings() -> str:
+    """Best-effort retrieval of backup root directory from settings, with config fallback."""
+    try:
+        import settings_manager
+        settings, _ = settings_manager.load_settings()
+        backup_root = settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
+    except Exception:
+        backup_root = getattr(config, "BACKUP_BASE_DIR", None)
+    return backup_root
+
+def _mirror_json_to_backup_root(filename: str, json_obj: dict, rotation: int = 10) -> None:
+    """Write a mirror copy of json_obj into backup_root/.savestate/filename and keep N rotated snapshots."""
+    backup_root = _get_backup_root_from_settings()
+    if not backup_root:
+        return
+    mirror_dir = os.path.join(backup_root, ".savestate")
+    os.makedirs(mirror_dir, exist_ok=True)
+
+    # Write primary mirror
+    mirror_path = os.path.join(mirror_dir, filename)
+    with open(mirror_path, "w", encoding="utf-8") as mf:
+        json.dump(json_obj, mf, indent=4, ensure_ascii=False)
+    logging.info(f"Mirror saved: {mirror_path}")
+
+    # Write timestamped snapshot
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    snapshot_path = os.path.join(mirror_dir, f"{os.path.splitext(filename)[0]}-{ts}.json")
+    try:
+        with open(snapshot_path, "w", encoding="utf-8") as sf:
+            json.dump(json_obj, sf, indent=2, ensure_ascii=False)
+    except Exception:
+        logging.warning(f"Failed to write snapshot mirror for {filename}")
+
+    # Rotate old snapshots
+    try:
+        candidates = [f for f in os.listdir(mirror_dir) if f.startswith(os.path.splitext(filename)[0] + "-") and f.endswith(".json")]
+        candidates.sort(reverse=True)
+        for old in candidates[rotation:]:
+            try:
+                os.remove(os.path.join(mirror_dir, old))
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 # <<< Function to sanitize folder names >>>
 def sanitize_foldername(name):
@@ -202,6 +249,11 @@ def save_profiles(profiles):
         with open(PROFILES_FILE_PATH, 'w', encoding='utf-8') as f:
             json.dump(data_to_save, f, indent=4, ensure_ascii=False)
         logging.info(f"Saved {len(profiles)} profiles in '{PROFILES_FILE_PATH}'.")
+        # Mirror nel root dei backup per resilienza
+        try:
+            _mirror_json_to_backup_root("game_save_profiles.json", data_to_save, rotation=10)
+        except Exception as e_mirror:
+            logging.warning(f"Unable to mirror profiles JSON to backup root: {e_mirror}")
         return True
     except Exception as e:
         logging.error(f"Error saving profiles in '{PROFILES_FILE_PATH}': {e}")
@@ -372,6 +424,21 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
 
     try:
         with zipfile.ZipFile(archive_path, 'w', compression=zip_compression, compresslevel=zip_compresslevel) as zipf:
+            # Scrivi un manifest leggero per rendere il backup auto-descrittivo
+            try:
+                manifest_data = {
+                    "schema": 1,
+                    "app_version": getattr(config, "APP_VERSION", "unknown"),
+                    "created_at": datetime.now().isoformat(),
+                    "profile_name": profile_name,
+                    "paths": paths_to_process,
+                    "multiple_paths": is_multiple_paths,
+                    "platform": platform.system(),
+                }
+                zipf.writestr("savestate/manifest.json", json.dumps(manifest_data, indent=2, ensure_ascii=False))
+                logging.debug("Added savestate/manifest.json to the backup archive")
+            except Exception as e_manifest:
+                logging.warning(f"Unable to write backup manifest.json: {e_manifest}")
 
             # --- Logica Specifica DuckStation (SOLO se NON multi-percorso) --- START
             is_duckstation_single_file = False
@@ -1301,6 +1368,12 @@ def _get_actual_total_source_size(source_paths_list):
             is_shortcut = True
             original_shortcut_path = single_path_str
             try:
+                try:
+                    import winshell
+                except Exception:
+                    winshell = None
+                if winshell is None:
+                    raise RuntimeError("winshell not available to resolve .lnk")
                 shortcut = winshell.shortcut(single_path_str)
                 target_path = shortcut.path
                 if target_path and os.path.exists(target_path):

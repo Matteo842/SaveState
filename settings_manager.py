@@ -136,6 +136,17 @@ def save_settings(settings_dict):
             json.dump(settings_dict, f, indent=4)
         logging.info("Saving settings to file...")
         logging.info(f"Settings successfully saved to '{SETTINGS_FILE_PATH}'.")
+        # Mirror settings into backup root for resiliency
+        try:
+            backup_root = settings_dict.get("backup_base_dir", config.BACKUP_BASE_DIR)
+            if backup_root:
+                mirror_dir = os.path.join(backup_root, ".savestate")
+                os.makedirs(mirror_dir, exist_ok=True)
+                mirror_path = os.path.join(mirror_dir, "settings.json")
+                with open(mirror_path, 'w', encoding='utf-8') as mf:
+                    json.dump(settings_dict, mf, indent=4)
+        except Exception:
+            logging.warning("Unable to mirror settings.json to backup root")
         return True
     except Exception:
         logging.error(f"Error saving settings to '{SETTINGS_FILE_PATH}'.", exc_info=True)

@@ -149,6 +149,69 @@ class MainWindowHandlers:
             except Exception as e_start:
                 QMessageBox.critical(self.main_window, "Error Opening", "Unable to open folder:\n{0}".format(e_start))
 
+    # Import configuration (profiles, favorites, settings) from backup mirror
+    @Slot()
+    def handle_import_config_from_backup(self):
+        backup_dir = self.main_window.current_settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
+        if not backup_dir:
+            QMessageBox.warning(self.main_window, "Import Error", "Backup base directory is not configured.")
+            return
+        mirror_dir = os.path.join(backup_dir, ".savestate")
+        if not os.path.isdir(mirror_dir):
+            QMessageBox.warning(self.main_window, "Import Error", f"Mirror folder not found:\n{mirror_dir}")
+            return
+
+        # Files to import
+        candidates = {
+            "game_save_profiles.json": (core_logic.PROFILES_FILE_PATH, "profiles"),
+            "favorites_status.json": (os.path.join(config.get_app_data_folder(), "favorites_status.json"), "favorites"),
+            "settings.json": (settings_manager.SETTINGS_FILE_PATH, "settings"),
+        }
+
+        imported = []
+        for fname, (dest_path, label) in candidates.items():
+            src_path = os.path.join(mirror_dir, fname)
+            try:
+                if os.path.isfile(src_path):
+                    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                    # Backup any existing file first
+                    if os.path.exists(dest_path):
+                        try:
+                            import datetime
+                            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                            shutil.copy2(dest_path, dest_path + f".bak-{ts}")
+                        except Exception:
+                            pass
+                    shutil.copy2(src_path, dest_path)
+                    imported.append(label)
+            except Exception as e:
+                logging.error(f"Failed importing {fname}: {e}")
+
+        if not imported:
+            QMessageBox.information(self.main_window, "Import", "No mirror files found to import.")
+            return
+
+        # Reload runtime state when possible
+        if "settings" in imported:
+            self.main_window.current_settings, _first = settings_manager.load_settings()
+            if hasattr(self.main_window, 'update_global_drag_listener_state'):
+                self.main_window.update_global_drag_listener_state()
+        if "profiles" in imported:
+            self.main_window.profiles = core_logic.load_profiles()
+            if hasattr(self.main_window, 'profile_table_manager'):
+                self.main_window.profile_table_manager.update_profile_table()
+
+        from gui_components import favorites_manager
+        if "favorites" in imported:
+            try:
+                # Force reload of cache
+                favorites_manager._cache_loaded = False
+                favorites_manager.load_favorites()
+            except Exception:
+                pass
+
+        QMessageBox.information(self.main_window, "Import", "Imported: " + ", ".join(imported) + "\nYou can now use Restore without creating a dummy profile.")
+
     # Opens the settings dialog and applies changes if confirmed.
     @Slot()
     def handle_settings(self):

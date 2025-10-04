@@ -5,6 +5,7 @@ import os
 import json
 import logging
 import config # Importa config per ottenere la cartella dati
+from datetime import datetime
 
 # --- Favorites File Name and Path ---
 FAVORITES_FILENAME = "favorites_status.json"
@@ -73,6 +74,39 @@ def save_favorites(favorites_dict):
             json.dump(favorites_dict, f, indent=4, ensure_ascii=False)
         logging.info(f"Saved {len(favorites_dict)} favorites to '{FAVORITES_FILE_PATH}'.")
         _favorites_cache = favorites_dict.copy() # Update cache after successful saving
+        # Mirror in backup root for resiliency
+        try:
+            backup_root = None
+            try:
+                import settings_manager
+                settings, _ = settings_manager.load_settings()
+                backup_root = settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
+            except Exception:
+                backup_root = getattr(config, "BACKUP_BASE_DIR", None)
+            if backup_root:
+                mirror_dir = os.path.join(backup_root, ".savestate")
+                os.makedirs(mirror_dir, exist_ok=True)
+                mirror_path = os.path.join(mirror_dir, "favorites_status.json")
+                with open(mirror_path, 'w', encoding='utf-8') as mf:
+                    json.dump(favorites_dict, mf, indent=4, ensure_ascii=False)
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                snap_path = os.path.join(mirror_dir, f"favorites_status-{ts}.json")
+                try:
+                    with open(snap_path, 'w', encoding='utf-8') as sf:
+                        json.dump(favorites_dict, sf, indent=2, ensure_ascii=False)
+                except Exception:
+                    pass
+                # Rotate keep last 10
+                try:
+                    candidates = [f for f in os.listdir(mirror_dir) if f.startswith("favorites_status-") and f.endswith(".json")]
+                    candidates.sort(reverse=True)
+                    for old in candidates[10:]:
+                        try: os.remove(os.path.join(mirror_dir, old))
+                        except Exception: pass
+                except Exception:
+                    pass
+        except Exception as e_mirror:
+            logging.warning(f"Unable to mirror favorites to backup root: {e_mirror}")
         return True
     except Exception as e:
         logging.error(f"Error saving favorites to '{FAVORITES_FILE_PATH}': {e}")
