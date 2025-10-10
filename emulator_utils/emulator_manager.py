@@ -24,6 +24,7 @@ from .sameboy_manager import find_sameboy_profiles
 from .xenia_manager import find_xenia_profiles
 from .pcsx2_manager import find_pcsx2_profiles
 from .gopher64_manager import find_gopher64_profiles
+from .vita3k_manager import find_vita3k_profiles
 #from .xemu_manager import find_xemu_profiles
 # Eden è un fork di Yuzu, quindi utilizza lo stesso codice
 
@@ -41,7 +42,7 @@ KNOWN_EMULATORS = [
     # Questi devono corrispondere esattamente alle chiavi in EMULATORS
     'rpcs3', 'yuzu', 'eden', 'citron', 'ppsspp', 'citra', 'azahar', 'ryujinx', 'dolphin',
     'duckstation', 'mgba', 'snes9x', 'desmume', 'melonds', 'cemu', 'flycast', 'shadps4',
-    'sameboy', 'xenia', 'pcsx2', 'gopher64',
+    'sameboy', 'xenia', 'pcsx2', 'gopher64', 'vita3k',
 ]
 
 UNKNOWN_EMULATORS = [
@@ -56,7 +57,7 @@ UNKNOWN_EMULATORS = [
     'nestopia', 'nether_sx2', 'no$gba', 'nulldc', 'panda3ds', 'pcsp',
     'pcsx-rearmed', 'pcsx-reloaded', 'play', 'project64', 'puNES', 'raine',
     'redream', 'retroarch', 'rmg', 'scummvm', 'simple64', 'ssantanshiro',
-    'supermodel', 'swanstation', 'vba-m', 'vita3k', 'xqemu',
+    'supermodel', 'swanstation', 'vba-m', 'xqemu',
     'yabause', 'zsnes','xemu',
 ]
 # Dictionary mapping emulator keys (used internally) to their configuration
@@ -145,6 +146,10 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'gopher64': {
         'name': 'Gopher64',
         'profile_finder': lambda path: find_gopher64_profiles(path)
+    },
+    'vita3k': {
+        'name': 'Vita3K',
+        'profile_finder': lambda path: find_vita3k_profiles(path)
     },
 }
 
