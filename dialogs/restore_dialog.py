@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QPushButton, QFileDialog, QHBoxLayout, QMessageBox
 )
 from PySide6.QtCore import Qt, QLocale, QCoreApplication
+from PySide6.QtGui import QBrush, QColor
 
 import core_logic
 import config
@@ -19,12 +20,18 @@ class RestoreDialog(QDialog):
         self.profile_name = profile_name
         self.selected_backup_path = None
         self.loaded_manifest = None  # Store manifest from loaded ZIP
+        self.selected_is_zip = False
+        self._zip_list_item = None  # Reference to the synthetic list item representing the loaded ZIP
+        self._profile_items = []     # References to normal profile backup items
+        self._original_window_title = None
+        self._original_instruction_text = None
         
         # Set title based on whether we have a profile
         if profile_name:
             self.setWindowTitle(f"Restore Backup for {profile_name}")
         else:
             self.setWindowTitle("Restore Backup from ZIP")
+        self._original_window_title = self.windowTitle()
         
         self.setMinimumWidth(450)
         self.backup_list_widget = QListWidget()
@@ -75,17 +82,16 @@ class RestoreDialog(QDialog):
                 item = QListWidgetItem(item_text)
                 item.setData(Qt.ItemDataRole.UserRole, path) # Save the full path
                 self.backup_list_widget.addItem(item)
+                self._profile_items.append(item)
             # --- End list population loop ---
         
-        # If no profile name, disable the list and show info label
+        # If no profile name, keep the list enabled but empty and show an instruction label
         if not profile_name:
-            self.backup_list_widget.setEnabled(False)
+            self.backup_list_widget.setEnabled(True)
             no_backup_label = QLabel("Use 'Load from ZIP' button to select a backup file.")
 
-        # --- Info label for loaded ZIP ---
+        # --- Info label for loaded ZIP (kept hidden - superseded by list item presentation) ---
         self.zip_info_label = QLabel("")
-        self.zip_info_label.setWordWrap(True)
-        self.zip_info_label.setStyleSheet("QLabel { color: #4CAF50; font-weight: bold; font-size: 11pt; padding: 8px; }")
         self.zip_info_label.hide()
 
         # --- Load from ZIP Button ---
@@ -110,9 +116,11 @@ class RestoreDialog(QDialog):
         
         # Top section with instruction label
         if profile_name:
-            layout.addWidget(QLabel("Select the backup to restore from:"))
+            self.instruction_label = QLabel("Select the backup to restore from:")
         else:
-            layout.addWidget(QLabel("Load a backup ZIP file to restore:"))
+            self.instruction_label = QLabel("Load a backup ZIP file to restore:")
+        layout.addWidget(self.instruction_label)
+        self._original_instruction_text = self.instruction_label.text()
         
         if no_backup_label: 
             layout.addWidget(no_backup_label)
@@ -127,7 +135,7 @@ class RestoreDialog(QDialog):
         button_layout.addStretch()
         layout.addLayout(button_layout)
         
-        # Info label for loaded ZIP (with more context)
+        # Info label placeholder (intentionally hidden by default)
         layout.addWidget(self.zip_info_label)
         
         # Dialog buttons
@@ -176,40 +184,61 @@ class RestoreDialog(QDialog):
         # Store the selected ZIP path and manifest
         self.selected_backup_path = zip_path
         self.loaded_manifest = manifest
-        
-        # Extract info from manifest
+        self.selected_is_zip = True
+
+        # Build a synthetic list item representing the loaded ZIP, inserted at the top
         profile_name = manifest.get("profile_name", "Unknown")
         created_at = manifest.get("created_at", "Unknown date")
-        
-        # Format the date if possible
         try:
             from datetime import datetime
             dt = datetime.fromisoformat(created_at)
             system_locale = QLocale.system()
             date_str = system_locale.toString(dt, QLocale.FormatType.ShortFormat)
-        except:
+        except Exception:
             date_str = created_at
-        
-        # Update info label with clearer message
-        self.zip_info_label.setText(
-            f"📦 Ready to restore from ZIP:\n"
-            f"Profile: {profile_name}\n"
-            f"Backup Date: {date_str}"
-        )
-        self.zip_info_label.show()
-        
-        # Disable and grey out the backup list to make it clear it's not being used
-        self.backup_list_widget.setEnabled(False)
-        self.backup_list_widget.clearSelection()
-        self.backup_list_widget.setStyleSheet("QListWidget:disabled { background-color: #2a2a2a; }")
-        
-        # Show the clear button
-        self.clear_zip_button.show()
-        
-        # Enable the restore button
+
+        zip_filename = os.path.basename(zip_path)
+        zip_item_text = f"From ZIP — {profile_name} ({date_str})"
+
+        if self._zip_list_item is None:
+            item = QListWidgetItem(zip_item_text)
+            # Mark as a ZIP item and store path
+            item.setData(Qt.ItemDataRole.UserRole, zip_path)
+            item.setData(Qt.ItemDataRole.UserRole + 1, True)  # flag: is_zip
+            item.setToolTip(f"ZIP File: {zip_filename}\nProfile: {profile_name}\nDate: {date_str}\nPath: {zip_path}")
+            # Slight visual cue (optional, subtle)
+            item.setForeground(QBrush(QColor(220, 220, 220)))
+            self.backup_list_widget.insertItem(0, item)
+            self._zip_list_item = item
+        else:
+            self._zip_list_item.setText(zip_item_text)
+            self._zip_list_item.setData(Qt.ItemDataRole.UserRole, zip_path)
+            self._zip_list_item.setData(Qt.ItemDataRole.UserRole + 1, True)
+            self._zip_list_item.setToolTip(f"ZIP File: {zip_filename}\nProfile: {profile_name}\nDate: {date_str}\nPath: {zip_path}")
+
+        # Select the ZIP item and ensure OK is enabled
+        self.backup_list_widget.setCurrentItem(self._zip_list_item)
         if self.ok_button:
             self.ok_button.setEnabled(True)
-        
+
+        # Hide profile items to avoid confusion; show only the loaded ZIP
+        try:
+            for it in self._profile_items:
+                it.setHidden(True)
+        except Exception:
+            pass
+
+        # Show the clear button (to remove the loaded ZIP entry)
+        self.clear_zip_button.show()
+
+        # Keep the info label hidden; list presentation is now the source of truth
+        self.zip_info_label.hide()
+
+        # Update window title and instruction label to reflect ZIP mode
+        self.setWindowTitle(f"Restore Backup from ZIP — {profile_name}")
+        if hasattr(self, 'instruction_label') and self.instruction_label:
+            self.instruction_label.setText("Ready to restore from ZIP:")
+
         logging.info(f"Loaded ZIP backup: {os.path.basename(zip_path)} for profile '{profile_name}'")
 
     # The rest of the RestoreDialog class (on_selection_change, get_selected_path) remains unchanged...
@@ -220,44 +249,66 @@ class RestoreDialog(QDialog):
         # Clear ZIP data
         self.selected_backup_path = None
         self.loaded_manifest = None
+        self.selected_is_zip = False
         
-        # Hide ZIP info and clear button
+        # Remove the synthetic ZIP item if present
+        if self._zip_list_item is not None:
+            try:
+                row = self.backup_list_widget.row(self._zip_list_item)
+                it = self.backup_list_widget.takeItem(row)
+                del it
+            except Exception:
+                pass
+            self._zip_list_item = None
+        
+        # Hide clear button and info label
         self.zip_info_label.hide()
         self.clear_zip_button.hide()
         
-        # Re-enable the backup list
-        self.backup_list_widget.setEnabled(True)
-        self.backup_list_widget.setStyleSheet("")  # Reset style
-        
-        # Disable restore button until something is selected
-        if self.ok_button:
-            self.ok_button.setEnabled(False)
+        # Unhide profile items and restore title/instruction
+        try:
+            for it in self._profile_items:
+                it.setHidden(False)
+        except Exception:
+            pass
+        if self._original_window_title:
+            self.setWindowTitle(self._original_window_title)
+        if hasattr(self, 'instruction_label') and self.instruction_label and self._original_instruction_text:
+            self.instruction_label.setText(self._original_instruction_text)
+
+        # If there are items in the list (profile mode), select the first; else disable OK
+        if self.backup_list_widget.count() > 0:
+            self.backup_list_widget.setCurrentRow(0)
+        else:
+            if self.ok_button:
+                self.ok_button.setEnabled(False)
         
         logging.info("Cleared loaded ZIP selection")
     
     def on_selection_change(self, current_item, previous_item):
         """Handle selection change in the backup list."""
-        # Don't process selection changes if a ZIP is loaded
-        if self.loaded_manifest is not None:
-            return
-        
         # Retrieve the data associated with the selected item
         item_data = None
+        is_zip_item = False
         if current_item:
             try:
-                # Attempt to retrieve the path saved as UserRole
                 item_data = current_item.data(Qt.ItemDataRole.UserRole)
+                is_zip_item = bool(current_item.data(Qt.ItemDataRole.UserRole + 1))
             except Exception as e_data:
-                # Log only if there is an error retrieving the data
                 logging.error(f"Error retrieving data from selected item: {e_data}")
 
-        # Enable the button ONLY if an item is selected AND has valid data (not None)
+        # Update selection state
         if current_item and item_data is not None:
-            self.selected_backup_path = item_data # Save the valid path
+            self.selected_backup_path = item_data
+            self.selected_is_zip = is_zip_item
+            # Only keep manifest if the selected item is the ZIP item
+            if not is_zip_item:
+                self.loaded_manifest = None
             if self.ok_button:
                 self.ok_button.setEnabled(True)
         else:
             self.selected_backup_path = None
+            self.selected_is_zip = False
             if self.ok_button:
                 self.ok_button.setEnabled(False)
         
@@ -267,4 +318,4 @@ class RestoreDialog(QDialog):
     
     def get_manifest(self):
         """Return the loaded manifest (if loaded from ZIP), or None."""
-        return self.loaded_manifest
+        return self.loaded_manifest if self.selected_is_zip else None
