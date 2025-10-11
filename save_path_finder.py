@@ -374,6 +374,14 @@ class GameContext:
         # Aggiungi abbreviazioni da executable
         if self.game_install_dir:
             self._add_exe_abbreviations(abbreviations)
+        
+        # Se il nome rilevato sembra un diminutivo (<= 5 caratteri),
+        # arricchisci le varianti usando i nomi delle cartelle di installazione
+        try:
+            if self.game_install_dir and isinstance(self.sanitized_name, str) and len(self.sanitized_name) <= 5:
+                self._add_install_dir_abbreviations(abbreviations)
+        except Exception as e:
+            logging.warning(f"Error expanding abbreviations from install dir: {e}")
             
         return sorted(list(filter(lambda x: x and len(x) >= 2, abbreviations)), key=len, reverse=True)
     
@@ -442,6 +450,57 @@ class GameContext:
             exe_name = re.sub(r'[-_]+$', '', exe_name)
             if len(exe_name) >= 2:
                 abbreviations.add(exe_name)
+    
+    def _add_install_dir_abbreviations(self, abbreviations: Set[str]) -> None:
+        """Aggiunge varianti del nome derivate dalle cartelle di installazione quando il titolo è molto corto.
+        
+        Esempio: se `game_name` è 'LOP' e `game_install_dir` è '.../Lies Of P (2023)/Lies of P',
+        aggiunge 'Lies of P' e varianti pulite per potenziare la ricerca.
+        """
+        try:
+            if not (self.game_install_dir and os.path.isdir(self.game_install_dir)):
+                return
+            base = os.path.basename(self.game_install_dir)
+            parent_dir = os.path.dirname(self.game_install_dir) or ''
+            parent = os.path.basename(parent_dir) if parent_dir else ''
+            candidates = []
+            for name in (base, parent):
+                if not name:
+                    continue
+                # Rimuove contenuti tra parentesi/quadre/graffe (spesso anni o tag)
+                name_clean = re.sub(r'[\(\[\{].*?[\)\]\}]', '', name).strip()
+                # Rimuove eventuali suffissi di separatori
+                name_clean = re.sub(r'[-_]+$', '', name_clean).strip()
+                if len(name_clean) < 2:
+                    continue
+                # Escludi contenitori generici
+                generic_names = {
+                    'bin', 'binaries', 'win64', 'win32', 'x64', 'x86', 'game', 'games',
+                    'steam', 'steamapps', 'common', 'program files', 'program files (x86)'
+                }
+                if name_clean.lower() in generic_names:
+                    continue
+                candidates.append(name_clean)
+            
+            added: Set[str] = set()
+            for cand in candidates:
+                # Versione originale (case-preserving)
+                abbreviations.add(cand)
+                added.add(cand)
+                # Variante senza spazi
+                no_space = cand.replace(' ', '')
+                if len(no_space) >= 2:
+                    abbreviations.add(no_space)
+                    added.add(no_space)
+                # Variante alfanumerica
+                alnum_only = re.sub(r'[^A-Za-z0-9]', '', cand)
+                if len(alnum_only) >= 2:
+                    abbreviations.add(alnum_only)
+                    added.add(alnum_only)
+            if added:
+                logging.info(f"Abbreviation expansion from install dir for short title '{self.sanitized_name}': {sorted(added)}")
+        except Exception as e:
+            logging.warning(f"_add_install_dir_abbreviations error: {e}")
                 
     def _find_game_executable(self) -> Optional[str]:
         """Trova l'eseguibile principale del gioco."""
