@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QStatusBar,
     QProgressBar, QGroupBox, QLineEdit,
     QStyle, QDockWidget, QPlainTextEdit, QTableWidget, QGraphicsOpacityEffect,
-    QDialog
+    QDialog, QFileDialog, QMenu
 )
 from PySide6.QtGui import QKeyEvent # Added for keyPressEvent
 from PySide6.QtCore import (
@@ -37,7 +37,7 @@ except ImportError:
                     "Install pynput for this feature (e.g., 'pip install pynput').")
 
 from PySide6.QtGui import (
-     QIcon, QColor, QDragEnterEvent, QDropEvent, QDragLeaveEvent, QDragMoveEvent, QPalette
+     QIcon, QColor, QDragEnterEvent, QDropEvent, QDragLeaveEvent, QDragMoveEvent, QPalette, QAction
 )
 
 # Import condizionale per PyWin32 (solo su Windows)
@@ -363,6 +363,36 @@ class MainWindow(QMainWindow):
         profile_group.setLayout(profile_layout)
         main_layout.addWidget(profile_group, stretch=1)
 
+        # Inline Profile Editor (hidden by default)
+        self.profile_editor_group = QGroupBox("Edit Profile")
+        editor_layout = QVBoxLayout()
+        # Name field
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel("Name:"))
+        self.edit_name_edit = QLineEdit()
+        name_row.addWidget(self.edit_name_edit)
+        editor_layout.addLayout(name_row)
+        # Path field with browse
+        path_row = QHBoxLayout()
+        path_row.addWidget(QLabel("Save Path:"))
+        self.edit_path_edit = QLineEdit()
+        self.edit_browse_button = QPushButton()
+        self.edit_browse_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        path_row.addWidget(self.edit_path_edit)
+        path_row.addWidget(self.edit_browse_button)
+        editor_layout.addLayout(path_row)
+        # Save/Cancel buttons
+        buttons_row = QHBoxLayout()
+        self.edit_save_button = QPushButton("Save")
+        self.edit_cancel_button = QPushButton("Cancel")
+        buttons_row.addStretch(1)
+        buttons_row.addWidget(self.edit_save_button)
+        buttons_row.addWidget(self.edit_cancel_button)
+        editor_layout.addLayout(buttons_row)
+        self.profile_editor_group.setLayout(editor_layout)
+        self.profile_editor_group.setVisible(False)
+        main_layout.addWidget(self.profile_editor_group, stretch=1)
+
         actions_group = QGroupBox("Actions")
         self.actions_group = actions_group
         actions_layout = QHBoxLayout()
@@ -502,6 +532,13 @@ class MainWindow(QMainWindow):
 
         self.minecraft_button.clicked.connect(self.profile_creation_manager.handle_minecraft_button) # Stays with manager
         self.create_shortcut_button.clicked.connect(self.handlers.handle_create_shortcut)
+        # Right-click context menu on profile table
+        self.profile_table_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.profile_table_widget.customContextMenuRequested.connect(self._on_profile_table_context_menu)
+        # Editor actions
+        self.edit_browse_button.clicked.connect(self.handlers.handle_profile_edit_browse)
+        self.edit_save_button.clicked.connect(self.handlers.handle_profile_edit_save)
+        self.edit_cancel_button.clicked.connect(self.handlers.handle_profile_edit_cancel)
 
         # Stato Iniziale e Tema
         self.update_action_button_states()
@@ -655,6 +692,14 @@ class MainWindow(QMainWindow):
 
             logging.debug("Updating profile table after UI text update")
             self.profile_table_manager.update_profile_table()
+
+        # Update editor texts if present
+        if hasattr(self, 'profile_editor_group'):
+            self.profile_editor_group.setTitle("Edit Profile")
+        if hasattr(self, 'edit_save_button'):
+            self.edit_save_button.setText("Save")
+        if hasattr(self, 'edit_cancel_button'):
+            self.edit_cancel_button.setText("Cancel")
 
         # --- Update Tooltips and Titles ---
         if hasattr(self, 'create_shortcut_button'):
@@ -918,6 +963,17 @@ class MainWindow(QMainWindow):
         self.toggle_log_button.setEnabled(enabled)
         self.open_backup_dir_button.setEnabled(enabled)
         self.progress_bar.setVisible(not enabled)
+        # Editor controls
+        if hasattr(self, 'edit_name_edit'):
+            self.edit_name_edit.setEnabled(enabled)
+        if hasattr(self, 'edit_path_edit'):
+            self.edit_path_edit.setEnabled(enabled)
+        if hasattr(self, 'edit_browse_button'):
+            self.edit_browse_button.setEnabled(enabled)
+        if hasattr(self, 'edit_save_button'):
+            self.edit_save_button.setEnabled(enabled)
+        if hasattr(self, 'edit_cancel_button'):
+            self.edit_cancel_button.setEnabled(enabled)
 
     # --- Single Instance Activation ---
     # Activates the window of an existing instance when a new instance is launched.
@@ -1119,5 +1175,59 @@ class MainWindow(QMainWindow):
         # Chiama il closeEvent della classe base
         super().closeEvent(event)
         logging.info("MainWindow closed.")
+
+    # Context menu event handler: show side menu and select row
+    def _on_profile_table_context_menu(self, pos):
+        try:
+            index = self.profile_table_widget.indexAt(pos)
+            if index and index.isValid():
+                row = index.row()
+                self.profile_table_widget.selectRow(row)
+                self.update_action_button_states()
+                # Build and show a context menu like Linux/Ubuntu
+                menu = QMenu(self)
+                # Actions
+                act_edit = QAction("Edit Profile", self)
+                act_shortcut = QAction("Create Desktop Shortcut", self)
+                # Optional icons
+                try:
+                    desktop_icon_path = resource_path("icons/desktop.png")
+                    if os.path.exists(desktop_icon_path):
+                        act_shortcut.setIcon(QIcon(desktop_icon_path))
+                except Exception:
+                    pass
+                act_edit.triggered.connect(self.handlers.handle_show_edit_profile)
+                act_shortcut.triggered.connect(self.handlers.handle_create_shortcut)
+                menu.addAction(act_edit)
+                menu.addAction(act_shortcut)
+                global_pos = self.profile_table_widget.viewport().mapToGlobal(pos)
+                menu.exec(global_pos)
+        except Exception as e:
+            logging.error(f"Error handling profile table context menu: {e}")
+
+    def show_profile_editor(self, profile_name):
+        """Show inline editor for the given profile, replacing the profiles UI."""
+        try:
+            if not profile_name or profile_name not in self.profiles:
+                return
+            self._editing_profile_original_name = profile_name
+            data = self.profiles.get(profile_name, {})
+            # Populate fields
+            self.edit_name_edit.setText(profile_name)
+            path_value = ""
+            if isinstance(data, dict):
+                if isinstance(data.get('path'), str):
+                    path_value = data.get('path')
+                elif isinstance(data.get('paths'), list) and data.get('paths'):
+                    first_path = data.get('paths')[0]
+                    if isinstance(first_path, str):
+                        path_value = first_path
+            self.edit_path_edit.setText(path_value)
+
+            # Toggle UI visibility
+            self.profile_group.setVisible(False)
+            self.profile_editor_group.setVisible(True)
+        except Exception as e:
+            logging.error(f"Error showing profile editor: {e}")
 
 # --- End of MainWindow class definition ---

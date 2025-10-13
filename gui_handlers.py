@@ -8,7 +8,7 @@ import zipfile
 import tempfile
 import config
 
-from PySide6.QtWidgets import QMessageBox, QDialog, QInputDialog, QApplication
+from PySide6.QtWidgets import QMessageBox, QDialog, QInputDialog, QApplication, QFileDialog
 from PySide6.QtCore import Slot, QUrl, QPropertyAnimation, QTimer
 from PySide6.QtGui import QDesktopServices
 
@@ -723,6 +723,120 @@ class MainWindowHandlers:
             QMessageBox.information(self.main_window, "Shortcut Creation", message)
         else:
             QMessageBox.warning(self.main_window, "Error Creating Shortcut", message)
+
+    # --- Inline Profile Editor Handlers ---
+    @Slot()
+    def handle_show_edit_profile(self):
+        profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
+        if not profile_name:
+            QMessageBox.warning(self.main_window, "No Selection", "Select a profile to edit.")
+            return
+        try:
+            # Hide side menu while editing
+            if hasattr(self.main_window, 'profile_side_group'):
+                self.main_window.profile_side_group.setVisible(False)
+            self.main_window.show_profile_editor(profile_name)
+        except Exception as e:
+            logging.error(f"Error opening inline profile editor: {e}")
+
+    @Slot()
+    def handle_profile_edit_browse(self):
+        try:
+            current = self.main_window.edit_path_edit.text() if hasattr(self.main_window, 'edit_path_edit') else ""
+            directory = QFileDialog.getExistingDirectory(self.main_window, "Select Save Folder", current)
+            if directory:
+                self.main_window.edit_path_edit.setText(os.path.normpath(directory))
+        except Exception as e:
+            logging.error(f"Error in browse for profile editor: {e}")
+
+    @Slot()
+    def handle_profile_edit_save(self):
+        try:
+            mw = self.main_window
+            if not hasattr(mw, '_editing_profile_original_name'):
+                QMessageBox.warning(mw, "Edit Error", "No profile is being edited.")
+                return
+            original_name = mw._editing_profile_original_name
+            new_name_input = mw.edit_name_edit.text().strip()
+            new_name = shortcut_utils.sanitize_profile_name(new_name_input)
+            if not new_name:
+                QMessageBox.warning(mw, "Name Error", f"Invalid or empty profile name: '{new_name_input}'.")
+                return
+            # Check name conflict
+            if new_name != original_name and new_name in mw.profiles:
+                QMessageBox.warning(mw, "Duplicate Name", f"A profile named '{new_name}' already exists.")
+                return
+
+            # Validate path
+            new_path_input = mw.edit_path_edit.text().strip()
+            if not new_path_input:
+                QMessageBox.warning(mw, "Path Error", "The path cannot be empty.")
+                return
+            validator = None
+            if hasattr(mw, 'profile_creation_manager') and hasattr(mw.profile_creation_manager, 'validate_save_path'):
+                validator = mw.profile_creation_manager.validate_save_path
+            else:
+                validator = lambda p, _n: p if os.path.isdir(p) else None
+            validated_path = validator(new_path_input, new_name)
+            if not validated_path:
+                return  # Validator shows message
+
+            # Build new profile data preserving other keys
+            old_data = mw.profiles.get(original_name, {}) if isinstance(mw.profiles.get(original_name), dict) else {}
+            new_data = dict(old_data)
+            new_data['path'] = validated_path
+            if isinstance(new_data.get('paths'), list) and new_data['paths']:
+                new_paths = list(new_data['paths'])
+                new_paths[0] = validated_path
+                new_data['paths'] = new_paths
+
+            # Apply rename if needed
+            if new_name != original_name:
+                # Update favorites mapping if needed
+                try:
+                    from gui_components import favorites_manager
+                    if favorites_manager.is_favorite(original_name):
+                        favorites_manager.set_favorite_status(new_name, True)
+                        favorites_manager.remove_profile(original_name)
+                except Exception as e_fav:
+                    logging.warning(f"Failed to migrate favorites on rename: {e_fav}")
+
+                if original_name in mw.profiles:
+                    del mw.profiles[original_name]
+                mw.profiles[new_name] = new_data
+            else:
+                mw.profiles[original_name] = new_data
+
+            if core_logic.save_profiles(mw.profiles):
+                # Update UI back to profiles list
+                if hasattr(mw, 'profile_editor_group'):
+                    mw.profile_editor_group.setVisible(False)
+                if hasattr(mw, 'profile_group'):
+                    mw.profile_group.setVisible(True)
+                mw.status_label.setText(f"Profile '{new_name}' updated.")
+                if hasattr(mw, 'profile_table_manager'):
+                    mw.profile_table_manager.update_profile_table()
+                    mw.profile_table_manager.select_profile_in_table(new_name)
+                QMessageBox.information(mw, "Profile Updated", f"Profile '{new_name}' saved successfully.")
+                # Clear edit state
+                mw._editing_profile_original_name = None
+            else:
+                QMessageBox.critical(mw, "Save Error", "Unable to save the profiles file.")
+        except Exception as e:
+            logging.error(f"Error saving profile edits: {e}", exc_info=True)
+            QMessageBox.critical(self.main_window, "Edit Error", f"An error occurred: {e}")
+
+    @Slot()
+    def handle_profile_edit_cancel(self):
+        try:
+            mw = self.main_window
+            if hasattr(mw, 'profile_editor_group'):
+                mw.profile_editor_group.setVisible(False)
+            if hasattr(mw, 'profile_group'):
+                mw.profile_group.setVisible(True)
+            mw._editing_profile_original_name = None
+        except Exception as e:
+            logging.error(f"Error cancelling profile edit: {e}")
 
     # --- Steam Handling ---
     # Scans Steam data and opens the Steam configuration dialog.
