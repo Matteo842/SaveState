@@ -52,7 +52,10 @@ def _get_backup_root_from_settings() -> str:
     return backup_root
 
 def _mirror_json_to_backup_root(filename: str, json_obj: dict, rotation: int = 10) -> None:
-    """Write a mirror copy of json_obj into backup_root/.savestate/filename and keep N rotated snapshots."""
+    """Write a mirror copy of json_obj into backup_root/.savestate/filename and keep N rotated snapshots.
+
+    If rotation <= 0, only the primary mirror file is written (no timestamped snapshots).
+    """
     backup_root = _get_backup_root_from_settings()
     if not backup_root:
         return
@@ -65,26 +68,27 @@ def _mirror_json_to_backup_root(filename: str, json_obj: dict, rotation: int = 1
         json.dump(json_obj, mf, indent=4, ensure_ascii=False)
     logging.info(f"Mirror saved: {mirror_path}")
 
-    # Write timestamped snapshot
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    snapshot_path = os.path.join(mirror_dir, f"{os.path.splitext(filename)[0]}-{ts}.json")
-    try:
-        with open(snapshot_path, "w", encoding="utf-8") as sf:
-            json.dump(json_obj, sf, indent=2, ensure_ascii=False)
-    except Exception:
-        logging.warning(f"Failed to write snapshot mirror for {filename}")
+    # Write timestamped snapshot only if rotation is enabled (> 0)
+    if rotation and rotation > 0:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        snapshot_path = os.path.join(mirror_dir, f"{os.path.splitext(filename)[0]}-{ts}.json")
+        try:
+            with open(snapshot_path, "w", encoding="utf-8") as sf:
+                json.dump(json_obj, sf, indent=2, ensure_ascii=False)
+        except Exception:
+            logging.warning(f"Failed to write snapshot mirror for {filename}")
 
-    # Rotate old snapshots
-    try:
-        candidates = [f for f in os.listdir(mirror_dir) if f.startswith(os.path.splitext(filename)[0] + "-") and f.endswith(".json")]
-        candidates.sort(reverse=True)
-        for old in candidates[rotation:]:
-            try:
-                os.remove(os.path.join(mirror_dir, old))
-            except Exception:
-                pass
-    except Exception:
-        pass
+        # Rotate old snapshots
+        try:
+            candidates = [f for f in os.listdir(mirror_dir) if f.startswith(os.path.splitext(filename)[0] + "-") and f.endswith(".json")]
+            candidates.sort(reverse=True)
+            for old in candidates[rotation:]:
+                try:
+                    os.remove(os.path.join(mirror_dir, old))
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
 # <<< Function to sanitize folder names >>>
 def sanitize_foldername(name):
@@ -249,9 +253,16 @@ def save_profiles(profiles):
         with open(PROFILES_FILE_PATH, 'w', encoding='utf-8') as f:
             json.dump(data_to_save, f, indent=4, ensure_ascii=False)
         logging.info(f"Saved {len(profiles)} profiles in '{PROFILES_FILE_PATH}'.")
-        # Mirror nel root dei backup per resilienza
+        # Mirror nel root dei backup per resilienza (rotation configurable via settings)
         try:
-            _mirror_json_to_backup_root("game_save_profiles.json", data_to_save, rotation=10)
+            rotation = 0
+            try:
+                import settings_manager
+                settings, _ = settings_manager.load_settings()
+                rotation = int(settings.get("mirror_rotation_keep", 0))
+            except Exception:
+                rotation = 0
+            _mirror_json_to_backup_root("game_save_profiles.json", data_to_save, rotation=rotation)
         except Exception as e_mirror:
             logging.warning(f"Unable to mirror profiles JSON to backup root: {e_mirror}")
         return True
