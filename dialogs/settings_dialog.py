@@ -50,7 +50,7 @@ class SettingsDialog(QDialog):
         self.size_options = [
             ("50 MB", 50), ("100 MB", 100), ("250 MB", 250), ("500 MB", 500),
             ("1 GB (1024 MB)", 1024), ("2 GB (2048 MB)", 2048),
-            ("5 GB (5120 MB)", 5120), ("10 GB (10240 MB)", 10240),
+            ("5 GB (5120 MB)", 5120),
             ("No Limit", -1)
         ]
         self.max_src_combobox = QComboBox()

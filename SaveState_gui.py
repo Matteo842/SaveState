@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QStatusBar,
     QProgressBar, QGroupBox, QLineEdit,
     QStyle, QDockWidget, QPlainTextEdit, QTableWidget, QGraphicsOpacityEffect,
-    QDialog, QFileDialog, QMenu
+    QDialog, QFileDialog, QMenu, QSpinBox, QComboBox, QCheckBox, QFormLayout
 )
 from PySide6.QtGui import QKeyEvent # Added for keyPressEvent
 from PySide6.QtCore import (
@@ -381,6 +381,34 @@ class MainWindow(QMainWindow):
         path_row.addWidget(self.edit_path_edit)
         path_row.addWidget(self.edit_browse_button)
         editor_layout.addLayout(path_row)
+        # Overrides toggle and group
+        self.overrides_enable_checkbox = QCheckBox("Use profile-specific settings")
+        editor_layout.addWidget(self.overrides_enable_checkbox)
+        self.overrides_group = QGroupBox("Overrides")
+        overrides_form = QFormLayout()
+        # Max backups
+        self.override_max_backups_spin = QSpinBox()
+        self.override_max_backups_spin.setRange(1, 999)
+        overrides_form.addRow("Max backups:", self.override_max_backups_spin)
+        # Compression mode
+        self.override_compression_combo = QComboBox()
+        self.override_compression_combo.addItems(["standard", "maximum", "stored"])
+        overrides_form.addRow("Compression:", self.override_compression_combo)
+        # Max source size MB (match Settings dialog options)
+        self.override_size_options = [
+            ("50 MB", 50), ("100 MB", 100), ("250 MB", 250), ("500 MB", 500),
+            ("1 GB (1024 MB)", 1024), ("2 GB (2048 MB)", 2048),
+            ("5 GB (5120 MB)", 5120), ("No Limit", -1)
+        ]
+        self.override_max_size_combo = QComboBox()
+        for display_text, _ in self.override_size_options:
+            self.override_max_size_combo.addItem(display_text)
+        overrides_form.addRow("Max source size (MB):", self.override_max_size_combo)
+        # Check free space
+        self.override_check_space_checkbox = QCheckBox("Check free disk space before backup")
+        overrides_form.addRow(self.override_check_space_checkbox)
+        self.overrides_group.setLayout(overrides_form)
+        editor_layout.addWidget(self.overrides_group)
         # Save/Cancel buttons
         buttons_row = QHBoxLayout()
         self.edit_save_button = QPushButton("Save")
@@ -539,6 +567,8 @@ class MainWindow(QMainWindow):
         self.edit_browse_button.clicked.connect(self.handlers.handle_profile_edit_browse)
         self.edit_save_button.clicked.connect(self.handlers.handle_profile_edit_save)
         self.edit_cancel_button.clicked.connect(self.handlers.handle_profile_edit_cancel)
+        # Overrides toggle action
+        self.overrides_enable_checkbox.toggled.connect(self.handlers.handle_profile_overrides_toggled)
 
         # Stato Iniziale e Tema
         self.update_action_button_states()
@@ -700,6 +730,10 @@ class MainWindow(QMainWindow):
             self.edit_save_button.setText("Save")
         if hasattr(self, 'edit_cancel_button'):
             self.edit_cancel_button.setText("Cancel")
+        if hasattr(self, 'overrides_group'):
+            self.overrides_group.setTitle("Overrides")
+        if hasattr(self, 'overrides_enable_checkbox'):
+            self.overrides_enable_checkbox.setText("Use profile-specific settings")
 
         # --- Update Tooltips and Titles ---
         if hasattr(self, 'create_shortcut_button'):
@@ -1224,10 +1258,63 @@ class MainWindow(QMainWindow):
                         path_value = first_path
             self.edit_path_edit.setText(path_value)
 
+            # Populate overrides UI from profile or global settings
+            use_overrides = False
+            overrides = {}
+            if isinstance(data, dict):
+                use_overrides = bool(data.get('use_profile_overrides', False))
+                if isinstance(data.get('overrides'), dict):
+                    overrides = data.get('overrides') or {}
+            # Defaults from global settings
+            global_max_backups = self.current_settings.get('max_backups', 5)
+            global_compression = self.current_settings.get('compression_mode', 'standard')
+            global_max_size = self.current_settings.get('max_source_size_mb', 200)
+            global_check_space = self.current_settings.get('check_free_space_enabled', True)
+            # Apply values
+            self.overrides_enable_checkbox.setChecked(use_overrides)
+            self.override_max_backups_spin.setValue(int(overrides.get('max_backups', global_max_backups)))
+            comp_val = str(overrides.get('compression_mode', global_compression))
+            idx = self.override_compression_combo.findText(comp_val)
+            self.override_compression_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            # Select matching size option; fallback to 500MB if not found
+            size_mb = int(overrides.get('max_source_size_mb', global_max_size))
+            select_index = next((i for i, (_, v) in enumerate(self.override_size_options) if v == size_mb), -1)
+            if select_index == -1:
+                select_index = next((i for i, (_, v) in enumerate(self.override_size_options) if v == 500), 0)
+            self.override_max_size_combo.setCurrentIndex(select_index)
+            self.override_check_space_checkbox.setChecked(bool(overrides.get('check_free_space_enabled', global_check_space)))
+            # Enable/disable group according to checkbox
+            self.overrides_group.setEnabled(use_overrides)
+
             # Toggle UI visibility
             self.profile_group.setVisible(False)
             self.profile_editor_group.setVisible(True)
+            # Disable main controls while editing
+            self.enter_profile_edit_mode()
         except Exception as e:
             logging.error(f"Error showing profile editor: {e}")
+
+    def _set_main_controls_enabled_during_edit(self, enabled):
+        try:
+            if hasattr(self, 'actions_group') and self.actions_group:
+                self.actions_group.setEnabled(enabled)
+            if hasattr(self, 'general_group') and self.general_group:
+                self.general_group.setEnabled(enabled)
+            if hasattr(self, 'search_bar') and self.search_bar:
+                self.search_bar.setEnabled(enabled)
+            if hasattr(self, 'profile_table_widget') and self.profile_table_widget:
+                self.profile_table_widget.setEnabled(enabled)
+            if hasattr(self, 'toggle_log_button') and self.toggle_log_button:
+                self.toggle_log_button.setEnabled(enabled)
+        except Exception:
+            pass
+
+    def enter_profile_edit_mode(self):
+        self._edit_mode_active = True
+        self._set_main_controls_enabled_during_edit(False)
+
+    def exit_profile_edit_mode(self):
+        self._edit_mode_active = False
+        self._set_main_controls_enabled_during_edit(True)
 
 # --- End of MainWindow class definition ---

@@ -305,6 +305,25 @@ class MainWindowHandlers:
         self.main_window.status_label.setText("Starting backup for '{0}'...".format(profile_name))
         self.main_window.set_controls_enabled(False) # Disable controls
 
+        # Determine effective settings (per-profile overrides or global)
+        effective = {
+            'backup_base_dir': self.main_window.current_settings.get('backup_base_dir', config.BACKUP_BASE_DIR),
+            'max_backups': self.main_window.current_settings.get('max_backups', config.MAX_BACKUPS),
+            'max_source_size_mb': self.main_window.current_settings.get('max_source_size_mb', 200),
+            'compression_mode': self.main_window.current_settings.get('compression_mode', 'standard'),
+            'check_free_space_enabled': self.main_window.current_settings.get('check_free_space_enabled', True),
+        }
+        try:
+            if isinstance(profile_data, dict) and profile_data.get('use_profile_overrides') and isinstance(profile_data.get('overrides'), dict):
+                ov = profile_data.get('overrides')
+                # Do not override backup_base_dir here; base dir remains global unless later requested
+                if 'max_backups' in ov: effective['max_backups'] = int(ov['max_backups'])
+                if 'max_source_size_mb' in ov: effective['max_source_size_mb'] = int(ov['max_source_size_mb'])
+                if 'compression_mode' in ov: effective['compression_mode'] = str(ov['compression_mode'])
+                if 'check_free_space_enabled' in ov: effective['check_free_space_enabled'] = bool(ov['check_free_space_enabled'])
+        except Exception as e:
+            logging.warning(f"Error reading profile overrides, falling back to globals: {e}")
+
         # Determine which backup function to use
         is_pcsx2_selective_profile = (profile_data.get('emulator') == 'PCSX2' and
                                       'save_dir' in profile_data and
@@ -320,11 +339,10 @@ class MainWindowHandlers:
             def pcsx2_backup_task(p_name_worker, mc_path_worker, mc_save_dir_worker):
                 try:
                     # Use the main window's current settings, don't reload from file
-                    settings = self.main_window.current_settings
-                    backup_dir = settings.get('backup_base_dir', config.BACKUP_BASE_DIR) # CORRECTED KEY
-                    max_bks = settings.get('max_backups', config.MAX_BACKUPS)
-                    max_size_mb = settings.get('max_source_size_mb', config.MAX_SOURCE_SIZE_MB)
-                    compress_mode = settings.get('compression_mode', config.COMPRESSION_MODE)
+                    backup_dir = effective['backup_base_dir']
+                    max_bks = effective['max_backups']
+                    max_size_mb = effective['max_source_size_mb']
+                    compress_mode = effective['compression_mode']
                     
                     logging.debug(f"pcsx2_backup_task: Calling backup_pcsx2_save with: profile='{p_name_worker}', mc_path='{mc_path_worker}', save_dir='{mc_save_dir_worker}', backup_base_dir='{backup_dir}', max_backups={max_bks}, max_source_size_mb={max_size_mb}, compression_mode='{compress_mode}'")
 
@@ -370,11 +388,11 @@ class MainWindowHandlers:
                 self.main_window.set_controls_enabled(True)
                 return
 
-            backup_base_dir = self.main_window.current_settings.get('backup_base_dir', config.BACKUP_BASE_DIR) # CORRECTED KEY
-            max_backups = self.main_window.current_settings.get('max_backups', config.MAX_BACKUPS)
-            max_source_size_mb = self.main_window.current_settings.get('max_source_size_mb', 200) # Corretto fallback
-            compression_mode = self.main_window.current_settings.get('compression_mode', "standard") # Corretto fallback
-            check_space = self.main_window.current_settings.get("check_free_space_enabled", True)
+            backup_base_dir = effective['backup_base_dir']
+            max_backups = effective['max_backups']
+            max_source_size_mb = effective['max_source_size_mb']
+            compression_mode = effective['compression_mode']
+            check_space = effective['check_free_space_enabled']
             min_gb_required = config.MIN_FREE_SPACE_GB
 
             # Free space check
@@ -790,6 +808,24 @@ class MainWindowHandlers:
                 new_paths[0] = validated_path
                 new_data['paths'] = new_paths
 
+            # Capture overrides UI state without applying to globals
+            use_overrides = bool(mw.overrides_enable_checkbox.isChecked())
+            new_data['use_profile_overrides'] = use_overrides
+            overrides_dict = dict(new_data.get('overrides') or {})
+            overrides_dict['max_backups'] = int(mw.override_max_backups_spin.value())
+            overrides_dict['compression_mode'] = str(mw.override_compression_combo.currentText())
+            # Read size from combo options (aligned with SettingsDialog options)
+            try:
+                size_index = mw.override_max_size_combo.currentIndex()
+                size_value = -1
+                if 0 <= size_index < len(mw.override_size_options):
+                    _, size_value = mw.override_size_options[size_index]
+                overrides_dict['max_source_size_mb'] = int(size_value)
+            except Exception:
+                overrides_dict['max_source_size_mb'] = int(mw.current_settings.get('max_source_size_mb', 500))
+            overrides_dict['check_free_space_enabled'] = bool(mw.override_check_space_checkbox.isChecked())
+            new_data['overrides'] = overrides_dict
+
             # Apply rename if needed
             if new_name != original_name:
                 # Update favorites mapping if needed
@@ -813,6 +849,8 @@ class MainWindowHandlers:
                     mw.profile_editor_group.setVisible(False)
                 if hasattr(mw, 'profile_group'):
                     mw.profile_group.setVisible(True)
+                if hasattr(mw, 'exit_profile_edit_mode'):
+                    mw.exit_profile_edit_mode()
                 mw.status_label.setText(f"Profile '{new_name}' updated.")
                 if hasattr(mw, 'profile_table_manager'):
                     mw.profile_table_manager.update_profile_table()
@@ -834,9 +872,19 @@ class MainWindowHandlers:
                 mw.profile_editor_group.setVisible(False)
             if hasattr(mw, 'profile_group'):
                 mw.profile_group.setVisible(True)
+            if hasattr(mw, 'exit_profile_edit_mode'):
+                mw.exit_profile_edit_mode()
             mw._editing_profile_original_name = None
         except Exception as e:
             logging.error(f"Error cancelling profile edit: {e}")
+
+    @Slot(bool)
+    def handle_profile_overrides_toggled(self, enabled):
+        try:
+            if hasattr(self.main_window, 'overrides_group'):
+                self.main_window.overrides_group.setEnabled(bool(enabled))
+        except Exception as e:
+            logging.error(f"Error toggling overrides group: {e}")
 
     # --- Steam Handling ---
     # Scans Steam data and opens the Steam configuration dialog.
