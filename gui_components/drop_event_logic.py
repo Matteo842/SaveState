@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QMessageBox, QApplication, QDialog  # Import QAppl
 from PySide6.QtGui import QDropEvent
 from PySide6.QtCore import Qt  # Import Qt
 from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
+from dialogs.retroarch_dialog import RetroArchCoreSelectionDialog
 from gui_utils import DetectionWorkerThread  # Import DetectionWorkerThread
 from shortcut_utils import sanitize_profile_name  # Import sanitize_profile_name
 from .multi_profile_dialog import MultiProfileDialog
@@ -444,7 +445,7 @@ class DropEventMixin:
 
             # Se non è 'unsupported', procedi con la normale verifica per emulatori supportati
             emulator_result = handler_instance._check_if_emulator(file_path)
-            
+
             if emulator_result:
                 emulator_key, profiles_data = emulator_result
                 logging.info(f"DragDropHandler.dropEvent: Detected emulator: {emulator_key}")
@@ -496,6 +497,74 @@ class DropEventMixin:
                     else:
                         profiles_data = result_profiles
                 
+                # RetroArch two-step flow: select core, then games
+                if emulator_key == 'RetroArch' or emulator_key == 'retroarch':
+                    try:
+                        from emulator_utils.retroarch_manager import list_retroarch_cores, find_retroarch_profiles
+                        # Resolve RA root hint: prefer resolved .lnk target dir or exe dir
+                        ra_hint = file_path
+                        if platform.system() == "Windows" and isinstance(ra_hint, str) and ra_hint.lower().endswith('.lnk'):
+                            try:
+                                import winshell
+                                shortcut = winshell.shortcut(ra_hint)
+                                resolved_target = shortcut.path
+                                if resolved_target and os.path.exists(resolved_target):
+                                    ra_hint = resolved_target
+                            except Exception:
+                                pass
+                        if os.path.isfile(ra_hint):
+                            ra_hint = os.path.dirname(ra_hint)
+
+                        cores = list_retroarch_cores(ra_hint)
+                        if not cores:
+                            QMessageBox.warning(mw, "RetroArch", "No cores with saves detected under RetroArch paths.")
+                        else:
+                            core_dialog = RetroArchCoreSelectionDialog(cores, mw)
+                            if core_dialog.exec():
+                                core_id = core_dialog.get_selected_core()
+                                if core_id:
+                                    profiles_data = find_retroarch_profiles(core_id, ra_hint) or []
+                                    if profiles_data:
+                                        selection_dialog = EmulatorGameSelectionDialog(core_id, profiles_data, mw)
+                                        if selection_dialog.exec():
+                                            selected_profile = selection_dialog.get_selected_profile_data()
+                                            if selected_profile:
+                                                profile_id = selected_profile.get('id', '')
+                                                selected_name = selected_profile.get('name', profile_id)
+                                                save_paths = selected_profile.get('paths', [])
+                                                profile_name = f"{core_id} - {selected_name}"
+                                                if profile_name in mw.profiles:
+                                                    reply = QMessageBox.question(mw, "Existing Profile", f"A profile named '{profile_name}' already exists. Overwrite it?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+                                                    if reply == QMessageBox.StandardButton.No:
+                                                        mw.status_label.setText("Profile creation cancelled.")
+                                                        event.acceptProposedAction(); return
+                                                new_profile = {'name': profile_name, 'paths': save_paths, 'emulator': core_id}
+                                                for k, v in selected_profile.items():
+                                                    if k not in ['name', 'paths']:
+                                                        new_profile[k] = v
+                                                mw.profiles[profile_name] = new_profile
+                                                if mw.core_logic.save_profiles(mw.profiles):
+                                                    if hasattr(mw, 'profile_table_manager'):
+                                                        mw.profile_table_manager.update_profile_table()
+                                                        mw.profile_table_manager.select_profile_in_table(profile_name)
+                                                    mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
+                                                else:
+                                                    QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
+                                        # end selection_dialog
+                                    else:
+                                        QMessageBox.information(mw, "RetroArch", f"No saves found for core '{core_id}'.")
+                            # end core_dialog
+                        # end cores empty/else
+                    except Exception as e_ra:
+                        logging.error(f"RetroArch flow error: {e_ra}", exc_info=True)
+                        QMessageBox.critical(mw, "RetroArch Error", f"An error occurred while scanning RetroArch: {e_ra}")
+                    # Regardless, finish handling for RetroArch
+                    self._hide_overlay_if_visible(mw)
+                    mw.set_controls_enabled(True)
+                    QApplication.restoreOverrideCursor()
+                    event.acceptProposedAction()
+                    return True
+
                 # Handle emulator profiles if found (non-empty list only)
                 if emulator_key and bool(profiles_data):  # Only proceed when there are profiles to show
                     logging.info(f"Found {emulator_key} profiles: {len(profiles_data)}")
@@ -892,6 +961,69 @@ class DropEventMixin:
                             f"An error occurred while trying to detect SameBoy profiles: {e}\n"
                             "You can try adding the emulator again or set the path manually via settings (if available).")
                 
+                # RetroArch two-step flow in fallback branch
+                if emulator_key == 'RetroArch' or emulator_key == 'retroarch':
+                    try:
+                        from emulator_utils.retroarch_manager import list_retroarch_cores, find_retroarch_profiles
+                        cores = list_retroarch_cores(target_path)
+                        if not cores:
+                            QMessageBox.warning(mw, "RetroArch", "No cores with saves detected under RetroArch paths.")
+                        else:
+                            core_dialog = RetroArchCoreSelectionDialog(cores, mw)
+                            if core_dialog.exec():
+                                core_id = core_dialog.get_selected_core()
+                                if core_id:
+                                    profiles_data = find_retroarch_profiles(core_id, target_path) or []
+                                    if profiles_data:
+                                        selection_dialog = EmulatorGameSelectionDialog(core_id, profiles_data, mw)
+                                        if selection_dialog.exec():
+                                            selected_profile = selection_dialog.get_selected_profile_data()
+                                            logging.debug(f"PCM.dropEvent: Emulator game selected. Raw selected_profile data: {selected_profile}")
+                                            if selected_profile:
+                                                profile_id = selected_profile.get('id', '')
+                                                selected_name = selected_profile.get('name', profile_id)
+                                                save_paths = selected_profile.get('paths', [])
+                                                profile_name = f"{core_id} - {selected_name}"
+                                                if profile_name in mw.profiles:
+                                                    reply = QMessageBox.question(mw, "Existing Profile",
+                                                                                f"A profile named '{profile_name}' already exists. Overwrite it?",
+                                                                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                                                                QMessageBox.StandardButton.No)
+                                                    if reply == QMessageBox.StandardButton.No:
+                                                        mw.status_label.setText("Profile creation cancelled.")
+                                                        return
+                                                    else:
+                                                        logging.warning(f"Overwriting existing profile: {profile_name}")
+                                                new_profile = {
+                                                    'name': profile_name,
+                                                    'paths': save_paths,
+                                                    'emulator': core_id
+                                                }
+                                                for key, value in selected_profile.items():
+                                                    if key not in ['name', 'paths']:
+                                                        new_profile[key] = value
+                                                if 'save_dir' in selected_profile and selected_profile['save_dir']:
+                                                    new_profile['save_dir'] = selected_profile['save_dir']
+                                                    logging.debug(f"PCM.dropEvent: Added 'save_dir': '{selected_profile['save_dir']}' to new_profile for '{profile_name}'.")
+                                                mw.profiles[profile_name] = new_profile
+                                                if mw.core_logic.save_profiles(mw.profiles):
+                                                    mw.profile_table_manager.update_profile_table()
+                                                    mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
+                                                    mw.profile_table_manager.select_profile_in_table(profile_name)
+                                                    logging.info(f"Emulator game profile '{profile_name}' created/updated with emulator '{core_id}'.")
+                                                else:
+                                                    logging.error(f"Failed to save profiles after adding '{profile_name}'.")
+                                                    QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
+                    except Exception as e_ra:
+                        logging.error(f"RetroArch flow error: {e_ra}", exc_info=True)
+                        QMessageBox.critical(mw, "RetroArch Error", f"An error occurred while scanning RetroArch: {e_ra}")
+                    # Hide the overlay if it's visible
+                    self._hide_overlay_if_visible(mw)
+                    mw.set_controls_enabled(True)
+                    QApplication.restoreOverrideCursor()
+                    event.acceptProposedAction()
+                    return # handled RA
+
                 # Handle emulator profiles if found
                 if emulator_key and profiles_data is not None: # Check if profiles_data is not None (it could be an empty list)
                     logging.info(f"Found {emulator_key} profiles: {len(profiles_data)}")

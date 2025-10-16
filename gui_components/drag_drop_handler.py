@@ -16,7 +16,7 @@ from gui_utils import DetectionWorkerThread
 # Setup logging per questo modulo
 logger = logging.getLogger(__name__)
 
-from .drop_event_logic import DropEventMixin  # Import the mixin
+from gui_components.drop_event_logic import DropEventMixin  # Import the mixin (absolute to avoid relative import issues)
 
 class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
     """
