@@ -278,42 +278,89 @@ def find_dolphin_profiles(executable_path: str | None = None) -> list[dict]:
                         try:
                             game_id_folders = os.listdir(region_path)
                             log.debug(f"      Game IDs/Items found in region '{region_name}': {game_id_folders}")
-                            for game_id_name in game_id_folders: # This is the actual game ID like GM8E01
+
+                            # 1) Handle standard per-title folders (6-char alnum)
+                            for game_id_name in game_id_folders:
                                 game_id_path = os.path.join(region_path, game_id_name)
 
-                                # --- Skip Memory Card simulations --- 
-                                if game_id_name.upper() in ['CARD A', 'CARD B']:
-                                     log.debug(f"        Skipping Memory Card folder: {game_id_name}")
-                                     continue
-                                # ------------------------------------
-
-                                # Check if it's a directory and looks like a GC ID
                                 if os.path.isdir(game_id_path) and len(game_id_name) == 6 and game_id_name.isalnum():
                                     log.debug(f"        Found potential GC Game ID folder: {game_id_name}")
                                     profile_id = game_id_name
-                                    profile_name = game_id_name # Default name is ID
+                                    profile_name = game_id_name
                                     profile_type = 'GC'
-                                    # --- Try to get name from banner.bin ---
-                                    banner_file = os.path.join(game_id_path, "banner.bin")
+
+                                    banner_file = os.path.join(game_id_path, 'banner.bin')
                                     if os.path.isfile(banner_file):
                                         log.debug(f"          Found banner.bin, attempting parse: {banner_file}")
                                         parsed_name = _parse_gc_banner_bin(banner_file)
                                         if parsed_name:
-                                            profile_name = parsed_name # Use parsed name!
+                                            profile_name = parsed_name
                                             log.info(f"          Successfully parsed GC game name: '{profile_name}' (ID: {profile_id})")
                                         else:
                                             log.warning(f"          Failed to parse banner.bin for {profile_id}, using ID as name.")
                                     else:
                                         log.debug(f"          banner.bin not found in {game_id_path}, using ID as name.")
-                                    # -----------------------------------------
+
                                     profiles.append({
                                         'id': profile_id,
                                         'name': profile_name,
-                                        'paths': [game_id_path], # Use list and 'paths'
+                                        'paths': [game_id_path],
                                         'type': profile_type
                                     })
-                                else:
-                                    log.debug(f"        Skipping item in region '{region_name}' (not dir or not 6 chars): {game_id_name}")
+
+                            # 2) Handle Memory Card folders (Card A / Card B) containing .gci files
+                            for card_folder in ['Card A', 'Card B']:
+                                card_path = os.path.join(region_path, card_folder)
+                                if not os.path.isdir(card_path):
+                                    continue
+                                try:
+                                    gci_files = [f for f in os.listdir(card_path) if f.lower().endswith('.gci')]
+                                except OSError as e:
+                                    log.error(f"      Error listing files in memory card folder '{card_path}': {e}")
+                                    gci_files = []
+
+                                if not gci_files:
+                                    continue
+
+                                # Group .gci files by the internal 4-char game code in filename if present
+                                # Expected pattern example: '01-GMSP-super_mario_sunshine.gci'
+                                groups: dict[str, list[str]] = {}
+                                for filename in gci_files:
+                                    base = os.path.splitext(filename)[0]
+                                    # Try to extract 4-char code between first '-' and next '-'
+                                    # Accept both with or without leading slot index prefix
+                                    # Patterns: '01-GMSP-title', 'GMSP-title', fallback: whole base
+                                    code_match = re.search(r'^(?:\d{2}-)?([A-Za-z0-9]{4})-', base)
+                                    if code_match:
+                                        game_code = code_match.group(1)
+                                        display_name = re.sub(r'^(?:\d{2}-)?[A-Za-z0-9]{4}-', '', base)
+                                    else:
+                                        # Fallback: use base as code and display
+                                        game_code = base[:6] if len(base) >= 6 else base
+                                        display_name = base
+
+                                    display_name = display_name.replace('_', ' ').strip() or game_code
+                                    key = f"{game_code}"
+                                    groups.setdefault(key, [])
+                                    groups[key].append(os.path.join(card_path, filename))
+
+                                # Create one profile per group
+                                for game_code, file_paths in groups.items():
+                                    # Try to get a nicer name from any filename in the group
+                                    sample_name = os.path.splitext(os.path.basename(file_paths[0]))[0]
+                                    name_part = re.sub(r'^(?:\d{2}-)?[A-Za-z0-9]{4}-', '', sample_name)
+                                    display = name_part.replace('_', ' ').strip() or game_code
+
+                                    profile_id = game_code
+                                    profile_name = display
+                                    profile_type = 'GC'
+
+                                    profiles.append({
+                                        'id': profile_id,
+                                        'name': profile_name,
+                                        'paths': file_paths,
+                                        'type': profile_type
+                                    })
                         except OSError as region_e:
                             log.error(f"      Error scanning GC region directory '{region_path}': {region_e}")
                     else:
