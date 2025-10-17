@@ -5,6 +5,8 @@ import os
 import logging
 import argparse
 import config
+import platform
+import glob
 # --- PySide6 Imports ---
 from PySide6.QtWidgets import QApplication, QMessageBox, QDialog
 from PySide6.QtCore import QSharedMemory
@@ -54,6 +56,78 @@ def cleanup_instance_lock(local_server, shared_memory):
     except Exception as e_mem:
         logging.error(f"Error detaching shared memory: {e_mem}")
 
+
+def cleanup_stale_qt_ipc_artifacts(local_server_name: str, shared_memory_key: str) -> None:
+    """Best-effort cleanup for stale Qt IPC artifacts on Linux.
+
+    This removes orphaned QLocalServer sockets and forces deletion of stale
+    QSharedMemory segments by attach+detach. It also tries to unlink known
+    temporary files created by Qt for shared memory and semaphores that can
+    persist after crashes.
+    """
+    if platform.system() != "Linux":
+        return
+
+    try:
+        # Remove potentially orphaned local server socket by name (Qt handles path resolution)
+        if QLocalServer.removeServer(local_server_name):
+            logging.warning(f"Removed orphaned local server '{local_server_name}' (pre-cleanup)")
+    except Exception as e:
+        logging.debug(f"QLocalServer.removeServer pre-cleanup failed: {e}")
+
+    # Try to remove runtime path variant as well (where Qt may store the socket)
+    try:
+        runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+        if not runtime_dir:
+            try:
+                uid = os.getuid()  # type: ignore[attr-defined]
+                runtime_dir = f"/run/user/{uid}"
+            except Exception:
+                runtime_dir = None
+        if runtime_dir:
+            server_path = os.path.join(runtime_dir, local_server_name)
+            if os.path.exists(server_path):
+                os.unlink(server_path)
+                logging.warning(f"Unlinked stale local socket: {server_path}")
+    except Exception as e:
+        logging.debug(f"Runtime socket unlink failed: {e}")
+
+    # Force attach/detach on shared memory to drop a stale segment when no other process holds it
+    try:
+        temp_mem = QSharedMemory(shared_memory_key)
+        if temp_mem.attach():
+            logging.warning("Attached to stale shared memory; detaching to release it...")
+            if not temp_mem.detach():
+                logging.error(f"Failed to detach stale shared memory: {temp_mem.errorString()}")
+            else:
+                logging.info("Stale shared memory released via attach+detach.")
+    except Exception as e:
+        logging.debug(f"Shared memory attach/detach cleanup skipped/failed: {e}")
+
+    # As a last resort, attempt to remove Qt's temporary IPC files for this app key
+    # Restrict patterns to this app by including 'SaveState' or the exact key
+    try:
+        tokens = [shared_memory_key, local_server_name, "SaveState"]
+        tmp_patterns = []
+        for token in tokens:
+            if token and isinstance(token, str):
+                tmp_patterns.append(f"/tmp/qipc_sharedmemory_*{token}*")
+                tmp_patterns.append(f"/tmp/qipc_systemsem_*{token}*")
+
+        removed_any = False
+        for pattern in tmp_patterns:
+            for path in glob.glob(pattern):
+                try:
+                    if os.path.exists(path):
+                        os.unlink(path)
+                        removed_any = True
+                        logging.warning(f"Removed stale Qt IPC temp file: {path}")
+                except Exception as e_rm:
+                    logging.debug(f"Could not remove '{path}': {e_rm}")
+        if not removed_any:
+            logging.debug("No matching stale Qt IPC temp files found to remove.")
+    except Exception as e:
+        logging.debug(f"Temp files cleanup skipped/failed: {e}")
 
 # --- Main Execution Block ---
 if __name__ == "__main__":
@@ -128,38 +202,57 @@ if __name__ == "__main__":
         app_should_run = True # Flag to decide whether to start the GUI
 
         try:
+            # Proactive cleanup of stale IPC artifacts on Linux to avoid "plugin xcb" and invalid socket issues
+            cleanup_stale_qt_ipc_artifacts(LOCAL_SERVER_NAME, SHARED_MEM_KEY)
+
             shared_memory = QSharedMemory(SHARED_MEM_KEY)
 
             # Tries to create shared memory. If it fails because it already exists...
             if not shared_memory.create(1, QSharedMemory.AccessMode.ReadOnly):
                 if shared_memory.error() == QSharedMemory.SharedMemoryError.AlreadyExists:
                     logging.warning("Another instance of SaveState is already running. Attempting to activate it.")
-                    app_should_run = False # Do not start this GUI instance
+                    app_should_run = False # Assume another instance until proven stale
 
-                    # Connect to the other instance
+                    # Try to contact the other instance
                     local_socket = QLocalSocket()
                     local_socket.connectToServer(LOCAL_SERVER_NAME)
                     if local_socket.waitForConnected(500):
                         logging.info("Connected to existing instance. Sending 'show' signal.")
-                        # Send a recognizable signal, e.g. 'show\n'
                         bytes_written = local_socket.write(b'show\n')
                         if bytes_written == -1:
-                             logging.error(f"Failed to write to local socket: {local_socket.errorString()}")
+                            logging.error(f"Failed to write to local socket: {local_socket.errorString()}")
                         elif not local_socket.waitForBytesWritten(500):
-                             logging.warning("Timeout waiting for bytes written to local socket.")
+                            logging.warning("Timeout waiting for bytes written to local socket.")
                         else:
-                             logging.debug("Signal 'show' sent successfully.")
+                            logging.debug("Signal 'show' sent successfully.")
                         local_socket.disconnectFromServer()
                         local_socket.close()
                         logging.info("Signal sent. Exiting this instance.")
-                        # Release shared memory (only attached implicitly)
-                        if shared_memory.isAttached(): shared_memory.detach()
-                        sys.exit(0) # Exit successfully (the other instance has been activated)
+                        if shared_memory.isAttached():
+                            shared_memory.detach()
+                        sys.exit(0)
                     else:
-                        logging.error(f"Unable to connect to existing instance server '{LOCAL_SERVER_NAME}': {local_socket.errorString()}")
-                        # Exit is more secure if we can't communicate
-                        if shared_memory.isAttached(): shared_memory.detach()
-                        sys.exit(1) # Exit with error
+                        # Likely stale shared memory/socket; attempt automatic cleanup & retry
+                        logging.error(f"Unable to connect to existing instance server '{LOCAL_SERVER_NAME}': {local_socket.errorString()} - attempting stale lock cleanup and retry...")
+                        try:
+                            local_socket.abort()
+                        except Exception:
+                            pass
+                        cleanup_stale_qt_ipc_artifacts(LOCAL_SERVER_NAME, SHARED_MEM_KEY)
+
+                        # Retry: allocate a fresh shared memory object and try to create again
+                        retry_mem = QSharedMemory(SHARED_MEM_KEY)
+                        if retry_mem.create(1, QSharedMemory.AccessMode.ReadOnly):
+                            logging.warning("Stale locks cleaned. Proceeding as first instance after retry.")
+                            shared_memory = retry_mem
+                            app_should_run = True
+                        else:
+                            logging.critical(f"Retry create shared memory failed: {retry_mem.errorString()}")
+                            if retry_mem.isAttached():
+                                retry_mem.detach()
+                            # As a last resort, remove server name and exit to avoid duplicate instances
+                            QLocalServer.removeServer(LOCAL_SERVER_NAME)
+                            sys.exit(1)
                 else:
                     # Other recoverable shared memory error
                     logging.error(f"QSharedMemory fatal error (create): {shared_memory.errorString()}")
@@ -235,10 +328,12 @@ if __name__ == "__main__":
 
             if not local_server.listen(LOCAL_SERVER_NAME):
                 logging.error(f"Unable to start local server '{LOCAL_SERVER_NAME}': {local_server.errorString()}")
-                # Clean up shared memory before exiting
-                cleanup_instance_lock(local_server, shared_memory)
-                # if splash: splash.close() # Close splash before exit
-                sys.exit(1) # Exit if the server doesn't start
+                # Try a last cleanup pass and retry once
+                cleanup_stale_qt_ipc_artifacts(LOCAL_SERVER_NAME, SHARED_MEM_KEY)
+                if not local_server.listen(LOCAL_SERVER_NAME):
+                    logging.error(f"Retry listen failed for '{LOCAL_SERVER_NAME}': {local_server.errorString()}")
+                    cleanup_instance_lock(local_server, shared_memory)
+                    sys.exit(1)
             else:
                 logging.info(f"Local server listening on: {local_server.fullServerName()}")
 
