@@ -375,7 +375,7 @@ if __name__ == "__main__":
                         logging.info("First launch detected, showing settings dialog.")
                         # Import SettingsDialog here to avoid circular module dependencies
                         from dialogs.settings_dialog import SettingsDialog
-                        settings_dialog = SettingsDialog(current_settings.copy(), window) # Passa copia e parent
+                        settings_dialog = SettingsDialog(current_settings.copy(), window, is_initial_setup=True) # Passa copia e parent
                         if settings_dialog.exec() == QDialog.Accepted:
                             new_settings = settings_dialog.get_settings()
                             # NOTE: If the user restored configs from backup, the dialog may have updated
@@ -387,14 +387,24 @@ if __name__ == "__main__":
                                 window.theme_manager.update_theme() # Applica tema
                                 # Reload favorites cache to reflect restored favorites immediately
                                 try:
+                                    import importlib
                                     from gui_components import favorites_manager as _fav
+                                    # Ensure module paths reflect the (possibly) new active config dir
+                                    _fav._cache_loaded = False
+                                    importlib.reload(_fav)
                                     _fav._cache_loaded = False
                                     _fav.load_favorites()
                                 except Exception:
                                     pass
 
                                 # Reload profiles from disk and refresh table
-                                window.profiles = backup_runner.core_logic.load_profiles() if hasattr(backup_runner, 'core_logic') else __import__('core_logic').load_profiles()
+                                try:
+                                    import importlib
+                                    import core_logic as _cl
+                                    importlib.reload(_cl)
+                                    window.profiles = _cl.load_profiles()
+                                except Exception:
+                                    window.profiles = backup_runner.core_logic.load_profiles() if hasattr(backup_runner, 'core_logic') else __import__('core_logic').load_profiles()
                                 window.updateUiText() # Aggiorna UI
                                 window.profile_table_manager.update_profile_table() # Aggiorna tabella
                                 logging.info("Initial settings configured and saved by user.")

@@ -7,14 +7,19 @@ import logging
 import config # Importa config per ottenere la cartella dati
 from datetime import datetime
 
-# --- Favorites File Name and Path ---
+# --- Favorites File Name and Path (dynamic using settings_manager) ---
 FAVORITES_FILENAME = "favorites_status.json"
-APP_DATA_FOLDER = config.get_app_data_folder() # Use the same function from config
-if APP_DATA_FOLDER:
-    FAVORITES_FILE_PATH = os.path.join(APP_DATA_FOLDER, FAVORITES_FILENAME)
+try:
+    import settings_manager as _sm
+    _ACTIVE_CONFIG_DIR = _sm.get_active_config_dir()
+except Exception:
+    _ACTIVE_CONFIG_DIR = config.get_app_data_folder()
+    logging.warning("Failed to import settings_manager for active config dir; falling back to AppData.")
+
+if _ACTIVE_CONFIG_DIR:
+    FAVORITES_FILE_PATH = os.path.join(_ACTIVE_CONFIG_DIR, FAVORITES_FILENAME)
 else:
-    # Fallback if data folder not found
-    logging.error("Unable to determine APP_DATA_FOLDER for favorites. Using relative path.")
+    logging.error("Unable to determine configuration directory for favorites. Using relative path.")
     FAVORITES_FILE_PATH = os.path.abspath(FAVORITES_FILENAME)
 logging.info(f"Favorites file path in use: {FAVORITES_FILE_PATH}")
 # --- End of Favorites File Path Definition ---
@@ -74,23 +79,29 @@ def save_favorites(favorites_dict):
             json.dump(favorites_dict, f, indent=4, ensure_ascii=False)
         logging.info(f"Saved {len(favorites_dict)} favorites to '{FAVORITES_FILE_PATH}'.")
         _favorites_cache = favorites_dict.copy() # Update cache after successful saving
-        # Mirror in backup root for resiliency (no timestamp snapshots by default)
+        # Mirror only when NOT in portable mode
         try:
-            # Determine rotation policy (defaults to 0 = disabled)
-            rotation = 0
+            do_mirror = True
             try:
-                import settings_manager
-                settings, _ = settings_manager.load_settings()
-                rotation = int(settings.get("mirror_rotation_keep", 0))
+                import settings_manager as _smirror
+                if _smirror.is_portable_mode():
+                    do_mirror = False
             except Exception:
+                pass
+            if do_mirror:
                 rotation = 0
-
-            # Use core_logic helper to mirror into backup root
-            try:
-                import core_logic
-                core_logic._mirror_json_to_backup_root("favorites_status.json", favorites_dict, rotation=rotation)
-            except Exception as e_core:
-                logging.warning(f"Mirror favorites to backup root failed: {e_core}")
+                try:
+                    import settings_manager as _sm4
+                    settings, _ = _sm4.load_settings()
+                    rotation = int(settings.get("mirror_rotation_keep", 0))
+                except Exception:
+                    rotation = 0
+                # Use core_logic helper to mirror into backup root
+                try:
+                    import core_logic
+                    core_logic._mirror_json_to_backup_root("favorites_status.json", favorites_dict, rotation=rotation)
+                except Exception as e_core:
+                    logging.warning(f"Mirror favorites to backup root failed: {e_core}")
         except Exception as e_mirror:
             logging.warning(f"Unable to mirror favorites to backup root: {e_mirror}")
         return True

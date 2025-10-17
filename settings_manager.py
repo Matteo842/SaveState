@@ -1,26 +1,108 @@
 # settings_manager.py
 import json
 import os
+import sys
+import shutil
 import config # Import for default values
 import logging
 
 
-# --- Use the function from config to define the path ---
+# --- Dynamic configuration directory resolution ---
 SETTINGS_FILENAME = "settings.json"
-APP_DATA_FOLDER = config.get_app_data_folder() # Get the base folder
-if APP_DATA_FOLDER: # Check if get_app_data_folder returned a valid path
-    SETTINGS_FILE_PATH = os.path.join(APP_DATA_FOLDER, SETTINGS_FILENAME)
-else:
-    # Fallback if we don't have a data folder (very rare)
-    logging.error("Unable to determine APP_DATA_FOLDER, using relative path for settings.json.")
-    SETTINGS_FILE_PATH = os.path.abspath(SETTINGS_FILENAME)
-logging.info(f"Settings file path in use: {SETTINGS_FILE_PATH}")
-# --- END OF DEFINITION ---
+
+# Runtime override for the active config directory (set after save_settings)
+_RUNTIME_CONFIG_DIR_OVERRIDE = None
+
+
+def _get_appdata_settings_path() -> str:
+    app_dir = config.get_app_data_folder()
+    try:
+        os.makedirs(app_dir, exist_ok=True)
+    except Exception:
+        pass
+    return os.path.join(app_dir, SETTINGS_FILENAME)
+
+
+def _read_appdata_settings() -> dict | None:
+    """Read settings.json from AppData if present. Returns dict or None."""
+    path = _get_appdata_settings_path()
+    try:
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        logging.warning("Unable to read settings.json from AppData (may be pointer or full config).")
+    return None
+
+
+def get_active_config_dir() -> str:
+    """Return the directory where JSON configs should be read from and written to.
+
+    Logic:
+      - If AppData settings.json exists AND indicates portable_config_only true with a valid
+        backup_base_dir, then point to <backup>/.savestate.
+      - Otherwise, use AppData directory.
+    """
+    # 0) Runtime override takes precedence for current session
+    global _RUNTIME_CONFIG_DIR_OVERRIDE
+    if _RUNTIME_CONFIG_DIR_OVERRIDE:
+        return _RUNTIME_CONFIG_DIR_OVERRIDE
+
+    app_dir = config.get_app_data_folder()
+    data = _read_appdata_settings()
+    try:
+        if isinstance(data, dict) and bool(data.get("portable_config_only")):
+            backup_root = data.get("backup_base_dir")
+            if isinstance(backup_root, str) and backup_root:
+                target = os.path.join(backup_root, ".savestate")
+                try:
+                    os.makedirs(target, exist_ok=True)
+                except Exception:
+                    pass
+                return target
+    except Exception:
+        pass
+    # If no AppData settings indicate portable, try default backup path fallback
+    try:
+        backup_default = getattr(config, "BACKUP_BASE_DIR", None)
+        if isinstance(backup_default, str) and backup_default:
+            savestate_dir = os.path.join(backup_default, ".savestate")
+            settings_path = os.path.join(savestate_dir, SETTINGS_FILENAME)
+            if os.path.isfile(settings_path):
+                try:
+                    with open(settings_path, 'r', encoding='utf-8') as f:
+                        portable_settings = json.load(f)
+                    if bool(portable_settings.get("portable_config_only")):
+                        return savestate_dir
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # Fallback to AppData
+    if not app_dir:
+        app_dir = os.path.abspath("SaveState")
+        try:
+            os.makedirs(app_dir, exist_ok=True)
+        except Exception:
+            pass
+    return app_dir
+
+
+def is_portable_mode() -> bool:
+    """True if the active configuration directory is the backup .savestate or runtime override implies it."""
+    try:
+        active_dir = _RUNTIME_CONFIG_DIR_OVERRIDE or get_active_config_dir()
+        return os.path.basename(os.path.normpath(active_dir)) == ".savestate"
+    except Exception:
+        return False
 
 
 def load_settings():
-    """Load settings from SETTINGS_FILE_PATH."""
-    first_launch = not os.path.exists(SETTINGS_FILE_PATH)
+    """Load settings from the active settings file path."""
+    active_config_dir = get_active_config_dir()
+    settings_file_path = os.path.join(active_config_dir, SETTINGS_FILENAME)
+    first_launch = not os.path.exists(settings_file_path)
     defaults = {
         "backup_base_dir": config.BACKUP_BASE_DIR,
         "max_backups": config.MAX_BACKUPS,
@@ -29,6 +111,8 @@ def load_settings():
         "compression_mode": "standard",
         "check_free_space_enabled": True,
         "enable_global_drag_effect": True, # ADDED: For the pynput global mouse drag detection overlay
+        # Portable mode default follows AppData pointer if present
+        "portable_config_only": bool(is_portable_mode()),
         "ini_whitelist": [ # Files to check for paths
             "steam_emu.ini",
             "user_steam_emu.ini",
@@ -60,15 +144,15 @@ def load_settings():
 
     if first_launch:
         logging.info("Loading settings from file...")
-        logging.info(f"Settings file '{SETTINGS_FILE_PATH}' not found...") 
+        logging.info(f"Settings file '{settings_file_path}' not found...") 
         # We could save defaults here, but we wait for user confirmation in the dialog
         return defaults.copy(), True # Returns COPY of defaults and True for first launch
 
     try:
-        with open(SETTINGS_FILE_PATH, 'r', encoding='utf-8') as f:
+        with open(settings_file_path, 'r', encoding='utf-8') as f:
             user_settings = json.load(f)
         logging.info("Settings loaded successfully")
-        logging.info(f"Settings loaded successfully from '{SETTINGS_FILE_PATH}'.")
+        logging.info(f"Settings loaded successfully from '{settings_file_path}'.")
         # Merge defaults with user settings to handle missing keys
         # User settings override defaults
         settings = defaults.copy()
@@ -122,32 +206,121 @@ def load_settings():
         
         return settings, False
     except (json.JSONDecodeError, KeyError, TypeError):
-        logging.error(f"Failed to read or validate '{SETTINGS_FILE_PATH}'...", exc_info=True)
+        logging.error(f"Failed to read or validate '{settings_file_path}'...", exc_info=True)
         return defaults.copy(), True # Treat as first launch if file is corrupted
     except Exception:
-        logging.error(f"Unexpected error reading settings from '{SETTINGS_FILE_PATH}'.", exc_info=True)
+        logging.error(f"Unexpected error reading settings from '{settings_file_path}'.", exc_info=True)
         return defaults.copy(), True
         
 
 def save_settings(settings_dict):
-    """Save the settings dictionary to SETTINGS_FILE. Returns bool (success)."""
+    """Save the settings dictionary. Supports portable mode. Returns bool (success)."""
     try:
-        with open(SETTINGS_FILE_PATH, 'w', encoding='utf-8') as f:
+        global _RUNTIME_CONFIG_DIR_OVERRIDE
+        # Extract and remove ephemeral flags (not persisted)
+        delete_appdata_after_portable = bool(settings_dict.pop("_delete_appdata_after_portable", False))
+
+        portable_flag = bool(settings_dict.get("portable_config_only", False))
+        backup_root = settings_dict.get("backup_base_dir", config.BACKUP_BASE_DIR)
+
+        # Decide target config directory
+        if portable_flag and backup_root:
+            target_config_dir = os.path.join(backup_root, ".savestate")
+            try:
+                os.makedirs(target_config_dir, exist_ok=True)
+            except Exception as e_mkdir:
+                logging.error(f"Unable to create portable config directory '{target_config_dir}': {e_mkdir}")
+                return False
+        else:
+            target_config_dir = config.get_app_data_folder()
+
+        # Save settings to the chosen place
+        target_settings_path = os.path.join(target_config_dir, SETTINGS_FILENAME)
+        with open(target_settings_path, 'w', encoding='utf-8') as f:
             json.dump(settings_dict, f, indent=4)
-        logging.info("Saving settings to file...")
-        logging.info(f"Settings successfully saved to '{SETTINGS_FILE_PATH}'.")
-        # Mirror settings into backup root for resiliency
+        logging.info(f"Settings saved to '{target_settings_path}'.")
+
+        # If enabling portable mode, migrate other JSONs from AppData to the portable directory
+        if portable_flag and backup_root:
+            try:
+                appdata_dir = config.get_app_data_folder()
+                files = [
+                    "settings.json",
+                    "game_save_profiles.json",
+                    "favorites_status.json",
+                ]
+                for name in files:
+                    src = os.path.join(appdata_dir, name)
+                    dst = os.path.join(target_config_dir, name)
+                    try:
+                        if os.path.isfile(src):
+                            shutil.copy2(src, dst)
+                            logging.info(f"Migrated '{name}' from AppData to portable directory.")
+                    except Exception as e_copy:
+                        logging.warning(f"Unable to migrate '{name}': {e_copy}")
+
+                # Optionally delete the AppData folder when requested and different from target
+                if delete_appdata_after_portable:
+                    try:
+                        if os.path.normcase(os.path.abspath(appdata_dir)) != os.path.normcase(os.path.abspath(target_config_dir)) and os.path.isdir(appdata_dir):
+                            shutil.rmtree(appdata_dir, ignore_errors=True)
+                            logging.info(f"AppData configuration directory removed: {appdata_dir}")
+                    except Exception as e_rm:
+                        logging.warning(f"Unable to remove AppData configuration directory: {e_rm}")
+            except Exception as e_mig:
+                logging.warning(f"Migration to portable directory encountered issues: {e_mig}")
+
+        # Update runtime override so subsequent reads in this session use the chosen directory immediately
         try:
-            backup_root = settings_dict.get("backup_base_dir", config.BACKUP_BASE_DIR)
-            if backup_root:
-                mirror_dir = os.path.join(backup_root, ".savestate")
-                os.makedirs(mirror_dir, exist_ok=True)
-                mirror_path = os.path.join(mirror_dir, "settings.json")
-                with open(mirror_path, 'w', encoding='utf-8') as mf:
-                    json.dump(settings_dict, mf, indent=4)
+            _RUNTIME_CONFIG_DIR_OVERRIDE = target_config_dir
         except Exception:
-            logging.warning("Unable to mirror settings.json to backup root")
+            pass
+
+        # Mirror settings only if NOT portable (portable dir is already the backup root)
+        if not portable_flag:
+            try:
+                backup_root_effective = backup_root
+                if backup_root_effective:
+                    mirror_dir = os.path.join(backup_root_effective, ".savestate")
+                    os.makedirs(mirror_dir, exist_ok=True)
+                    mirror_path = os.path.join(mirror_dir, "settings.json")
+                    with open(mirror_path, 'w', encoding='utf-8') as mf:
+                        json.dump(settings_dict, mf, indent=4)
+            except Exception:
+                logging.warning("Unable to mirror settings.json to backup root")
+
+            # Additionally, when LEAVING portable mode, copy other JSONs from the portable
+            # directory into AppData so runtime reload has complete data (profiles/favorites).
+            try:
+                portable_source_dir = None
+                if backup_root:
+                    candidate = os.path.join(backup_root, ".savestate")
+                    if os.path.isdir(candidate):
+                        portable_source_dir = candidate
+                if not portable_source_dir:
+                    try:
+                        active_dir = get_active_config_dir()
+                        if os.path.basename(os.path.normpath(active_dir)) == ".savestate":
+                            portable_source_dir = active_dir
+                    except Exception:
+                        portable_source_dir = None
+
+                if portable_source_dir and os.path.isdir(portable_source_dir):
+                    # Copy only non-settings JSONs; settings.json was just written above
+                    for name in ["game_save_profiles.json", "favorites_status.json"]:
+                        src = os.path.join(portable_source_dir, name)
+                        dst = os.path.join(target_config_dir, name)
+                        try:
+                            if os.path.isfile(src):
+                                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                                shutil.copy2(src, dst)
+                                logging.info(f"Migrated '{name}' from portable directory to AppData.")
+                        except Exception as e_copy_back:
+                            logging.warning(f"Unable to migrate '{name}' to AppData: {e_copy_back}")
+            except Exception as e_migrate_back:
+                logging.warning(f"Issues while migrating data from portable to AppData: {e_migrate_back}")
+
         return True
     except Exception:
-        logging.error(f"Error saving settings to '{SETTINGS_FILE_PATH}'.", exc_info=True)
+        logging.error("Error saving settings.", exc_info=True)
         return False

@@ -21,11 +21,13 @@ except ImportError:
 
 class SettingsDialog(QDialog):
 
-    def __init__(self, current_settings, parent=None):
+    def __init__(self, current_settings, parent=None, is_initial_setup: bool = False):
         super().__init__(parent)
         self.setWindowTitle("Application Settings")
         self.setMinimumWidth(500)
         self.settings = current_settings.copy()
+        # Flag: true only for the very first configuration dialog shown at app startup
+        self.is_initial_setup = bool(is_initial_setup)
 
         # Get the style for standard icons
         style = QApplication.instance().style()
@@ -43,6 +45,17 @@ class SettingsDialog(QDialog):
         path_layout.addWidget(self.browse_button)
         self.path_group.setLayout(path_layout)
         layout.addWidget(self.path_group)
+
+        # --- Portable Mode Group ---
+        self.portable_group = QGroupBox()
+        portable_layout = QHBoxLayout()
+        self.portable_checkbox = QCheckBox()
+        # Initialize from current settings (fallback False)
+        self.portable_checkbox.setChecked(self.settings.get("portable_config_only", False))
+        portable_layout.addWidget(self.portable_checkbox)
+        portable_layout.addStretch()
+        self.portable_group.setLayout(portable_layout)
+        layout.addWidget(self.portable_group)
 
         # --- Maximum Source Size Group ---
         self.max_src_group = QGroupBox() # Saved reference
@@ -142,9 +155,16 @@ class SettingsDialog(QDialog):
 
         # Connect signals
         self.browse_button.clicked.connect(self.browse_backup_dir)
+        # React to portable checkbox toggle
+        self.portable_checkbox.toggled.connect(self._handle_portable_toggled)
 
         # Call updateUiText at the end to set initial texts
         self.updateUiText()
+        # Apply initial toggle state rules (e.g., in first-launch flow)
+        try:
+            self._handle_portable_toggled(self.portable_checkbox.isChecked())
+        except Exception:
+            pass
 
     def get_settings(self):
         """Returns the internal dictionary of modified settings."""
@@ -164,6 +184,9 @@ class SettingsDialog(QDialog):
         # UI Settings Texts
         self.ui_settings_group.setTitle("UI Settings")
         self.enable_global_drag_checkbox.setText("Enable global mouse drag-to-show effect")
+        # Portable Mode Texts
+        self.portable_group.setTitle("Portable Mode")
+        self.portable_checkbox.setText("Use only JSONs in backup folder (.savestate)")
         
         # Restore JSON Texts
         self.restore_json_group.setTitle("Restore Configuration Backups")
@@ -215,6 +238,7 @@ class SettingsDialog(QDialog):
         selected_size_index = self.max_src_combobox.currentIndex()
         new_compression_mode = self.comp_combobox.currentData()
         new_check_free_space = self.space_check_checkbox.isChecked()
+        new_portable_mode = self.portable_checkbox.isChecked()
 
         new_max_src_size_mb = -1
         if 0 <= selected_size_index < len(self.size_options):
@@ -272,9 +296,79 @@ class SettingsDialog(QDialog):
         self.settings["compression_mode"] = new_compression_mode
         self.settings["check_free_space_enabled"] = new_check_free_space
         self.settings["enable_global_drag_effect"] = self.enable_global_drag_checkbox.isChecked()
+        # Handle portable mode and conditional AppData deletion prompt
+        previous_portable = bool(self.settings.get("portable_config_only", False))
+        self.settings["portable_config_only"] = new_portable_mode
 
+        # Show delete AppData popup only when enabling portable and AppData folder exists
+        try:
+            if (not previous_portable) and new_portable_mode:
+                import config as _cfg
+                appdata_dir = _cfg.get_app_data_folder()
+                appdata_has_configs = False
+                if appdata_dir and os.path.isdir(appdata_dir):
+                    # Consider folder existing with any of the known JSONs as present
+                    known = ["settings.json", "game_save_profiles.json", "favorites_status.json"]
+                    appdata_has_configs = any(os.path.exists(os.path.join(appdata_dir, n)) for n in known)
+                if appdata_has_configs:
+                    reply = QMessageBox.question(
+                        self,
+                        "Remove AppData Configuration?",
+                        ("You enabled portable mode and a configuration folder was found in AppData:\n\n"
+                         f"{appdata_dir}\n\n"
+                         "Do you want to delete the AppData configuration after migrating files to the backup folder?"),
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.Yes
+                    )
+                    if reply == QMessageBox.StandardButton.Yes:
+                        # Ephemeral flag consumed by settings_manager.save_settings
+                        self.settings["_delete_appdata_after_portable"] = True
+        except Exception:
+            pass
+
+        # If enabling portable and .savestate esiste, cambiamo immediatamente i percorsi e chiudiamo come Continue
+        if new_portable_mode:
+            try:
+                # Forza override runtime subito, così gli import usano il nuovo path in questa sessione
+                import settings_manager as _sm
+                target_dir = os.path.join(validated_new_path, ".savestate")
+                if hasattr(_sm, "_RUNTIME_CONFIG_DIR_OVERRIDE"):
+                    _sm._RUNTIME_CONFIG_DIR_OVERRIDE = target_dir
+            except Exception:
+                pass
         # Accept the dialog
         super().accept()
+
+    def _is_portable_ready(self) -> bool:
+        try:
+            base = os.path.normpath(self.path_edit.text())
+            if not base:
+                return False
+            savestate_dir = os.path.join(base, ".savestate")
+            if not os.path.isdir(savestate_dir):
+                return False
+            # Require at least settings.json and game_save_profiles.json to exist
+            required = [
+                os.path.join(savestate_dir, "settings.json"),
+                os.path.join(savestate_dir, "game_save_profiles.json"),
+            ]
+            return all(os.path.isfile(p) for p in required)
+        except Exception:
+            return False
+
+    def _handle_portable_toggled(self, enabled: bool):
+        ready = self._is_portable_ready() if enabled else False
+        # Only during initial setup we lock the rest of the UI when portable is ready
+        if self.is_initial_setup:
+            for g in (self.max_src_group, self.max_group, self.comp_group, self.space_check_group, self.ui_settings_group, self.restore_json_group):
+                g.setEnabled(not (enabled and ready))
+            self.path_group.setEnabled(not (enabled and ready))
+        try:
+            btn = self.buttons.button(QDialogButtonBox.StandardButton.Save)
+            if btn:
+                btn.setText("Continue" if (self.is_initial_setup and enabled and ready) else "Save")
+        except Exception:
+            pass
     
     @Slot()
     def handle_restore_json_backup(self):

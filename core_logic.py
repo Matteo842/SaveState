@@ -28,14 +28,19 @@ except ImportError:
     logging.warning("Library 'thefuzz' not found. Fuzzy matching will be disabled.")
     logging.warning("Install it with: pip install thefuzz[speedup]")
 
-# --- Define profiles file path ---
+# --- Define profiles file path (dynamic using settings_manager) ---
 PROFILES_FILENAME = "game_save_profiles.json"
-APP_DATA_FOLDER = config.get_app_data_folder() # Get base folder
-if APP_DATA_FOLDER: # Check if valid
-    PROFILES_FILE_PATH = os.path.join(APP_DATA_FOLDER, PROFILES_FILENAME)
+try:
+    import settings_manager as _sm
+    _ACTIVE_CONFIG_DIR = _sm.get_active_config_dir()
+except Exception:
+    _ACTIVE_CONFIG_DIR = config.get_app_data_folder()
+    logging.warning("Failed to import settings_manager for active config dir; falling back to AppData.")
+
+if _ACTIVE_CONFIG_DIR:
+    PROFILES_FILE_PATH = os.path.join(_ACTIVE_CONFIG_DIR, PROFILES_FILENAME)
 else:
-    # Fallback
-    logging.error("Unable to determine APP_DATA_FOLDER, using relative path for game_save_profiles.json.")
+    logging.error("Unable to determine configuration directory, using relative path for game_save_profiles.json.")
     PROFILES_FILE_PATH = os.path.abspath(PROFILES_FILENAME)
 logging.info(f"Profile file path in use: {PROFILES_FILE_PATH}")
 # --- End definition ---
@@ -253,16 +258,24 @@ def save_profiles(profiles):
         with open(PROFILES_FILE_PATH, 'w', encoding='utf-8') as f:
             json.dump(data_to_save, f, indent=4, ensure_ascii=False)
         logging.info(f"Saved {len(profiles)} profiles in '{PROFILES_FILE_PATH}'.")
-        # Mirror nel root dei backup per resilienza (rotation configurable via settings)
+        # Mirror only when NOT in portable mode (portable is already in backup root)
         try:
-            rotation = 0
+            do_mirror = True
             try:
-                import settings_manager
-                settings, _ = settings_manager.load_settings()
-                rotation = int(settings.get("mirror_rotation_keep", 0))
+                import settings_manager as _sm2
+                if _sm2.is_portable_mode():
+                    do_mirror = False
             except Exception:
+                pass
+            if do_mirror:
                 rotation = 0
-            _mirror_json_to_backup_root("game_save_profiles.json", data_to_save, rotation=rotation)
+                try:
+                    import settings_manager as _sm3
+                    settings, _ = _sm3.load_settings()
+                    rotation = int(settings.get("mirror_rotation_keep", 0))
+                except Exception:
+                    rotation = 0
+                _mirror_json_to_backup_root("game_save_profiles.json", data_to_save, rotation=rotation)
         except Exception as e_mirror:
             logging.warning(f"Unable to mirror profiles JSON to backup root: {e_mirror}")
         return True
@@ -1390,19 +1403,37 @@ def restore_json_from_backup_root() -> bool:
         if filename == "game_save_profiles.json":
             dest_path = PROFILES_FILE_PATH
         elif filename == "settings.json":
-            dest_path = os.path.join(APP_DATA_FOLDER, filename)
+            try:
+                import settings_manager as _sm_restore
+                dest_root = _sm_restore.get_active_config_dir()
+            except Exception:
+                dest_root = config.get_app_data_folder()
+            dest_path = os.path.join(dest_root, filename)
         elif filename == "favorites_status.json":
             try:
                 # Use path constant from favorites_manager to avoid duplication
                 from gui_components import favorites_manager as _fav
                 dest_path = _fav.FAVORITES_FILE_PATH
             except Exception:
-                dest_path = os.path.join(APP_DATA_FOLDER, filename)
+                try:
+                    import settings_manager as _sm_restore2
+                    dest_root = _sm_restore2.get_active_config_dir()
+                except Exception:
+                    dest_root = config.get_app_data_folder()
+                dest_path = os.path.join(dest_root, filename)
         else:
             continue
         
         try:
             import shutil
+            # Skip if source and destination coincide (portable mode)
+            try:
+                if os.path.normcase(os.path.abspath(source_file)) == os.path.normcase(os.path.abspath(dest_path)):
+                    logging.info(f"Skipping restore for {filename}: source and destination are the same.")
+                    restored_count += 1
+                    continue
+            except Exception:
+                pass
             # Create backup of current file before overwriting
             if os.path.exists(dest_path):
                 backup_path = dest_path + ".before_restore"

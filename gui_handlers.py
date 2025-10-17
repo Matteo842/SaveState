@@ -236,7 +236,9 @@ class MainWindowHandlers:
 
             # Settings Application Flow:
 
-            # 1. Update the main_window's internal settings object immediately.
+            # 1. Keep track of old portable flag to detect transition
+            old_portable = bool(self.main_window.current_settings.get("portable_config_only", False)) if hasattr(self.main_window, "current_settings") and isinstance(self.main_window.current_settings, dict) else False
+            # 1b. Update the main_window's internal settings object immediately.
             self.main_window.current_settings = new_settings
 
             # 2. Apply theme and update UI
@@ -247,12 +249,50 @@ class MainWindowHandlers:
             if settings_manager.save_settings(self.main_window.current_settings):
                 logging.info("Settings saved successfully after dialog confirmation.")
                 self.main_window.status_label.setText("Settings saved.")
-                # Update the global drag listener state if the setting was changed
-                if hasattr(self.main_window, 'update_global_drag_listener_state'):
-                    logging.debug("Calling update_global_drag_listener_state after saving settings.")
-                    self.main_window.update_global_drag_listener_state()
-                else:
-                    logging.warning("MainWindow does not have update_global_drag_listener_state method.")
+                # Decide whether to reload runtime modules/data
+                new_portable = bool(self.main_window.current_settings.get("portable_config_only", False))
+                need_runtime_reload = new_portable or (new_portable != old_portable)
+
+                # Always reload settings from disk (ensures paths are normalized and persisted)
+                try:
+                    self.main_window.current_settings, _first = settings_manager.load_settings()
+                except Exception as e_load:
+                    logging.warning(f"Reloading settings after save failed: {e_load}")
+
+                # If portable is enabled (or changed), point modules to the new active dir immediately and reload data
+                if need_runtime_reload:
+                    try:
+                        import importlib
+                        # Reload favorites manager so FAVORITES_FILE_PATH is recomputed using new active dir
+                        from gui_components import favorites_manager as _fav
+                        importlib.reload(_fav)
+                        _fav._cache_loaded = False
+                        _fav.load_favorites()
+                    except Exception as e_fav:
+                        logging.warning(f"Reload favorites after settings change failed: {e_fav}")
+
+                    try:
+                        import importlib
+                        import core_logic as _cl
+                        importlib.reload(_cl)
+                        self.main_window.profiles = _cl.load_profiles()
+                    except Exception as e_cl:
+                        logging.warning(f"Reload profiles after settings change failed: {e_cl}")
+
+                    # Refresh UI bits dependent on profiles/settings
+                    try:
+                        if hasattr(self.main_window, 'profile_table_manager') and self.main_window.profile_table_manager:
+                            self.main_window.profile_table_manager.update_profile_table()
+                    except Exception:
+                        pass
+
+                # Update the global drag listener state
+                try:
+                    if hasattr(self.main_window, 'update_global_drag_listener_state'):
+                        logging.debug("Calling update_global_drag_listener_state after saving settings.")
+                        self.main_window.update_global_drag_listener_state()
+                except Exception:
+                    logging.warning("Unable to update global drag listener state after settings save.")
             else:
                 logging.error("Failed to save settings after dialog confirmation.")
                 QMessageBox.warning(self.main_window, "Save Error",
