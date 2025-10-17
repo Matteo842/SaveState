@@ -1365,7 +1365,7 @@ def get_display_name_from_backup_filename(filename):
 
 # --- JSON Backup Restore Functions ---
 def restore_json_from_backup_root() -> bool:
-    """Restore JSON files (profiles, settings, etc.) from backup_root/.savestate/ directory."""
+    """Restore JSON files (profiles, settings, favorites) from backup_root/.savestate/ directory."""
     backup_root = _get_backup_root_from_settings()
     if not backup_root:
         logging.error("Cannot restore JSONs: backup root not found")
@@ -1376,8 +1376,8 @@ def restore_json_from_backup_root() -> bool:
         logging.warning(f"Mirror directory does not exist: {mirror_dir}")
         return False
     
-    # Files to restore
-    files_to_restore = ["game_save_profiles.json", "settings.json", "favorites.json"]
+    # Files to restore (match mirror filenames)
+    files_to_restore = ["game_save_profiles.json", "settings.json", "favorites_status.json"]
     restored_count = 0
     
     for filename in files_to_restore:
@@ -1391,8 +1391,13 @@ def restore_json_from_backup_root() -> bool:
             dest_path = PROFILES_FILE_PATH
         elif filename == "settings.json":
             dest_path = os.path.join(APP_DATA_FOLDER, filename)
-        elif filename == "favorites.json":
-            dest_path = os.path.join(APP_DATA_FOLDER, filename)
+        elif filename == "favorites_status.json":
+            try:
+                # Use path constant from favorites_manager to avoid duplication
+                from gui_components import favorites_manager as _fav
+                dest_path = _fav.FAVORITES_FILE_PATH
+            except Exception:
+                dest_path = os.path.join(APP_DATA_FOLDER, filename)
         else:
             continue
         

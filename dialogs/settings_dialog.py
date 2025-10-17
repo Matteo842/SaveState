@@ -321,6 +321,13 @@ class SettingsDialog(QDialog):
                     if mw:
                         if isinstance(reloaded_settings, dict):
                             mw.current_settings = reloaded_settings
+                        # Reload favorites cache after restore
+                        try:
+                            from gui_components import favorites_manager as _fav
+                            _fav._cache_loaded = False
+                            _fav.load_favorites()
+                        except Exception:
+                            pass
                         # Reload profiles from disk and refresh UI
                         mw.profiles = core_logic.load_profiles()
                         if hasattr(mw, 'profile_table_manager') and mw.profile_table_manager:
