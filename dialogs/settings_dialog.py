@@ -280,6 +280,11 @@ class SettingsDialog(QDialog):
     def handle_restore_json_backup(self):
         """Handle restoring JSON backups from the backup directory."""
         import core_logic
+        # Lazy import to avoid potential cycles
+        try:
+            import settings_manager as _settings_manager
+        except Exception:
+            _settings_manager = None
         
         # Ask for confirmation
         reply = QMessageBox.question(
@@ -299,12 +304,44 @@ class SettingsDialog(QDialog):
         try:
             success = core_logic.restore_json_from_backup_root()
             if success:
+                # Reload settings and profiles immediately and apply to parent window
+                try:
+                    # Reload settings from disk
+                    reloaded_settings = None
+                    if _settings_manager is not None:
+                        reloaded_settings, _first = _settings_manager.load_settings()
+                    # Update internal dialog state
+                    if isinstance(reloaded_settings, dict):
+                        self.settings = reloaded_settings.copy()
+                        # Reflect new base path in UI field
+                        if hasattr(self, 'path_edit') and self.path_edit:
+                            self.path_edit.setText(self.settings.get("backup_base_dir", ""))
+                    # Update main window immediately (if available)
+                    mw = self.parent()
+                    if mw:
+                        if isinstance(reloaded_settings, dict):
+                            mw.current_settings = reloaded_settings
+                        # Reload profiles from disk and refresh UI
+                        mw.profiles = core_logic.load_profiles()
+                        if hasattr(mw, 'profile_table_manager') and mw.profile_table_manager:
+                            mw.profile_table_manager.update_profile_table()
+                        if hasattr(mw, 'updateUiText'):
+                            mw.updateUiText()
+                        if hasattr(mw, 'update_global_drag_listener_state'):
+                            mw.update_global_drag_listener_state()
+                except Exception as e_apply:
+                    logging.warning(f"Applied restore but failed to refresh UI/runtime state: {e_apply}")
+
                 QMessageBox.information(
                     self,
                     "Restore Successful",
-                    "Configuration files have been restored successfully.\n\n"
-                    "Please restart the application for changes to take effect."
+                    "Configuration files have been restored and applied."
                 )
+
+                # Close the dialog as 'Accepted' to continue normal startup
+                # (we avoid triggering accept_settings to not overwrite restored files)
+                self.accept()
+                return
             else:
                 QMessageBox.warning(
                     self,
