@@ -5,10 +5,22 @@ import os
 import logging
 import platform
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TypedDict
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
+
+
+class CoreEntry(TypedDict):
+    id: str
+    name: str
+    count: int
+
+
+class ProfileEntry(TypedDict):
+    id: str
+    name: str
+    paths: List[str]
 
 
 def _get_ra_root(executable_path_or_dir: Optional[str]) -> Optional[str]:
@@ -38,13 +50,34 @@ def _get_saves_dir(ra_root: Optional[str]) -> Optional[str]:
 
 
 def _parse_simple_cfg_line(line: str) -> Optional[Tuple[str, str]]:
-    line = line.strip()
-    if not line or line.startswith('#'):
+    """Parse a simple retroarch.cfg line of the form key = "value".
+    - Strips inline comments outside quotes (e.g., ... "value"  # comment)
+    - Returns (key, value) or None if not parseable
+    """
+    def _strip_inline_comment(s: str) -> str:
+        in_quotes = False
+        escaped = False
+        out_chars: List[str] = []
+        for ch in s:
+            if ch == '"' and not escaped:
+                in_quotes = not in_quotes
+            if ch == '#' and not in_quotes:
+                break
+            out_chars.append(ch)
+            escaped = (ch == '\\' and not escaped)
+        return ''.join(out_chars)
+
+    s = _strip_inline_comment(line).strip()
+    if not s or s.startswith('#'):
         return None
-    if '=' not in line:
+    if '=' not in s:
         return None
-    k, v = line.split('=', 1)
-    return k.strip(), v.strip().strip('"')
+    k, v = s.split('=', 1)
+    key = k.strip()
+    value = v.strip().strip('"')
+    if not key:
+        return None
+    return key, value
 
 
 def _read_retroarch_cfg(cfg_path: Optional[str]) -> Dict[str, str]:
@@ -75,6 +108,13 @@ def _expand(path_str: Optional[str], base: Optional[str]) -> Optional[str]:
         return path_str
 
 
+def _first_existing_dir(candidates: List[Optional[str]]) -> Optional[str]:
+    for p in candidates:
+        if p and os.path.isdir(p):
+            return p
+    return None
+
+
 def _resolve_ra_paths(executable_path_or_dir: Optional[str]) -> Dict[str, Optional[str]]:
     """Resolve RetroArch root, saves directory and system directory using both root and retroarch.cfg.
     Preference: explicit directories in retroarch.cfg > root defaults.
@@ -85,14 +125,25 @@ def _resolve_ra_paths(executable_path_or_dir: Optional[str]) -> Dict[str, Option
     cfg_candidates: List[str] = []
     if ra_root:
         cfg_candidates.append(os.path.join(ra_root, 'retroarch.cfg'))
+        # Portable/packaged layouts
+        cfg_candidates.append(os.path.join(ra_root, 'config', 'retroarch.cfg'))
+        cfg_candidates.append(os.path.join(ra_root, 'config', 'retroarch', 'retroarch.cfg'))
     if platform.system() == 'Windows':
         appdata = os.getenv('APPDATA')
         if appdata:
             cfg_candidates.append(os.path.join(appdata, 'RetroArch', 'retroarch.cfg'))
     elif platform.system() == 'Linux':
         home = os.path.expanduser('~')
+        # XDG_CONFIG_HOME
+        xdg_config = os.getenv('XDG_CONFIG_HOME')
+        if xdg_config:
+            cfg_candidates.append(os.path.join(xdg_config, 'retroarch', 'retroarch.cfg'))
+        # Standard config location
         cfg_candidates.append(os.path.join(home, '.config', 'retroarch', 'retroarch.cfg'))
+        # Flatpak
         cfg_candidates.append(os.path.join(home, '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'retroarch.cfg'))
+        # Snap (less common, but seen in the wild)
+        cfg_candidates.append(os.path.join(home, 'snap', 'retroarch', 'current', '.config', 'retroarch', 'retroarch.cfg'))
     elif platform.system() == 'Darwin':
         home = os.path.expanduser('~')
         cfg_candidates.append(os.path.join(home, 'Library', 'Application Support', 'RetroArch', 'retroarch.cfg'))
@@ -101,11 +152,63 @@ def _resolve_ra_paths(executable_path_or_dir: Optional[str]) -> Dict[str, Option
     cfg = _read_retroarch_cfg(cfg_path)
 
     # Resolve directories
-    explicit_saves = _expand(cfg.get('savefile_directory'), ra_root) if cfg else None
-    explicit_system = _expand(cfg.get('system_directory'), ra_root) if cfg else None
+    def _is_unset_dir_value(v: Optional[str]) -> bool:
+        if v is None:
+            return True
+        v_stripped = v.strip().strip('"')
+        return v_stripped == '' or v_stripped.lower() == 'default'
 
-    default_saves = _get_saves_dir(ra_root)
-    default_system = os.path.join(ra_root, 'system') if ra_root and os.path.isdir(os.path.join(ra_root, 'system')) else None
+    explicit_saves = None
+    explicit_system = None
+    if cfg:
+        saves_val = cfg.get('savefile_directory')
+        system_val = cfg.get('system_directory')
+        if not _is_unset_dir_value(saves_val):
+            explicit_saves = _expand(saves_val, ra_root)
+        if not _is_unset_dir_value(system_val):
+            explicit_system = _expand(system_val, ra_root)
+
+    # Default directories by platform
+    default_saves: Optional[str] = None
+    default_system: Optional[str] = None
+    sysname = platform.system()
+    if sysname == 'Windows':
+        default_saves = _get_saves_dir(ra_root)
+        default_system = os.path.join(ra_root, 'system') if ra_root and os.path.isdir(os.path.join(ra_root, 'system')) else None
+    elif sysname == 'Linux':
+        home = os.path.expanduser('~')
+        xdg_config = os.getenv('XDG_CONFIG_HOME') or os.path.join(home, '.config')
+        xdg_data = os.getenv('XDG_DATA_HOME') or os.path.join(home, '.local', 'share')
+        default_saves = _first_existing_dir([
+            _get_saves_dir(ra_root),
+            os.path.join(xdg_config, 'retroarch', 'saves'),
+            os.path.join(home, '.config', 'retroarch', 'saves'),
+            os.path.join(xdg_data, 'retroarch', 'saves'),
+            os.path.join(home, '.local', 'share', 'retroarch', 'saves'),
+            os.path.join(home, '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'saves'),
+            os.path.join(home, '.var', 'app', 'org.libretro.RetroArch', 'data', 'retroarch', 'saves'),
+            os.path.join(home, 'snap', 'retroarch', 'current', '.config', 'retroarch', 'saves'),
+        ])
+        default_system = _first_existing_dir([
+            os.path.join(ra_root, 'system') if ra_root else None,
+            os.path.join(xdg_config, 'retroarch', 'system') if xdg_config else None,
+            os.path.join(home, '.config', 'retroarch', 'system'),
+            os.path.join(xdg_data, 'retroarch', 'system') if xdg_data else None,
+            os.path.join(home, '.local', 'share', 'retroarch', 'system'),
+            os.path.join(home, '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'system'),
+            os.path.join(home, '.var', 'app', 'org.libretro.RetroArch', 'data', 'retroarch', 'system'),
+            os.path.join(home, 'snap', 'retroarch', 'current', '.config', 'retroarch', 'system'),
+        ])
+    elif sysname == 'Darwin':
+        home = os.path.expanduser('~')
+        default_saves = _first_existing_dir([
+            _get_saves_dir(ra_root),
+            os.path.join(home, 'Library', 'Application Support', 'RetroArch', 'saves'),
+        ])
+        default_system = _first_existing_dir([
+            os.path.join(ra_root, 'system') if ra_root else None,
+            os.path.join(home, 'Library', 'Application Support', 'RetroArch', 'system'),
+        ])
 
     saves_dir = explicit_saves if (explicit_saves and os.path.isdir(explicit_saves)) else default_saves
     system_dir = explicit_system if (explicit_system and os.path.isdir(explicit_system)) else default_system
@@ -181,7 +284,7 @@ def _count_files_with_extensions(root_dir: Optional[str], extensions: List[str])
     return count
 
 
-def list_retroarch_cores(executable_path_or_dir: Optional[str] = None) -> List[Dict[str, str]]:
+def list_retroarch_cores(executable_path_or_dir: Optional[str] = None) -> List[CoreEntry]:
     """
     Return cores from RetroArch root 'saves' directory.
     Structure expected:
@@ -191,7 +294,7 @@ def list_retroarch_cores(executable_path_or_dir: Optional[str] = None) -> List[D
     paths = _resolve_ra_paths(executable_path_or_dir)
     saves_dir = paths.get('saves_dir')
     system_dir = paths.get('system_dir')
-    cores: List[Dict[str, str]] = []
+    cores: List[CoreEntry] = []
     if not saves_dir:
         log.info("RetroArch saves directory not found under the provided root.")
         return cores
@@ -234,7 +337,7 @@ def list_retroarch_cores(executable_path_or_dir: Optional[str] = None) -> List[D
     return cores
 
 
-def find_retroarch_profiles(selected_core: str, executable_path_or_dir: Optional[str] = None) -> Optional[List[Dict[str, str]]]:
+def find_retroarch_profiles(selected_core: str, executable_path_or_dir: Optional[str] = None) -> Optional[List[ProfileEntry]]:
     """Return file-based profiles for the given core from <RA_ROOT>/saves/<CoreName>/.
     Each profile: {'id': base_filename, 'name': cleaned_display_name, 'paths': [full_file_path]}
     """
@@ -266,7 +369,7 @@ def find_retroarch_profiles(selected_core: str, executable_path_or_dir: Optional
         ps1_dir, _ = _find_dir_with_ext([system_dir, saves_dir], '.mcd', max_depth=3)
         if not ps1_dir:
             return []
-        profiles: List[Dict[str, str]] = []
+        profiles: List[ProfileEntry] = []
         for f in _iter_files_shallow(ps1_dir):
             if os.path.splitext(f)[1].lower() != '.mcd':
                 continue
@@ -290,7 +393,7 @@ def find_retroarch_profiles(selected_core: str, executable_path_or_dir: Optional
             chosen = next((d for d in [fc_dir_bin, fc_dir_vmu, fc_dir_vms] if d), None)
             if not chosen:
                 return []
-            profiles: List[Dict[str, str]] = []
+            profiles: List[ProfileEntry] = []
             for f in _iter_files_shallow(chosen):
                 ext = os.path.splitext(f)[1].lower()
                 if ext not in ('.bin', '.vmu', '.vms'):
@@ -304,7 +407,7 @@ def find_retroarch_profiles(selected_core: str, executable_path_or_dir: Optional
     if not os.path.isdir(core_dir):
         return []
 
-    profiles: List[Dict[str, str]] = []
+    profiles: List[ProfileEntry] = []
 
     try:
         for full in _iter_files_shallow(core_dir):
