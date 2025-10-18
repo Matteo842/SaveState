@@ -10,4 +10,4 @@ psutil==5.9.8
 requests==2.31.0
 steamgriddb==1.2.0
 # For Linux native notifications
-notify-py==0.4.0
+notify-py==0.3.43
