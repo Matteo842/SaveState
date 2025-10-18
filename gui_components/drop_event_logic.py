@@ -7,7 +7,7 @@ from pathlib import Path
 import shortcut_utils  # Import shortcut utilities
 
 from PySide6.QtWidgets import QMessageBox, QApplication, QDialog  # Import QApplication and QDialog
-from PySide6.QtGui import QDropEvent
+from PySide6.QtGui import QDropEvent, QGuiApplication
 from PySide6.QtCore import Qt  # Import Qt
 from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
 from dialogs.retroarch_dialog import RetroArchCoreSelectionDialog
@@ -46,6 +46,17 @@ class DropEventMixin:
         # Chiama il reset della classe padre se esiste
         if hasattr(super(), 'reset_internal_state'):
             super().reset_internal_state()
+
+    def _restore_all_override_cursors(self):
+        """Rimuove tutte le override cursors attive per evitare cursore bloccato su 'busy'."""
+        try:
+            while QGuiApplication.overrideCursor() is not None:
+                QApplication.restoreOverrideCursor()
+        except Exception:
+            try:
+                QApplication.restoreOverrideCursor()
+            except Exception:
+                pass
 
     # --- Generic helper: prompt for ROM directory and rescan profiles for any emulator ---
     def _prompt_for_emulator_rom_dir_and_find_profiles(self, mw, emulator_key: str, target_path: str | None):
@@ -1328,7 +1339,20 @@ class DropEventMixin:
             logging.info("Set processing_cancelled flag to prevent new thread creation")
         
         logging.info(f"Total threads cancelled: {total_cancelled}")
-        
+
+        # Ripristina sempre il cursore per evitare che rimanga in stato di attesa
+        self._restore_all_override_cursors()
+
+        # Best-effort: riabilita controlli e nascondi overlay se presente
+        try:
+            if hasattr(self, 'main_window') and self.main_window:
+                if hasattr(self, '_hide_overlay_if_visible'):
+                    self._hide_overlay_if_visible(self.main_window)
+                if hasattr(self.main_window, 'set_controls_enabled'):
+                    self.main_window.set_controls_enabled(True)
+        except Exception:
+            pass
+
         if total_cancelled == 0:
             logging.warning("No detection threads found to cancel! This might indicate a timing issue.")
 
