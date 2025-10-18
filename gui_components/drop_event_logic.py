@@ -530,41 +530,34 @@ class DropEventMixin:
                         if not cores:
                             QMessageBox.warning(mw, "RetroArch", "No cores with saves detected under RetroArch paths.")
                         else:
-                            core_dialog = RetroArchCoreSelectionDialog(cores, mw)
-                            if core_dialog.exec():
-                                core_id = core_dialog.get_selected_core()
-                                if core_id:
-                                    profiles_data = find_retroarch_profiles(core_id, ra_hint) or []
-                                    if profiles_data:
-                                        selection_dialog = EmulatorGameSelectionDialog(core_id, profiles_data, mw)
-                                        if selection_dialog.exec():
-                                            selected_profile = selection_dialog.get_selected_profile_data()
-                                            if selected_profile:
-                                                profile_id = selected_profile.get('id', '')
-                                                selected_name = selected_profile.get('name', profile_id)
-                                                save_paths = selected_profile.get('paths', [])
-                                                profile_name = f"{core_id} - {selected_name}"
-                                                if profile_name in mw.profiles:
-                                                    reply = QMessageBox.question(mw, "Existing Profile", f"A profile named '{profile_name}' already exists. Overwrite it?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-                                                    if reply == QMessageBox.StandardButton.No:
-                                                        mw.status_label.setText("Profile creation cancelled.")
-                                                        event.acceptProposedAction(); return
-                                                new_profile = {'name': profile_name, 'paths': save_paths, 'emulator': core_id}
-                                                for k, v in selected_profile.items():
-                                                    if k not in ['name', 'paths']:
-                                                        new_profile[k] = v
-                                                mw.profiles[profile_name] = new_profile
-                                                if mw.core_logic.save_profiles(mw.profiles):
-                                                    if hasattr(mw, 'profile_table_manager'):
-                                                        mw.profile_table_manager.update_profile_table()
-                                                        mw.profile_table_manager.select_profile_in_table(profile_name)
-                                                    mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
-                                                else:
-                                                    QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
-                                        # end selection_dialog
+                            # Unified single-dialog flow
+                            from dialogs.retroarch_dialog import RetroArchSetupDialog
+                            setup_dialog = RetroArchSetupDialog(ra_hint, cores, mw)
+                            if setup_dialog.exec():
+                                core_id = setup_dialog.get_selected_core()
+                                selected_profile = setup_dialog.get_selected_profile_data()
+                                if core_id and selected_profile:
+                                    profile_id = selected_profile.get('id', '')
+                                    selected_name = selected_profile.get('name', profile_id)
+                                    save_paths = selected_profile.get('paths', [])
+                                    profile_name = f"{core_id} - {selected_name}"
+                                    if profile_name in mw.profiles:
+                                        reply = QMessageBox.question(mw, "Existing Profile", f"A profile named '{profile_name}' already exists. Overwrite it?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+                                        if reply == QMessageBox.StandardButton.No:
+                                            mw.status_label.setText("Profile creation cancelled.")
+                                            event.acceptProposedAction(); return
+                                    new_profile = {'name': profile_name, 'paths': save_paths, 'emulator': core_id}
+                                    for k, v in selected_profile.items():
+                                        if k not in ['name', 'paths']:
+                                            new_profile[k] = v
+                                    mw.profiles[profile_name] = new_profile
+                                    if mw.core_logic.save_profiles(mw.profiles):
+                                        if hasattr(mw, 'profile_table_manager'):
+                                            mw.profile_table_manager.update_profile_table()
+                                            mw.profile_table_manager.select_profile_in_table(profile_name)
+                                        mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
                                     else:
-                                        QMessageBox.information(mw, "RetroArch", f"No saves found for core '{core_id}'.")
-                            # end core_dialog
+                                        QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
                         # end cores empty/else
                     except Exception as e_ra:
                         logging.error(f"RetroArch flow error: {e_ra}", exc_info=True)
