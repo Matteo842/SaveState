@@ -244,8 +244,9 @@ def save_settings(settings_dict):
         if portable_flag and backup_root:
             try:
                 appdata_dir = config.get_app_data_folder()
+                # Do NOT copy settings.json from AppData here: we just wrote the authoritative
+                # portable settings above and copying would overwrite the portable flag.
                 files = [
-                    "settings.json",
                     "game_save_profiles.json",
                     "favorites_status.json",
                 ]
@@ -258,6 +259,22 @@ def save_settings(settings_dict):
                             logging.info(f"Migrated '{name}' from AppData to portable directory.")
                     except Exception as e_copy:
                         logging.warning(f"Unable to migrate '{name}': {e_copy}")
+
+                # When not deleting AppData, leave a small pointer settings.json so future launches
+                # can resolve the portable directory without guessing.
+                try:
+                    if not delete_appdata_after_portable and appdata_dir:
+                        pointer_path = os.path.join(appdata_dir, SETTINGS_FILENAME)
+                        pointer = {
+                            "portable_config_only": True,
+                            "backup_base_dir": backup_root,
+                        }
+                        os.makedirs(appdata_dir, exist_ok=True)
+                        with open(pointer_path, 'w', encoding='utf-8') as pf:
+                            json.dump(pointer, pf, indent=4)
+                        logging.info(f"Wrote portable pointer settings to AppData: {pointer_path}")
+                except Exception as e_ptr:
+                    logging.warning(f"Unable to write portable pointer settings in AppData: {e_ptr}")
 
                 # Optionally delete the AppData folder when requested and different from target
                 if delete_appdata_after_portable:
