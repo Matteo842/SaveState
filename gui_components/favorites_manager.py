@@ -27,6 +27,39 @@ logging.info(f"Favorites file path in use: {FAVORITES_FILE_PATH}")
 _favorites_cache = {} # Internal cache to avoid continuous disk reads
 _cache_loaded = False # Flag to know if cache has been loaded
 
+def _get_existing_profile_names():
+    """Return a set with current profile names; empty set if not available.
+
+    Uses a lazy import of core_logic to avoid import cycles.
+    """
+    try:
+        import core_logic
+        profiles_dict = core_logic.load_profiles()
+        if isinstance(profiles_dict, dict):
+            return set(profiles_dict.keys())
+    except Exception as e:
+        logging.debug(f"Unable to retrieve current profile names for favorites prune: {e}")
+    return set()
+
+
+def _prune_stale_favorites(fav_dict: dict) -> dict:
+    """Return a cleaned copy of fav_dict keeping only existing profiles.
+
+    - Drops entries for profiles that no longer exist
+    - Coerces values to bool to avoid unexpected types
+    """
+    if not isinstance(fav_dict, dict):
+        return {}
+    try:
+        existing = _get_existing_profile_names()
+        if not existing:
+            # If we cannot resolve profiles, return the original dict coerced to bools
+            return {k: bool(v) for k, v in fav_dict.items()}
+        cleaned = {name: bool(is_fav) for name, is_fav in fav_dict.items() if name in existing}
+        return cleaned
+    except Exception:
+        return {k: bool(v) for k, v in fav_dict.items()}
+
 def load_favorites():
     """Loads favorites status from FAVORITES_FILE_PATH.
        Returns a dictionary {profile_name: bool}.
@@ -49,6 +82,18 @@ def load_favorites():
             #    if not isinstance(value, bool):
             #        logging.warning(f"Valore non booleano per '{key}' nel file preferiti. Rimosso.")
             #        del favorites_status[key]
+
+            # Auto-prune and rewrite file if necessary
+            cleaned = _prune_stale_favorites(favorites_status)
+            if cleaned != favorites_status:
+                try:
+                    os.makedirs(os.path.dirname(FAVORITES_FILE_PATH), exist_ok=True)
+                    with open(FAVORITES_FILE_PATH, 'w', encoding='utf-8') as wf:
+                        json.dump(cleaned, wf, indent=4, ensure_ascii=False, sort_keys=True)
+                    logging.info(f"Pruned and rewrote favorites file: removed {len(favorites_status) - len(cleaned)} stale entries.")
+                    favorites_status = cleaned
+                except Exception as e_rewrite:
+                    logging.warning(f"Unable to rewrite pruned favorites file: {e_rewrite}")
 
             logging.info(f"Loaded {len(favorites_status)} favorites from '{FAVORITES_FILE_PATH}'.")
         except json.JSONDecodeError:
@@ -73,12 +118,14 @@ def save_favorites(favorites_dict):
         logging.error("Attempt to save invalid favorites status (not a dictionary).")
         return False
     try:
+        # Clean before saving so the file doesn't accumulate deleted profiles
+        favorites_to_write = _prune_stale_favorites(favorites_dict)
         # Ensure the directory exists
         os.makedirs(os.path.dirname(FAVORITES_FILE_PATH), exist_ok=True)
         with open(FAVORITES_FILE_PATH, 'w', encoding='utf-8') as f:
-            json.dump(favorites_dict, f, indent=4, ensure_ascii=False)
-        logging.info(f"Saved {len(favorites_dict)} favorites to '{FAVORITES_FILE_PATH}'.")
-        _favorites_cache = favorites_dict.copy() # Update cache after successful saving
+            json.dump(favorites_to_write, f, indent=4, ensure_ascii=False, sort_keys=True)
+        logging.info(f"Saved {len(favorites_to_write)} favorites to '{FAVORITES_FILE_PATH}'.")
+        _favorites_cache = favorites_to_write.copy() # Update cache after successful saving
         # Mirror only when NOT in portable mode
         try:
             do_mirror = True
@@ -99,7 +146,7 @@ def save_favorites(favorites_dict):
                 # Use core_logic helper to mirror into backup root
                 try:
                     import core_logic
-                    core_logic._mirror_json_to_backup_root("favorites_status.json", favorites_dict, rotation=rotation)
+                    core_logic._mirror_json_to_backup_root("favorites_status.json", favorites_to_write, rotation=rotation)
                 except Exception as e_core:
                     logging.warning(f"Mirror favorites to backup root failed: {e_core}")
         except Exception as e_mirror:
