@@ -341,3 +341,92 @@ def save_settings(settings_dict):
     except Exception:
         logging.error("Error saving settings.", exc_info=True)
         return False
+
+
+def _load_json_for_compare(path: str):
+    """Best-effort JSON loader for equality comparison.
+
+    Returns a tuple (ok: bool, data_or_bytes: Any). If JSON parsing fails,
+    returns (True, raw_bytes) for byte-wise comparison; if read fails, returns (False, None).
+    """
+    try:
+        if not os.path.isfile(path):
+            return False, None
+        with open(path, 'r', encoding='utf-8') as f:
+            return True, json.load(f)
+    except Exception:
+        try:
+            with open(path, 'rb') as fb:
+                return True, fb.read()
+        except Exception:
+            return False, None
+
+
+def _json_like_equal(path_a: str, path_b: str) -> bool:
+    """Compare two files as JSON if possible, fallback to raw bytes.
+
+    Returns True if equal, False if different, and False if either cannot be read.
+    """
+    ok_a, data_a = _load_json_for_compare(path_a)
+    ok_b, data_b = _load_json_for_compare(path_b)
+    if not (ok_a and ok_b):
+        return False
+    try:
+        return data_a == data_b
+    except Exception:
+        return False
+
+
+def sync_secondary_config_mirror(current_settings: dict | None = None) -> None:
+    """Ensure backup_root/.savestate JSONs mirror the primary config on startup.
+
+    Only runs when NOT in portable mode. Compares and updates these files:
+    - settings.json
+    - game_save_profiles.json
+    - favorites_status.json
+    """
+    try:
+        # Skip if portable mode is active
+        if is_portable_mode():
+            return
+
+        # Determine primary and secondary dirs
+        primary_dir = get_active_config_dir()  # Expected AppData when not portable
+        backup_root = None
+        if isinstance(current_settings, dict):
+            backup_root = current_settings.get("backup_base_dir")
+        if not backup_root:
+            try:
+                loaded, _first = load_settings()
+                backup_root = loaded.get("backup_base_dir")
+            except Exception:
+                backup_root = getattr(config, "BACKUP_BASE_DIR", None)
+        if not (primary_dir and backup_root):
+            return
+        secondary_dir = os.path.join(backup_root, ".savestate")
+        try:
+            os.makedirs(secondary_dir, exist_ok=True)
+        except Exception:
+            pass
+
+        filenames = [
+            "settings.json",
+            "game_save_profiles.json",
+            "favorites_status.json",
+        ]
+
+        for name in filenames:
+            src = os.path.join(primary_dir, name)
+            dst = os.path.join(secondary_dir, name)
+            try:
+                if not os.path.isfile(src):
+                    continue
+                needs_copy = not os.path.isfile(dst) or not _json_like_equal(src, dst)
+                if needs_copy:
+                    import shutil
+                    shutil.copy2(src, dst)
+                    logging.info(f"Synchronized mirror file to backup: {name}")
+            except Exception as e_sync:
+                logging.warning(f"Unable to synchronize mirror for '{name}': {e_sync}")
+    except Exception as e_out:
+        logging.debug(f"Startup mirror sync skipped/failed: {e_out}")

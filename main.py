@@ -352,6 +352,11 @@ if __name__ == "__main__":
                     logging.info("Loading settings...")
                     current_settings, is_first_launch = settings_manager.load_settings()
                     logging.info("Settings loaded.")
+                    # Ensure secondary mirror (.savestate) is up-to-date when not in portable mode
+                    try:
+                        settings_manager.sync_secondary_config_mirror(current_settings)
+                    except Exception:
+                        pass
                     # --- Fine Caricamento Impostazioni ---
 
                     # --- Creazione Finestra Principale e gestione primo avvio ---
