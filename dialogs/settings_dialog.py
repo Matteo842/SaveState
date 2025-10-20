@@ -321,8 +321,17 @@ class SettingsDialog(QDialog):
                         QMessageBox.StandardButton.Yes
                     )
                     if reply == QMessageBox.StandardButton.Yes:
-                        # Ephemeral flag consumed by settings_manager.save_settings
-                        self.settings["_delete_appdata_after_portable"] = True
+                        # Save settings to portable FIRST, then delete AppData
+                        try:
+                            import settings_manager as _sm_forced
+                            temp_settings = self.settings.copy()
+                            temp_settings["portable_config_only"] = True
+                            # Ensure delete flag handled by settings_manager after saving portable
+                            temp_settings["_delete_appdata_after_portable"] = True
+                            _sm_forced.save_settings(temp_settings)
+                        except Exception:
+                            # Fallback: still pass the flag for deletion (will be handled later)
+                            self.settings["_delete_appdata_after_portable"] = True
         except Exception:
             pass
 
