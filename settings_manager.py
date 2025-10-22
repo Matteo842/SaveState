@@ -5,6 +5,7 @@ import sys
 import shutil
 import config # Import for default values
 import logging
+import time
 
 
 # --- Dynamic configuration directory resolution ---
@@ -101,6 +102,25 @@ def _read_portable_pointer() -> str | None:
     return None
 
 
+def _delete_portable_pointer() -> bool:
+    """Delete the hidden portable pointer JSON if it exists.
+
+    Returns True if deleted (or not present), False on failure.
+    """
+    try:
+        pointer_path = _get_portable_pointer_path()
+        if os.path.isfile(pointer_path):
+            try:
+                os.remove(pointer_path)
+                logging.info("Portable pointer removed (portable mode off).")
+            except Exception as e_rm:
+                logging.warning(f"Unable to remove portable pointer JSON: {e_rm}")
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def _write_portable_pointer(backup_root: str) -> bool:
     """Write the hidden portable pointer JSON next to the executable.
 
@@ -117,34 +137,47 @@ def _write_portable_pointer(backup_root: str) -> bool:
         except Exception:
             pass
 
-        # Write to a temp file first, then replace to avoid locks/permission issues
-        temp_path = pointer_path + ".tmp"
-        with open(temp_path, "w", encoding="utf-8") as f:
-            json.dump(backup_root, f, indent=0)
-
-        # Try to delete the old pointer if present, then move the temp into place
-        try:
-            if os.path.exists(pointer_path):
-                try:
-                    os.remove(pointer_path)
-                except Exception:
-                    # Fall back to replace without prior delete
-                    pass
-            os.replace(temp_path, pointer_path)
-        except Exception as e_rep:
-            # Cleanup temp and report failure
+        last_error = None
+        for attempt in range(3):
             try:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-            except Exception:
-                pass
-            raise e_rep
+                # Write to a temp file first, then replace to avoid locks/permission issues
+                temp_path = pointer_path + ".tmp"
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(backup_root, f, indent=0)
 
-        _make_file_hidden_windows(pointer_path)
-        logging.info(f"Portable pointer written next to executable: {pointer_path}")
-        return True
-    except Exception as e_ptr:
-        logging.warning(f"Unable to write portable pointer JSON: {e_ptr}")
+                # Try to delete the old pointer if present, then move the temp into place
+                try:
+                    if os.path.exists(pointer_path):
+                        try:
+                            os.remove(pointer_path)
+                        except Exception:
+                            # Fall back to replace without prior delete
+                            pass
+                    os.replace(temp_path, pointer_path)
+                except Exception as e_rep:
+                    # Cleanup temp and re-raise to outer except
+                    try:
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+                    except Exception:
+                        pass
+                    raise e_rep
+
+                _make_file_hidden_windows(pointer_path)
+                logging.info(f"Portable pointer written next to executable: {pointer_path}")
+                return True
+            except Exception as e_ptr:
+                last_error = e_ptr
+                # Short backoff and retry (handles transient AV/EDR locks)
+                try:
+                    time.sleep(0.15 * (2 ** attempt))
+                except Exception:
+                    pass
+        if last_error:
+            logging.warning(f"Unable to write portable pointer JSON after retries: {last_error}")
+        return False
+    except Exception as e_outer:
+        logging.warning(f"Unable to write portable pointer JSON: {e_outer}")
         return False
 
 
@@ -373,6 +406,28 @@ def save_settings(settings_dict):
         if portable_flag and backup_root:
             try:
                 appdata_dir = config.get_app_data_folder()
+                # If we are switching portable→portable (backup dir changed), migrate data
+                try:
+                    previous_active_dir = None
+                    try:
+                        # Determine previous active dir before this save took effect
+                        previous_active_dir = _RUNTIME_CONFIG_DIR_OVERRIDE or get_active_config_dir()
+                    except Exception:
+                        previous_active_dir = None
+                    new_portable_dir = target_config_dir
+                    if previous_active_dir and os.path.basename(os.path.normpath(previous_active_dir)) == ".savestate" and os.path.normcase(os.path.abspath(previous_active_dir)) != os.path.normcase(os.path.abspath(new_portable_dir)):
+                        for name in ["game_save_profiles.json", "favorites_status.json"]:
+                            src = os.path.join(previous_active_dir, name)
+                            dst = os.path.join(new_portable_dir, name)
+                            try:
+                                if os.path.isfile(src):
+                                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                                    shutil.copy2(src, dst)
+                                    logging.info(f"Moved '{name}' from old portable to new portable directory.")
+                            except Exception as e_move:
+                                logging.warning(f"Unable to move '{name}' during portable→portable migration: {e_move}")
+                except Exception as e_pp:
+                    logging.debug(f"Portable→portable migration skipped/failed: {e_pp}")
                 # Do NOT copy settings.json from AppData here: we just wrote the authoritative
                 # portable settings above and copying would overwrite the portable flag.
                 files = [
@@ -427,6 +482,12 @@ def save_settings(settings_dict):
                         json.dump(settings_dict, mf, indent=4)
             except Exception:
                 logging.warning("Unable to mirror settings.json to backup root")
+
+            # Explicitly remove the portable pointer when leaving portable mode
+            try:
+                _delete_portable_pointer()
+            except Exception:
+                pass
 
             # Additionally, when LEAVING portable mode, copy other JSONs from the portable
             # directory into AppData so runtime reload has complete data (profiles/favorites).
