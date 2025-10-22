@@ -9,6 +9,7 @@ import logging
 
 # --- Dynamic configuration directory resolution ---
 SETTINGS_FILENAME = "settings.json"
+PORTABLE_POINTER_FILENAME = ".savestate_portable.json"  # Hidden on Unix; hidden attribute set on Windows
 
 # Runtime override for the active config directory (set after save_settings)
 _RUNTIME_CONFIG_DIR_OVERRIDE = None
@@ -35,12 +36,126 @@ def _read_appdata_settings() -> dict | None:
     return None
 
 
+def _get_executable_dir() -> str:
+    """Return the directory containing the running executable or script.
+
+    Supports PyInstaller (sys.frozen) and normal Python execution.
+    """
+    try:
+        if getattr(sys, "frozen", False) and hasattr(sys, "executable"):
+            return os.path.dirname(os.path.abspath(sys.executable))
+        # Best-effort fallback to the script path
+        if hasattr(sys, "argv") and sys.argv and sys.argv[0]:
+            return os.path.dirname(os.path.abspath(sys.argv[0]))
+    except Exception:
+        pass
+    # Last resort: directory of this module
+    try:
+        return os.path.dirname(os.path.abspath(__file__))
+    except Exception:
+        return os.getcwd()
+
+
+def _get_portable_pointer_path() -> str:
+    """Full path to the hidden portable pointer JSON next to the executable."""
+    try:
+        return os.path.join(_get_executable_dir(), PORTABLE_POINTER_FILENAME)
+    except Exception:
+        return PORTABLE_POINTER_FILENAME
+
+
+def _make_file_hidden_windows(path: str) -> None:
+    """Mark file hidden on Windows. No-op on other platforms."""
+    try:
+        if os.name == "nt" and isinstance(path, str):
+            import ctypes
+            FILE_ATTRIBUTE_HIDDEN = 0x02
+            ctypes.windll.kernel32.SetFileAttributesW(ctypes.c_wchar_p(path), FILE_ATTRIBUTE_HIDDEN)
+    except Exception:
+        # Best effort only; ignoring failures keeps portability
+        pass
+
+
+def _read_portable_pointer() -> str | None:
+    """Read backup base directory from the hidden pointer JSON next to the executable.
+
+    The file may contain either a raw JSON string ("D:/path") or an object
+    like {"backup_base_dir": "D:/path"} or {"path": "D:/path"}.
+    Returns the backup base dir string, or None if not found/invalid.
+    """
+    try:
+        pointer_path = _get_portable_pointer_path()
+        if not os.path.isfile(pointer_path):
+            return None
+        with open(pointer_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, str) and data:
+            return data
+        if isinstance(data, dict):
+            for key in ("backup_base_dir", "path"):
+                val = data.get(key)
+                if isinstance(val, str) and val:
+                    return val
+    except Exception:
+        pass
+    return None
+
+
+def _write_portable_pointer(backup_root: str) -> bool:
+    """Write the hidden portable pointer JSON next to the executable.
+
+    Writes only the backup path (JSON string). Also attempts to hide the file on Windows.
+    Returns True on success, False on failure.
+    """
+    try:
+        if not isinstance(backup_root, str) or not backup_root:
+            return False
+        pointer_path = _get_portable_pointer_path()
+        # Ensure parent exists
+        try:
+            os.makedirs(os.path.dirname(pointer_path), exist_ok=True)
+        except Exception:
+            pass
+
+        # Write to a temp file first, then replace to avoid locks/permission issues
+        temp_path = pointer_path + ".tmp"
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(backup_root, f, indent=0)
+
+        # Try to delete the old pointer if present, then move the temp into place
+        try:
+            if os.path.exists(pointer_path):
+                try:
+                    os.remove(pointer_path)
+                except Exception:
+                    # Fall back to replace without prior delete
+                    pass
+            os.replace(temp_path, pointer_path)
+        except Exception as e_rep:
+            # Cleanup temp and report failure
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception:
+                pass
+            raise e_rep
+
+        _make_file_hidden_windows(pointer_path)
+        logging.info(f"Portable pointer written next to executable: {pointer_path}")
+        return True
+    except Exception as e_ptr:
+        logging.warning(f"Unable to write portable pointer JSON: {e_ptr}")
+        return False
+
+
 def get_active_config_dir() -> str:
     """Return the directory where JSON configs should be read from and written to.
 
     Logic:
       - If AppData settings.json exists AND indicates portable_config_only true with a valid
         backup_base_dir, then point to <backup>/.savestate.
+      - Otherwise, if AppData settings are absent, read the hidden pointer JSON next to the
+        executable and point to <backup>/.savestate.
       - Otherwise, use AppData directory.
     """
     # 0) Runtime override takes precedence for current session
@@ -62,6 +177,20 @@ def get_active_config_dir() -> str:
                 return target
     except Exception:
         pass
+    # If no AppData settings are present, try the hidden pointer next to the executable
+    try:
+        if data is None:
+            pointer_backup = _read_portable_pointer()
+            if isinstance(pointer_backup, str) and pointer_backup:
+                target = os.path.join(pointer_backup, ".savestate")
+                try:
+                    os.makedirs(target, exist_ok=True)
+                except Exception:
+                    pass
+                return target
+    except Exception:
+        pass
+
     # If no AppData settings indicate portable, try default backup path fallback
     try:
         backup_default = getattr(config, "BACKUP_BASE_DIR", None)
@@ -261,6 +390,13 @@ def save_settings(settings_dict):
                         logging.warning(f"Unable to migrate '{name}': {e_copy}")
 
                 # Do not write any pointer in AppData when enabling portable mode.
+
+                # Write the hidden pointer JSON next to the executable so subsequent launches
+                # know which backup root contains the portable config.
+                try:
+                    _write_portable_pointer(backup_root)
+                except Exception:
+                    pass
 
                 # Optionally delete the AppData folder when requested and different from target
                 if delete_appdata_after_portable:
