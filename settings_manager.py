@@ -30,10 +30,17 @@ def _read_appdata_settings() -> dict | None:
     path = _get_appdata_settings_path()
     try:
         if os.path.isfile(path):
+            logging.debug(f"Reading AppData settings from: {path}")
             with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception:
-        logging.warning("Unable to read settings.json from AppData (may be pointer or full config).")
+                data = json.load(f)
+                if isinstance(data, dict):
+                    portable_flag = data.get("portable_config_only", False)
+                    logging.debug(f"AppData settings loaded. portable_config_only={portable_flag}")
+                return data
+        else:
+            logging.debug(f"No settings file found in AppData: {path}")
+    except Exception as e:
+        logging.warning(f"Unable to read settings.json from AppData: {e}")
     return None
 
 
@@ -194,35 +201,49 @@ def get_active_config_dir() -> str:
     # 0) Runtime override takes precedence for current session
     global _RUNTIME_CONFIG_DIR_OVERRIDE
     if _RUNTIME_CONFIG_DIR_OVERRIDE:
+        logging.debug(f"Using runtime override config directory: {_RUNTIME_CONFIG_DIR_OVERRIDE}")
         return _RUNTIME_CONFIG_DIR_OVERRIDE
 
     app_dir = config.get_app_data_folder()
+    logging.debug(f"Determining active config directory. AppData location: {app_dir}")
     data = _read_appdata_settings()
+    
     try:
         if isinstance(data, dict) and bool(data.get("portable_config_only")):
-            backup_root = data.get("backup_base_dir")
+            # AppData says portable mode is active: read the path from the pointer file
+            logging.debug("AppData settings indicate portable_config_only=true, reading pointer file for backup path...")
+            pointer_path = _get_portable_pointer_path()
+            logging.debug(f"Pointer file location: {pointer_path}")
+            backup_root = _read_portable_pointer()
             if isinstance(backup_root, str) and backup_root:
                 target = os.path.join(backup_root, ".savestate")
+                logging.debug(f"Using portable configuration from '{target}' (pointer: '{pointer_path}')")
                 try:
                     os.makedirs(target, exist_ok=True)
                 except Exception:
                     pass
                 return target
-    except Exception:
-        pass
+            else:
+                logging.warning(f"portable_config_only=true in AppData, but pointer file is missing or invalid. Falling back to AppData.")
+    except Exception as e_portable:
+        logging.warning(f"Error checking portable mode from AppData: {e_portable}")
     # If no AppData settings are present, try the hidden pointer next to the executable
     try:
         if data is None:
+            logging.debug("No settings found in AppData, checking for pointer file next to executable...")
             pointer_backup = _read_portable_pointer()
             if isinstance(pointer_backup, str) and pointer_backup:
                 target = os.path.join(pointer_backup, ".savestate")
+                logging.debug(f"Found pointer file (no AppData settings): Using portable config from '{target}'")
                 try:
                     os.makedirs(target, exist_ok=True)
                 except Exception:
                     pass
                 return target
-    except Exception:
-        pass
+            else:
+                logging.debug("No pointer file found next to executable.")
+    except Exception as e_ptr:
+        logging.debug(f"Error reading pointer file: {e_ptr}")
 
     # If no AppData settings indicate portable, try default backup path fallback
     try:
@@ -235,6 +256,7 @@ def get_active_config_dir() -> str:
                     with open(settings_path, 'r', encoding='utf-8') as f:
                         portable_settings = json.load(f)
                     if bool(portable_settings.get("portable_config_only")):
+                        logging.debug(f"Found portable settings in default backup path fallback: {savestate_dir}")
                         return savestate_dir
                 except Exception:
                     pass
@@ -242,8 +264,10 @@ def get_active_config_dir() -> str:
         pass
 
     # Fallback to AppData
+    logging.debug(f"Using standard AppData configuration directory: {app_dir}")
     if not app_dir:
         app_dir = os.path.abspath("SaveState")
+        logging.warning(f"AppData folder not found, using fallback directory: {app_dir}")
         try:
             os.makedirs(app_dir, exist_ok=True)
         except Exception:
@@ -264,6 +288,14 @@ def load_settings():
     """Load settings from the active settings file path."""
     active_config_dir = get_active_config_dir()
     settings_file_path = os.path.join(active_config_dir, SETTINGS_FILENAME)
+    
+    # Log configuration mode clearly (once)
+    if is_portable_mode():
+        pointer_path = _get_portable_pointer_path()
+        logging.info(f"✓ PORTABLE MODE: Configuration loaded from '{active_config_dir}' (pointer: '{pointer_path}')")
+    else:
+        logging.info(f"Standard mode: Configuration loaded from '{active_config_dir}'")
+    
     first_launch = not os.path.exists(settings_file_path)
     defaults = {
         "backup_base_dir": config.BACKUP_BASE_DIR,
@@ -444,7 +476,34 @@ def save_settings(settings_dict):
                     except Exception as e_copy:
                         logging.warning(f"Unable to migrate '{name}': {e_copy}")
 
-                # Do not write any pointer in AppData when enabling portable mode.
+                # IMPORTANT: Update ONLY the portable_config_only flag in AppData settings.json
+                # This preserves all other user settings in AppData (as backup) while enabling
+                # portable mode. On next launch, get_active_config_dir() will read AppData,
+                # see portable_config_only=true, and then read the pointer file for the path.
+                try:
+                    appdata_settings_path = _get_appdata_settings_path()
+                    os.makedirs(os.path.dirname(appdata_settings_path), exist_ok=True)
+                    
+                    # Read existing settings from AppData to preserve them
+                    existing_appdata_settings = {}
+                    if os.path.isfile(appdata_settings_path):
+                        try:
+                            with open(appdata_settings_path, 'r', encoding='utf-8') as f:
+                                existing_appdata_settings = json.load(f)
+                            if not isinstance(existing_appdata_settings, dict):
+                                existing_appdata_settings = {}
+                        except Exception:
+                            logging.debug("Could not read existing AppData settings, creating new.")
+                            existing_appdata_settings = {}
+                    
+                    # Update ONLY the portable flag, preserving everything else
+                    existing_appdata_settings["portable_config_only"] = True
+                    
+                    with open(appdata_settings_path, 'w', encoding='utf-8') as f:
+                        json.dump(existing_appdata_settings, f, indent=4)
+                    logging.info(f"Updated AppData settings.json portable mode flag (preserved other settings): {appdata_settings_path}")
+                except Exception as e_appdata:
+                    logging.warning(f"Unable to update AppData portable mode flag: {e_appdata}")
 
                 # Write the hidden pointer JSON next to the executable so subsequent launches
                 # know which backup root contains the portable config.

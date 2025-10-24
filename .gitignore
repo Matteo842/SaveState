@@ -199,3 +199,4 @@ SaveState-OneDir-Linux.spec
 SaveState-OneDir.spec
 new_ui_demo.py
 save_path_finder_old.py
+.savestate_portable.json

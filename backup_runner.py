@@ -20,7 +20,7 @@ except ImportError as e_qt:
 
 # Try to import notify_py for native Linux notifications
 try:
-    import notify_py
+    import notify_py  # type: ignore[import-untyped]
     NATIVE_NOTIFY_AVAILABLE = True
     logging.info("notify_py imported successfully. Native Linux notifications are available.")
 except ImportError:
@@ -239,31 +239,33 @@ def run_silent_backup(profile_name):
     # At this point, paths_to_backup contains a list (potentially with a single element) of paths
     # The actual validation of the paths' existence will happen inside perform_backup
 
-    # SPECIAL HANDLING FOR XEMU PROFILES
-    # Check if this is any xemu profile that needs special handling
-    if 'emulator' in profile_data and profile_data.get('emulator') == 'xemu':
-        logging.info(f"Detected xemu profile: {profile_name} (type: {profile_data.get('type', 'unknown')})")
-        try:
-            from emulator_utils.xemu_manager import backup_xbox_save
-            
-            # Create backup directory for this profile
-            sanitized_folder_name = core_logic.sanitize_foldername(profile_name)
-            profile_backup_dir = os.path.join(settings.get("backup_base_dir", ""), sanitized_folder_name)
-            
-            # Use xemu's specialized backup function (no size limits for Xbox saves)
-            success = backup_xbox_save(profile_data['id'], profile_backup_dir)
-            
-            if success:
-                show_notification(True, f"Xbox save backup completed successfully:\n{profile_name}")
-                return True
-            else:
-                show_notification(False, f"Xbox save backup failed for:\n{profile_name}")
-                return False
-                
-        except Exception as e:
-            logging.error(f"Error during xemu backup for '{profile_name}': {e}", exc_info=True)
-            show_notification(False, f"Xbox save backup error: {e}")
-            return False
+    # TODO: SPECIAL HANDLING FOR XEMU PROFILES - TEMPORARILY DISABLED
+    # Xemu specialized backup is commented out until HDD extraction/injection is implemented
+    # When ready, uncomment this block
+    
+    # if 'emulator' in profile_data and profile_data.get('emulator') == 'xemu':
+    #     logging.info(f"Detected xemu profile: {profile_name} (type: {profile_data.get('type', 'unknown')})")
+    #     try:
+    #         from emulator_utils.xemu_manager import backup_xbox_save
+    #         
+    #         # Create backup directory for this profile
+    #         sanitized_folder_name = core_logic.sanitize_foldername(profile_name)
+    #         profile_backup_dir = os.path.join(settings.get("backup_base_dir", ""), sanitized_folder_name)
+    #         
+    #         # Use xemu's specialized backup function (no size limits for Xbox saves)
+    #         success = backup_xbox_save(profile_data['id'], profile_backup_dir)
+    #         
+    #         if success:
+    #             show_notification(True, f"Xbox save backup completed successfully:\n{profile_name}")
+    #             return True
+    #         else:
+    #             show_notification(False, f"Xbox save backup failed for:\n{profile_name}")
+    #             return False
+    #             
+    #     except Exception as e:
+    #         logging.error(f"Error during xemu backup for '{profile_name}': {e}", exc_info=True)
+    #         show_notification(False, f"Xbox save backup error: {e}")
+    #         return False
 
     backup_base_dir = settings.get("backup_base_dir")
     max_bk = settings.get("max_backups")
