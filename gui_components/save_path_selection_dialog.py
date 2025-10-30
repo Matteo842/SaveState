@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from typing import List, Optional, Tuple, Union
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -12,10 +12,133 @@ from PySide6.QtWidgets import (
     QLabel,
     QComboBox,
     QDialogButtonBox,
+    QStyledItemDelegate,
+    QStyle,
+    QStylePainter,
 )
-from PySide6.QtGui import QFontMetrics
+from PySide6.QtGui import QFontMetrics, QFont
+from PySide6.QtWidgets import QStyleOptionComboBox
 
 import config
+from utils import shorten_save_path
+
+
+class BoldPrefixDelegate(QStyledItemDelegate):
+    """Custom delegate to render text with bold prefix."""
+    
+    def paint(self, painter, option, index):
+        # Read display text and optional prefix length from custom role
+        full_text = index.data(Qt.ItemDataRole.DisplayRole) or ""
+        prefix_len = index.data(Qt.ItemDataRole.UserRole + 1) or 0
+
+        # Ensure consistent left padding for all rows
+        left_pad = 8
+
+        # If no prefix, draw normally but with the same padding
+        if not prefix_len or prefix_len <= 0 or prefix_len >= len(full_text):
+            painter.save()
+            # Selection background
+            if option.state & QStyle.State_Selected:
+                painter.fillRect(option.rect, option.palette.highlight())
+                text_color = option.palette.highlightedText().color()
+            else:
+                text_color = option.palette.text().color()
+            painter.setPen(text_color)
+            painter.setFont(option.font)
+            painter.drawText(option.rect.adjusted(left_pad, 0, 0, 0), Qt.AlignmentFlag.AlignVCenter, full_text)
+            painter.restore()
+            return
+
+        prefix = full_text[:prefix_len]
+        rest = full_text[prefix_len:]
+
+        painter.save()
+
+        # Draw selection background if needed
+        if option.state & QStyle.State_Selected:
+            painter.fillRect(option.rect, option.palette.highlight())
+            text_color = option.palette.highlightedText().color()
+        else:
+            text_color = option.palette.text().color()
+
+        # Prepare fonts
+        bold_font = QFont(option.font)
+        bold_font.setBold(True)
+        normal_font = option.font
+
+        # Left padding
+        # Slightly increased horizontal padding
+        left_pad = 8
+
+        # Draw bold prefix
+        painter.setPen(text_color)
+        painter.setFont(bold_font)
+        bold_metrics = painter.fontMetrics()
+        painter.drawText(option.rect.adjusted(left_pad, 0, 0, 0), Qt.AlignmentFlag.AlignVCenter, prefix)
+        prefix_width = bold_metrics.horizontalAdvance(prefix)
+
+        # Draw rest
+        painter.setFont(normal_font)
+        painter.drawText(option.rect.adjusted(left_pad + prefix_width, 0, 0, 0), Qt.AlignmentFlag.AlignVCenter, rest)
+
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        # Slightly increase the row height for readability
+        base = super().sizeHint(option, index)
+        return QSize(base.width(), base.height() + 4)
+
+
+class BoldPrefixCombo(QComboBox):
+    """QComboBox that paints the current item with a bold prefix as well."""
+
+    def paintEvent(self, event):
+        opt = QStyleOptionComboBox()
+        self.initStyleOption(opt)
+
+        painter = QStylePainter(self)
+        try:
+            painter.drawComplexControl(QStyle.CC_ComboBox, opt)
+
+            # Determine edit field rect
+            edit_rect = self.style().subControlRect(QStyle.CC_ComboBox, opt, QStyle.SC_ComboBoxEditField, self)
+
+            text = self.currentText() or ""
+            prefix_len = self.itemData(self.currentIndex(), Qt.ItemDataRole.UserRole + 1) or 0
+
+            # Ensure consistent padding
+            left_pad = 8
+
+            painter.save()
+            try:
+                # Choose text color according to enabled state
+                # Use palette.text() to ensure visibility in dark themes
+                text_color = opt.palette.text().color()
+                painter.setPen(text_color)
+
+                base_font = self.font()
+
+                if prefix_len and 0 < prefix_len < len(text):
+                    prefix = text[:prefix_len]
+                    rest = text[prefix_len:]
+                    # Draw bold prefix
+                    bold_font = QFont(base_font)
+                    bold_font.setBold(True)
+                    painter.setFont(bold_font)
+                    bold_metrics = painter.fontMetrics()
+                    painter.drawText(edit_rect.adjusted(left_pad, 0, 0, 0), Qt.AlignmentFlag.AlignVCenter, prefix)
+                    prefix_width = bold_metrics.horizontalAdvance(prefix)
+                    # Draw rest
+                    painter.setFont(base_font)
+                    painter.drawText(edit_rect.adjusted(left_pad + prefix_width, 0, 0, 0), Qt.AlignmentFlag.AlignVCenter, rest)
+                else:
+                    # No prefix: draw normally
+                    painter.setFont(base_font)
+                    painter.drawText(edit_rect.adjusted(left_pad, 0, 0, 0), Qt.AlignmentFlag.AlignVCenter, text)
+            finally:
+                painter.restore()
+        finally:
+            painter.end()
 
 
 class SavePathSelectionDialog(QDialog):
@@ -31,6 +154,8 @@ class SavePathSelectionDialog(QDialog):
         title: str,
         prompt_text: str,
         show_scores: bool = False,
+        shorten_paths: bool = True,
+        game_install_dir: Optional[str] = None,
         preselect_index: int = 0,
         parent=None,
     ) -> None:
@@ -57,6 +182,8 @@ class SavePathSelectionDialog(QDialog):
                 normalized_items.append({"path": os.path.normpath(path), "score": score, "has_saves": has_saves})
 
         self._items = normalized_items
+        self._shorten_paths = shorten_paths
+        self._game_install_dir = game_install_dir
 
         # UI
         layout = QVBoxLayout(self)
@@ -64,7 +191,21 @@ class SavePathSelectionDialog(QDialog):
         layout.addWidget(self._label)
 
         row = QHBoxLayout()
-        self._combo = QComboBox()
+        self._combo = BoldPrefixCombo()
+        # Install custom delegate for bold prefix rendering (popup view + current)
+        delegate = BoldPrefixDelegate()
+        self._combo.setItemDelegate(delegate)
+        try:
+            view = self._combo.view()
+            view.setItemDelegate(delegate)
+            try:
+                # Add a tiny spacing between rows
+                view.setSpacing(2)
+            except Exception:
+                pass
+        except Exception:
+            pass
+        
         self._badge = QLabel()
         self._badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._badge.setMinimumWidth(120)
@@ -73,12 +214,32 @@ class SavePathSelectionDialog(QDialog):
         # Populate combo
         longest_display_text = ""
         for entry in self._items:
-            display = entry["path"]
+            full_path = entry["path"]
+            display = full_path
+            plain_display = full_path  # For width calculation
+            
+            # Shorten path for display if enabled
+            if self._shorten_paths:
+                shortened, prefix_len = shorten_save_path(full_path, self._game_install_dir)
+                display = shortened
+                plain_display = shortened
+            
             if show_scores:
-                display = f"{display} (Score: {entry['score']})"
-            if len(display) > len(longest_display_text):
-                longest_display_text = display
+                score_text = f" (Score: {entry['score']})"
+                display = f"{display}{score_text}"
+                plain_display = f"{plain_display}{score_text}"
+                
+            if len(plain_display) > len(longest_display_text):
+                longest_display_text = plain_display
+            
+            # Store full path in data, show shortened in UI
             self._combo.addItem(display, entry)
+            row_index = self._combo.count() - 1
+            # Add tooltip with full path
+            self._combo.setItemData(row_index, full_path, Qt.ItemDataRole.ToolTipRole)
+            # Provide prefix length for delegate rendering
+            if self._shorten_paths:
+                self._combo.setItemData(row_index, prefix_len, Qt.ItemDataRole.UserRole + 1)
 
         # Manual option
         self._manual_text = "[Enter Manually...]"

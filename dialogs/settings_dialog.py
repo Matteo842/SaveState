@@ -123,6 +123,10 @@ class SettingsDialog(QDialog):
         self.enable_global_drag_checkbox = QCheckBox() # Saved reference
         self.enable_global_drag_checkbox.setChecked(self.settings.get("enable_global_drag_effect", True))
         ui_settings_layout.addWidget(self.enable_global_drag_checkbox)
+        # New: shorten paths toggle
+        self.shorten_paths_checkbox = QCheckBox()
+        self.shorten_paths_checkbox.setChecked(self.settings.get("shorten_paths_enabled", True))
+        ui_settings_layout.addWidget(self.shorten_paths_checkbox)
         self.ui_settings_group.setLayout(ui_settings_layout)
         layout.addWidget(self.ui_settings_group)
 
@@ -184,6 +188,7 @@ class SettingsDialog(QDialog):
         # UI Settings Texts
         self.ui_settings_group.setTitle("UI Settings")
         self.enable_global_drag_checkbox.setText("Enable global mouse drag-to-show effect")
+        self.shorten_paths_checkbox.setText("Shorten save paths in selection dialogs")
         # Portable Mode Texts
         self.portable_group.setTitle("Portable Mode")
         self.portable_checkbox.setText("Use only JSONs in backup folder (.savestate)")
@@ -296,6 +301,7 @@ class SettingsDialog(QDialog):
         self.settings["compression_mode"] = new_compression_mode
         self.settings["check_free_space_enabled"] = new_check_free_space
         self.settings["enable_global_drag_effect"] = self.enable_global_drag_checkbox.isChecked()
+        self.settings["shorten_paths_enabled"] = self.shorten_paths_checkbox.isChecked()
         # Handle portable mode and conditional AppData deletion prompt
         previous_portable = bool(self.settings.get("portable_config_only", False))
         self.settings["portable_config_only"] = new_portable_mode

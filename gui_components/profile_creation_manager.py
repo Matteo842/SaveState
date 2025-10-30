@@ -349,6 +349,7 @@ class ProfileCreationManager:
     def on_detection_finished(self, success, results):
         """Called when the path detection thread has finished."""
         mw = self.main_window
+        game_install_dir = results.get('game_install_dir')  # Extract for path shortening
         logging.debug(f"Detection thread finished. Success: {success}, Results: {results}")
         
         # Nascondiamo l'overlay appena prima di mostrare i dialoghi di conferma
@@ -452,11 +453,21 @@ class ProfileCreationManager:
                     QMessageBox.critical(mw, "UI Error", "Internal UI component missing.")
                     return
 
+                # Read UI setting to enable/disable path shortening
+                shorten_flag = True
+                try:
+                    if hasattr(mw, 'current_settings') and isinstance(mw.current_settings, dict):
+                        shorten_flag = bool(mw.current_settings.get('shorten_paths_enabled', True))
+                except Exception:
+                    shorten_flag = True
+
                 dlg = SavePathSelectionDialog(
                     items=items_for_dialog,
                     title="Confirm Save Path",
                     prompt_text=f"These potential paths have been found for '{profile_name}'.\nSelect the correct one (sorted by probability) or choose manual input:",
                     show_scores=show_scores,
+                    shorten_paths=shorten_flag,
+                    game_install_dir=game_install_dir,
                     preselect_index=0,
                     parent=mw,
                 )

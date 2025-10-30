@@ -143,9 +143,11 @@ class SteamDialog(QDialog):
         self.game_selected_for_config.emit(appid, profile_name)
         self.accept() 
         
-    @Slot(list, bool)
-    def on_steam_search_finished(self, guesses_with_scores, effect_was_shown):
+    @Slot(bool, dict)
+    def on_steam_search_finished(self, success, results_dict):
         """Slot called when SteamSearchWorkerThread has finished the search."""
+        guesses_with_scores = results_dict.get('path_data', [])
+        game_install_dir = results_dict.get('game_install_dir')
         # Import necessary here
         from PySide6.QtWidgets import QMessageBox, QInputDialog
         import os
@@ -260,11 +262,21 @@ class SteamDialog(QDialog):
                 f"These potential paths have been found for '{profile_name}'.\n"
                 "Select the correct one (sorted by probability) or choose manual entry:"
             )
+            # Read shorten flag from settings if available
+            shorten_flag = True
+            try:
+                if hasattr(main_window, 'current_settings') and isinstance(main_window.current_settings, dict):
+                    shorten_flag = bool(main_window.current_settings.get('shorten_paths_enabled', True))
+            except Exception:
+                shorten_flag = True
+
             dlg = SavePathSelectionDialog(
                 items=items_for_dialog,
                 title="Confirm Save Path",
                 prompt_text=dialog_text,
                 show_scores=show_scores,
+                shorten_paths=shorten_flag,
+                game_install_dir=game_install_dir,
                 preselect_index=current_selection_index,
                 parent=self,
             )

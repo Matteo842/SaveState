@@ -389,7 +389,8 @@ class DetectionWorkerThread(QThread):
                     'status': status,
                     'message': error_message,
                     'profile_name_suggestion': profile_name, # Aggiungi il nome del profilo usato
-                    'emulator_name': self.emulator_name # Add emulator name to results
+                    'emulator_name': self.emulator_name, # Add emulator name to results
+                    'game_install_dir': self.game_install_dir  # Add game install dir for path shortening
                 }
                 self.finished.emit(True, results_dict)
 
@@ -400,7 +401,8 @@ class DetectionWorkerThread(QThread):
                      'path_data': [],
                      'message': "Search interrupted by user.", # Messaggio più specifico
                      'profile_name_suggestion': profile_name,
-                     'emulator_name': self.emulator_name # Also include emulator name in error case
+                     'emulator_name': self.emulator_name, # Also include emulator name in error case
+                     'game_install_dir': self.game_install_dir  # Add game install dir
                  }
                  self.finished.emit(False, results_dict)
 
@@ -582,8 +584,8 @@ class SteamSearchWorkerThread(QThread):
     Thread per eseguire SOLO la ricerca euristica di core_logic.guess_save_path
     per i giochi Steam in background.
     """
-    # Segnale emesso alla fine: restituisce la lista di tuple (path, score) trovate
-    finished = Signal(list, str)
+    # Segnale emesso alla fine: restituisce un dizionario con risultati
+    finished = Signal(bool, dict)  # Changed to match DetectionWorkerThread
     # Segnale per messaggi di stato semplici (opzionale)
     progress = Signal(str)
 
@@ -628,5 +630,12 @@ class SteamSearchWorkerThread(QThread):
             # Emettiamo comunque una lista vuota in caso di errore grave nel thread
             results = []
         finally:
-            # Emetti il segnale finished con la lista dei risultati (può essere vuota)
-            self.finished.emit(results, self.profile_name_for_results)
+            # Emetti il segnale finished con un dizionario (compatibile con DetectionWorkerThread)
+            results_dict = {
+                'path_data': results,
+                'status': 'found' if results else 'not_found',
+                'message': '',
+                'profile_name_suggestion': self.profile_name_for_results,
+                'game_install_dir': self.game_install_dir  # Include for path shortening
+            }
+            self.finished.emit(True if results else False, results_dict)

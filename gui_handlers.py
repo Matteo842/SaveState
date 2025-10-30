@@ -1075,8 +1075,11 @@ class MainWindowHandlers:
         thread.start()
 
     # Handles the results from the Steam save path search worker thread.
-    @Slot(list, str) # Receives guesses_with_scores, profile_name_from_thread
-    def handle_steam_search_results(self, guesses_with_scores, profile_name_from_thread):
+    @Slot(bool, dict) # Receives success, results_dict
+    def handle_steam_search_results(self, success, results_dict):
+        guesses_with_scores = results_dict.get('path_data', [])
+        profile_name_from_thread = results_dict.get('profile_name_suggestion', '')
+        game_install_dir = results_dict.get('game_install_dir')
         logging.debug(f"Handling Steam search results for '{profile_name_from_thread}'. Guesses: {len(guesses_with_scores)}")
 
         # Reset thread reference on main_window
@@ -1147,11 +1150,19 @@ class MainWindowHandlers:
                 "Select the correct one (sorted by probability) or choose manual input:"
             ).format(profile_name)
 
+            shorten_flag = True
+            try:
+                shorten_flag = bool(self.main_window.current_settings.get("shorten_paths_enabled", True))
+            except Exception:
+                shorten_flag = True
+
             dlg = SavePathSelectionDialog(
                 items=items_for_dialog,
                 title="Confirm Save Path",
                 prompt_text=dialog_label_text,
                 show_scores=self.main_window.developer_mode_enabled,
+                shorten_paths=shorten_flag,
+                game_install_dir=game_install_dir,
                 preselect_index=current_selection_index,
                 parent=self.main_window,
             )
