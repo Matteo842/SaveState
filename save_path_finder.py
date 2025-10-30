@@ -1028,7 +1028,8 @@ class SavePathFinder:
         for path_data in self.guesses_data.values():
             path, source, contains_saves = path_data
             score = self.path_scorer.calculate(path, source, contains_saves)
-            results.append((path, score))
+            # Restituisci anche un hint su eventuali salvataggi rilevati nella directory
+            results.append((path, score, bool(contains_saves)))
             
         # Ordina per punteggio decrescente
         results.sort(key=lambda x: (-x[1], x[0].lower()))

@@ -1117,50 +1117,51 @@ class MainWindowHandlers:
                 if reply == QMessageBox.StandardButton.Yes: confirmed_path = existing_path
                 elif reply == QMessageBox.StandardButton.No: confirmed_path = self._ask_user_for_path_manually(profile_name, existing_path)
         else:
-            path_choices = []
-            display_text_to_original_path = {}
+            # Build model for custom selection dialog
+            try:
+                from gui_components.save_path_selection_dialog import SavePathSelectionDialog
+            except Exception as e_imp:
+                logging.error(f"Failed to import SavePathSelectionDialog: {e_imp}")
+                QMessageBox.critical(self.main_window, "UI Error", "Internal UI component missing.")
+                return
+
+            items_for_dialog = []
             current_selection_index = 0
-            existing_path_found_in_list = False
-            show_scores = self.main_window.developer_mode_enabled
-            logging.debug(f"Preparing QInputDialog items. Show scores: {show_scores}")
-
             norm_existing = os.path.normpath(existing_path) if existing_path else None
-            for i, (p, score) in enumerate(guesses_with_scores):
-                norm_p = os.path.normpath(p)
-                is_current_marker = "[CURRENT]" if norm_existing and norm_p == norm_existing else ""
-                score_str = f"(Score: {score})" if show_scores else ""
-                display_text = f"{p} {score_str} {is_current_marker}".strip().replace("  ", " ")
-                path_choices.append(display_text)
-                display_text_to_original_path[display_text] = p
-                if norm_existing and norm_p == norm_existing:
+            for i, guess in enumerate(guesses_with_scores):
+                try:
+                    p = guess[0]
+                    s = guess[1]
+                    has = bool(guess[2]) if len(guess) > 2 else None
+                except Exception:
+                    continue
+                items_for_dialog.append({"path": p, "score": s, "has_saves": has})
+                if norm_existing and os.path.normpath(p) == norm_existing:
                     current_selection_index = i
-                    existing_path_found_in_list = True
 
-            if existing_path and not existing_path_found_in_list:
+            if existing_path and not any(os.path.normpath(d["path"]) == norm_existing for d in items_for_dialog):
                 logging.warning(f"Existing path '{existing_path}' was not found in the suggested paths list.")
 
-            manual_option_str = "--- Enter path manually ---"
-            path_choices.append(manual_option_str)
             dialog_label_text = (
-                "These potential paths were found for '{0}'.\n"
-                "Select the correct one (ordered by probability) or choose manual entry:"
+                "These potential paths have been found for '{0}'.\n"
+                "Select the correct one (sorted by probability) or choose manual input:"
             ).format(profile_name)
 
-            logging.debug(f"Showing QInputDialog.getItem with {len(path_choices)} choices, pre-selected index: {current_selection_index}")
-            chosen_display_str, ok = QInputDialog.getItem(
-                self.main_window, "Confirm Save Path", dialog_label_text,
-                path_choices, current_selection_index, False
+            dlg = SavePathSelectionDialog(
+                items=items_for_dialog,
+                title="Confirm Save Path",
+                prompt_text=dialog_label_text,
+                show_scores=self.main_window.developer_mode_enabled,
+                preselect_index=current_selection_index,
+                parent=self.main_window,
             )
-
-            if ok and chosen_display_str:
-                if chosen_display_str == manual_option_str:
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                if dlg.is_manual_selected():
                     confirmed_path = self._ask_user_for_path_manually(profile_name, existing_path)
                 else:
-                    confirmed_path = display_text_to_original_path.get(chosen_display_str)
-                    if confirmed_path is None:
-                        logging.error(f"Error mapping selected choice '{chosen_display_str}' back to path.")
-                        QMessageBox.critical(self.main_window, "Internal Error", "Error in path selection.")
-                        confirmed_path = None
+                    confirmed_path = dlg.get_selected_path()
+            else:
+                confirmed_path = None
 
         # Save profile if path confirmed
         if confirmed_path:

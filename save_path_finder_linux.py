@@ -1007,7 +1007,10 @@ def guess_save_path(game_name, game_install_dir, appid=None, steam_userdata_path
         actual_score = -_final_sort_key_linux(item_tuple, state)[0]
         globals()['logging'].info(f"  {i+1}. {original_path} (Source: {source}, HasSaves: {has_saves}, Score: {actual_score})")
 
-    return [(item[0], -_final_sort_key_linux(item, state)[0]) for item in sorted_guesses]
+    return [
+        (item[0], -_final_sort_key_linux(item, state)[0], bool(item[1].get('has_saves_hint', False)))
+        for item in sorted_guesses
+    ]
 
 def _add_guess(
     guesses_data: dict,

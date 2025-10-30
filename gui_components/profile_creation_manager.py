@@ -434,63 +434,43 @@ class ProfileCreationManager:
                 show_scores = mw.developer_mode_enabled
                 logging.debug(f"Handling multiple paths. Developer mode active (show scores): {show_scores}")
 
-                choices = []
-                # Map to retrieve the original path from the displayed string
-                display_str_to_path_map = {}
+                # Normalize to dictionaries with optional has_saves flag (third element)
+                items_for_dialog = []
+                for guess in paths_found:
+                    try:
+                        p = guess[0]
+                        s = guess[1]
+                        has = bool(guess[2]) if len(guess) > 2 else None
+                    except Exception:
+                        continue
+                    items_for_dialog.append({"path": p, "score": s, "has_saves": has})
 
-                logging.debug(f"Original path_data received (sorted by score desc): {paths_found}") # Log the received data
+                try:
+                    from gui_components.save_path_selection_dialog import SavePathSelectionDialog
+                except Exception as e_imp:
+                    logging.error(f"Failed to import SavePathSelectionDialog: {e_imp}")
+                    QMessageBox.critical(mw, "UI Error", "Internal UI component missing.")
+                    return
 
-                # Create the strings for the dialog
-                for path, score in paths_found: # Iterate over the (path, score) tuples
-                    display_text = ""
-                    if show_scores:
-                        # Show path and score
-                        # Optionally clean up the path for display if too long?
-                        # display_path = path if len(path) < 60 else path[:25] + "..." + path[-30:]
-                        display_path = path # For now we use the full path
-                        display_text = f"{display_path} (Score: {score})"
-                    else:
-                        # Show only path
-                        display_text = path
-
-                    choices.append(display_text)
-                    display_str_to_path_map[display_text] = path # Map displayed string -> original path
-
-                # Add manual option
-                manual_entry_text = "[Enter Manually...]"
-                choices.append(manual_entry_text)
-                # Associate the manual option text to None in the map
-                display_str_to_path_map[manual_entry_text] = None
-
-                logging.debug(f"Choices prepared for QInputDialog: {choices}")
-
-                # Show the QInputDialog.getItem dialog
-                chosen_display_str, ok = QInputDialog.getItem(
-                    mw,
-                    "Confirm Save Path",
-                    f"These potential paths have been found for '{profile_name}'.\nSelect the correct one (sorted by probability) or choose manual input:",
-                    choices, # List of strings (with or without score)
-                    0,       # Initial index (the first, which has the highest score)
-                    False    # Not editable
+                dlg = SavePathSelectionDialog(
+                    items=items_for_dialog,
+                    title="Confirm Save Path",
+                    prompt_text=f"These potential paths have been found for '{profile_name}'.\nSelect the correct one (sorted by probability) or choose manual input:",
+                    show_scores=show_scores,
+                    preselect_index=0,
+                    parent=mw,
                 )
 
-                # Handle the user's choice
-                if ok and chosen_display_str:
-                    # Retrieve the corresponding path using the map
-                    # This works whether the score was visible or not
-                    selected_path_or_none = display_str_to_path_map.get(chosen_display_str)
-
-                    if selected_path_or_none is None: # The user chose "[Insert Manually...]"
+                if dlg.exec() == QDialog.DialogCode.Accepted:
+                    if dlg.is_manual_selected():
                         logging.info("User chose manual input from multiple paths list.")
-                        final_path_to_use = None # Force manual request later in the code
+                        final_path_to_use = None
                     else:
-                        # The user chose a specific path from the list
-                        final_path_to_use = selected_path_or_none # Save the actual path
+                        final_path_to_use = dlg.get_selected_path()
                         logging.debug(f"User selected path: {final_path_to_use}")
-
-                else: # The user pressed Cancel
+                else:
                     mw.status_label.setText("Profile creation cancelled.")
-                    return # Exit the on_detection_finished function
+                    return
 
         elif status == 'not_found':
             # No automatic path found

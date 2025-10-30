@@ -331,13 +331,24 @@ class DetectionWorkerThread(QThread):
 
                     # Aggiungi i risultati dell'euristica se non già presenti
                     added_heuristic_count = 0
-                    for path, score in heuristic_guesses_with_scores:
+                    for guess in heuristic_guesses_with_scores:
+                        # Support both (path, score) and (path, score, has_saves)
+                        try:
+                            path = guess[0]
+                            score = guess[1]
+                            has_saves = bool(guess[2]) if len(guess) > 2 else False
+                        except Exception:
+                            continue
                         norm_path = os.path.normpath(path)
                         if norm_path not in paths_already_added:
                              # <<< CORREZIONE: valida di nuovo qui per sicurezza >>>
                              if os.path.isdir(norm_path) and len(os.path.splitdrive(norm_path)[1]) > 1:
                                  logging.info(f"  Adding valid path (Score: {score}) from heuristic: {norm_path}")
-                                 final_path_data.append((norm_path, score))
+                                 # Propagate has_saves hint if present
+                                 try:
+                                     final_path_data.append((norm_path, score, has_saves))
+                                 except Exception:
+                                     final_path_data.append((norm_path, score))
                                  paths_already_added.add(norm_path)
                                  added_heuristic_count += 1
                              else:

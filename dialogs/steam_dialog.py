@@ -226,77 +226,56 @@ class SteamDialog(QDialog):
         # --- END RESTORED BLOCK ---
 
         else: 
-            path_choices = []
-            display_text_to_original_path = {}
-            added_normalized_paths_for_display = set()
-            original_path_order = [p for p, s in guesses_with_scores]
-
+            # Prepare items for custom dialog
             show_scores = False
             if MainWindow is not None and isinstance(main_window, MainWindow) and hasattr(main_window, 'developer_mode_enabled'):
-                 show_scores = main_window.developer_mode_enabled
-            logging.debug(f"ON_SEARCH_FINISHED: Developer mode (show scores): {show_scores}")
+                show_scores = main_window.developer_mode_enabled
 
-            logging.debug(f"ON_SEARCH_FINISHED: --- Start UI Choice Deduplication ---")
-            # Deduplication loop...
-            for i, (p, score) in enumerate(guesses_with_scores):
-                logging.debug(f"ON_SEARCH_FINISHED: Processing guess {i}: Path='{p}', Score={score}")
-                try:
-                    normalized_path_check = os.path.normpath(p).lower()
-                    logging.debug(f"  Normalized path for check: '{normalized_path_check}'")
-                except Exception as e_norm:
-                    logging.error(f"  Error normalizing path '{p}': {e_norm}. Skipping this guess.")
-                    continue
-
-                if normalized_path_check not in added_normalized_paths_for_display:
-                    logging.debug(f"  Path '{normalized_path_check}' is NEW for display list.")
-                    added_normalized_paths_for_display.add(normalized_path_check)
-                    is_current_marker = "[CURRENT]" if p == existing_path else ""
-                    score_str = f"(Score: {score})" if show_scores else ""
-                    display_text = f"{p} {score_str} {is_current_marker}".strip().replace("  ", " ")
-                    path_choices.append(display_text)
-                    display_text_to_original_path[display_text] = p
-                    logging.debug(f"  Added unique UI choice: '{display_text}' (maps to '{p}')")
-                else:
-                     logging.debug(f"  Path '{normalized_path_check}' ALREADY ADDED. Skipping UI duplicate for: '{p}'")
-            logging.debug(f"ON_SEARCH_FINISHED: --- End UI Choice Deduplication ---")
-            logging.debug(f"ON_SEARCH_FINISHED: Final unique path_choices list for dialog ({len(path_choices)} items): {path_choices}")
-
-            # Determine preselection index...
+            items_for_dialog = []
+            added_normalized = set()
             current_selection_index = 0
-            if existing_path:
-                 display_str_for_existing = None
-                 for disp_text, orig_path in display_text_to_original_path.items():
-                     if orig_path == existing_path: display_str_for_existing = disp_text; break
-                 if display_str_for_existing in path_choices:
-                      try: current_selection_index = path_choices.index(display_str_for_existing)
-                      except ValueError: current_selection_index = 0
-                 else: logging.debug(f"  Existing path was likely deduplicated, not preselecting.")
+            for i, guess in enumerate(guesses_with_scores):
+                try:
+                    p = guess[0]
+                    s = guess[1]
+                    has = bool(guess[2]) if len(guess) > 2 else None
+                except Exception:
+                    continue
+                norm_lower = os.path.normpath(p).lower()
+                if norm_lower in added_normalized:
+                    continue
+                added_normalized.add(norm_lower)
+                items_for_dialog.append({"path": p, "score": s, "has_saves": has})
+                if existing_path and os.path.normpath(p) == existing_path:
+                    current_selection_index = len(items_for_dialog) - 1
 
-            # Add manual option
-            manual_option_str = "--- Enter path manually ---"
-            path_choices.append(manual_option_str)
+            try:
+                from gui_components.save_path_selection_dialog import SavePathSelectionDialog
+            except Exception as e_imp:
+                logging.error(f"Failed to import SavePathSelectionDialog: {e_imp}")
+                QMessageBox.critical(self, "UI Error", "Internal UI component missing.")
+                self.reject(); return
 
-            dialog_text = f"These potential paths have been found for '{profile_name}'.\n" \
-                          "Select the correct one (sorted by probability) or choose manual entry:"
-
-            # Show choice dialog
-            logging.debug(f"ON_SEARCH_FINISHED: Showing QInputDialog with {len(path_choices)} choices.")
-            chosen_display_str, ok = QInputDialog.getItem(
-                self, "Confirm Save Path", dialog_text,
-                path_choices, current_selection_index, False
+            dialog_text = (
+                f"These potential paths have been found for '{profile_name}'.\n"
+                "Select the correct one (sorted by probability) or choose manual entry:"
             )
-
-            # Handle user choice...
-            if ok and chosen_display_str:
-                if chosen_display_str == manual_option_str:
+            dlg = SavePathSelectionDialog(
+                items=items_for_dialog,
+                title="Confirm Save Path",
+                prompt_text=dialog_text,
+                show_scores=show_scores,
+                preselect_index=current_selection_index,
+                parent=self,
+            )
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                if dlg.is_manual_selected():
                     confirmed_path = self._ask_for_manual_path(profile_name, existing_path)
                 else:
-                    confirmed_path = display_text_to_original_path.get(chosen_display_str)
-                    if confirmed_path is None:
-                        logging.error(f"Error mapping selected choice '{chosen_display_str}' back to path.")
-                        QMessageBox.critical(self, "Internal Error", "Error in path selection.")
+                    confirmed_path = dlg.get_selected_path()
+                    if not confirmed_path:
                         self.reject(); return
-            else: 
+            else:
                 self.status_label.setText("Configuration cancelled.")
                 self.reject(); return
 
