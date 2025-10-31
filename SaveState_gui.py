@@ -16,7 +16,8 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QStatusBar,
     QProgressBar, QGroupBox, QLineEdit,
     QStyle, QDockWidget, QPlainTextEdit, QTableWidget, QGraphicsOpacityEffect,
-    QDialog, QFileDialog, QMenu, QSpinBox, QComboBox, QCheckBox, QFormLayout
+    QDialog, QFileDialog, QMenu, QSpinBox, QComboBox, QCheckBox, QFormLayout,
+    QSizeGrip, QMessageBox
 )
 from PySide6.QtGui import QKeyEvent # Added for keyPressEvent
 from PySide6.QtCore import (
@@ -103,6 +104,10 @@ class MainWindow(QMainWindow):
         self.qt_log_handler = qt_log_handler
         self.settings_manager = settings_manager_instance # Assign settings_manager instance
         self.core_logic = core_logic # Assign core_logic module to an instance attribute
+        
+        # Use a custom, frameless title bar so we can reclaim vertical space
+        self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
+        self._drag_pos = None  # Used by the custom title bar drag logic
         
         # Inizializza il cancellation manager per i thread di ricerca
         from cancellation_utils import CancellationManager
@@ -225,6 +230,8 @@ class MainWindow(QMainWindow):
         self.restore_button = QPushButton()        # Crea pulsante Ripristina
         self.manage_backups_button = QPushButton() # Crea pulsante Gestisci Backup
         self.open_backup_dir_button = QPushButton() # Crea pulsante Apri Cartella
+        # New visible Cloud entry
+        self.cloud_button = QPushButton("Cloud...")
 
         # Search bar for profiles (initially hidden)
         self.search_bar = QLineEdit(self)
@@ -275,11 +282,16 @@ class MainWindow(QMainWindow):
         if os.path.exists(icon_path): # Controlla se il file esiste
             settings_icon = QIcon(icon_path)
             self.settings_button.setIcon(settings_icon)
-            self.settings_button.setIconSize(QSize(16, 16)) # Imposta dimensione se necessario
+            self.settings_button.setIconSize(QSize(20, 20)) # Icona più grande
         else:
             logging.warning(f"File icona impostazioni non trovato: {icon_path}")
             
         self.theme_button = QPushButton()
+        # Style settings/theme as square, icon-only buttons for the title bar
+        self.settings_button.setFlat(True)
+        self.settings_button.setFixedSize(QSize(28, 28))
+        self.theme_button.setFlat(True)
+        self.theme_button.setFixedSize(QSize(28, 28))
         
         #self.status_label = QLabel(self.tr("Pronto."))
         self.status_label.setObjectName("StatusLabel")
@@ -356,12 +368,79 @@ class MainWindow(QMainWindow):
 
         # --- Layout ---
         main_layout = QVBoxLayout()
+        # Make the title bar reach the window edges, while preserving content margins via a container
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)  # no gap below the title bar
+        
+        # Custom Title Bar (frameless)
+        self.title_bar = QWidget()
+        self.title_bar.setObjectName("CustomTitleBar")
+        # Compact title bar height and internal padding
+        self.title_bar.setMinimumHeight(36)
+        title_layout = QHBoxLayout()
+        title_layout.setContentsMargins(12, 4, 12, 4)
+        title_layout.setSpacing(6)
+        self.title_label = QLabel("SaveState - 1.4.6")
+        self.title_label.setObjectName("TitleLabel")
+        title_layout.addWidget(self.title_label)
+        title_layout.addStretch(1)
+        # Move Settings and Theme buttons to the title bar
+        self.settings_button.setObjectName("SettingsButton")
+        self.theme_button.setObjectName("ThemeButton")
+        title_layout.addWidget(self.settings_button)
+        title_layout.addWidget(self.theme_button)
+        # Window control buttons (minimize, close) - no maximize/fullscreen
+        self.minimize_button = QPushButton()
+        self.minimize_button.setObjectName("MinimizeButton")
+        self.minimize_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_TitleBarMinButton))
+        self.minimize_button.setFixedSize(QSize(28, 28))
+        self.minimize_button.setFlat(True)
+        self.minimize_button.setIconSize(QSize(14, 14))
+        self.minimize_button.clicked.connect(self.showMinimized)
+        self.close_button = QPushButton()
+        self.close_button.setObjectName("CloseButton")
+        self.close_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton))
+        self.close_button.setFixedSize(QSize(28, 28))
+        self.close_button.setFlat(True)
+        self.close_button.setIconSize(QSize(14, 14))
+        self.close_button.clicked.connect(self.close)
+        title_layout.addWidget(self.minimize_button)
+        title_layout.addWidget(self.close_button)
+        self.title_bar.setLayout(title_layout)
+        # Allow dragging the window from the title bar
+        self.title_bar.installEventFilter(self)
+        
+        # Title bar styling (darker than main UI, icon-only square buttons)
+        self.title_bar.setStyleSheet(
+            """
+            QWidget#CustomTitleBar { background-color: #0d0d0d; border-bottom: 1px solid #333333; }
+            QLabel#TitleLabel { color: #f2f2f2; font-size: 14pt; font-weight: 700; }
+            QPushButton#SettingsButton, QPushButton#ThemeButton, QPushButton#MinimizeButton, QPushButton#CloseButton {
+                border: none; background: transparent; min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; padding: 0px; border-radius: 4px;
+            }
+            QPushButton#SettingsButton:hover, QPushButton#ThemeButton:hover, QPushButton#MinimizeButton:hover {
+                background-color: rgba(255, 255, 255, 0.15);
+            }
+            QPushButton#CloseButton:hover { background-color: #b00020; }
+            """
+        )
+        
+        main_layout.addWidget(self.title_bar)
+
+        # Content container restores the usual margins around the app content
+        content_container = QWidget()
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(12, 8, 12, 4)
+        content_layout.setSpacing(4)
+        content_container.setLayout(content_layout)
         profile_group = QGroupBox("Profiles")
         self.profile_group = profile_group
         profile_layout = QVBoxLayout()
+        profile_layout.setContentsMargins(6, 6, 6, 6)
+        profile_layout.setSpacing(4)
         profile_layout.addWidget(self.profile_table_widget)
         profile_group.setLayout(profile_layout)
-        main_layout.addWidget(profile_group, stretch=1)
+        content_layout.addWidget(profile_group, stretch=1)
 
         # Inline Profile Editor (hidden by default)
         self.profile_editor_group = QGroupBox("Edit Profile")
@@ -419,12 +498,13 @@ class MainWindow(QMainWindow):
         editor_layout.addLayout(buttons_row)
         self.profile_editor_group.setLayout(editor_layout)
         self.profile_editor_group.setVisible(False)
-        main_layout.addWidget(self.profile_editor_group, stretch=1)
+        content_layout.addWidget(self.profile_editor_group, stretch=1)
 
         actions_group = QGroupBox("Actions")
         self.actions_group = actions_group
         actions_layout = QHBoxLayout()
-        actions_layout.setSpacing(8)
+        actions_layout.setContentsMargins(6, 6, 6, 6)
+        actions_layout.setSpacing(6)
         actions_layout.addWidget(self.backup_button)
         actions_layout.addWidget(self.restore_button)
         actions_layout.addWidget(self.manage_backups_button)
@@ -451,34 +531,44 @@ class MainWindow(QMainWindow):
         
         actions_layout.addWidget(self.create_shortcut_button)
         actions_layout.addWidget(self.minecraft_button)
+        actions_layout.addWidget(self.cloud_button)
         actions_layout.addWidget(self.delete_profile_button)
         actions_group.setLayout(actions_layout)
-        main_layout.addWidget(actions_group)
+        content_layout.addWidget(actions_group)
         general_group = QGroupBox("General")
         self.general_group = general_group
         general_layout = QHBoxLayout()
+        general_layout.setContentsMargins(6, 6, 6, 6)
+        general_layout.setSpacing(6)
         general_layout.addWidget(self.new_profile_button)
         general_layout.addWidget(self.steam_button)
         general_layout.addWidget(self.open_backup_dir_button) # Moved back here
-        general_layout.addWidget(self.settings_button)
-
-        # Theme button setup
-        general_layout.addWidget(self.theme_button)
         general_group.setLayout(general_layout)
-        main_layout.addWidget(general_group)
+        content_layout.addWidget(general_group)
         
         # --- Layout per Search Bar e Pulsante Log (in basso) ---
         bottom_controls_layout = QHBoxLayout()
+        bottom_controls_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_controls_layout.setSpacing(6)
         bottom_controls_layout.addWidget(self.search_bar) # Search bar first
         bottom_controls_layout.addStretch(1) # Add stretch to push log button to the right
         bottom_controls_layout.addWidget(self.toggle_log_button) # Log button last
 
-        main_layout.addLayout(bottom_controls_layout)
+        content_layout.addLayout(bottom_controls_layout)
+        
+        # Finally add the content container to the main layout (beneath the title bar)
+        main_layout.addWidget(content_container, stretch=1)
         # --- FINE Layout Search Bar e Pulsante Log ---
         
         status_bar = QStatusBar()
         status_bar.addWidget(self.status_label, stretch=1)
         status_bar.addPermanentWidget(self.progress_bar)
+        try:
+            # Add a size grip so the frameless window remains resizable
+            self.size_grip = QSizeGrip(self)
+            status_bar.addPermanentWidget(self.size_grip)
+        except Exception:
+            pass
         
         # --- Limita Altezza Status Bar ---
         # Calcola l'altezza di una riga di testo con un po' di margine
@@ -552,6 +642,7 @@ class MainWindow(QMainWindow):
         self.manage_backups_button.clicked.connect(self.handlers.handle_manage_backups)
         self.settings_button.clicked.connect(self.handlers.handle_settings)
         self.open_backup_dir_button.clicked.connect(self.handlers.handle_open_backup_folder)
+        self.cloud_button.clicked.connect(self._handle_cloud_button_clicked)
         # Log button connections use handlers
         self.toggle_log_button.pressed.connect(self.handlers.handle_log_button_pressed)
         self.toggle_log_button.released.connect(self.handlers.handle_log_button_released)
@@ -671,6 +762,27 @@ class MainWindow(QMainWindow):
         self.request_hide_overlay.emit()
         event.accept() # Accept the event
 
+    def eventFilter(self, watched, event):
+        """Enable window dragging from the custom title bar and ignore double-click maximize."""
+        try:
+            if hasattr(self, 'title_bar') and watched is self.title_bar:
+                if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                    # Record offset between click and top-left of window
+                    pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+                    self._drag_pos = pos - self.frameGeometry().topLeft()
+                    return True
+                if event.type() == QEvent.Type.MouseMove and (event.buttons() & Qt.MouseButton.LeftButton):
+                    if self._drag_pos is not None:
+                        pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+                        self.move(pos - self._drag_pos)
+                        return True
+                if event.type() == QEvent.Type.MouseButtonDblClick:
+                    # Do nothing on double click (no maximize toggle)
+                    return True
+        except Exception:
+            pass
+        return super().eventFilter(watched, event)
+
     def dropEvent(self, event: QDropEvent):
         """Handles drop events by delegating to the DragDropHandler."""
         logging.debug("MainWindow.dropEvent: Delegating to DragDropHandler.")
@@ -685,12 +797,23 @@ class MainWindow(QMainWindow):
             logging.error("MainWindow.dropEvent: DragDropHandler not initialized.")
             event.ignore()
     
+    def _handle_cloud_button_clicked(self):
+        """Placeholder entry-point for the upcoming Cloud Save UI."""
+        try:
+            QMessageBox.information(self, "Cloud Saves", "Cloud Saves will arrive in 1.5.\nThis is a placeholder entry point.")
+        except Exception:
+            if hasattr(self, 'status_label'):
+                self.status_label.setText("Cloud Saves placeholder activated.")
+    
     def updateUiText(self):
         """Updates the UI text"""
         logging.debug(">>> updateUiText: START <<<")
-        self.setWindowTitle("SaveState - 1.4.6")
+        self.setWindowTitle("SaveState - 2.0 preview")
+        if hasattr(self, 'title_label'):
+            self.title_label.setText("SaveState - 2.0 preview")
         self.profile_table_manager.retranslate_headers()
-        self.settings_button.setText("Settings...")
+        # Keep Settings as icon-only in the title bar
+        self.settings_button.setText("")
         self.new_profile_button.setText("New Profile...")
         self.steam_button.setText("Manage Steam")
         self.delete_profile_button.setText("Delete Profile")
@@ -698,6 +821,8 @@ class MainWindow(QMainWindow):
         self.restore_button.setText("Restore...")
         self.manage_backups_button.setText("Manage Backups")
         self.open_backup_dir_button.setText("Open Backup Folder")
+        if hasattr(self, 'cloud_button'):
+            self.cloud_button.setText("Cloud...")
 
         if hasattr(self, 'profile_group'): # Check if attribute exists
             self.profile_group.setTitle("Profiles")
@@ -900,6 +1025,8 @@ class MainWindow(QMainWindow):
         self.delete_profile_button.setEnabled(has_selection)
         self.manage_backups_button.setEnabled(has_selection)
         self.create_shortcut_button.setEnabled(has_selection)
+        if hasattr(self, 'cloud_button'):
+            self.cloud_button.setEnabled(True)
 
     @Slot(str)
     def _on_main_search_text_changed(self, text):
@@ -996,6 +1123,8 @@ class MainWindow(QMainWindow):
         self.minecraft_button.setEnabled(enabled)
         self.toggle_log_button.setEnabled(enabled)
         self.open_backup_dir_button.setEnabled(enabled)
+        if hasattr(self, 'cloud_button'):
+            self.cloud_button.setEnabled(enabled)
         self.progress_bar.setVisible(not enabled)
         # Editor controls
         if hasattr(self, 'edit_name_edit'):
