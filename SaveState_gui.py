@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QProgressBar, QGroupBox, QLineEdit,
     QStyle, QDockWidget, QPlainTextEdit, QTableWidget, QGraphicsOpacityEffect,
     QDialog, QFileDialog, QMenu, QSpinBox, QComboBox, QCheckBox, QFormLayout,
-    QSizeGrip, QMessageBox
+    QSizeGrip, QMessageBox, QGridLayout
 )
 from PySide6.QtGui import QKeyEvent # Added for keyPressEvent
 from PySide6.QtCore import (
@@ -150,6 +150,7 @@ class MainWindow(QMainWindow):
         # Translator removed - application is now English-only
 
         self.setGeometry(650, 250, 720, 600)
+        self.setMinimumSize(720, 600)  # Set minimum size to current size
         self.setAcceptDrops(True)
         self.current_settings = initial_settings
         self.profiles = core_logic.load_profiles()
@@ -500,6 +501,139 @@ class MainWindow(QMainWindow):
         self.profile_editor_group.setVisible(False)
         content_layout.addWidget(self.profile_editor_group, stretch=1)
 
+        # --- Inline Settings Panel (hidden by default) ---
+        self.settings_panel_group = QGroupBox("Application Settings")
+        settings_main_layout = QVBoxLayout()
+        settings_main_layout.setContentsMargins(8, 4, 8, 8)  # Reduce top margin
+        settings_main_layout.setSpacing(8)
+        
+        # Create grid layout for 2-column layout
+        settings_grid = QGridLayout()
+        settings_grid.setContentsMargins(4, 4, 4, 4)  # Reduce margins
+        settings_grid.setHorizontalSpacing(16)
+        settings_grid.setVerticalSpacing(12)
+        
+        # ROW 0, COL 0-1: Backup Base Path (full width)
+        backup_path_group = QGroupBox("Backup Base Path")
+        backup_path_layout = QHBoxLayout()
+        backup_path_layout.setContentsMargins(8, 8, 8, 8)
+        backup_path_layout.setSpacing(6)
+        self.settings_path_edit = QLineEdit()
+        self.settings_browse_button = QPushButton("Browse...")
+        self.settings_browse_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
+        backup_path_layout.addWidget(self.settings_path_edit)
+        backup_path_layout.addWidget(self.settings_browse_button)
+        backup_path_group.setLayout(backup_path_layout)
+        settings_grid.addWidget(backup_path_group, 0, 0, 1, 2)  # span 2 columns
+        
+        # ROW 1, COL 0: Portable Mode
+        portable_group = QGroupBox("Portable Mode")
+        portable_layout = QVBoxLayout()
+        portable_layout.setContentsMargins(8, 8, 8, 8)
+        portable_layout.setSpacing(6)
+        self.settings_portable_checkbox = QCheckBox("Use only JSONs in backup folder (.savestate)")
+        portable_layout.addWidget(self.settings_portable_checkbox)
+        portable_group.setLayout(portable_layout)
+        settings_grid.addWidget(portable_group, 1, 0)
+        
+        # ROW 1, COL 1: Maximum Source Size
+        max_size_group = QGroupBox("Maximum Source Size for Backup")
+        max_size_layout = QVBoxLayout()
+        max_size_layout.setContentsMargins(8, 8, 8, 8)
+        max_size_layout.setSpacing(6)
+        self.settings_max_size_combo = QComboBox()
+        self.settings_size_options = [
+            ("50 MB", 50), ("100 MB", 100), ("250 MB", 250), ("500 MB", 500),
+            ("1 GB (1024 MB)", 1024), ("2 GB (2048 MB)", 2048),
+            ("5 GB (5120 MB)", 5120), ("No Limit", -1)
+        ]
+        for display_text, _ in self.settings_size_options:
+            self.settings_max_size_combo.addItem(display_text)
+        max_size_layout.addWidget(self.settings_max_size_combo)
+        max_size_group.setLayout(max_size_layout)
+        settings_grid.addWidget(max_size_group, 1, 1)
+        
+        # ROW 2, COL 0: Max Number of Backups
+        max_backups_group = QGroupBox("Maximum Number of Backups per Profile")
+        max_backups_layout = QHBoxLayout()
+        max_backups_layout.setContentsMargins(8, 8, 8, 8)
+        max_backups_layout.setSpacing(6)
+        self.settings_max_backups_spin = QSpinBox()
+        self.settings_max_backups_spin.setRange(1, 99)
+        self.settings_max_backups_spin.setMaximumWidth(120) # Limit width
+        max_backups_layout.addWidget(self.settings_max_backups_spin)
+        max_backups_layout.addWidget(QLabel("backups per profile (.zip)"))
+        max_backups_layout.addStretch(1)  # Push everything to the left
+        max_backups_group.setLayout(max_backups_layout)
+        settings_grid.addWidget(max_backups_group, 2, 0)
+        
+        # ROW 2, COL 1: Backup Compression
+        compression_group = QGroupBox("Backup Compression (.zip)")
+        compression_layout = QVBoxLayout()
+        compression_layout.setContentsMargins(8, 8, 8, 8)
+        compression_layout.setSpacing(6)
+        self.settings_compression_combo = QComboBox()
+        self.settings_compression_options = {
+            "standard": "Standard (Recommended)",
+            "maximum": "Maximum (Slower)",
+            "stored": "None (Faster)"
+        }
+        for key, text in self.settings_compression_options.items():
+            self.settings_compression_combo.addItem(text, key)
+        compression_layout.addWidget(self.settings_compression_combo)
+        compression_group.setLayout(compression_layout)
+        settings_grid.addWidget(compression_group, 2, 1)
+        
+        # ROW 3, COL 0: Free Disk Space Check
+        space_check_group = QGroupBox("Free Disk Space Check")
+        space_check_layout = QVBoxLayout()
+        space_check_layout.setContentsMargins(8, 8, 8, 8)
+        space_check_layout.setSpacing(6)
+        self.settings_space_check_checkbox = QCheckBox("Enable space check before backup (minimum 2 GB)")
+        space_check_layout.addWidget(self.settings_space_check_checkbox)
+        space_check_group.setLayout(space_check_layout)
+        settings_grid.addWidget(space_check_group, 3, 0)
+        
+        # ROW 3, COL 1: UI Settings
+        ui_settings_group = QGroupBox("UI Settings")
+        ui_settings_layout = QVBoxLayout()
+        ui_settings_layout.setContentsMargins(8, 8, 8, 8)
+        ui_settings_layout.setSpacing(6)
+        self.settings_global_drag_checkbox = QCheckBox("Enable global mouse drag-to-show effect")
+        self.settings_shorten_paths_checkbox = QCheckBox("Shorten save paths in selection dialogs")
+        ui_settings_layout.addWidget(self.settings_global_drag_checkbox)
+        ui_settings_layout.addWidget(self.settings_shorten_paths_checkbox)
+        ui_settings_group.setLayout(ui_settings_layout)
+        settings_grid.addWidget(ui_settings_group, 3, 1)
+        
+        # ROW 4, COL 0-1 (spans 2 columns): Restore Configuration
+        restore_config_group = QGroupBox("Restore Configuration Backups")
+        restore_config_layout = QVBoxLayout()
+        restore_config_layout.setContentsMargins(8, 8, 8, 8)
+        restore_config_layout.setSpacing(6)
+        self.settings_restore_button = QPushButton("Restore Profiles and Settings from Backup")
+        self.settings_restore_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
+        restore_config_layout.addWidget(self.settings_restore_button)
+        restore_config_group.setLayout(restore_config_layout)
+        settings_grid.addWidget(restore_config_group, 4, 0, 1, 2)  # span 2 columns
+        
+        settings_main_layout.addLayout(settings_grid)
+        # No stretch - let the grid breathe naturally
+        
+        # Exit and Save buttons
+        settings_buttons_row = QHBoxLayout()
+        self.settings_exit_button = QPushButton("Exit")
+        self.settings_save_button = QPushButton("Save")
+        settings_buttons_row.addStretch(1)
+        settings_buttons_row.addWidget(self.settings_exit_button)
+        settings_buttons_row.addWidget(self.settings_save_button)
+        settings_main_layout.addLayout(settings_buttons_row)
+        
+        self.settings_panel_group.setLayout(settings_main_layout)
+        self.settings_panel_group.setVisible(False)
+        content_layout.addWidget(self.settings_panel_group, stretch=1)
+        # --- End Inline Settings Panel ---
+
         actions_group = QGroupBox("Actions")
         self.actions_group = actions_group
         actions_layout = QHBoxLayout()
@@ -547,14 +681,17 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(general_group)
         
         # --- Layout per Search Bar e Pulsante Log (in basso) ---
+        # Wrap in a widget container so we can easily hide it
+        self.bottom_controls_widget = QWidget()
         bottom_controls_layout = QHBoxLayout()
         bottom_controls_layout.setContentsMargins(0, 0, 0, 0)
         bottom_controls_layout.setSpacing(6)
         bottom_controls_layout.addWidget(self.search_bar) # Search bar first
         bottom_controls_layout.addStretch(1) # Add stretch to push log button to the right
         bottom_controls_layout.addWidget(self.toggle_log_button) # Log button last
+        self.bottom_controls_widget.setLayout(bottom_controls_layout)
 
-        content_layout.addLayout(bottom_controls_layout)
+        content_layout.addWidget(self.bottom_controls_widget)
         
         # Finally add the content container to the main layout (beneath the title bar)
         main_layout.addWidget(content_container, stretch=1)
@@ -643,6 +780,11 @@ class MainWindow(QMainWindow):
         self.settings_button.clicked.connect(self.handlers.handle_settings)
         self.open_backup_dir_button.clicked.connect(self.handlers.handle_open_backup_folder)
         self.cloud_button.clicked.connect(self._handle_cloud_button_clicked)
+        # Settings panel connections
+        self.settings_exit_button.clicked.connect(self.handlers.handle_settings_exit)
+        self.settings_save_button.clicked.connect(self.handlers.handle_settings_save)
+        self.settings_browse_button.clicked.connect(self.handlers.handle_settings_browse)
+        self.settings_restore_button.clicked.connect(self.handlers.handle_settings_restore)
         # Log button connections use handlers
         self.toggle_log_button.pressed.connect(self.handlers.handle_log_button_pressed)
         self.toggle_log_button.released.connect(self.handlers.handle_log_button_released)
@@ -1445,5 +1587,67 @@ class MainWindow(QMainWindow):
     def exit_profile_edit_mode(self):
         self._edit_mode_active = False
         self._set_main_controls_enabled_during_edit(True)
+
+    # --- Settings Panel Management ---
+    def show_settings_panel(self):
+        """Show inline settings panel, replacing the profiles UI."""
+        try:
+            # Populate settings fields from current settings
+            self.settings_path_edit.setText(self.current_settings.get("backup_base_dir", ""))
+            self.settings_portable_checkbox.setChecked(self.current_settings.get("portable_config_only", False))
+            
+            # Max source size
+            current_mb_value = self.current_settings.get("max_source_size_mb", 500)
+            current_index = next((i for i, (_, v) in enumerate(self.settings_size_options) if v == current_mb_value), -1)
+            if current_index != -1:
+                self.settings_max_size_combo.setCurrentIndex(current_index)
+            else:
+                default_index = next((i for i, (_, v) in enumerate(self.settings_size_options) if v == 500), 0)
+                self.settings_max_size_combo.setCurrentIndex(default_index)
+            
+            # Max backups
+            self.settings_max_backups_spin.setValue(self.current_settings.get("max_backups", 3))
+            
+            # Compression
+            current_comp_mode = self.current_settings.get("compression_mode", "standard")
+            comp_index = self.settings_compression_combo.findData(current_comp_mode)
+            if comp_index >= 0:
+                self.settings_compression_combo.setCurrentIndex(comp_index)
+            
+            # Space check
+            self.settings_space_check_checkbox.setChecked(self.current_settings.get("check_free_space_enabled", True))
+            
+            # UI settings
+            self.settings_global_drag_checkbox.setChecked(self.current_settings.get("enable_global_drag_effect", True))
+            self.settings_shorten_paths_checkbox.setChecked(self.current_settings.get("shorten_paths_enabled", True))
+            
+            # Toggle UI visibility
+            self.profile_group.setVisible(False)
+            self.actions_group.setVisible(False)
+            self.general_group.setVisible(False)
+            self.bottom_controls_widget.setVisible(False)  # Hide search bar and log button
+            self.settings_panel_group.setVisible(True)
+            
+            # Disable main controls
+            self.enter_settings_mode()
+        except Exception as e:
+            logging.error(f"Error showing settings panel: {e}")
+
+    def exit_settings_panel(self):
+        """Exit settings panel and return to normal UI."""
+        self.settings_panel_group.setVisible(False)
+        self.profile_group.setVisible(True)
+        self.actions_group.setVisible(True)
+        self.general_group.setVisible(True)
+        self.bottom_controls_widget.setVisible(True)  # Show search bar and log button again
+        self.exit_settings_mode()
+
+    def enter_settings_mode(self):
+        """Set flag when settings panel is shown."""
+        self._settings_mode_active = True
+
+    def exit_settings_mode(self):
+        """Clear flag after settings panel is closed."""
+        self._settings_mode_active = False
 
 # --- End of MainWindow class definition ---

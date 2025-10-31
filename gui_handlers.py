@@ -214,19 +214,28 @@ class MainWindowHandlers:
 
     # Opens the settings dialog and applies changes if confirmed.
     @Slot()
-    def handle_settings(self):
-        # Language handling removed - application is now English-only
-        # Pass a copy and the main window as parent
-        dialog = SettingsDialog(self.main_window.current_settings.copy(), self.main_window)
+    def handle_settings(self, is_initial_setup=False):
+        """
+        Show settings UI.
+        If is_initial_setup=True, show as popup dialog (first launch).
+        Otherwise, show as inline panel.
+        """
+        if is_initial_setup:
+            # Use popup dialog for initial setup
+            dialog = SettingsDialog(self.main_window.current_settings.copy(), self.main_window, is_initial_setup=True)
+            try:
+                logging.debug("Updating dialog UI text before showing...")
+                dialog.updateUiText()
+            except Exception as e_update:
+                logging.error(f"Error updating dialog UI text: {e_update}", exc_info=True)
+            result = dialog.exec()
+        else:
+            # Show inline settings panel
+            self.main_window.show_settings_panel()
+            return  # Exit early for inline mode
         
-        try:
-            logging.debug("Updating dialog UI text before showing...")
-            dialog.updateUiText() # Force update text
-        except Exception as e_update:
-            logging.error(f"Error updating dialog UI text: {e_update}", exc_info=True)
-        
-        # Use exec() to make it modal and block interaction with main window
-        result = dialog.exec()
+        # Dialog mode - handle result
+        result_copy = result  # Keep for checking below
         
         # Handle the result immediately after dialog closes
         if result == QDialog.Accepted:
@@ -298,6 +307,265 @@ class MainWindowHandlers:
                                    "Failed to save settings to file.")
         else:
             logging.debug("Settings dialog cancelled.")
+
+    # --- Inline Settings Panel Handlers ---
+    @Slot()
+    def handle_settings_exit(self):
+        """Exit the inline settings panel without saving."""
+        self.main_window.exit_settings_panel()
+        logging.debug("Settings panel closed without saving.")
+
+    @Slot()
+    def handle_settings_browse(self):
+        """Opens dialog to select backup folder from inline settings panel."""
+        directory = QFileDialog.getExistingDirectory(
+            self.main_window, "Select Base Folder for Backups", 
+            self.main_window.settings_path_edit.text()
+        )
+        if directory:
+            self.main_window.settings_path_edit.setText(os.path.normpath(directory))
+
+    @Slot()
+    def handle_settings_restore(self):
+        """Handle restoring JSON backups from inline settings panel."""
+        # Same logic as in settings_dialog.py
+        reply = QMessageBox.question(
+            self.main_window,
+            "Restore Configuration Backups",
+            "This will restore your profiles, settings, and favorites from the backup directory.\n\n"
+            "Current files will be backed up before restoration.\n\n"
+            "Do you want to proceed?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        try:
+            success = core_logic.restore_json_from_backup_root()
+            if success:
+                # Reload settings and profiles
+                try:
+                    reloaded_settings, _first = settings_manager.load_settings()
+                    if isinstance(reloaded_settings, dict):
+                        self.main_window.current_settings = reloaded_settings
+                        # Update UI field
+                        self.main_window.settings_path_edit.setText(reloaded_settings.get("backup_base_dir", ""))
+                    
+                    # Reload favorites
+                    try:
+                        from gui_components import favorites_manager as _fav
+                        _fav._cache_loaded = False
+                        _fav.load_favorites()
+                    except Exception:
+                        pass
+                    
+                    # Reload profiles
+                    self.main_window.profiles = core_logic.load_profiles()
+                    if hasattr(self.main_window, 'profile_table_manager') and self.main_window.profile_table_manager:
+                        self.main_window.profile_table_manager.update_profile_table()
+                    if hasattr(self.main_window, 'updateUiText'):
+                        self.main_window.updateUiText()
+                    if hasattr(self.main_window, 'update_global_drag_listener_state'):
+                        self.main_window.update_global_drag_listener_state()
+                except Exception as e_apply:
+                    logging.warning(f"Applied restore but failed to refresh UI/runtime state: {e_apply}")
+
+                QMessageBox.information(
+                    self.main_window,
+                    "Restore Successful",
+                    "Configuration files have been restored and applied."
+                )
+                
+                # Close settings panel
+                self.main_window.exit_settings_panel()
+                return
+            else:
+                QMessageBox.warning(
+                    self.main_window,
+                    "Restore Failed",
+                    "Could not restore configuration files.\n\n"
+                    "Please check that backup files exist in the .savestate folder."
+                )
+        except Exception as e:
+            logging.error(f"Error restoring JSON backups: {e}", exc_info=True)
+            QMessageBox.critical(
+                self.main_window,
+                "Error",
+                f"An error occurred while restoring backups:\n\n{str(e)}"
+            )
+
+    @Slot()
+    def handle_settings_save(self):
+        """Save settings from the inline settings panel."""
+        try:
+            # Collect values from inline panel
+            new_path = os.path.normpath(self.main_window.settings_path_edit.text())
+            new_max_backups = self.main_window.settings_max_backups_spin.value()
+            selected_size_index = self.main_window.settings_max_size_combo.currentIndex()
+            new_compression_mode = self.main_window.settings_compression_combo.currentData()
+            new_check_free_space = self.main_window.settings_space_check_checkbox.isChecked()
+            new_portable_mode = self.main_window.settings_portable_checkbox.isChecked()
+            new_global_drag = self.main_window.settings_global_drag_checkbox.isChecked()
+            new_shorten_paths = self.main_window.settings_shorten_paths_checkbox.isChecked()
+            
+            new_max_src_size_mb = -1
+            if 0 <= selected_size_index < len(self.main_window.settings_size_options):
+                _, new_max_src_size_mb = self.main_window.settings_size_options[selected_size_index]
+            
+            # Path validation and creation
+            if new_path and not os.path.isdir(new_path):
+                reply = QMessageBox.question(
+                    self.main_window,
+                    "Create Directory?",
+                    f"The path '{new_path}' does not exist.\nDo you want to create it?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    try:
+                        os.makedirs(new_path, exist_ok=True)
+                        logging.info(f"Created backup directory: {new_path}")
+                    except OSError as e:
+                        QMessageBox.critical(
+                            self.main_window,
+                            "Creation Failed",
+                            f"Failed to create directory '{new_path}'.\n\nError: {e}"
+                        )
+                        return
+                else:
+                    return
+            
+            # Validate path
+            if not hasattr(self.main_window, 'profile_creation_manager') or \
+               not self.main_window.profile_creation_manager or \
+               not hasattr(self.main_window.profile_creation_manager, 'validate_save_path'):
+                logging.error("Unable to validate path: profile_creation_manager missing.")
+                QMessageBox.critical(self.main_window, "Internal Error", "Unable to validate path.")
+                return
+            
+            validated_new_path = self.main_window.profile_creation_manager.validate_save_path(
+                new_path, context_profile_name="Settings"
+            )
+            if validated_new_path is None:
+                return
+            
+            # Save old portable flag
+            old_portable = bool(self.main_window.current_settings.get("portable_config_only", False))
+            
+            # Update settings
+            new_settings = self.main_window.current_settings.copy()
+            new_settings["backup_base_dir"] = validated_new_path
+            new_settings["max_backups"] = new_max_backups
+            new_settings["max_source_size_mb"] = new_max_src_size_mb
+            new_settings["compression_mode"] = new_compression_mode
+            new_settings["check_free_space_enabled"] = new_check_free_space
+            new_settings["enable_global_drag_effect"] = new_global_drag
+            new_settings["shorten_paths_enabled"] = new_shorten_paths
+            new_settings["portable_config_only"] = new_portable_mode
+            
+            # Show delete AppData popup only when enabling portable and AppData folder exists
+            try:
+                if (not old_portable) and new_portable_mode:
+                    import config as _cfg
+                    appdata_dir = _cfg.get_app_data_folder()
+                    appdata_has_configs = False
+                    if appdata_dir and os.path.isdir(appdata_dir):
+                        # Consider folder existing with any of the known JSONs as present
+                        known = ["settings.json", "game_save_profiles.json", "favorites_status.json"]
+                        appdata_has_configs = any(os.path.exists(os.path.join(appdata_dir, n)) for n in known)
+                    if appdata_has_configs:
+                        reply = QMessageBox.question(
+                            self.main_window,
+                            "Remove AppData Configuration?",
+                            ("You enabled portable mode and a configuration folder was found in AppData:\n\n"
+                             f"{appdata_dir}\n\n"
+                             "Do you want to delete the AppData configuration after migrating files to the backup folder?"),
+                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                            QMessageBox.StandardButton.Yes
+                        )
+                        if reply == QMessageBox.StandardButton.Yes:
+                            # Set flag - settings_manager.save_settings() will handle the deletion
+                            new_settings["_delete_appdata_after_portable"] = True
+            except Exception as e:
+                logging.warning(f"Error showing AppData deletion prompt: {e}")
+            
+            # If enabling portable, force runtime override immediately (like settings_dialog.py does)
+            if new_portable_mode:
+                try:
+                    target_dir = os.path.join(validated_new_path, ".savestate")
+                    if hasattr(settings_manager, "_RUNTIME_CONFIG_DIR_OVERRIDE"):
+                        settings_manager._RUNTIME_CONFIG_DIR_OVERRIDE = target_dir
+                        logging.debug(f"Forced runtime config dir override to: {target_dir}")
+                except Exception as e_override:
+                    logging.warning(f"Error forcing runtime override: {e_override}")
+            
+            # Apply to main window
+            self.main_window.current_settings = new_settings
+            
+            # Apply theme and update UI
+            self.main_window.theme_manager.update_theme()
+            self.main_window.updateUiText()
+            
+            # Save to file
+            if settings_manager.save_settings(self.main_window.current_settings):
+                logging.info("Settings saved successfully from inline panel.")
+                self.main_window.status_label.setText("Settings saved.")
+                
+                # Reload if portable changed
+                new_portable = bool(self.main_window.current_settings.get("portable_config_only", False))
+                need_runtime_reload = new_portable or (new_portable != old_portable)
+                
+                # Reload settings from disk
+                try:
+                    self.main_window.current_settings, _first = settings_manager.load_settings()
+                except Exception as e_load:
+                    logging.warning(f"Reloading settings after save failed: {e_load}")
+                
+                # Reload modules if needed
+                if need_runtime_reload:
+                    try:
+                        import importlib
+                        from gui_components import favorites_manager as _fav
+                        importlib.reload(_fav)
+                        _fav._cache_loaded = False
+                        _fav.load_favorites()
+                    except Exception as e_fav:
+                        logging.warning(f"Reload favorites after settings change failed: {e_fav}")
+                    
+                    try:
+                        import importlib
+                        import core_logic as _cl
+                        importlib.reload(_cl)
+                        self.main_window.profiles = _cl.load_profiles()
+                    except Exception as e_cl:
+                        logging.warning(f"Reload profiles after settings change failed: {e_cl}")
+                    
+                    try:
+                        if hasattr(self.main_window, 'profile_table_manager') and self.main_window.profile_table_manager:
+                            self.main_window.profile_table_manager.update_profile_table()
+                    except Exception:
+                        pass
+                
+                # Update global drag listener
+                try:
+                    if hasattr(self.main_window, 'update_global_drag_listener_state'):
+                        logging.debug("Calling update_global_drag_listener_state after saving settings.")
+                        self.main_window.update_global_drag_listener_state()
+                except Exception:
+                    logging.warning("Unable to update global drag listener state after settings save.")
+                
+                # Close settings panel
+                self.main_window.exit_settings_panel()
+            else:
+                logging.error("Failed to save settings from inline panel.")
+                QMessageBox.warning(self.main_window, "Save Error",
+                                   "Failed to save settings to file.")
+        except Exception as e:
+            logging.error(f"Error saving settings from inline panel: {e}", exc_info=True)
+            QMessageBox.critical(self.main_window, "Error",
+                               f"An error occurred while saving settings:\n\n{str(e)}")
 
     # --- Profile Actions (Delete, Backup, Restore, Manage, Shortcut) ---
     # Handles the deletion of the selected profile after confirmation.
