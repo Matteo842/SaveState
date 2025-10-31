@@ -7,6 +7,11 @@ import platform
 import logging
 import configparser
 from typing import Iterable
+try:
+    from PySide6.QtCore import QThread, Signal
+except Exception:
+    QThread = None
+    Signal = None
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
@@ -611,6 +616,49 @@ def find_melonds_profiles(executable_path: str | None = None) -> list[dict] | No
         )
         return None
 
+
+# --- Async worker (Qt) to run melonDS scan without blocking the UI ---
+class MelonDSProfilesWorker(QThread):
+    """
+    Qt worker thread that runs find_melonds_profiles in background.
+    Usage:
+        worker = MelonDSProfilesWorker(executable_path)
+        worker.finished.connect(lambda profiles: ...)
+        worker.start()
+    """
+    if Signal is not None:
+        finished = Signal(object)  # Emits profiles list or None
+
+    def __init__(self, executable_path: str | None):
+        if QThread is None:
+            raise RuntimeError("Qt (PySide6) not available; MelonDSProfilesWorker cannot be used.")
+        super().__init__()
+        self._executable_path = executable_path
+
+    def run(self) -> None:
+        try:
+            profiles = find_melonds_profiles(self._executable_path)
+        except Exception as e:
+            logging.error(f"MelonDSProfilesWorker error: {e}")
+            profiles = None
+        # Emit result
+        try:
+            self.finished.emit(profiles)
+        except Exception:
+            # If no Qt signal available or disconnected
+            pass
+
+
+def start_melonds_profile_search_async(executable_path: str | None):
+    """
+    Convenience helper to start the async search.
+    Returns the started QThread instance (caller should keep a reference).
+    """
+    if QThread is None:
+        raise RuntimeError("Qt (PySide6) not available; cannot start async melonDS search.")
+    worker = MelonDSProfilesWorker(executable_path)
+    worker.start()
+    return worker
 
 # Example usage (optional)
 if __name__ == "__main__":
