@@ -13,7 +13,7 @@ import core_logic # Added import
 # Importa il modulo base prima, poi gli elementi specifici
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QStatusBar,
+    QPushButton, QLabel, QStatusBar, QFrame, QSizePolicy,
     QProgressBar, QGroupBox, QLineEdit,
     QStyle, QDockWidget, QPlainTextEdit, QTableWidget, QGraphicsOpacityEffect,
     QDialog, QFileDialog, QMenu, QSpinBox, QComboBox, QCheckBox, QFormLayout,
@@ -560,7 +560,7 @@ class MainWindow(QMainWindow):
         max_backups_layout.setSpacing(6)
         self.settings_max_backups_spin = QSpinBox()
         self.settings_max_backups_spin.setRange(1, 99)
-        self.settings_max_backups_spin.setMaximumWidth(120) # Limit width
+        self.settings_max_backups_spin.setMaximumWidth(80)  # Limit width
         max_backups_layout.addWidget(self.settings_max_backups_spin)
         max_backups_layout.addWidget(QLabel("backups per profile (.zip)"))
         max_backups_layout.addStretch(1)  # Push everything to the left
@@ -665,7 +665,6 @@ class MainWindow(QMainWindow):
         
         actions_layout.addWidget(self.create_shortcut_button)
         actions_layout.addWidget(self.minecraft_button)
-        actions_layout.addWidget(self.cloud_button)
         actions_layout.addWidget(self.delete_profile_button)
         actions_group.setLayout(actions_layout)
         content_layout.addWidget(actions_group)
@@ -678,7 +677,35 @@ class MainWindow(QMainWindow):
         general_layout.addWidget(self.steam_button)
         general_layout.addWidget(self.open_backup_dir_button) # Moved back here
         general_group.setLayout(general_layout)
-        content_layout.addWidget(general_group)
+
+        # --- New right-side Cloud group next to General with a light separator ---
+        self.cloud_group = QGroupBox("")  # frameless title to visually group the Cloud button
+        cloud_layout = QHBoxLayout()
+        cloud_layout.setContentsMargins(6, 6, 6, 6)
+        cloud_layout.setSpacing(6)
+        cloud_layout.addWidget(self.cloud_button)
+        self.cloud_group.setLayout(cloud_layout)
+
+        # Subtle vertical separator between General and Cloud
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.VLine)
+        separator.setFrameShadow(QFrame.Shadow.Plain)
+        separator.setLineWidth(1)
+        separator.setFixedWidth(1)
+        separator.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        separator.setStyleSheet("QFrame { border-left: 1px solid rgba(255, 255, 255, 0.12); background: transparent; }")
+
+        # Row container to place General (left) and Cloud (right of it)
+        self.general_cloud_row = QWidget()
+        general_cloud_row_layout = QHBoxLayout()
+        general_cloud_row_layout.setContentsMargins(0, 0, 0, 0)
+        general_cloud_row_layout.setSpacing(6)
+        general_cloud_row_layout.addWidget(general_group)
+        general_cloud_row_layout.addWidget(separator)
+        general_cloud_row_layout.addWidget(self.cloud_group)
+        self.general_cloud_row.setLayout(general_cloud_row_layout)
+
+        content_layout.addWidget(self.general_cloud_row)
         
         # --- Layout per Search Bar e Pulsante Log (in basso) ---
         # Wrap in a widget container so we can easily hide it
@@ -1571,6 +1598,10 @@ class MainWindow(QMainWindow):
                 self.actions_group.setEnabled(enabled)
             if hasattr(self, 'general_group') and self.general_group:
                 self.general_group.setEnabled(enabled)
+            if hasattr(self, 'cloud_group') and self.cloud_group:
+                self.cloud_group.setEnabled(enabled)
+            if hasattr(self, 'general_cloud_row') and self.general_cloud_row:
+                self.general_cloud_row.setEnabled(enabled)
             if hasattr(self, 'search_bar') and self.search_bar:
                 self.search_bar.setEnabled(enabled)
             if hasattr(self, 'profile_table_widget') and self.profile_table_widget:
@@ -1625,6 +1656,10 @@ class MainWindow(QMainWindow):
             self.profile_group.setVisible(False)
             self.actions_group.setVisible(False)
             self.general_group.setVisible(False)
+            if hasattr(self, 'general_cloud_row'):
+                self.general_cloud_row.setVisible(False)
+            if hasattr(self, 'cloud_group'):
+                self.cloud_group.setVisible(False)
             self.bottom_controls_widget.setVisible(False)  # Hide search bar and log button
             self.settings_panel_group.setVisible(True)
             
@@ -1639,6 +1674,10 @@ class MainWindow(QMainWindow):
         self.profile_group.setVisible(True)
         self.actions_group.setVisible(True)
         self.general_group.setVisible(True)
+        if hasattr(self, 'general_cloud_row'):
+            self.general_cloud_row.setVisible(True)
+        if hasattr(self, 'cloud_group'):
+            self.cloud_group.setVisible(True)
         self.bottom_controls_widget.setVisible(True)  # Show search bar and log button again
         self.exit_settings_mode()
 
