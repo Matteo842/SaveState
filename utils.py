@@ -125,3 +125,48 @@ def shorten_save_path(path, game_install_dir=None):
         return original_path, 0
     
     return path, prefix_length
+
+
+def sanitize_profile_display_name(name):
+    """
+    Produce a clean, human-friendly display name for a game/profile.
+
+    Heuristics:
+    - Cut everything starting from the first bracket: '(', '[', or '{'.
+      Example: "Game Title (Europe) (Rev A)" -> "Game Title"
+    - Remove trailing CRC/similar hex tokens like ".980e42e38c995".
+    - Collapse underscores/dots into spaces and normalize whitespace.
+    - Trim trailing separators and punctuation.
+    """
+    try:
+        if not isinstance(name, str):
+            name = str(name)
+
+        cleaned = name
+
+        # 1) Trim at first bracket (any of (, [, {)
+        cut_pos = len(cleaned)
+        for ch in ('(', '[', '{'):
+            p = cleaned.find(ch)
+            if p != -1 and p < cut_pos:
+                cut_pos = p
+        if cut_pos != len(cleaned):
+            cleaned = cleaned[:cut_pos]
+
+        # 2) Remove trailing hex-like token after a dot (common CRC/hash suffixes)
+        #    e.g., ".980e42e38c995"
+        cleaned = re.sub(r"\.[0-9a-fA-F]{6,}$", "", cleaned)
+
+        # 3) Replace underscores and isolated dots with spaces
+        cleaned = cleaned.replace('_', ' ')
+        # Avoid aggressively removing dots inside abbreviations; only compress repeated spaces later
+        cleaned = cleaned.replace('·', ' ')
+
+        # 4) Normalize whitespace and strip separators/punctuation
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        cleaned = cleaned.strip(" .-_/\\—–:;")
+
+        # Fallback to original if result is empty
+        return cleaned if cleaned else name.strip()
+    except Exception:
+        return name

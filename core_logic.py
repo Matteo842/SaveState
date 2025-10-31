@@ -735,18 +735,23 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path):
                             break
                 
                 logging.debug(f"Does the zip contain base folders matching the destinations? {zip_contains_base_folders}")
-                # If no base folders found, also try checking for exact filename matches
-                if not zip_contains_base_folders and len(zip_members) > 0:
-                    logging.debug("No base folders found, checking if any ZIP members match destination filenames directly.")
+
+                # Independently check if any ZIP entry matches destination filenames directly
+                zip_contains_any_dest_filenames = False
+                if len(zip_members) > 0:
+                    logging.debug("Checking if any ZIP members match destination filenames directly.")
                     for dest_path in paths_to_process:
                         dest_filename = os.path.basename(dest_path)
                         for m in zip_members:
-                            if m.endswith(dest_filename) or m.endswith(dest_filename + '/'):
-                                zip_contains_base_folders = True
+                            normalized_m = m.replace('/', os.sep)
+                            if normalized_m.endswith(os.sep + dest_filename) or normalized_m == dest_filename:
+                                zip_contains_any_dest_filenames = True
                                 logging.debug(f"Found matching filename: '{dest_filename}' in ZIP member: '{m}'")
                                 break
+                        if zip_contains_any_dest_filenames:
+                            break
 
-                if not zip_contains_base_folders:
+                if (not zip_contains_base_folders) and zip_contains_any_dest_filenames:
                     # Nuovo codice: prova a trovare i file basandosi sul nome file finale
                     logging.warning("Base folders not found in ZIP. Trying alternative extraction method based on filenames.")
                     
@@ -786,7 +791,7 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path):
                         return True, f"Restore completed successfully using alternative extraction method."
                     
                     # Se arriviamo qui, non abbiamo trovato corrispondenze
-                    msg = "ERROR: Multi-path restore failed. The ZIP archive doesn't seem to contain the expected base folders (e.g. SAVEDATA/, SYSTEM/). Backup potentially corrupted or created incorrectly."
+                    msg = "ERROR: Multi-path restore failed. ZIP does not contain expected base folders nor matching filenames for destinations."
                     logging.error(msg)
                     logging.error(f"Archive members (example): {zipf.namelist()[:10]}")
                     logging.error(f"Expected destination map: {dest_map}")

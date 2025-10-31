@@ -6,7 +6,7 @@ import logging
 import platform
 import glob
 import configparser
-import re
+from utils import sanitize_profile_display_name
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler()) # Avoid 'No handler found' warnings
@@ -132,11 +132,8 @@ def find_mgba_profiles(executable_path: str | None = None) -> list[dict] | None:
                 base_name = os.path.splitext(os.path.basename(file_path))[0]
                 profile_id = base_name # Keep full name for ID
 
-                # Clean the name for display by removing trailing language codes like (En,Fr,De,...)
-                profile_name = re.sub(r'\s*\([A-Za-z]{2}(?:,[A-Za-z]{2})+\)$', '', base_name).strip()
-                # If cleaning didn't change anything (maybe different pattern), use original
-                if not profile_name:
-                    profile_name = base_name 
+                # Clean the name for display (remove brackets, CRC-like tokens, normalize spaces)
+                profile_name = sanitize_profile_display_name(base_name)
 
                 profile = {
                     'id': profile_id,
