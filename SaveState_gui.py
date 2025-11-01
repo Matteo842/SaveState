@@ -61,6 +61,7 @@ from gui_components.profile_list_manager import ProfileListManager
 from gui_components.theme_manager import ThemeManager
 from gui_components.profile_creation_manager import ProfileCreationManager
 from gui_components.drag_drop_handler import DragDropHandler
+from cloud_utils.cloud_panel import CloudSavePanel
 import core_logic # Mantenuto per load_profiles
 from gui_handlers import MainWindowHandlers
 
@@ -634,6 +635,16 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.settings_panel_group, stretch=1)
         # --- End Inline Settings Panel ---
 
+        # --- Inline Cloud Save Panel (hidden by default) ---
+        self.cloud_panel = CloudSavePanel(
+            backup_base_dir=self.current_settings.get("backup_base_dir", ""),
+            profiles=self.profiles,
+            parent=self
+        )
+        self.cloud_panel.setVisible(False)
+        content_layout.addWidget(self.cloud_panel, stretch=1)
+        # --- End Inline Cloud Save Panel ---
+
         actions_group = QGroupBox("Actions")
         self.actions_group = actions_group
         actions_layout = QHBoxLayout()
@@ -981,12 +992,21 @@ class MainWindow(QMainWindow):
             event.ignore()
     
     def _handle_cloud_button_clicked(self):
-        """Placeholder entry-point for the upcoming Cloud Save UI."""
+        """Open the Cloud Save panel."""
         try:
-            QMessageBox.information(self, "Cloud Saves", "Cloud Saves will arrive in 1.5.\nThis is a placeholder entry point.")
-        except Exception:
+            # Toggle cloud panel (show if hidden, hide if visible)
+            if getattr(self, '_cloud_mode_active', False):
+                # Cloud panel is open, close it
+                self.exit_cloud_panel()
+                logging.debug("Cloud panel toggled OFF (closed).")
+            else:
+                # Cloud panel is closed, open it
+                self.show_cloud_panel()
+                logging.debug("Cloud panel toggled ON (opened).")
+        except Exception as e:
+            logging.error(f"Error toggling cloud panel: {e}")
             if hasattr(self, 'status_label'):
-                self.status_label.setText("Cloud Saves placeholder activated.")
+                self.status_label.setText("Error opening Cloud Save panel.")
     
     def updateUiText(self):
         """Updates the UI text"""
@@ -1263,10 +1283,11 @@ class MainWindow(QMainWindow):
     def event(self, event_obj):
         """Handles events for the main window, specifically KeyPress to activate search bar."""
         if event_obj.type() == QEvent.Type.KeyPress:
-            # Only act if the search bar is currently hidden and we're not in edit or settings mode
+            # Only act if the search bar is currently hidden and we're not in edit, settings, or cloud mode
             if not self.search_bar.isVisible() and \
                not getattr(self, '_edit_mode_active', False) and \
-               not getattr(self, '_settings_mode_active', False):
+               not getattr(self, '_settings_mode_active', False) and \
+               not getattr(self, '_cloud_mode_active', False):
                 key_text = event_obj.text()
                 # Check if the key produces a printable character and is not just whitespace
                 # Also exclude special keys
@@ -1703,5 +1724,51 @@ class MainWindow(QMainWindow):
     def exit_settings_mode(self):
         """Clear flag after settings panel is closed."""
         self._settings_mode_active = False
+
+    # --- Cloud Panel Management ---
+    def show_cloud_panel(self):
+        """Show inline cloud save panel, replacing the profiles UI."""
+        try:
+            # Update cloud panel with current data
+            if hasattr(self, 'cloud_panel') and self.cloud_panel:
+                self.cloud_panel.update_backup_dir(self.current_settings.get("backup_base_dir", ""))
+                self.cloud_panel.update_profiles(self.profiles)
+            
+            # Toggle UI visibility
+            self.profile_group.setVisible(False)
+            self.actions_group.setVisible(False)
+            self.general_group.setVisible(False)
+            if hasattr(self, 'general_cloud_row'):
+                self.general_cloud_row.setVisible(False)
+            if hasattr(self, 'cloud_group'):
+                self.cloud_group.setVisible(False)
+            self.bottom_controls_widget.setVisible(False)  # Hide search bar and log button
+            self.cloud_panel.setVisible(True)
+            
+            # Set flag
+            self.enter_cloud_mode()
+        except Exception as e:
+            logging.error(f"Error showing cloud panel: {e}")
+
+    def exit_cloud_panel(self):
+        """Exit cloud panel and return to normal UI."""
+        self.cloud_panel.setVisible(False)
+        self.profile_group.setVisible(True)
+        self.actions_group.setVisible(True)
+        self.general_group.setVisible(True)
+        if hasattr(self, 'general_cloud_row'):
+            self.general_cloud_row.setVisible(True)
+        if hasattr(self, 'cloud_group'):
+            self.cloud_group.setVisible(True)
+        self.bottom_controls_widget.setVisible(True)  # Show search bar and log button again
+        self.exit_cloud_mode()
+
+    def enter_cloud_mode(self):
+        """Set flag when cloud panel is shown."""
+        self._cloud_mode_active = True
+
+    def exit_cloud_mode(self):
+        """Clear flag after cloud panel is closed."""
+        self._cloud_mode_active = False
 
 # --- End of MainWindow class definition ---
