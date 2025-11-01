@@ -218,7 +218,7 @@ class MainWindowHandlers:
         """
         Show settings UI.
         If is_initial_setup=True, show as popup dialog (first launch).
-        Otherwise, show as inline panel.
+        Otherwise, toggle inline panel (show if hidden, hide if visible).
         """
         if is_initial_setup:
             # Use popup dialog for initial setup
@@ -230,8 +230,15 @@ class MainWindowHandlers:
                 logging.error(f"Error updating dialog UI text: {e_update}", exc_info=True)
             result = dialog.exec()
         else:
-            # Show inline settings panel
-            self.main_window.show_settings_panel()
+            # Toggle inline settings panel
+            if getattr(self.main_window, '_settings_mode_active', False):
+                # Settings are open, close them (same as Exit button)
+                self.main_window.exit_settings_panel()
+                logging.debug("Settings panel toggled OFF (closed).")
+            else:
+                # Settings are closed, open them
+                self.main_window.show_settings_panel()
+                logging.debug("Settings panel toggled ON (opened).")
             return  # Exit early for inline mode
         
         # Dialog mode - handle result
