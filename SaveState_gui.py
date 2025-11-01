@@ -683,8 +683,14 @@ class MainWindow(QMainWindow):
         cloud_layout = QHBoxLayout()
         cloud_layout.setContentsMargins(6, 6, 6, 6)
         cloud_layout.setSpacing(6)
+        # Reduce Cloud button width slightly (about 15-20%)
+        self.cloud_button.setMaximumWidth(150)  # Limit max width
+        self.cloud_button.setStyleSheet("padding-left: 14px; padding-right: 14px;")
         cloud_layout.addWidget(self.cloud_button)
         self.cloud_group.setLayout(cloud_layout)
+        # Make the cloud group take minimal space
+        self.cloud_group.setMaximumWidth(170)  # Slightly larger than button to account for margins
+        self.cloud_group.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
 
         # Subtle vertical separator between General and Cloud
         separator = QFrame()
@@ -717,6 +723,14 @@ class MainWindow(QMainWindow):
         bottom_controls_layout.addStretch(1) # Add stretch to push log button to the right
         bottom_controls_layout.addWidget(self.toggle_log_button) # Log button last
         self.bottom_controls_widget.setLayout(bottom_controls_layout)
+        
+        # Set fixed height to prevent UI jumping when search bar shows/hides
+        # Calculate height based on search bar size hint and add padding
+        search_bar_height = self.search_bar.sizeHint().height()
+        log_button_height = self.toggle_log_button.sizeHint().height()
+        # Use the larger of the two and add 4-6 pixels for vertical spacing (2-3px top + 2-3px bottom)
+        fixed_height = max(search_bar_height, log_button_height) + 6
+        self.bottom_controls_widget.setFixedHeight(fixed_height)
 
         content_layout.addWidget(self.bottom_controls_widget)
         
@@ -1246,33 +1260,34 @@ class MainWindow(QMainWindow):
             # Optionally, return focus to the table or main window if needed
             # self.profile_table_widget.setFocus()
 
-    def keyPressEvent(self, event: QKeyEvent):
-        """Handles key presses to show/hide and interact with the search bar."""
-        if self.search_bar.isHidden():
-            # Show search bar on typing a letter or number
-            # Check for actual character input (letters, numbers, common symbols), no modifiers like Ctrl/Alt
-            # and ensure it's not an action key like Enter, Tab, Escape itself.
-            if event.text() and event.text().isprintable() and len(event.text()) == 1 and \
-               not event.modifiers() and \
-               event.key() not in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab, Qt.Key.Key_Backtab, Qt.Key.Key_Escape):
-                self.search_bar.show()
-                self.search_bar.setFocus()
-                self.search_bar.setText(event.text()) # Start with the typed character
-                # To prevent the character from being processed by other widgets if the search bar is now active:
-                # event.accept() # Careful: this might interfere with the QLineEdit getting the event.
-                return # Event handled by showing search bar
-        elif self.search_bar.isVisible() and self.search_bar.hasFocus():
-            if event.key() == Qt.Key.Key_Escape:
-                self.search_bar.clear() # This will trigger textChanged, which will hide it
-                self.profile_table_widget.setFocus() # Return focus to table
-                event.accept()
-                return # Event handled
-            # Let QLineEdit handle other keys like backspace, delete, arrows, etc.
-            # No need to explicitly call super().keyPressEvent(event) if QLineEdit handles it.
-
-        # If the search bar is visible but doesn't have focus, or if it's hidden and the key wasn't for activation,
-        # or if QLineEdit didn't handle the event, pass it to the base class.
-        super().keyPressEvent(event)
+    def event(self, event_obj):
+        """Handles events for the main window, specifically KeyPress to activate search bar."""
+        if event_obj.type() == QEvent.Type.KeyPress:
+            # Only act if the search bar is currently hidden and we're not in edit or settings mode
+            if not self.search_bar.isVisible() and \
+               not getattr(self, '_edit_mode_active', False) and \
+               not getattr(self, '_settings_mode_active', False):
+                key_text = event_obj.text()
+                # Check if the key produces a printable character and is not just whitespace
+                # Also exclude special keys
+                if key_text and key_text.isprintable() and key_text.strip() != '' and \
+                   event_obj.key() not in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab, 
+                                          Qt.Key.Key_Backtab, Qt.Key.Key_Escape):
+                    # Show the search bar, set focus to it, and input the typed character
+                    self.search_bar.show()
+                    self.search_bar.setFocus()
+                    self.search_bar.setText(key_text)  # This also triggers _on_search_text_changed
+                    return True  # Event handled, stop further processing
+            # Handle Escape key when search bar is visible and has focus
+            elif self.search_bar.isVisible() and self.search_bar.hasFocus() and \
+                 event_obj.key() == Qt.Key.Key_Escape:
+                self.search_bar.clear()  # This will trigger textChanged, which will hide it
+                self.profile_table_widget.setFocus()  # Return focus to table
+                return True  # Event handled
+        
+        # For all other events or if the key press wasn't handled above,
+        # call the base class's event handler
+        return super().event(event_obj)
 
     # Enables or disables main UI controls, typically during background operations.
     def set_controls_enabled(self, enabled):
