@@ -218,6 +218,7 @@ class MainWindowHandlers:
         """
         Show settings UI.
         If is_initial_setup=True, show as popup dialog (first launch).
+        If in cloud mode, show cloud settings instead of main settings.
         Otherwise, toggle inline panel (show if hidden, hide if visible).
         """
         if is_initial_setup:
@@ -230,7 +231,22 @@ class MainWindowHandlers:
                 logging.error(f"Error updating dialog UI text: {e_update}", exc_info=True)
             result = dialog.exec()
         else:
-            # Toggle inline settings panel
+            # Check if we're in cloud mode
+            if getattr(self.main_window, '_cloud_mode_active', False):
+                # In cloud mode - toggle cloud settings
+                if hasattr(self.main_window, 'cloud_panel') and self.main_window.cloud_panel:
+                    # Check if cloud settings are currently shown
+                    if self.main_window.cloud_panel.stacked_widget.currentIndex() == 1:
+                        # Cloud settings are open, close them
+                        self.main_window.cloud_panel.exit_cloud_settings()
+                        logging.debug("Cloud settings panel toggled OFF (closed).")
+                    else:
+                        # Cloud settings are closed, open them
+                        self.main_window.cloud_panel.show_cloud_settings()
+                        logging.debug("Cloud settings panel toggled ON (opened).")
+                return  # Exit early for cloud settings
+            
+            # Toggle inline settings panel (normal mode)
             if getattr(self.main_window, '_settings_mode_active', False):
                 # Settings are open, close them (same as Exit button)
                 self.main_window.exit_settings_panel()

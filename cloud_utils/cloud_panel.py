@@ -10,10 +10,11 @@ import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox,
-    QCheckBox, QLineEdit, QProgressBar, QMessageBox
+    QCheckBox, QLineEdit, QProgressBar, QMessageBox, QStackedWidget
 )
 from PySide6.QtCore import Qt, Signal, Slot, QEvent
 from PySide6.QtGui import QIcon, QColor
+from cloud_utils.cloud_settings_panel import CloudSettingsPanel
 
 
 class CloudSavePanel(QWidget):
@@ -44,11 +45,29 @@ class CloudSavePanel(QWidget):
         # Track which backups are available locally
         self.local_backups = []
         
+        # Use stacked widget to switch between main panel and settings
+        self.stacked_widget = QStackedWidget(self)
+        
+        # Create main panel widget
+        self.main_panel = QWidget()
+        
+        # Create settings panel
+        self.settings_panel = CloudSettingsPanel(parent=self)
+        
+        # Add both to stacked widget
+        self.stacked_widget.addWidget(self.main_panel)  # Index 0
+        self.stacked_widget.addWidget(self.settings_panel)  # Index 1
+        
+        # Set layout for CloudSavePanel
+        container_layout = QVBoxLayout(self)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.addWidget(self.stacked_widget)
+        
         self._init_ui()
         
     def _init_ui(self):
-        """Initialize the UI components."""
-        main_layout = QVBoxLayout(self)
+        """Initialize the UI components for the main panel."""
+        main_layout = QVBoxLayout(self.main_panel)
         main_layout.setContentsMargins(8, 8, 8, 8)
         main_layout.setSpacing(12)
         
@@ -436,4 +455,14 @@ class CloudSavePanel(QWidget):
         """Update the profiles dictionary and refresh the list."""
         self.profiles = profiles
         self._populate_backup_list()
+    
+    def show_cloud_settings(self):
+        """Show the cloud settings panel."""
+        logging.debug("Showing cloud settings panel")
+        self.stacked_widget.setCurrentIndex(1)  # Switch to settings panel
+    
+    def exit_cloud_settings(self):
+        """Exit cloud settings and return to main cloud panel."""
+        logging.debug("Exiting cloud settings panel")
+        self.stacked_widget.setCurrentIndex(0)  # Switch back to main panel
 
