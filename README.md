@@ -3,7 +3,6 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Latest Release](https://img.shields.io/github/v/release/Matteo842/SaveState)](https://github.com/Matteo842/SaveState/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Matteo842/SaveState/total.svg)](https://github.com/Matteo842/SaveState/releases)
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/V7V61GBYAX)
 
 A user-friendly GUI application for Windows and Linux to easily back up and restore video game save files, especially useful for games without cloud saves or for managing multiple save locations.
 
