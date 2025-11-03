@@ -290,11 +290,20 @@ class MainWindow(QMainWindow):
         
         icon_path = resource_path("icons/settings.png") # Percorso relativo dell'icona
         if os.path.exists(icon_path): # Controlla se il file esiste
-            settings_icon = QIcon(icon_path)
-            self.settings_button.setIcon(settings_icon)
+            self.settings_icon_normal = QIcon(icon_path)  # Save normal icon
+            self.settings_button.setIcon(self.settings_icon_normal)
             self.settings_button.setIconSize(QSize(20, 20)) # Icona più grande
         else:
             logging.warning(f"File icona impostazioni non trovato: {icon_path}")
+            self.settings_icon_normal = None
+        
+        # Cloud settings icon
+        cloud_settings_icon_path = resource_path("icons/cloud option.png")
+        if os.path.exists(cloud_settings_icon_path):
+            self.settings_icon_cloud = QIcon(cloud_settings_icon_path)
+        else:
+            logging.warning(f"File icona cloud settings non trovato: {cloud_settings_icon_path}")
+            self.settings_icon_cloud = self.settings_icon_normal  # Fallback to normal icon
             
         self.theme_button = QPushButton()
         # Style settings/theme as square, icon-only buttons for the title bar
@@ -1775,9 +1784,17 @@ class MainWindow(QMainWindow):
     def enter_cloud_mode(self):
         """Set flag when cloud panel is shown."""
         self._cloud_mode_active = True
+        # Change settings icon to cloud settings icon
+        if hasattr(self, 'settings_icon_cloud') and self.settings_icon_cloud:
+            self.settings_button.setIcon(self.settings_icon_cloud)
+            logging.debug("Settings icon changed to cloud settings icon")
 
     def exit_cloud_mode(self):
         """Clear flag after cloud panel is closed."""
         self._cloud_mode_active = False
+        # Restore normal settings icon
+        if hasattr(self, 'settings_icon_normal') and self.settings_icon_normal:
+            self.settings_button.setIcon(self.settings_icon_normal)
+            logging.debug("Settings icon restored to normal icon")
 
 # --- End of MainWindow class definition ---
