@@ -414,21 +414,46 @@ class ProfileCreationManager:
         if status == 'found':
             logging.debug(f"Path data found by detection thread: {paths_found}") # Updated log
             if len(paths_found) == 1:
-                # One path found (now a tuple)
-                single_path, single_score = paths_found[0] # Extract path and score
-                reply = QMessageBox.question(mw, "Confirm Automatic Path",
-                                              # Mostra solo il percorso nel messaggio
-                                              f"This path has been detected:\n\n{single_path}\n\nDo you want to use it for the profile '{profile_name}'?",
-                                              QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
-                                              QMessageBox.StandardButton.Yes)
-                if reply == QMessageBox.StandardButton.Yes:
-                    final_path_to_use = single_path # Usa solo il percorso
-                elif reply == QMessageBox.StandardButton.No:
-                    logging.info("User rejected single automatic path. Requesting manual input.")
-                    final_path_to_use = None # Forza richiesta manuale
-                else: # Cancel
-                    mw.status_label.setText("Profile creation cancelled.")
-                    return
+                # One path found (tuple, list, dict or raw string)
+                single_entry = paths_found[0]
+
+                single_path = None
+                single_score = None
+                single_has_saves = None
+
+                if isinstance(single_entry, dict):
+                    single_path = single_entry.get('path')
+                    single_score = single_entry.get('score')
+                    single_has_saves = single_entry.get('has_saves')
+                elif isinstance(single_entry, (list, tuple)):
+                    if len(single_entry) >= 1:
+                        single_path = single_entry[0]
+                    if len(single_entry) >= 2:
+                        single_score = single_entry[1]
+                    if len(single_entry) >= 3:
+                        single_has_saves = single_entry[2]
+                else:
+                    single_path = single_entry
+
+                if single_path is None:
+                    logging.error(f"Single automatic path result could not be parsed: {single_entry}")
+                    QMessageBox.warning(mw, "Path Detection Error", "Unable to parse the automatically detected path. Please enter it manually.")
+                    final_path_to_use = None
+                else:
+                    logging.debug(f"Single path detected: path='{single_path}', score='{single_score}', has_saves='{single_has_saves}'")
+                    reply = QMessageBox.question(mw, "Confirm Automatic Path",
+                                                  # Mostra solo il percorso nel messaggio
+                                                  f"This path has been detected:\n\n{single_path}\n\nDo you want to use it for the profile '{profile_name}'?",
+                                                  QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
+                                                  QMessageBox.StandardButton.Yes)
+                    if reply == QMessageBox.StandardButton.Yes:
+                        final_path_to_use = single_path # Usa solo il percorso
+                    elif reply == QMessageBox.StandardButton.No:
+                        logging.info("User rejected single automatic path. Requesting manual input.")
+                        final_path_to_use = None # Forza richiesta manuale
+                    else: # Cancel
+                        mw.status_label.setText("Profile creation cancelled.")
+                        return
 
             elif len(paths_found) > 1: 
 
