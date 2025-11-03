@@ -233,7 +233,15 @@ class MainWindow(QMainWindow):
         self.manage_backups_button = QPushButton() # Crea pulsante Gestisci Backup
         self.open_backup_dir_button = QPushButton() # Crea pulsante Apri Cartella
         # New visible Cloud entry
-        self.cloud_button = QPushButton("Cloud...")
+        self.cloud_button = QPushButton("Cloud Sync")
+        
+        # Cloud icon
+        cloud_icon_path = resource_path("icons/cloud-sync.png")
+        if os.path.exists(cloud_icon_path):
+            cloud_icon = QIcon(cloud_icon_path)
+            self.cloud_button.setIcon(cloud_icon)
+        else:
+            logging.warning(f"File icona Cloud non trovato: {cloud_icon_path}")
 
         # Search bar for profiles (initially hidden)
         self.search_bar = QLineEdit(self)
@@ -363,6 +371,7 @@ class MainWindow(QMainWindow):
         self.restore_button.setIconSize(icon_size)
         self.manage_backups_button.setIconSize(icon_size)
         self.open_backup_dir_button.setIconSize(icon_size)
+        self.cloud_button.setIconSize(icon_size)
         # self.settings_button.setIconSize(icon_size)
         # self.steam_button.setIconSize(icon_size)
 
@@ -1025,7 +1034,7 @@ class MainWindow(QMainWindow):
         self.manage_backups_button.setText("Manage Backups")
         self.open_backup_dir_button.setText("Open Backup Folder")
         if hasattr(self, 'cloud_button'):
-            self.cloud_button.setText("Cloud...")
+            self.cloud_button.setText("Cloud Sync")
 
         if hasattr(self, 'profile_group'): # Check if attribute exists
             self.profile_group.setTitle("Profiles")
