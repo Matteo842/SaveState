@@ -14,6 +14,7 @@ a = Analysis(
          ('emulator_utils/switch_game_map.pkl', 'emulator_utils'), # Include il DB dei titoli swich
          ('emulator_utils/ps4_game_map.pkl', 'emulator_utils'), # Include il DB dei titoli ps4
          ('emulator_utils/xenia_title_map.pkl', 'emulator_utils'), # include il DB dei titoli xbox 360
+         ('cloud_utils/client_secret.json', 'cloud_utils'), # Google Drive OAuth credentials
     ],
     hiddenimports=[
         'PySide6.QtSvg',             # Necessario per icone SVG se usate

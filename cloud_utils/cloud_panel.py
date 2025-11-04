@@ -12,9 +12,98 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox,
     QCheckBox, QLineEdit, QProgressBar, QMessageBox, QStackedWidget
 )
-from PySide6.QtCore import Qt, Signal, Slot, QEvent
+from PySide6.QtCore import Qt, Signal, Slot, QEvent, QThread, QObject
 from PySide6.QtGui import QIcon, QColor
 from cloud_utils.cloud_settings_panel import CloudSettingsPanel
+from cloud_utils.google_drive_manager import get_drive_manager
+
+
+class AuthWorker(QObject):
+    """Worker thread for Google Drive authentication to avoid blocking UI."""
+    finished = Signal(bool, str)  # success, error_message
+    
+    def __init__(self, drive_manager):
+        super().__init__()
+        self.drive_manager = drive_manager
+    
+    def run(self):
+        """Execute authentication in background."""
+        try:
+            success = self.drive_manager.authenticate()
+            if success:
+                self.finished.emit(True, "")
+            else:
+                self.finished.emit(False, "Authentication failed. Please check your credentials.")
+        except Exception as e:
+            error_msg = str(e)
+            logging.error(f"Authentication error: {error_msg}")
+            self.finished.emit(False, f"Error during authentication: {error_msg}")
+
+
+class UploadWorker(QObject):
+    """Worker thread for uploading backups to avoid blocking UI."""
+    progress = Signal(int, int, str)  # current, total, message
+    finished = Signal(int, int)  # success_count, total_count
+    
+    def __init__(self, drive_manager, backup_list, backup_base_dir):
+        super().__init__()
+        self.drive_manager = drive_manager
+        self.backup_list = backup_list
+        self.backup_base_dir = backup_base_dir
+    
+    def run(self):
+        """Execute upload in background."""
+        success_count = 0
+        total = len(self.backup_list)
+        
+        for idx, backup_name in enumerate(self.backup_list, 1):
+            self.progress.emit(idx, total, f"Uploading {backup_name}...")
+            
+            backup_path = os.path.join(self.backup_base_dir, backup_name)
+            
+            try:
+                if self.drive_manager.upload_backup(backup_path, backup_name):
+                    success_count += 1
+                    logging.info(f"Successfully uploaded: {backup_name}")
+                else:
+                    logging.error(f"Failed to upload: {backup_name}")
+            except Exception as e:
+                logging.error(f"Error uploading {backup_name}: {e}")
+        
+        self.finished.emit(success_count, total)
+
+
+class DownloadWorker(QObject):
+    """Worker thread for downloading backups to avoid blocking UI."""
+    progress = Signal(int, int, str)  # current, total, message
+    finished = Signal(int, int)  # success_count, total_count
+    
+    def __init__(self, drive_manager, backup_list, backup_base_dir):
+        super().__init__()
+        self.drive_manager = drive_manager
+        self.backup_list = backup_list
+        self.backup_base_dir = backup_base_dir
+    
+    def run(self):
+        """Execute download in background."""
+        success_count = 0
+        total = len(self.backup_list)
+        
+        for idx, backup_name in enumerate(self.backup_list, 1):
+            self.progress.emit(idx, total, f"Downloading {backup_name}...")
+            
+            backup_path = os.path.join(self.backup_base_dir, backup_name)
+            
+            try:
+                if self.drive_manager.download_backup(backup_name, backup_path):
+                    success_count += 1
+                    logging.info(f"Successfully downloaded: {backup_name}")
+                else:
+                    logging.error(f"Failed to download: {backup_name}")
+            except Exception as e:
+                logging.error(f"Error downloading {backup_name}: {e}")
+        
+        self.finished.emit(success_count, total)
 
 
 class CloudSavePanel(QWidget):
@@ -44,6 +133,12 @@ class CloudSavePanel(QWidget):
         
         # Track which backups are available locally
         self.local_backups = []
+        
+        # Google Drive manager
+        self.drive_manager = get_drive_manager()
+        
+        # Cloud backups cache
+        self.cloud_backups = {}
         
         # Use stacked widget to switch between main panel and settings
         self.stacked_widget = QStackedWidget(self)
@@ -366,29 +461,69 @@ class CloudSavePanel(QWidget):
         """Refresh the backup list."""
         logging.info("Refreshing backup list...")
         self._populate_backup_list()
-        # TODO: Also refresh cloud status when connected
+        
+        # Also refresh cloud status if connected
+        if self.drive_manager.is_connected:
+            self._refresh_cloud_status()
     
     def _on_connect_clicked(self):
         """Handle Google Drive connection."""
         logging.info("Connecting to Google Drive...")
-        # TODO: Implement Google Drive OAuth flow
-        QMessageBox.information(
-            self,
-            "Google Drive Connection",
-            "Google Drive integration will be implemented in version 2.0.\n\n"
-            "This will allow you to:\n"
-            "• Sync backups to Google Drive\n"
-            "• Download backups from any device\n"
-            "• Automatic backup synchronization"
-        )
         
-        # Placeholder: simulate connection
-        # self._set_connected(True)
+        # Show progress
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)  # Indeterminate progress
+        self.progress_bar.setFormat("Authenticating...")
+        self.connect_button.setEnabled(False)
+        
+        # Create worker and thread
+        self.auth_thread = QThread()
+        self.auth_worker = AuthWorker(self.drive_manager)
+        self.auth_worker.moveToThread(self.auth_thread)
+        
+        # Connect signals
+        self.auth_thread.started.connect(self.auth_worker.run)
+        self.auth_worker.finished.connect(self._on_auth_finished)
+        self.auth_worker.finished.connect(self.auth_thread.quit)
+        self.auth_worker.finished.connect(self.auth_worker.deleteLater)
+        self.auth_thread.finished.connect(self.auth_thread.deleteLater)
+        
+        # Start authentication
+        self.auth_thread.start()
+    
+    def _on_auth_finished(self, success, error_message):
+        """Handle authentication completion."""
+        self.progress_bar.setVisible(False)
+        self.connect_button.setEnabled(True)
+        
+        if success:
+            self._set_connected(True)
+            self._refresh_cloud_status()
+            QMessageBox.information(
+                self,
+                "Connected",
+                "Successfully connected to Google Drive!"
+            )
+        else:
+            self._set_connected(False)
+            QMessageBox.warning(
+                self,
+                "Connection Failed",
+                f"Could not connect to Google Drive.\n\n"
+                f"{error_message}\n\n"
+                "Please make sure:\n"
+                "• You have a valid client_secret.json file\n"
+                "• You authorized the application in your browser\n"
+                "• You have an active internet connection"
+            )
     
     def _on_disconnect_clicked(self):
         """Handle Google Drive disconnection."""
         logging.info("Disconnecting from Google Drive...")
+        self.drive_manager.disconnect()
         self._set_connected(False)
+        self.cloud_backups.clear()
+        self._populate_backup_list()  # Refresh to clear cloud status
     
     def _set_connected(self, connected):
         """Update UI based on connection status."""
@@ -415,8 +550,49 @@ class CloudSavePanel(QWidget):
             return
         
         logging.info(f"Uploading {len(selected)} backups to cloud...")
-        # TODO: Implement upload logic
-        self.sync_requested.emit(selected)
+        
+        # Show progress
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, len(selected))
+        self.progress_bar.setValue(0)
+        self.upload_button.setEnabled(False)
+        self.download_button.setEnabled(False)
+        
+        # Create worker and thread
+        self.upload_thread = QThread()
+        self.upload_worker = UploadWorker(self.drive_manager, selected, self.backup_base_dir)
+        self.upload_worker.moveToThread(self.upload_thread)
+        
+        # Connect signals
+        self.upload_thread.started.connect(self.upload_worker.run)
+        self.upload_worker.progress.connect(self._on_upload_progress)
+        self.upload_worker.finished.connect(self._on_upload_finished)
+        self.upload_worker.finished.connect(self.upload_thread.quit)
+        self.upload_worker.finished.connect(self.upload_worker.deleteLater)
+        self.upload_thread.finished.connect(self.upload_thread.deleteLater)
+        
+        # Start upload
+        self.upload_thread.start()
+    
+    def _on_upload_progress(self, current, total, message):
+        """Handle upload progress updates."""
+        self.progress_bar.setValue(current)
+        self.progress_bar.setFormat(f"{message} ({current}/{total})")
+    
+    def _on_upload_finished(self, success_count, total_count):
+        """Handle upload completion."""
+        self.progress_bar.setVisible(False)
+        self.upload_button.setEnabled(True)
+        self.download_button.setEnabled(True)
+        
+        QMessageBox.information(
+            self,
+            "Upload Complete",
+            f"Successfully uploaded {success_count} of {total_count} backups."
+        )
+        
+        # Refresh cloud status
+        self._refresh_cloud_status()
     
     def _on_download_clicked(self):
         """Handle download selected backups from cloud."""
@@ -426,7 +602,49 @@ class CloudSavePanel(QWidget):
             return
         
         logging.info(f"Downloading {len(selected)} backups from cloud...")
-        # TODO: Implement download logic
+        
+        # Show progress
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, len(selected))
+        self.progress_bar.setValue(0)
+        self.upload_button.setEnabled(False)
+        self.download_button.setEnabled(False)
+        
+        # Create worker and thread
+        self.download_thread = QThread()
+        self.download_worker = DownloadWorker(self.drive_manager, selected, self.backup_base_dir)
+        self.download_worker.moveToThread(self.download_thread)
+        
+        # Connect signals
+        self.download_thread.started.connect(self.download_worker.run)
+        self.download_worker.progress.connect(self._on_download_progress)
+        self.download_worker.finished.connect(self._on_download_finished)
+        self.download_worker.finished.connect(self.download_thread.quit)
+        self.download_worker.finished.connect(self.download_worker.deleteLater)
+        self.download_thread.finished.connect(self.download_thread.deleteLater)
+        
+        # Start download
+        self.download_thread.start()
+    
+    def _on_download_progress(self, current, total, message):
+        """Handle download progress updates."""
+        self.progress_bar.setValue(current)
+        self.progress_bar.setFormat(f"{message} ({current}/{total})")
+    
+    def _on_download_finished(self, success_count, total_count):
+        """Handle download completion."""
+        self.progress_bar.setVisible(False)
+        self.upload_button.setEnabled(True)
+        self.download_button.setEnabled(True)
+        
+        QMessageBox.information(
+            self,
+            "Download Complete",
+            f"Successfully downloaded {success_count} of {total_count} backups."
+        )
+        
+        # Refresh local list
+        self._populate_backup_list()
     
     def _get_selected_backups(self):
         """Get list of selected backup names."""
@@ -465,4 +683,48 @@ class CloudSavePanel(QWidget):
         """Exit cloud settings and return to main cloud panel."""
         logging.debug("Exiting cloud settings panel")
         self.stacked_widget.setCurrentIndex(0)  # Switch back to main panel
+    
+    def _refresh_cloud_status(self):
+        """Refresh cloud backup status for all backups."""
+        if not self.drive_manager.is_connected:
+            return
+        
+        logging.info("Refreshing cloud backup status...")
+        
+        try:
+            # Get list of cloud backups
+            cloud_backups_list = self.drive_manager.list_cloud_backups()
+            
+            # Convert to dict for easy lookup
+            self.cloud_backups = {
+                backup['name']: backup for backup in cloud_backups_list
+            }
+            
+            # Update table
+            for row in range(self.backup_table.rowCount()):
+                name_item = self.backup_table.item(row, 1)
+                if not name_item:
+                    continue
+                
+                backup_name = name_item.text()
+                cloud_item = self.backup_table.item(row, 4)
+                
+                if backup_name in self.cloud_backups:
+                    cloud_info = self.cloud_backups[backup_name]
+                    file_count = cloud_info['file_count']
+                    cloud_item.setText(f"{file_count} files (synced)")
+                    cloud_item.setForeground(QColor("#4CAF50"))
+                else:
+                    cloud_item.setText("Not synced")
+                    cloud_item.setForeground(QColor("#AAAAAA"))
+            
+            logging.info(f"Cloud status updated: {len(self.cloud_backups)} backups in cloud")
+            
+        except Exception as e:
+            logging.error(f"Error refreshing cloud status: {e}")
+            QMessageBox.warning(
+                self,
+                "Refresh Error",
+                f"Could not refresh cloud status:\n{str(e)}"
+            )
 

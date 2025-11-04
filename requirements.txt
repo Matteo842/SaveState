@@ -11,3 +11,8 @@ requests==2.31.0
 steamgriddb==1.0.5
 # For Linux native notifications
 notify-py==0.3.43
+
+# Google Drive Cloud Save (2.0)
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.0
+google-api-python-client>=2.0.0

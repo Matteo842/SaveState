@@ -200,3 +200,9 @@ SaveState-OneDir.spec
 new_ui_demo.py
 save_path_finder_old.py
 .savestate_portable.json
+
+# Google OAuth2 credentials (sensitive)
+cloud_utils/client_secret.json
+cloud_utils/token.json
+cloud_utils/credentials.json
+cloud_utils/token.pickle
