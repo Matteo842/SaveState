@@ -331,20 +331,12 @@ class CloudSavePanel(QWidget):
         self.progress_bar.setFormat("%v/%m files (%p%)")
         main_layout.addWidget(self.progress_bar)
         
-        # --- Action Buttons and Search Bar Row ---
+        # --- Action Buttons Row ---
         actions_layout = QHBoxLayout()
         
         self.refresh_button = QPushButton("Refresh List")
         self.refresh_button.clicked.connect(self._on_refresh_clicked)
         actions_layout.addWidget(self.refresh_button)
-        
-        # Search bar (hidden by default, appears when typing)
-        self.filter_search = QLineEdit()
-        self.filter_search.setPlaceholderText("Type to filter backups...")
-        self.filter_search.setMaximumWidth(250)
-        self.filter_search.textChanged.connect(self._on_search_changed)
-        self.filter_search.hide()  # Initially hidden
-        actions_layout.addWidget(self.filter_search)
         
         actions_layout.addStretch(1)
         
@@ -374,15 +366,24 @@ class CloudSavePanel(QWidget):
         
         main_layout.addLayout(actions_layout)
         
-        # --- Exit Button ---
-        exit_layout = QHBoxLayout()
-        exit_layout.addStretch(1)
+        # --- Bottom Row: Search Bar and Exit Button ---
+        bottom_layout = QHBoxLayout()
+        
+        # Search bar (hidden by default, appears when typing)
+        self.filter_search = QLineEdit()
+        self.filter_search.setPlaceholderText("Type to filter backups...")
+        self.filter_search.setMaximumWidth(250)
+        self.filter_search.textChanged.connect(self._on_search_changed)
+        self.filter_search.hide()  # Initially hidden
+        bottom_layout.addWidget(self.filter_search)
+        
+        bottom_layout.addStretch(1)
         
         self.exit_button = QPushButton("Exit")
         self.exit_button.clicked.connect(self._on_exit_clicked)
-        exit_layout.addWidget(self.exit_button)
+        bottom_layout.addWidget(self.exit_button)
         
-        main_layout.addLayout(exit_layout)
+        main_layout.addLayout(bottom_layout)
         
         # Initial population
         self._populate_backup_list()
