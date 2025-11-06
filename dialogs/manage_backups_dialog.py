@@ -31,6 +31,10 @@ class ManageBackupsDialog(QDialog):
         delete_icon = style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
         self.delete_button.setIcon(delete_icon)
         
+        self.delete_all_button = QPushButton("Delete All")
+        self.delete_all_button.setObjectName("DangerButton")
+        self.delete_all_button.setIcon(delete_icon)
+        
         self.close_button = QPushButton("Close")
         
         # Set standard icon for Close
@@ -38,11 +42,13 @@ class ManageBackupsDialog(QDialog):
         self.close_button.setIcon(close_icon)
         
         self.delete_button.setEnabled(False)
+        self.delete_all_button.setEnabled(False)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(f"Existing backups for '{self.profile_name}':"))
         layout.addWidget(self.backup_list_widget)
         button_layout = QHBoxLayout()
         button_layout.addStretch()
+        button_layout.addWidget(self.delete_all_button)
         button_layout.addWidget(self.delete_button)
         button_layout.addWidget(self.close_button)
         layout.addLayout(button_layout)
@@ -50,6 +56,7 @@ class ManageBackupsDialog(QDialog):
             lambda item: self.delete_button.setEnabled(item is not None and item.data(Qt.ItemDataRole.UserRole) is not None)
         )
         self.delete_button.clicked.connect(self.delete_selected_backup)
+        self.delete_all_button.clicked.connect(self.delete_all_backups)
         self.close_button.clicked.connect(self.reject)
         self.populate_backup_list()
      
@@ -58,6 +65,7 @@ class ManageBackupsDialog(QDialog):
      def populate_backup_list(self):
         self.backup_list_widget.clear()
         self.delete_button.setEnabled(False)
+        self.delete_all_button.setEnabled(False)
 
         # --- RECOVER SETTINGS HERE (BEFORE USING VARIABLES) ---
         current_backup_base_dir = "" # Default empty
@@ -83,9 +91,11 @@ class ManageBackupsDialog(QDialog):
             item.setData(Qt.ItemDataRole.UserRole, None) # No associated path
             self.backup_list_widget.addItem(item)
             self.backup_list_widget.setEnabled(False) # Disable list
+            self.delete_all_button.setEnabled(False) # Disable delete all button
         else:
             # There are backups, populate the list
             self.backup_list_widget.setEnabled(True) # Enable list
+            self.delete_all_button.setEnabled(True) # Enable delete all button
 
             # Loop to add each backup with formatted date
             for name, path, dt_obj in backups: # Iterate on the tuple (name, path, datetime_object)
@@ -140,3 +150,77 @@ class ManageBackupsDialog(QDialog):
             else:
                 QMessageBox.critical(self, "Deletion Error", message)
                 self.populate_backup_list() # Update anyway
+     
+     @Slot()
+     def delete_all_backups(self):
+        """Delete all backups for this profile after confirmation."""
+        # Count backups
+        backup_count = 0
+        for row in range(self.backup_list_widget.count()):
+            item = self.backup_list_widget.item(row)
+            if item and item.data(Qt.ItemDataRole.UserRole):
+                backup_count += 1
+        
+        if backup_count == 0:
+            return
+        
+        # Ask for confirmation
+        confirm_title = "Confirm Delete All"
+        confirm_text = (
+            f"Are you sure you want to PERMANENTLY delete ALL {backup_count} backup(s) "
+            f"for profile '{self.profile_name}'?\n\n"
+            "This action cannot be undone!"
+        )
+        
+        confirm = QMessageBox.warning(
+            self, 
+            confirm_title, 
+            confirm_text,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if confirm == QMessageBox.StandardButton.Yes:
+            self.setEnabled(False)
+            QApplication.processEvents()
+            
+            # Collect all backup paths
+            backup_paths = []
+            for row in range(self.backup_list_widget.count()):
+                item = self.backup_list_widget.item(row)
+                if item:
+                    backup_path = item.data(Qt.ItemDataRole.UserRole)
+                    if backup_path:
+                        backup_paths.append(backup_path)
+            
+            # Delete all backups
+            success_count = 0
+            failed_count = 0
+            
+            for backup_path in backup_paths:
+                success, message = core_logic.delete_single_backup_file(backup_path)
+                if success:
+                    success_count += 1
+                else:
+                    failed_count += 1
+                    logging.error(f"Failed to delete backup: {message}")
+            
+            self.setEnabled(True)
+            
+            # Show result
+            if failed_count == 0:
+                QMessageBox.information(
+                    self, 
+                    "Success", 
+                    f"Successfully deleted all {success_count} backup(s)."
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Partial Success",
+                    f"Deleted {success_count} backup(s).\n"
+                    f"Failed to delete {failed_count} backup(s)."
+                )
+            
+            # Refresh the list
+            self.populate_backup_list()
