@@ -1395,7 +1395,7 @@ def restore_json_from_backup_root() -> bool:
         return False
     
     # Files to restore (match mirror filenames)
-    files_to_restore = ["game_save_profiles.json", "settings.json", "favorites_status.json"]
+    files_to_restore = ["game_save_profiles.json", "settings.json", "favorites_status.json", "cloud_settings.json"]
     restored_count = 0
     
     for filename in files_to_restore:

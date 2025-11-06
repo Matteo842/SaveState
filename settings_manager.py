@@ -450,7 +450,7 @@ def save_settings(settings_dict):
                         previous_active_dir = None
                     new_portable_dir = target_config_dir
                     if previous_active_dir and os.path.basename(os.path.normpath(previous_active_dir)) == ".savestate" and os.path.normcase(os.path.abspath(previous_active_dir)) != os.path.normcase(os.path.abspath(new_portable_dir)):
-                        for name in ["game_save_profiles.json", "favorites_status.json"]:
+                        for name in ["game_save_profiles.json", "favorites_status.json", "cloud_settings.json"]:
                             src = os.path.join(previous_active_dir, name)
                             dst = os.path.join(new_portable_dir, name)
                             try:
@@ -467,6 +467,7 @@ def save_settings(settings_dict):
                 files = [
                     "game_save_profiles.json",
                     "favorites_status.json",
+                    "cloud_settings.json",
                 ]
                 for name in files:
                     src = os.path.join(appdata_dir, name)
@@ -568,7 +569,7 @@ def save_settings(settings_dict):
 
                 if portable_source_dir and os.path.isdir(portable_source_dir):
                     # Copy only non-settings JSONs; settings.json was just written above
-                    for name in ["game_save_profiles.json", "favorites_status.json"]:
+                    for name in ["game_save_profiles.json", "favorites_status.json", "cloud_settings.json"]:
                         src = os.path.join(portable_source_dir, name)
                         dst = os.path.join(target_config_dir, name)
                         try:
@@ -657,6 +658,7 @@ def sync_secondary_config_mirror(current_settings: dict | None = None) -> None:
             "settings.json",
             "game_save_profiles.json",
             "favorites_status.json",
+            "cloud_settings.json",
         ]
 
         for name in filenames:

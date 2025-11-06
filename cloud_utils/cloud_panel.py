@@ -12,10 +12,11 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox,
     QCheckBox, QLineEdit, QProgressBar, QMessageBox, QStackedWidget
 )
-from PySide6.QtCore import Qt, Signal, Slot, QEvent, QThread, QObject
+from PySide6.QtCore import Qt, Signal, Slot, QEvent, QThread, QObject, QTimer
 from PySide6.QtGui import QIcon, QColor
 from cloud_utils.cloud_settings_panel import CloudSettingsPanel
 from cloud_utils.google_drive_manager import get_drive_manager
+import cloud_settings_manager
 
 
 class AuthWorker(QObject):
@@ -45,11 +46,12 @@ class UploadWorker(QObject):
     progress = Signal(int, int, str)  # current, total, message
     finished = Signal(int, int)  # success_count, total_count
     
-    def __init__(self, drive_manager, backup_list, backup_base_dir):
+    def __init__(self, drive_manager, backup_list, backup_base_dir, max_backups=None):
         super().__init__()
         self.drive_manager = drive_manager
         self.backup_list = backup_list
         self.backup_base_dir = backup_base_dir
+        self.max_backups = max_backups
     
     def run(self):
         """Execute upload in background."""
@@ -62,7 +64,7 @@ class UploadWorker(QObject):
             backup_path = os.path.join(self.backup_base_dir, backup_name)
             
             try:
-                if self.drive_manager.upload_backup(backup_path, backup_name):
+                if self.drive_manager.upload_backup(backup_path, backup_name, max_backups=self.max_backups):
                     success_count += 1
                     logging.info(f"Successfully uploaded: {backup_name}")
                 else:
@@ -140,6 +142,12 @@ class CloudSavePanel(QWidget):
         # Cloud backups cache
         self.cloud_backups = {}
         
+        # Cloud settings (will be loaded from settings panel)
+        self.cloud_settings = {}
+        
+        # Periodic sync timer
+        self.sync_timer = None
+        
         # Use stacked widget to switch between main panel and settings
         self.stacked_widget = QStackedWidget(self)
         
@@ -148,6 +156,7 @@ class CloudSavePanel(QWidget):
         
         # Create settings panel
         self.settings_panel = CloudSettingsPanel(parent=self)
+        self.settings_panel.settings_saved.connect(self._on_cloud_settings_saved)
         
         # Add both to stacked widget
         self.stacked_widget.addWidget(self.main_panel)  # Index 0
@@ -160,6 +169,21 @@ class CloudSavePanel(QWidget):
         
         self._init_ui()
         
+        # Load cloud settings from disk
+        self._load_cloud_settings_from_disk()
+        
+    def _load_cloud_settings_from_disk(self):
+        """Load cloud settings from disk on initialization."""
+        try:
+            settings = cloud_settings_manager.load_cloud_settings()
+            self.cloud_settings = settings
+            self.settings_panel.load_settings(settings)
+            
+            # Apply settings to drive manager
+            self._apply_settings_to_drive_manager()
+        except Exception as e:
+            logging.error(f"Error loading cloud settings from disk: {e}")
+    
     def _init_ui(self):
         """Initialize the UI components for the main panel."""
         main_layout = QVBoxLayout(self.main_panel)
@@ -253,9 +277,10 @@ class CloudSavePanel(QWidget):
         
         # Configure table
         self.backup_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.backup_table.setSelectionMode(QTableWidget.SelectionMode.MultiSelection)
+        self.backup_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)  # Disable row selection, use checkboxes only
         self.backup_table.setAlternatingRowColors(False)  # Disabled to fix white row bug
         self.backup_table.verticalHeader().setVisible(False)
+        self.backup_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Remove focus rectangle
         
         # Set column widths
         header = self.backup_table.horizontalHeader()
@@ -499,6 +524,10 @@ class CloudSavePanel(QWidget):
         if success:
             self._set_connected(True)
             self._refresh_cloud_status()
+            
+            # Setup periodic sync if enabled
+            self._setup_periodic_sync()
+            
             QMessageBox.information(
                 self,
                 "Connected",
@@ -549,6 +578,36 @@ class CloudSavePanel(QWidget):
             QMessageBox.warning(self, "No Selection", "Please select backups to upload.")
             return
         
+        # Check storage limit if enabled
+        if self.cloud_settings.get('max_cloud_storage_enabled', False):
+            max_storage_gb = self.cloud_settings.get('max_cloud_storage_gb', 5)
+            within_limit, current_gb, max_gb = self.drive_manager.check_storage_limit(max_storage_gb)
+            
+            if not within_limit:
+                QMessageBox.warning(
+                    self,
+                    "Storage Limit Reached",
+                    f"Cloud storage limit reached!\n\n"
+                    f"Current: {current_gb} GB\n"
+                    f"Limit: {max_gb} GB\n\n"
+                    f"Please delete old backups or increase the limit in settings."
+                )
+                return
+            
+            # Warn if close to limit
+            if current_gb > max_gb * 0.8:
+                reply = QMessageBox.question(
+                    self,
+                    "Storage Warning",
+                    f"Cloud storage is at {int((current_gb/max_gb)*100)}% of limit.\n\n"
+                    f"Current: {current_gb} GB\n"
+                    f"Limit: {max_gb} GB\n\n"
+                    f"Continue with upload?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if reply == QMessageBox.StandardButton.No:
+                    return
+        
         logging.info(f"Uploading {len(selected)} backups to cloud...")
         
         # Show progress
@@ -558,9 +617,14 @@ class CloudSavePanel(QWidget):
         self.upload_button.setEnabled(False)
         self.download_button.setEnabled(False)
         
+        # Get max backups setting
+        max_backups = None
+        if self.cloud_settings.get('max_cloud_backups_enabled', False):
+            max_backups = self.cloud_settings.get('max_cloud_backups_count', 5)
+        
         # Create worker and thread
         self.upload_thread = QThread()
-        self.upload_worker = UploadWorker(self.drive_manager, selected, self.backup_base_dir)
+        self.upload_worker = UploadWorker(self.drive_manager, selected, self.backup_base_dir, max_backups)
         self.upload_worker.moveToThread(self.upload_thread)
         
         # Connect signals
@@ -584,6 +648,12 @@ class CloudSavePanel(QWidget):
         self.progress_bar.setVisible(False)
         self.upload_button.setEnabled(True)
         self.download_button.setEnabled(True)
+        
+        # Show notification
+        self._show_notification(
+            "Upload Complete",
+            f"Successfully uploaded {success_count} of {total_count} backups to Google Drive."
+        )
         
         QMessageBox.information(
             self,
@@ -637,6 +707,12 @@ class CloudSavePanel(QWidget):
         self.upload_button.setEnabled(True)
         self.download_button.setEnabled(True)
         
+        # Show notification
+        self._show_notification(
+            "Download Complete",
+            f"Successfully downloaded {success_count} of {total_count} backups from Google Drive."
+        )
+        
         QMessageBox.information(
             self,
             "Download Complete",
@@ -673,6 +749,28 @@ class CloudSavePanel(QWidget):
         """Update the profiles dictionary and refresh the list."""
         self.profiles = profiles
         self._populate_backup_list()
+    
+
+    
+    def perform_startup_sync(self):
+        """Perform sync on startup if enabled in settings."""
+        if not self.cloud_settings.get('auto_sync_on_startup', False):
+            return
+        
+        if not self.drive_manager.is_connected:
+            logging.info("Startup sync skipped: not connected to Google Drive")
+            return
+        
+        logging.info("Performing startup sync...")
+        
+        # Get profiles to sync
+        if self.cloud_settings.get('sync_all_profiles', True):
+            profiles_to_sync = list(self.profiles.keys())
+        else:
+            profiles_to_sync = list(self.profiles.keys())
+        
+        if profiles_to_sync:
+            self._auto_sync_profiles(profiles_to_sync)
     
     def show_cloud_settings(self):
         """Show the cloud settings panel."""
@@ -727,4 +825,140 @@ class CloudSavePanel(QWidget):
                 "Refresh Error",
                 f"Could not refresh cloud status:\n{str(e)}"
             )
+    
+    def _on_cloud_settings_saved(self, settings):
+        """Handle cloud settings being saved."""
+        self.cloud_settings = settings
+        
+        # Save settings to disk
+        cloud_settings_manager.save_cloud_settings(settings)
+        
+        # Apply settings to drive manager
+        self._apply_settings_to_drive_manager()
+        
+        # Apply periodic sync setting
+        self._setup_periodic_sync()
+    
+    def _apply_settings_to_drive_manager(self):
+        """Apply current settings to the Google Drive manager."""
+        # Compression level
+        compression = self.cloud_settings.get('compression_level', 'standard')
+        self.drive_manager.set_compression_level(compression)
+        
+        # Bandwidth limit
+        if self.cloud_settings.get('bandwidth_limit_enabled', False):
+            limit = self.cloud_settings.get('bandwidth_limit_mbps', 10)
+            self.drive_manager.set_bandwidth_limit(limit)
+        else:
+            self.drive_manager.set_bandwidth_limit(None)
+    
+    def _show_notification(self, title, message):
+        """Show a system notification if enabled in settings."""
+        if not self.cloud_settings.get('show_sync_notifications', True):
+            return
+        
+        try:
+            # Try to use system notifications
+            from notifypy import Notify
+            
+            notification = Notify()
+            notification.title = title
+            notification.message = message
+            notification.application_name = "SaveState"
+            notification.send()
+            
+        except Exception as e:
+            logging.debug(f"Could not send notification: {e}")
+            # Fallback: just log it
+            logging.info(f"Notification: {title} - {message}")
+    
+    def _setup_periodic_sync(self):
+        """Setup or update periodic sync timer based on settings."""
+        # Stop existing timer if any
+        if self.sync_timer:
+            self.sync_timer.stop()
+            self.sync_timer = None
+        
+        # Check if periodic sync is enabled
+        if not self.cloud_settings.get('auto_sync_enabled', False):
+            logging.debug("Periodic sync disabled")
+            return
+        
+        if not self.drive_manager.is_connected:
+            logging.warning("Cannot setup periodic sync: not connected to Google Drive")
+            return
+        
+        # Get interval in hours, convert to milliseconds
+        interval_hours = self.cloud_settings.get('auto_sync_interval_hours', 12)
+        interval_ms = interval_hours * 60 * 60 * 1000
+        
+        # Create and start timer
+        self.sync_timer = QTimer(self)
+        self.sync_timer.timeout.connect(self._perform_periodic_sync)
+        self.sync_timer.start(interval_ms)
+        
+        logging.info(f"Periodic sync enabled: every {interval_hours} hours")
+    
+    def _perform_periodic_sync(self):
+        """Perform automatic sync of all profiles."""
+        if not self.drive_manager.is_connected:
+            logging.warning("Periodic sync skipped: not connected")
+            return
+        
+        logging.info("Starting periodic sync...")
+        
+        # Get profiles to sync
+        if self.cloud_settings.get('sync_all_profiles', True):
+            # Sync all profiles
+            profiles_to_sync = list(self.profiles.keys())
+        else:
+            # TODO: In future, allow user to select which profiles to sync
+            profiles_to_sync = list(self.profiles.keys())
+        
+        if not profiles_to_sync:
+            logging.info("No profiles to sync")
+            return
+        
+        # Perform sync in background
+        self._auto_sync_profiles(profiles_to_sync)
+    
+    def _auto_sync_profiles(self, profile_names):
+        """Automatically sync specified profiles in background."""
+        # Get max backups setting
+        max_backups = None
+        if self.cloud_settings.get('max_cloud_backups_enabled', False):
+            max_backups = self.cloud_settings.get('max_cloud_backups_count', 5)
+        
+        # Create worker for background sync
+        self.auto_sync_thread = QThread()
+        self.auto_sync_worker = UploadWorker(
+            self.drive_manager, 
+            profile_names, 
+            self.backup_base_dir, 
+            max_backups
+        )
+        self.auto_sync_worker.moveToThread(self.auto_sync_thread)
+        
+        # Connect signals
+        self.auto_sync_thread.started.connect(self.auto_sync_worker.run)
+        self.auto_sync_worker.finished.connect(self._on_auto_sync_finished)
+        self.auto_sync_worker.finished.connect(self.auto_sync_thread.quit)
+        self.auto_sync_worker.finished.connect(self.auto_sync_worker.deleteLater)
+        self.auto_sync_thread.finished.connect(self.auto_sync_thread.deleteLater)
+        
+        # Start sync
+        self.auto_sync_thread.start()
+    
+    def _on_auto_sync_finished(self, success_count, total_count):
+        """Handle automatic sync completion."""
+        logging.info(f"Periodic sync completed: {success_count}/{total_count} profiles synced")
+        
+        # Show notification
+        self._show_notification(
+            "Periodic Sync Complete",
+            f"Synced {success_count} of {total_count} profiles to Google Drive."
+        )
+        
+        # Refresh cloud status
+        self._refresh_cloud_status()
 

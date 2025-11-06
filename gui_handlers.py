@@ -166,6 +166,7 @@ class MainWindowHandlers:
             "game_save_profiles.json": (core_logic.PROFILES_FILE_PATH, "profiles"),
             "favorites_status.json": (os.path.join(config.get_app_data_folder(), "favorites_status.json"), "favorites"),
             "settings.json": (settings_manager.SETTINGS_FILE_PATH, "settings"),
+            "cloud_settings.json": (os.path.join(settings_manager.get_active_config_dir(), "cloud_settings.json"), "cloud settings"),
         }
 
         imported = []
@@ -496,7 +497,7 @@ class MainWindowHandlers:
                     appdata_has_configs = False
                     if appdata_dir and os.path.isdir(appdata_dir):
                         # Consider folder existing with any of the known JSONs as present
-                        known = ["settings.json", "game_save_profiles.json", "favorites_status.json"]
+                        known = ["settings.json", "game_save_profiles.json", "favorites_status.json", "cloud_settings.json"]
                         appdata_has_configs = any(os.path.exists(os.path.join(appdata_dir, n)) for n in known)
                     if appdata_has_configs:
                         reply = QMessageBox.question(

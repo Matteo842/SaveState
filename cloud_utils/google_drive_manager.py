@@ -51,6 +51,10 @@ class GoogleDriveManager:
         # Progress callback
         self.progress_callback: Optional[Callable[[int, int, str], None]] = None
         
+        # Settings
+        self.compression_level = 'standard'  # 'standard', 'maximum', 'stored'
+        self.bandwidth_limit_mbps = None  # None = unlimited
+        
     def authenticate(self) -> bool:
         """
         Authenticate with Google Drive using OAuth2.
@@ -191,7 +195,8 @@ class GoogleDriveManager:
             logging.error(f"Error creating/finding app folder: {e}")
             return None
     
-    def upload_backup(self, local_path: str, profile_name: str, overwrite: bool = True) -> bool:
+    def upload_backup(self, local_path: str, profile_name: str, overwrite: bool = True, 
+                      max_backups: Optional[int] = None) -> bool:
         """
         Upload a backup folder to Google Drive.
         
@@ -199,6 +204,7 @@ class GoogleDriveManager:
             local_path: Local path to the backup folder
             profile_name: Name of the profile (used as folder name in Drive)
             overwrite: If True, overwrite existing files; if False, skip existing
+            max_backups: If set, keep only this many backups (delete oldest after upload)
             
         Returns:
             bool: True if upload successful, False otherwise
@@ -256,6 +262,11 @@ class GoogleDriveManager:
                         logging.warning(f"Failed to upload file: {filename}")
             
             logging.info(f"Upload completed for profile '{profile_name}'")
+            
+            # IMPORTANT: Cleanup old backups AFTER successful upload (safety first!)
+            if max_backups and max_backups > 0:
+                self._cleanup_old_backups(profile_folder_id, profile_name, max_backups)
+            
             return True
             
         except Exception as e:
@@ -653,6 +664,137 @@ class GoogleDriveManager:
     def set_progress_callback(self, callback: Callable[[int, int, str], None]):
         """Set a callback function for progress updates."""
         self.progress_callback = callback
+    
+    def set_compression_level(self, level: str):
+        """
+        Set compression level for uploads.
+        
+        Args:
+            level: 'standard', 'maximum', or 'stored' (no compression)
+        """
+        if level in ['standard', 'maximum', 'stored']:
+            self.compression_level = level
+            logging.debug(f"Compression level set to: {level}")
+        else:
+            logging.warning(f"Invalid compression level: {level}")
+    
+    def set_bandwidth_limit(self, limit_mbps: Optional[int]):
+        """
+        Set bandwidth limit for uploads/downloads.
+        
+        Args:
+            limit_mbps: Limit in Mbps, or None for unlimited
+        """
+        self.bandwidth_limit_mbps = limit_mbps
+        if limit_mbps:
+            logging.debug(f"Bandwidth limit set to: {limit_mbps} Mbps")
+        else:
+            logging.debug("Bandwidth limit disabled")
+    
+    def get_app_folder_size(self) -> int:
+        """
+        Calculate total size of all files in the SaveState app folder.
+        
+        Returns:
+            int: Total size in bytes, or 0 if error
+        """
+        if not self.service or not self.app_folder_id:
+            return 0
+        
+        try:
+            total_size = 0
+            
+            # Get all folders in app folder
+            folders_query = f"'{self.app_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+            folders_result = self.service.files().list(
+                q=folders_query,
+                spaces='drive',
+                fields='files(id)'
+            ).execute()
+            
+            folders = folders_result.get('files', [])
+            
+            # For each folder, get all files and sum sizes
+            for folder in folders:
+                folder_id = folder['id']
+                files = self._list_files_in_folder(folder_id)
+                for file_info in files:
+                    total_size += int(file_info.get('size', 0))
+            
+            return total_size
+            
+        except Exception as e:
+            logging.error(f"Error calculating app folder size: {e}")
+            return 0
+    
+    def check_storage_limit(self, max_gb: int) -> tuple[bool, int, int]:
+        """
+        Check if current storage is within limit.
+        
+        Args:
+            max_gb: Maximum storage in GB
+            
+        Returns:
+            tuple: (within_limit, current_gb, max_gb)
+        """
+        try:
+            current_bytes = self.get_app_folder_size()
+            current_gb = current_bytes / (1024**3)
+            within_limit = current_gb < max_gb
+            
+            return (within_limit, round(current_gb, 2), max_gb)
+            
+        except Exception as e:
+            logging.error(f"Error checking storage limit: {e}")
+            return (True, 0, max_gb)  # Allow upload on error
+    
+    def _cleanup_old_backups(self, folder_id: str, profile_name: str, max_backups: int):
+        """
+        Delete oldest backup files if count exceeds max_backups.
+        IMPORTANT: This is called AFTER successful upload to ensure safety.
+        
+        Args:
+            folder_id: Google Drive folder ID containing backups
+            profile_name: Profile name (for logging)
+            max_backups: Maximum number of backups to keep
+        """
+        try:
+            # Get all files in folder, sorted by modification time (oldest first)
+            query = f"'{folder_id}' in parents and trashed=false"
+            results = self.service.files().list(
+                q=query,
+                spaces='drive',
+                fields='files(id, name, modifiedTime)',
+                orderBy='modifiedTime'  # Oldest first
+            ).execute()
+            
+            files = results.get('files', [])
+            
+            if len(files) <= max_backups:
+                logging.info(f"Profile '{profile_name}': {len(files)} backups (within limit of {max_backups})")
+                return
+            
+            # Calculate how many to delete
+            files_to_delete = len(files) - max_backups
+            logging.info(f"Profile '{profile_name}': {len(files)} backups found, deleting {files_to_delete} oldest...")
+            
+            # Delete oldest files
+            for i in range(files_to_delete):
+                file_to_delete = files[i]
+                file_id = file_to_delete['id']
+                file_name = file_to_delete['name']
+                
+                try:
+                    self.service.files().delete(fileId=file_id).execute()
+                    logging.info(f"Deleted old backup: {file_name}")
+                except Exception as e:
+                    logging.error(f"Failed to delete {file_name}: {e}")
+            
+            logging.info(f"Cleanup completed for profile '{profile_name}': kept {max_backups} most recent backups")
+            
+        except Exception as e:
+            logging.error(f"Error during backup cleanup for '{profile_name}': {e}")
+            # Don't raise - cleanup failure shouldn't fail the upload
 
 
 # Singleton instance
