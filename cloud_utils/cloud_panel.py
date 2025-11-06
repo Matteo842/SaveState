@@ -108,6 +108,36 @@ class DownloadWorker(QObject):
         self.finished.emit(success_count, total)
 
 
+class DeleteWorker(QObject):
+    """Worker thread for deleting backups from cloud to avoid blocking UI."""
+    progress = Signal(int, int, str)  # current, total, message
+    finished = Signal(int, int)  # success_count, total_count
+    
+    def __init__(self, drive_manager, backup_list):
+        super().__init__()
+        self.drive_manager = drive_manager
+        self.backup_list = backup_list
+    
+    def run(self):
+        """Execute deletion in background."""
+        success_count = 0
+        total = len(self.backup_list)
+        
+        for idx, backup_name in enumerate(self.backup_list, 1):
+            self.progress.emit(idx, total, f"Deleting {backup_name}...")
+            
+            try:
+                if self.drive_manager.delete_cloud_backup(backup_name):
+                    success_count += 1
+                    logging.info(f"Successfully deleted from cloud: {backup_name}")
+                else:
+                    logging.error(f"Failed to delete from cloud: {backup_name}")
+            except Exception as e:
+                logging.error(f"Error deleting {backup_name}: {e}")
+        
+        self.finished.emit(success_count, total)
+
+
 class CloudSavePanel(QWidget):
     """
     Inline panel for Cloud Save management.
@@ -318,15 +348,29 @@ class CloudSavePanel(QWidget):
         
         actions_layout.addStretch(1)
         
-        self.upload_button = QPushButton("Upload Selected to Cloud")
+        self.upload_button = QPushButton("Upload Selected")
         self.upload_button.setEnabled(False)
         self.upload_button.clicked.connect(self._on_upload_clicked)
         actions_layout.addWidget(self.upload_button)
         
-        self.download_button = QPushButton("Download Selected from Cloud")
+        self.download_button = QPushButton("Download Selected")
         self.download_button.setEnabled(False)
         self.download_button.clicked.connect(self._on_download_clicked)
         actions_layout.addWidget(self.download_button)
+        
+        self.delete_button = QPushButton("Delete Selected from Cloud")
+        self.delete_button.setObjectName("DangerButton")
+        self.delete_button.setEnabled(False)
+        self.delete_button.clicked.connect(self._on_delete_clicked)
+        # Set trash icon (same as delete profile button)
+        try:
+            from PySide6.QtWidgets import QApplication, QStyle
+            style = QApplication.instance().style()
+            delete_icon = style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+            self.delete_button.setIcon(delete_icon)
+        except Exception as e:
+            logging.warning(f"Could not set delete button icon: {e}")
+        actions_layout.addWidget(self.delete_button)
         
         main_layout.addLayout(actions_layout)
         
@@ -563,6 +607,7 @@ class CloudSavePanel(QWidget):
             self.disconnect_button.setEnabled(True)
             self.upload_button.setEnabled(True)
             self.download_button.setEnabled(True)
+            self.delete_button.setEnabled(True)
         else:
             self.connection_status_label.setText("● Not Connected")
             self.connection_status_label.setStyleSheet("color: #FF5555;")
@@ -570,6 +615,7 @@ class CloudSavePanel(QWidget):
             self.disconnect_button.setEnabled(False)
             self.upload_button.setEnabled(False)
             self.download_button.setEnabled(False)
+            self.delete_button.setEnabled(False)
     
     def _on_upload_clicked(self):
         """Handle upload selected backups to cloud."""
@@ -721,6 +767,79 @@ class CloudSavePanel(QWidget):
         
         # Refresh local list
         self._populate_backup_list()
+    
+    def _on_delete_clicked(self):
+        """Handle delete selected backups from cloud."""
+        selected = self._get_selected_backups()
+        if not selected:
+            QMessageBox.warning(self, "No Selection", "Please select backups to delete from cloud.")
+            return
+        
+        # Ask for confirmation
+        reply = QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete {len(selected)} backup(s) from Google Drive?\n\n"
+            "This action cannot be undone!",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        logging.info(f"Deleting {len(selected)} backups from cloud...")
+        
+        # Show progress
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, len(selected))
+        self.progress_bar.setValue(0)
+        self.upload_button.setEnabled(False)
+        self.download_button.setEnabled(False)
+        self.delete_button.setEnabled(False)
+        
+        # Create worker and thread
+        self.delete_thread = QThread()
+        self.delete_worker = DeleteWorker(self.drive_manager, selected)
+        self.delete_worker.moveToThread(self.delete_thread)
+        
+        # Connect signals
+        self.delete_thread.started.connect(self.delete_worker.run)
+        self.delete_worker.progress.connect(self._on_delete_progress)
+        self.delete_worker.finished.connect(self._on_delete_finished)
+        self.delete_worker.finished.connect(self.delete_thread.quit)
+        self.delete_worker.finished.connect(self.delete_worker.deleteLater)
+        self.delete_thread.finished.connect(self.delete_thread.deleteLater)
+        
+        # Start deletion
+        self.delete_thread.start()
+    
+    def _on_delete_progress(self, current, total, message):
+        """Handle delete progress updates."""
+        self.progress_bar.setValue(current)
+        self.progress_bar.setFormat(f"{message} ({current}/{total})")
+    
+    def _on_delete_finished(self, success_count, total_count):
+        """Handle delete completion."""
+        self.progress_bar.setVisible(False)
+        self.upload_button.setEnabled(True)
+        self.download_button.setEnabled(True)
+        self.delete_button.setEnabled(True)
+        
+        # Show notification
+        self._show_notification(
+            "Deletion Complete",
+            f"Successfully deleted {success_count} of {total_count} backups from Google Drive."
+        )
+        
+        QMessageBox.information(
+            self,
+            "Deletion Complete",
+            f"Successfully deleted {success_count} of {total_count} backups from cloud."
+        )
+        
+        # Refresh cloud status
+        self._refresh_cloud_status()
     
     def _get_selected_backups(self):
         """Get list of selected backup names."""
