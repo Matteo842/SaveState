@@ -197,6 +197,9 @@ class CloudSavePanel(QWidget):
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.addWidget(self.stacked_widget)
         
+        # Enable focus for keyboard events
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
         self._init_ui()
         
         # Load cloud settings from disk
@@ -499,6 +502,12 @@ class CloudSavePanel(QWidget):
         # Hide search bar if text is empty
         if not text:
             self.filter_search.hide()
+    
+    def showEvent(self, event):
+        """Handle show event to ensure the panel can receive keyboard input."""
+        super().showEvent(event)
+        # Set focus to the main panel so it can receive keyboard events
+        self.setFocus()
     
     def event(self, event_obj):
         """Handles events for the cloud panel, specifically KeyPress to activate search bar."""
