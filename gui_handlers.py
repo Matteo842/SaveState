@@ -607,8 +607,33 @@ class MainWindowHandlers:
             # Access main_window.profiles and call core_logic
             if core_logic.delete_profile(self.main_window.profiles, profile_name):
                 if core_logic.save_profiles(self.main_window.profiles):
+                    # Try to delete the backup folder if it's empty
+                    try:
+                        backup_base_dir = self.main_window.current_settings.get('backup_base_dir', config.BACKUP_BASE_DIR)
+                        profile_backup_folder = os.path.join(backup_base_dir, profile_name)
+                        
+                        if os.path.exists(profile_backup_folder) and os.path.isdir(profile_backup_folder):
+                            # Check if folder is empty (no files, only .savestate folder allowed)
+                            folder_contents = os.listdir(profile_backup_folder)
+                            # Filter out .savestate folder
+                            backup_files = [f for f in folder_contents if f != '.savestate']
+                            
+                            if not backup_files:
+                                # Folder is empty (or only has .savestate), safe to delete
+                                import shutil
+                                shutil.rmtree(profile_backup_folder)
+                                logging.info(f"Deleted empty backup folder: {profile_backup_folder}")
+                                self.main_window.status_label.setText("Profile '{0}' deleted (empty backup folder removed).".format(profile_name))
+                            else:
+                                logging.info(f"Backup folder not empty, keeping it: {profile_backup_folder} ({len(backup_files)} files)")
+                                self.main_window.status_label.setText("Profile '{0}' deleted (backup files preserved).".format(profile_name))
+                        else:
+                            self.main_window.status_label.setText("Profile '{0}' deleted.".format(profile_name))
+                    except Exception as e:
+                        logging.error(f"Error checking/deleting backup folder for '{profile_name}': {e}")
+                        self.main_window.status_label.setText("Profile '{0}' deleted (could not check backup folder).".format(profile_name))
+                    
                     self.main_window.profile_table_manager.update_profile_table()
-                    self.main_window.status_label.setText("Profile '{0}' deleted.".format(profile_name))
                 else:
                     QMessageBox.critical(self.main_window, "Error", "Profile deleted from memory but unable to save changes.")
                     # Reload profiles in main_window
