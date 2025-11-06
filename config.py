@@ -1004,6 +1004,81 @@ QPushButton#ShortcutButton:pressed {
     background-color: #404040; /* Leggermente più scuro alla pressione */
 }
 
+/* ===== CUSTOM SCROLLBAR STYLING (DARK THEME) ===== */
+QScrollBar:vertical {
+    background-color: #2D2D2D;  /* Sfondo track (stesso del widget) */
+    width: 14px;                /* Larghezza scrollbar (aumentata per bordo) */
+    margin: 0px;                /* Nessun margine */
+    border: none;               /* Nessun bordo */
+}
+
+QScrollBar::handle:vertical {
+    background-color: #4A4A4A;  /* Riempimento interno grigio scuro */
+    border: 2px solid #A10808;  /* Bordo accent rosso (colore titoli) */
+    min-height: 30px;           /* Altezza minima handle */
+    border-radius: 4px;         /* Angoli leggermente arrotondati */
+    margin: 2px;                /* Margine per distanziare dal bordo */
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #5A5A5A;  /* Riempimento più chiaro al passaggio */
+    border: 2px solid #C10A0A;  /* Bordo rosso leggermente più brillante */
+}
+
+QScrollBar::handle:vertical:pressed {
+    background-color: #A10808;  /* Riempimento rosso quando premuto */
+    border: 2px solid #C10A0A;  /* Bordo rosso più brillante */
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0px;                /* Nascondi le frecce su/giù */
+    background: none;
+}
+
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: none;           /* Nessuno sfondo per le aree sopra/sotto handle */
+}
+
+/* Scrollbar orizzontale (se necessaria) */
+QScrollBar:horizontal {
+    background-color: #2D2D2D;
+    height: 14px;
+    margin: 0px;
+    border: none;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #4A4A4A;
+    border: 2px solid #A10808;
+    min-width: 30px;
+    border-radius: 4px;
+    margin: 2px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #5A5A5A;
+    border: 2px solid #C10A0A;
+}
+
+QScrollBar::handle:horizontal:pressed {
+    background-color: #A10808;
+    border: 2px solid #C10A0A;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0px;
+    background: none;
+}
+
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
+    background: none;
+}
+/* ===== END CUSTOM SCROLLBAR ===== */
+
 """
 
 LIGHT_THEME_QSS = """
@@ -1184,6 +1259,81 @@ QPushButton#ShortcutButton:hover {
 QPushButton#ShortcutButton:pressed {
     background-color: #C8C8C8; /* Leggermente più scuro alla pressione */
 }
+
+/* ===== CUSTOM SCROLLBAR STYLING (LIGHT THEME) ===== */
+QScrollBar:vertical {
+    background-color: #F0F0F0;  /* Sfondo track (stesso del widget) */
+    width: 14px;                /* Larghezza scrollbar (aumentata per bordo) */
+    margin: 0px;                /* Nessun margine */
+    border: none;               /* Nessun bordo */
+}
+
+QScrollBar::handle:vertical {
+    background-color: #DEDEDE;  /* Riempimento interno grigio chiaro */
+    border: 2px solid #20B2AA;  /* Bordo accent ciano */
+    min-height: 30px;           /* Altezza minima handle */
+    border-radius: 4px;         /* Angoli leggermente arrotondati */
+    margin: 2px;                /* Margine per distanziare dal bordo */
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #D0D0D0;  /* Riempimento più scuro al passaggio */
+    border: 2px solid #1AA89A;  /* Bordo ciano più scuro */
+}
+
+QScrollBar::handle:vertical:pressed {
+    background-color: #20B2AA;  /* Riempimento ciano quando premuto */
+    border: 2px solid #00A89A;  /* Bordo ciano più scuro */
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0px;                /* Nascondi le frecce su/giù */
+    background: none;
+}
+
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: none;           /* Nessuno sfondo per le aree sopra/sotto handle */
+}
+
+/* Scrollbar orizzontale (se necessaria) */
+QScrollBar:horizontal {
+    background-color: #F0F0F0;
+    height: 14px;
+    margin: 0px;
+    border: none;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #DEDEDE;
+    border: 2px solid #20B2AA;
+    min-width: 30px;
+    border-radius: 4px;
+    margin: 2px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #D0D0D0;
+    border: 2px solid #1AA89A;
+}
+
+QScrollBar::handle:horizontal:pressed {
+    background-color: #20B2AA;
+    border: 2px solid #00A89A;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0px;
+    background: none;
+}
+
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
+    background: none;
+}
+/* ===== END CUSTOM SCROLLBAR ===== */
 
 """
 # --- FINE NUOVE REGOLE ---
