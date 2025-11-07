@@ -306,7 +306,7 @@ class CloudSavePanel(QWidget):
         self.backup_table = QTableWidget()
         self.backup_table.setColumnCount(5)
         self.backup_table.setHorizontalHeaderLabels([
-            "Select", "Backup Name", "Profile", "Local Status", "Cloud Status"
+            "Select", "State", "Profile", "Local Status", "Cloud Status"
         ])
         
         # Configure table
@@ -319,11 +319,12 @@ class CloudSavePanel(QWidget):
         # Set column widths
         header = self.backup_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)  # Select checkbox
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Backup Name
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)  # State
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # Profile
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Local Status
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Cloud Status
         self.backup_table.setColumnWidth(0, 60)
+        self.backup_table.setColumnWidth(1, 80)
         
         list_layout.addWidget(self.backup_table)
         list_group.setLayout(list_layout)
@@ -415,68 +416,115 @@ class CloudSavePanel(QWidget):
         self._populate_backup_list()
     
     def _populate_backup_list(self):
-        """Populate the table with available backups from the backup directory."""
+        """Populate the table with available backups from the backup directory and cloud."""
         self.backup_table.setRowCount(0)
         self.local_backups.clear()
-        
-        if not os.path.isdir(self.backup_base_dir):
-            logging.warning(f"Backup directory does not exist: {self.backup_base_dir}")
-            return
-        
-        # Get all subdirectories in backup folder (each is a profile backup folder)
-        try:
-            entries = os.listdir(self.backup_base_dir)
-        except Exception as e:
-            logging.error(f"Error reading backup directory: {e}")
-            return
         
         show_all = self.show_all_backups_checkbox.isChecked()
         search_text = self.filter_search.text().lower()
         
-        for entry in sorted(entries):
-            entry_path = os.path.join(self.backup_base_dir, entry)
-            
-            # Only process directories
-            if not os.path.isdir(entry_path):
-                continue
-            
-            # Skip special folders
-            if entry.startswith('.') or entry == '__pycache__':
-                continue
+        # Dictionary to track all backups (local + cloud)
+        all_backups = {}
+        
+        # --- Scan local backups ---
+        if os.path.isdir(self.backup_base_dir):
+            try:
+                entries = os.listdir(self.backup_base_dir)
+                
+                for entry in entries:
+                    entry_path = os.path.join(self.backup_base_dir, entry)
+                    
+                    # Only process directories
+                    if not os.path.isdir(entry_path):
+                        continue
+                    
+                    # Skip special folders
+                    if entry.startswith('.') or entry == '__pycache__':
+                        continue
+                    
+                    # Count backup files in this folder
+                    try:
+                        backup_files = [f for f in os.listdir(entry_path) if f.endswith('.zip')]
+                        file_count = len(backup_files)
+                    except Exception:
+                        file_count = 0
+                    
+                    all_backups[entry] = {
+                        'name': entry,
+                        'path': entry_path,
+                        'local_file_count': file_count,
+                        'cloud_file_count': 0,
+                        'has_local': True,
+                        'has_cloud': False
+                    }
+                    
+            except Exception as e:
+                logging.error(f"Error reading backup directory: {e}")
+        
+        # --- Add cloud backups ---
+        if self.drive_manager.is_connected:
+            logging.info(f"Drive connected, cloud_backups dict has {len(self.cloud_backups)} entries")
+            if self.cloud_backups:
+                for cloud_name, cloud_info in self.cloud_backups.items():
+                    logging.info(f"Processing cloud backup: {cloud_name}")
+                    if cloud_name in all_backups:
+                        # Update existing entry with cloud info
+                        logging.info(f"  - Updating existing local backup '{cloud_name}' with cloud info")
+                        all_backups[cloud_name]['has_cloud'] = True
+                        all_backups[cloud_name]['cloud_file_count'] = cloud_info.get('file_count', 0)
+                    else:
+                        # Add cloud-only backup
+                        logging.info(f"  - Adding cloud-only backup '{cloud_name}'")
+                        all_backups[cloud_name] = {
+                            'name': cloud_name,
+                            'path': None,
+                            'local_file_count': 0,
+                            'cloud_file_count': cloud_info.get('file_count', 0),
+                            'has_local': False,
+                            'has_cloud': True
+                        }
+            else:
+                logging.info("No cloud backups in self.cloud_backups dict")
+        else:
+            logging.info("Drive not connected, skipping cloud backups")
+        
+        # --- Filter and populate table ---
+        logging.info(f"Total backups found (local + cloud): {len(all_backups)}")
+        logging.info(f"Backup names: {list(all_backups.keys())}")
+        
+        for backup_name in sorted(all_backups.keys()):
+            backup = all_backups[backup_name]
             
             # Check if this backup folder matches a profile
-            profile_match = entry if entry in self.profiles else "Unknown"
+            profile_name = backup_name if backup_name in self.profiles else backup_name
+            is_known_profile = backup_name in self.profiles
             
-            # Filter: if not showing all, skip non-profile backups
-            if not show_all and profile_match == "Unknown":
+            # Filter: if not showing all, skip non-profile backups UNLESS they have cloud sync
+            has_cloud = backup.get('has_cloud', False)
+            if not show_all and not is_known_profile and not has_cloud:
+                logging.info(f"Skipping '{backup_name}' - not a known profile, no cloud sync, and show_all is False")
                 continue
             
             # Search filter
-            if search_text and search_text not in entry.lower():
+            if search_text and search_text not in backup_name.lower():
+                logging.info(f"Skipping '{backup_name}' - doesn't match search text '{search_text}'")
                 continue
             
-            # Count backup files in this folder
-            try:
-                backup_files = [f for f in os.listdir(entry_path) if f.endswith('.zip')]
-                file_count = len(backup_files)
-            except Exception:
-                file_count = 0
+            # Add profile name to backup info
+            backup['profile'] = profile_name
+            backup['is_known_profile'] = is_known_profile
             
-            self.local_backups.append({
-                'name': entry,
-                'path': entry_path,
-                'profile': profile_match,
-                'file_count': file_count
-            })
-        
-        # Populate table
-        for backup in self.local_backups:
+            logging.info(f"Adding backup to table: {backup_name} (local={backup['has_local']}, cloud={backup['has_cloud']})")
+            self.local_backups.append(backup)
             self._add_backup_row(backup)
     
     def _add_backup_row(self, backup_info):
         """Add a row to the backup table."""
         row = self.backup_table.rowCount()
         self.backup_table.insertRow(row)
+        
+        has_local = backup_info.get('has_local', False)
+        has_cloud = backup_info.get('has_cloud', False)
         
         # Column 0: Checkbox
         checkbox_widget = QWidget()
@@ -487,31 +535,64 @@ class CloudSavePanel(QWidget):
         checkbox_layout.addWidget(checkbox)
         self.backup_table.setCellWidget(row, 0, checkbox_widget)
         
-        # Column 1: Backup Name
-        name_item = QTableWidgetItem(backup_info['name'])
-        name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-        self.backup_table.setItem(row, 1, name_item)
-        
-        # Column 2: Profile
-        profile_item = QTableWidgetItem(backup_info['profile'])
-        profile_item.setFlags(profile_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-        if backup_info['profile'] == "Unknown":
-            profile_item.setForeground(QColor("#FF5555"))
+        # Column 1: State (Local/Cloud/Both)
+        if has_local and has_cloud:
+            state_text = "Both"
+            state_color = QColor("#4CAF50")  # Green
+        elif has_local:
+            state_text = "Local"
+            state_color = QColor("#2196F3")  # Blue
+        elif has_cloud:
+            state_text = "Cloud"
+            state_color = QColor("#FF9800")  # Orange
         else:
-            profile_item.setForeground(QColor("#4CAF50"))
+            state_text = "Unknown"
+            state_color = QColor("#AAAAAA")  # Gray
+        
+        state_item = QTableWidgetItem(state_text)
+        state_item.setFlags(state_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        state_item.setForeground(state_color)
+        state_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.backup_table.setItem(row, 1, state_item)
+        
+        # Column 2: Profile (use backup name as profile name)
+        profile_name = backup_info['profile']
+        is_known = backup_info.get('is_known_profile', False)
+        
+        profile_item = QTableWidgetItem(profile_name)
+        profile_item.setFlags(profile_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        if is_known:
+            profile_item.setForeground(QColor("#4CAF50"))  # Green for known profiles
+        else:
+            profile_item.setForeground(QColor("#AAAAAA"))  # Gray for unknown
         self.backup_table.setItem(row, 2, profile_item)
         
         # Column 3: Local Status
-        local_status = f"{backup_info['file_count']} files"
+        local_count = backup_info.get('local_file_count', 0)
+        if has_local:
+            local_status = f"{local_count} files"
+            local_color = QColor("#4CAF50")
+        else:
+            local_status = "Not local"
+            local_color = QColor("#AAAAAA")
+        
         local_item = QTableWidgetItem(local_status)
         local_item.setFlags(local_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-        local_item.setForeground(QColor("#4CAF50"))
+        local_item.setForeground(local_color)
         self.backup_table.setItem(row, 3, local_item)
         
-        # Column 4: Cloud Status (placeholder - will be updated when connected)
-        cloud_item = QTableWidgetItem("Not synced")
+        # Column 4: Cloud Status
+        cloud_count = backup_info.get('cloud_file_count', 0)
+        if has_cloud:
+            cloud_status = f"{cloud_count} files"
+            cloud_color = QColor("#4CAF50")
+        else:
+            cloud_status = "Not synced"
+            cloud_color = QColor("#AAAAAA")
+        
+        cloud_item = QTableWidgetItem(cloud_status)
         cloud_item.setFlags(cloud_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-        cloud_item.setForeground(QColor("#AAAAAA"))
+        cloud_item.setForeground(cloud_color)
         self.backup_table.setItem(row, 4, cloud_item)
     
     def _on_filter_changed(self, checked):
@@ -882,7 +963,8 @@ class CloudSavePanel(QWidget):
             if checkbox_widget:
                 checkbox = checkbox_widget.findChild(QCheckBox)
                 if checkbox and checkbox.isChecked():
-                    name_item = self.backup_table.item(row, 1)
+                    # Column 2 now contains the profile name
+                    name_item = self.backup_table.item(row, 2)
                     if name_item:
                         selected.append(name_item.text())
         return selected
@@ -937,6 +1019,7 @@ class CloudSavePanel(QWidget):
     def _refresh_cloud_status(self):
         """Refresh cloud backup status for all backups."""
         if not self.drive_manager.is_connected:
+            logging.warning("Cannot refresh cloud status: not connected")
             return
         
         logging.info("Refreshing cloud backup status...")
@@ -945,33 +1028,22 @@ class CloudSavePanel(QWidget):
             # Get list of cloud backups
             cloud_backups_list = self.drive_manager.list_cloud_backups()
             
+            logging.info(f"Retrieved {len(cloud_backups_list)} cloud backups from Drive")
+            for backup in cloud_backups_list:
+                logging.debug(f"  - {backup['name']}: {backup['file_count']} files")
+            
             # Convert to dict for easy lookup
             self.cloud_backups = {
                 backup['name']: backup for backup in cloud_backups_list
             }
             
-            # Update table
-            for row in range(self.backup_table.rowCount()):
-                name_item = self.backup_table.item(row, 1)
-                if not name_item:
-                    continue
-                
-                backup_name = name_item.text()
-                cloud_item = self.backup_table.item(row, 4)
-                
-                if backup_name in self.cloud_backups:
-                    cloud_info = self.cloud_backups[backup_name]
-                    file_count = cloud_info['file_count']
-                    cloud_item.setText(f"{file_count} files (synced)")
-                    cloud_item.setForeground(QColor("#4CAF50"))
-                else:
-                    cloud_item.setText("Not synced")
-                    cloud_item.setForeground(QColor("#AAAAAA"))
-            
             logging.info(f"Cloud status updated: {len(self.cloud_backups)} backups in cloud")
             
+            # Repopulate the entire table to include cloud-only backups
+            self._populate_backup_list()
+            
         except Exception as e:
-            logging.error(f"Error refreshing cloud status: {e}")
+            logging.error(f"Error refreshing cloud status: {e}", exc_info=True)
             QMessageBox.warning(
                 self,
                 "Refresh Error",
