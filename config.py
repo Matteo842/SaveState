@@ -1004,6 +1004,21 @@ QPushButton#ShortcutButton:pressed {
     background-color: #404040; /* Leggermente più scuro alla pressione */
 }
 
+QPushButton#ExitButton {
+    min-width: 32px;
+    max-width: 32px;
+    min-height: 32px;
+    max-height: 32px;
+    padding: 4px;
+}
+QPushButton#ExitButton:hover {
+    background-color: #5A5A5A;
+    border: 1px solid #888888;
+}
+QPushButton#ExitButton:pressed {
+    background-color: #404040;
+}
+
 /* ===== CUSTOM SCROLLBAR STYLING (DARK THEME) ===== */
 QScrollBar:vertical {
     background-color: #2D2D2D;  /* Sfondo track (stesso del widget) */
@@ -1258,6 +1273,21 @@ QPushButton#ShortcutButton:hover {
 }
 QPushButton#ShortcutButton:pressed {
     background-color: #C8C8C8; /* Leggermente più scuro alla pressione */
+}
+
+QPushButton#ExitButton {
+    min-width: 32px;
+    max-width: 32px;
+    min-height: 32px;
+    max-height: 32px;
+    padding: 4px;
+}
+QPushButton#ExitButton:hover {
+    background-color: #DCDCDC;
+    border: 1px solid #888888;
+}
+QPushButton#ExitButton:pressed {
+    background-color: #C8C8C8;
 }
 
 /* ===== CUSTOM SCROLLBAR STYLING (LIGHT THEME) ===== */

@@ -17,6 +17,7 @@ from PySide6.QtGui import QIcon, QColor
 from cloud_utils.cloud_settings_panel import CloudSettingsPanel
 from cloud_utils.google_drive_manager import get_drive_manager
 import cloud_settings_manager
+from utils import resource_path
 
 
 class AuthWorker(QObject):
@@ -334,13 +335,29 @@ class CloudSavePanel(QWidget):
         self.progress_bar.setFormat("%v/%m files (%p%)")
         main_layout.addWidget(self.progress_bar)
         
-        # --- Action Buttons Row ---
+        # --- Action Buttons Row (all buttons in one row at bottom) ---
         actions_layout = QHBoxLayout()
         
+        # Stacked widget to switch between Refresh button and Search bar
+        self.refresh_search_stack = QStackedWidget()
+        from PySide6.QtWidgets import QSizePolicy
+        self.refresh_search_stack.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        
+        # Refresh button widget
         self.refresh_button = QPushButton("Refresh List")
         self.refresh_button.clicked.connect(self._on_refresh_clicked)
-        actions_layout.addWidget(self.refresh_button)
         
+        # Search bar widget
+        self.filter_search = QLineEdit()
+        self.filter_search.setPlaceholderText("Type to filter backups...")
+        self.filter_search.textChanged.connect(self._on_search_changed)
+        
+        # Add both to stacked widget
+        self.refresh_search_stack.addWidget(self.refresh_button)  # Index 0
+        self.refresh_search_stack.addWidget(self.filter_search)   # Index 1
+        self.refresh_search_stack.setCurrentIndex(0)  # Show refresh button by default
+        
+        actions_layout.addWidget(self.refresh_search_stack)
         actions_layout.addStretch(1)
         
         self.upload_button = QPushButton("Upload Selected")
@@ -367,26 +384,32 @@ class CloudSavePanel(QWidget):
             logging.warning(f"Could not set delete button icon: {e}")
         actions_layout.addWidget(self.delete_button)
         
-        main_layout.addLayout(actions_layout)
-        
-        # --- Bottom Row: Search Bar and Exit Button ---
-        bottom_layout = QHBoxLayout()
-        
-        # Search bar (hidden by default, appears when typing)
-        self.filter_search = QLineEdit()
-        self.filter_search.setPlaceholderText("Type to filter backups...")
-        self.filter_search.setMaximumWidth(250)
-        self.filter_search.textChanged.connect(self._on_search_changed)
-        self.filter_search.hide()  # Initially hidden
-        bottom_layout.addWidget(self.filter_search)
-        
-        bottom_layout.addStretch(1)
-        
-        self.exit_button = QPushButton("Exit")
+        # Exit button (icon only, square)
+        self.exit_button = QPushButton()
+        self.exit_button.setObjectName("ExitButton")  # Set object name for CSS styling
+        self.exit_button.setToolTip("Exit Cloud Panel")
         self.exit_button.clicked.connect(self._on_exit_clicked)
-        bottom_layout.addWidget(self.exit_button)
+        # Try to load exit.png, fallback to standard icon
+        try:
+            exit_icon_path = resource_path("icons/exit.png")
+            if os.path.exists(exit_icon_path):
+                exit_icon = QIcon(exit_icon_path)
+                self.exit_button.setIcon(exit_icon)
+            else:
+                # Fallback to standard close icon
+                from PySide6.QtWidgets import QApplication, QStyle
+                style = QApplication.instance().style()
+                exit_icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton)
+                self.exit_button.setIcon(exit_icon)
+            from PySide6.QtCore import QSize
+            self.exit_button.setIconSize(QSize(32, 32))
+        except Exception as e:
+            logging.warning(f"Could not set exit button icon: {e}")
+            self.exit_button.setText("X")  # Fallback text
         
-        main_layout.addLayout(bottom_layout)
+        actions_layout.addWidget(self.exit_button)
+        
+        main_layout.addLayout(actions_layout)
         
         # Initial population
         self._populate_backup_list()
@@ -496,12 +519,12 @@ class CloudSavePanel(QWidget):
         self._populate_backup_list()
     
     def _on_search_changed(self, text):
-        """Handle search text change and hide search bar if empty."""
+        """Handle search text change and switch back to refresh button if empty."""
         self._populate_backup_list()
         
-        # Hide search bar if text is empty
+        # Switch back to refresh button if text is empty
         if not text:
-            self.filter_search.hide()
+            self.refresh_search_stack.setCurrentIndex(0)  # Show refresh button
     
     def showEvent(self, event):
         """Handle show event to ensure the panel can receive keyboard input."""
@@ -512,23 +535,23 @@ class CloudSavePanel(QWidget):
     def event(self, event_obj):
         """Handles events for the cloud panel, specifically KeyPress to activate search bar."""
         if event_obj.type() == QEvent.Type.KeyPress:
-            # Only act if the search bar is currently hidden
-            if not self.filter_search.isVisible():
+            # Check if refresh button is currently shown (search bar hidden)
+            if self.refresh_search_stack.currentIndex() == 0:
                 key_text = event_obj.text()
                 # Check if the key produces a printable character and is not just whitespace
                 # Also exclude special keys
                 if key_text and key_text.isprintable() and key_text.strip() != '' and \
                    event_obj.key() not in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab, 
                                           Qt.Key.Key_Backtab, Qt.Key.Key_Escape):
-                    # Show the search bar, set focus to it, and input the typed character
-                    self.filter_search.show()
+                    # Switch to search bar, set focus to it, and input the typed character
+                    self.refresh_search_stack.setCurrentIndex(1)  # Show search bar
                     self.filter_search.setFocus()
                     self.filter_search.setText(key_text)  # This also triggers _on_search_changed
                     return True  # Event handled, stop further processing
             # Handle Escape key when search bar is visible and has focus
-            elif self.filter_search.isVisible() and self.filter_search.hasFocus() and \
+            elif self.refresh_search_stack.currentIndex() == 1 and self.filter_search.hasFocus() and \
                  event_obj.key() == Qt.Key.Key_Escape:
-                self.filter_search.clear()  # This will trigger _on_search_changed, which will hide it
+                self.filter_search.clear()  # This will trigger _on_search_changed, which switches back
                 self.backup_table.setFocus()  # Return focus to table
                 return True  # Event handled
         
