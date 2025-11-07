@@ -34,6 +34,7 @@ class CloudSettingsPanel(QWidget):
         
         # Default settings
         self.settings = {
+            'auto_connect_on_startup': False,  # NEW: Auto-connect to Google Drive on startup
             'auto_sync_on_startup': False,
             'auto_sync_enabled': False,
             'auto_sync_interval_hours': 12,
@@ -78,11 +79,26 @@ class CloudSettingsPanel(QWidget):
         left_column = QVBoxLayout()
         left_column.setSpacing(8)
         
+        # Connection Settings (NEW)
+        connection_group = QGroupBox("Connection")
+        connection_layout = QVBoxLayout()
+        connection_layout.setContentsMargins(8, 12, 8, 12)
+        connection_layout.setSpacing(8)
+        
+        self.auto_connect_checkbox = QCheckBox("Auto-connect on startup")
+        self.auto_connect_checkbox.setToolTip("Automatically connect to Google Drive when SaveState starts")
+        self.auto_connect_checkbox.setChecked(self.settings.get('auto_connect_on_startup', False))
+        connection_layout.addWidget(self.auto_connect_checkbox)
+        
+        connection_group.setLayout(connection_layout)
+        connection_group.setMinimumHeight(70)  # Fixed height for alignment
+        left_column.addWidget(connection_group)
+        
         # Automatic Sync
         auto_sync_group = QGroupBox("Automatic Sync")
         auto_sync_layout = QVBoxLayout()
-        auto_sync_layout.setContentsMargins(8, 8, 8, 8)
-        auto_sync_layout.setSpacing(6)
+        auto_sync_layout.setContentsMargins(8, 12, 8, 12)
+        auto_sync_layout.setSpacing(8)
         
         self.auto_sync_startup_checkbox = QCheckBox("Sync on startup")
         self.auto_sync_startup_checkbox.setToolTip("Sync all profiles when SaveState starts")
@@ -102,19 +118,20 @@ class CloudSettingsPanel(QWidget):
         self.sync_interval_spin.setValue(self.settings['auto_sync_interval_hours'])
         self.sync_interval_spin.setSuffix(" hrs")
         self.sync_interval_spin.setEnabled(self.settings['auto_sync_enabled'])
-        self.sync_interval_spin.setMaximumWidth(110)
+        self.sync_interval_spin.setFixedWidth(110)
         interval_layout.addWidget(self.sync_interval_spin)
         interval_layout.addStretch(1)
         auto_sync_layout.addLayout(interval_layout)
         
         auto_sync_group.setLayout(auto_sync_layout)
+        auto_sync_group.setMinimumHeight(130)  # Fixed height for alignment
         left_column.addWidget(auto_sync_group)
         
         # Profile Sync
         profile_group = QGroupBox("Profile Sync")
         profile_layout = QVBoxLayout()
-        profile_layout.setContentsMargins(8, 8, 8, 8)
-        profile_layout.setSpacing(6)
+        profile_layout.setContentsMargins(8, 12, 8, 12)
+        profile_layout.setSpacing(8)
         
         self.sync_all_profiles_checkbox = QCheckBox("Sync all profiles")
         self.sync_all_profiles_checkbox.setToolTip("Sync all profiles automatically")
@@ -122,13 +139,14 @@ class CloudSettingsPanel(QWidget):
         profile_layout.addWidget(self.sync_all_profiles_checkbox)
         
         profile_group.setLayout(profile_layout)
+        profile_group.setMinimumHeight(70)  # Fixed height for alignment
         left_column.addWidget(profile_group)
         
         # Backup Management
         backup_group = QGroupBox("Backup Management")
         backup_layout = QVBoxLayout()
-        backup_layout.setContentsMargins(8, 8, 8, 8)
-        backup_layout.setSpacing(6)
+        backup_layout.setContentsMargins(8, 12, 8, 12)
+        backup_layout.setSpacing(8)
         
         self.max_backups_checkbox = QCheckBox("Limit backups per profile")
         self.max_backups_checkbox.setChecked(self.settings['max_cloud_backups_enabled'])
@@ -145,13 +163,14 @@ class CloudSettingsPanel(QWidget):
         self.max_backups_spin.setRange(1, 100)
         self.max_backups_spin.setValue(self.settings['max_cloud_backups_count'])
         self.max_backups_spin.setSuffix(" backups")
-        self.max_backups_spin.setMaximumWidth(130)
+        self.max_backups_spin.setFixedWidth(130)
         self.max_backups_spin.setEnabled(self.settings['max_cloud_backups_enabled'])
         count_layout.addWidget(self.max_backups_spin)
         count_layout.addStretch(1)
         backup_layout.addLayout(count_layout)
         
         backup_group.setLayout(backup_layout)
+        backup_group.setMinimumHeight(100)  # Fixed height for alignment
         left_column.addWidget(backup_group)
         
         left_column.addStretch(1)
@@ -164,8 +183,8 @@ class CloudSettingsPanel(QWidget):
         # Advanced Settings
         advanced_group = QGroupBox("Advanced")
         advanced_layout = QVBoxLayout()
-        advanced_layout.setContentsMargins(8, 8, 8, 8)
-        advanced_layout.setSpacing(6)
+        advanced_layout.setContentsMargins(8, 12, 8, 12)
+        advanced_layout.setSpacing(8)
         
         # Compression
         comp_layout = QHBoxLayout()
@@ -175,7 +194,7 @@ class CloudSettingsPanel(QWidget):
         compression_map = {'standard': 0, 'maximum': 1, 'stored': 2}
         self.compression_combo.setCurrentIndex(compression_map.get(self.settings['compression_level'], 0))
         self.compression_combo.setToolTip("Upload compression level")
-        self.compression_combo.setMaximumWidth(130)
+        self.compression_combo.setFixedWidth(130)
         comp_layout.addWidget(self.compression_combo)
         comp_layout.addStretch(1)
         advanced_layout.addLayout(comp_layout)
@@ -194,20 +213,21 @@ class CloudSettingsPanel(QWidget):
         self.bandwidth_limit_spin.setRange(1, 1000)
         self.bandwidth_limit_spin.setValue(self.settings['bandwidth_limit_mbps'])
         self.bandwidth_limit_spin.setSuffix(" Mbps")
-        self.bandwidth_limit_spin.setMaximumWidth(120)
+        self.bandwidth_limit_spin.setFixedWidth(120)
         self.bandwidth_limit_spin.setEnabled(self.settings['bandwidth_limit_enabled'])
         bw_layout.addWidget(self.bandwidth_limit_spin)
         bw_layout.addStretch(1)
         advanced_layout.addLayout(bw_layout)
         
         advanced_group.setLayout(advanced_layout)
+        advanced_group.setMinimumHeight(130)  # Fixed height for alignment
         right_column.addWidget(advanced_group)
         
         # Storage Limit
         storage_group = QGroupBox("Storage Limit")
         storage_layout = QVBoxLayout()
-        storage_layout.setContentsMargins(8, 8, 8, 8)
-        storage_layout.setSpacing(6)
+        storage_layout.setContentsMargins(8, 12, 8, 12)
+        storage_layout.setSpacing(8)
         
         self.max_storage_checkbox = QCheckBox("Limit total cloud storage")
         self.max_storage_checkbox.setChecked(self.settings['max_cloud_storage_enabled'])
@@ -224,20 +244,21 @@ class CloudSettingsPanel(QWidget):
         self.max_storage_spin.setRange(1, 1000)
         self.max_storage_spin.setValue(self.settings['max_cloud_storage_gb'])
         self.max_storage_spin.setSuffix(" GB")
-        self.max_storage_spin.setMaximumWidth(120)
+        self.max_storage_spin.setFixedWidth(120)
         self.max_storage_spin.setEnabled(self.settings['max_cloud_storage_enabled'])
         storage_limit_layout.addWidget(self.max_storage_spin)
         storage_limit_layout.addStretch(1)
         storage_layout.addLayout(storage_limit_layout)
         
         storage_group.setLayout(storage_layout)
+        storage_group.setMinimumHeight(100)  # Fixed height for alignment
         right_column.addWidget(storage_group)
         
         # Notifications
         notif_group = QGroupBox("Notifications")
         notif_layout = QVBoxLayout()
-        notif_layout.setContentsMargins(8, 8, 8, 8)
-        notif_layout.setSpacing(6)
+        notif_layout.setContentsMargins(8, 12, 8, 12)
+        notif_layout.setSpacing(8)
         
         self.show_notifications_checkbox = QCheckBox("Show sync notifications")
         self.show_notifications_checkbox.setChecked(self.settings['show_sync_notifications'])
@@ -245,25 +266,13 @@ class CloudSettingsPanel(QWidget):
         notif_layout.addWidget(self.show_notifications_checkbox)
         
         notif_group.setLayout(notif_layout)
+        notif_group.setMinimumHeight(70)  # Fixed height for alignment
         right_column.addWidget(notif_group)
         
         right_column.addStretch(1)
         columns_layout.addLayout(right_column, 1)
         
         main_layout.addLayout(columns_layout)
-        
-        # --- Info Note ---
-        info_note = QLabel("💡 Settings are saved automatically and take effect immediately.")
-        info_note.setWordWrap(True)
-        info_note.setStyleSheet(
-            "background-color: rgba(76, 175, 80, 0.1); "
-            "border: 1px solid rgba(76, 175, 80, 0.3); "
-            "border-radius: 4px; "
-            "padding: 8px; "
-            "color: #4CAF50; "
-            "font-size: 9pt;"
-        )
-        main_layout.addWidget(info_note)
         
         # --- Action Buttons ---
         buttons_layout = QHBoxLayout()
@@ -300,6 +309,7 @@ class CloudSettingsPanel(QWidget):
     def _on_save_clicked(self):
         """Save settings and return to cloud panel."""
         # Collect settings
+        self.settings['auto_connect_on_startup'] = self.auto_connect_checkbox.isChecked()
         self.settings['auto_sync_on_startup'] = self.auto_sync_startup_checkbox.isChecked()
         self.settings['auto_sync_enabled'] = self.auto_sync_enabled_checkbox.isChecked()
         self.settings['auto_sync_interval_hours'] = self.sync_interval_spin.value()
@@ -344,6 +354,7 @@ class CloudSettingsPanel(QWidget):
         self.settings.update(settings_dict)
         
         # Update UI elements
+        self.auto_connect_checkbox.setChecked(self.settings.get('auto_connect_on_startup', False))
         self.auto_sync_startup_checkbox.setChecked(self.settings.get('auto_sync_on_startup', False))
         self.auto_sync_enabled_checkbox.setChecked(self.settings.get('auto_sync_enabled', False))
         self.sync_interval_spin.setValue(self.settings.get('auto_sync_interval_hours', 12))

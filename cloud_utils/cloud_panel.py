@@ -1087,7 +1087,56 @@ class CloudSavePanel(QWidget):
     
 
     
-    def perform_startup_sync(self):
+    def perform_startup_actions(self):
+        """Perform startup actions (auto-connect and auto-sync) if enabled in settings."""
+        # Check if auto-connect is enabled
+        if self.cloud_settings.get('auto_connect_on_startup', False):
+            logging.info("Auto-connect on startup enabled, connecting to Google Drive...")
+            self._perform_auto_connect()
+        else:
+            logging.debug("Auto-connect on startup disabled")
+    
+    def _perform_auto_connect(self):
+        """Perform automatic connection to Google Drive in background."""
+        if self.drive_manager.is_connected:
+            logging.info("Already connected to Google Drive")
+            self._perform_startup_sync()
+            return
+        
+        logging.info("Starting automatic connection to Google Drive...")
+        
+        # Create worker and thread for background connection
+        self.startup_auth_thread = QThread()
+        self.startup_auth_worker = AuthWorker(self.drive_manager)
+        self.startup_auth_worker.moveToThread(self.startup_auth_thread)
+        
+        # Connect signals
+        self.startup_auth_thread.started.connect(self.startup_auth_worker.run)
+        self.startup_auth_worker.finished.connect(self._on_startup_auth_finished)
+        self.startup_auth_worker.finished.connect(self.startup_auth_thread.quit)
+        self.startup_auth_worker.finished.connect(self.startup_auth_worker.deleteLater)
+        self.startup_auth_thread.finished.connect(self.startup_auth_thread.deleteLater)
+        
+        # Start authentication
+        self.startup_auth_thread.start()
+    
+    def _on_startup_auth_finished(self, success, error_message):
+        """Handle startup authentication completion."""
+        if success:
+            logging.info("Startup auto-connect successful")
+            self._set_connected(True)
+            self._refresh_cloud_status()
+            
+            # Setup periodic sync if enabled
+            self._setup_periodic_sync()
+            
+            # Perform startup sync if enabled
+            self._perform_startup_sync()
+        else:
+            logging.warning(f"Startup auto-connect failed: {error_message}")
+            self._set_connected(False)
+    
+    def _perform_startup_sync(self):
         """Perform sync on startup if enabled in settings."""
         if not self.cloud_settings.get('auto_sync_on_startup', False):
             return

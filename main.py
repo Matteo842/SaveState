@@ -438,6 +438,11 @@ if __name__ == "__main__":
 
 
                     window.show()
+                    
+                    # Perform startup cloud actions (auto-connect, auto-sync) after UI is loaded
+                    # Use QTimer.singleShot to ensure UI is fully rendered before starting
+                    from PySide6.QtCore import QTimer
+                    QTimer.singleShot(500, window.cloud_panel.perform_startup_actions)
 
                     # Log system locale information for date formatting
                     from PySide6.QtCore import QLocale, QDateTime
