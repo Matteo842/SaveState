@@ -80,12 +80,14 @@ class DownloadWorker(QObject):
     """Worker thread for downloading backups to avoid blocking UI."""
     progress = Signal(int, int, str)  # current, total, message
     finished = Signal(int, int)  # success_count, total_count
+    profile_created = Signal(str, str)  # profile_name, backup_path (emitted when a new profile is created)
     
-    def __init__(self, drive_manager, backup_list, backup_base_dir):
+    def __init__(self, drive_manager, backup_list, backup_base_dir, existing_profiles):
         super().__init__()
         self.drive_manager = drive_manager
         self.backup_list = backup_list
         self.backup_base_dir = backup_base_dir
+        self.existing_profiles = existing_profiles  # Dict of existing profiles
     
     def run(self):
         """Execute download in background."""
@@ -101,6 +103,11 @@ class DownloadWorker(QObject):
                 if self.drive_manager.download_backup(backup_name, backup_path):
                     success_count += 1
                     logging.info(f"Successfully downloaded: {backup_name}")
+                    
+                    # Check if profile exists, if not, emit signal to create it
+                    if backup_name not in self.existing_profiles:
+                        logging.info(f"Profile '{backup_name}' does not exist, will create it automatically")
+                        self.profile_created.emit(backup_name, backup_path)
                 else:
                     logging.error(f"Failed to download: {backup_name}")
             except Exception as e:
@@ -462,36 +469,24 @@ class CloudSavePanel(QWidget):
                 logging.error(f"Error reading backup directory: {e}")
         
         # --- Add cloud backups ---
-        if self.drive_manager.is_connected:
-            logging.info(f"Drive connected, cloud_backups dict has {len(self.cloud_backups)} entries")
-            if self.cloud_backups:
-                for cloud_name, cloud_info in self.cloud_backups.items():
-                    logging.info(f"Processing cloud backup: {cloud_name}")
-                    if cloud_name in all_backups:
-                        # Update existing entry with cloud info
-                        logging.info(f"  - Updating existing local backup '{cloud_name}' with cloud info")
-                        all_backups[cloud_name]['has_cloud'] = True
-                        all_backups[cloud_name]['cloud_file_count'] = cloud_info.get('file_count', 0)
-                    else:
-                        # Add cloud-only backup
-                        logging.info(f"  - Adding cloud-only backup '{cloud_name}'")
-                        all_backups[cloud_name] = {
-                            'name': cloud_name,
-                            'path': None,
-                            'local_file_count': 0,
-                            'cloud_file_count': cloud_info.get('file_count', 0),
-                            'has_local': False,
-                            'has_cloud': True
-                        }
-            else:
-                logging.info("No cloud backups in self.cloud_backups dict")
-        else:
-            logging.info("Drive not connected, skipping cloud backups")
+        if self.drive_manager.is_connected and self.cloud_backups:
+            for cloud_name, cloud_info in self.cloud_backups.items():
+                if cloud_name in all_backups:
+                    # Update existing entry with cloud info
+                    all_backups[cloud_name]['has_cloud'] = True
+                    all_backups[cloud_name]['cloud_file_count'] = cloud_info.get('file_count', 0)
+                else:
+                    # Add cloud-only backup
+                    all_backups[cloud_name] = {
+                        'name': cloud_name,
+                        'path': None,
+                        'local_file_count': 0,
+                        'cloud_file_count': cloud_info.get('file_count', 0),
+                        'has_local': False,
+                        'has_cloud': True
+                    }
         
         # --- Filter and populate table ---
-        logging.info(f"Total backups found (local + cloud): {len(all_backups)}")
-        logging.info(f"Backup names: {list(all_backups.keys())}")
-        
         for backup_name in sorted(all_backups.keys()):
             backup = all_backups[backup_name]
             
@@ -502,19 +497,16 @@ class CloudSavePanel(QWidget):
             # Filter: if not showing all, skip non-profile backups UNLESS they have cloud sync
             has_cloud = backup.get('has_cloud', False)
             if not show_all and not is_known_profile and not has_cloud:
-                logging.info(f"Skipping '{backup_name}' - not a known profile, no cloud sync, and show_all is False")
                 continue
             
             # Search filter
             if search_text and search_text not in backup_name.lower():
-                logging.info(f"Skipping '{backup_name}' - doesn't match search text '{search_text}'")
                 continue
             
             # Add profile name to backup info
             backup['profile'] = profile_name
             backup['is_known_profile'] = is_known_profile
             
-            logging.info(f"Adding backup to table: {backup_name} (local={backup['has_local']}, cloud={backup['has_cloud']})")
             self.local_backups.append(backup)
             self._add_backup_row(backup)
     
@@ -842,12 +834,18 @@ class CloudSavePanel(QWidget):
         
         # Create worker and thread
         self.download_thread = QThread()
-        self.download_worker = DownloadWorker(self.drive_manager, selected, self.backup_base_dir)
+        self.download_worker = DownloadWorker(
+            self.drive_manager, 
+            selected, 
+            self.backup_base_dir,
+            self.profiles  # Pass existing profiles
+        )
         self.download_worker.moveToThread(self.download_thread)
         
         # Connect signals
         self.download_thread.started.connect(self.download_worker.run)
         self.download_worker.progress.connect(self._on_download_progress)
+        self.download_worker.profile_created.connect(self._on_profile_auto_created)
         self.download_worker.finished.connect(self._on_download_finished)
         self.download_worker.finished.connect(self.download_thread.quit)
         self.download_worker.finished.connect(self.download_worker.deleteLater)
@@ -860,6 +858,34 @@ class CloudSavePanel(QWidget):
         """Handle download progress updates."""
         self.progress_bar.setValue(current)
         self.progress_bar.setFormat(f"{message} ({current}/{total})")
+    
+    def _on_profile_auto_created(self, profile_name, backup_path):
+        """Handle automatic profile creation after download."""
+        try:
+            logging.info(f"Auto-creating profile '{profile_name}' with path '{backup_path}'")
+            
+            # Add profile to main window's profiles dict
+            if self.main_window and hasattr(self.main_window, 'profiles'):
+                self.main_window.profiles[profile_name] = {'path': backup_path}
+                
+                # Save profiles to disk
+                import core_logic
+                if core_logic.save_profiles(self.main_window.profiles):
+                    logging.info(f"Profile '{profile_name}' created and saved successfully")
+                    
+                    # Update local profiles reference
+                    self.profiles = self.main_window.profiles
+                    
+                    # Update profile table in main window
+                    if hasattr(self.main_window, 'profile_table_manager'):
+                        self.main_window.profile_table_manager.update_profile_table()
+                else:
+                    logging.error(f"Failed to save profile '{profile_name}'")
+            else:
+                logging.error("Cannot create profile: main_window or profiles not available")
+                
+        except Exception as e:
+            logging.error(f"Error auto-creating profile '{profile_name}': {e}", exc_info=True)
     
     def _on_download_finished(self, success_count, total_count):
         """Handle download completion."""
@@ -1019,7 +1045,6 @@ class CloudSavePanel(QWidget):
     def _refresh_cloud_status(self):
         """Refresh cloud backup status for all backups."""
         if not self.drive_manager.is_connected:
-            logging.warning("Cannot refresh cloud status: not connected")
             return
         
         logging.info("Refreshing cloud backup status...")
@@ -1027,10 +1052,6 @@ class CloudSavePanel(QWidget):
         try:
             # Get list of cloud backups
             cloud_backups_list = self.drive_manager.list_cloud_backups()
-            
-            logging.info(f"Retrieved {len(cloud_backups_list)} cloud backups from Drive")
-            for backup in cloud_backups_list:
-                logging.debug(f"  - {backup['name']}: {backup['file_count']} files")
             
             # Convert to dict for easy lookup
             self.cloud_backups = {
