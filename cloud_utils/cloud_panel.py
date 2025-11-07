@@ -321,7 +321,7 @@ class CloudSavePanel(QWidget):
         self.backup_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)  # Disable row selection, use checkboxes only
         self.backup_table.setAlternatingRowColors(False)  # Disabled to fix white row bug
         self.backup_table.verticalHeader().setVisible(False)
-        self.backup_table.verticalHeader().setDefaultSectionSize(35)  # Increase row height for better icon visibility
+        self.backup_table.verticalHeader().setDefaultSectionSize(40)  # Increase row height for better icon visibility
         self.backup_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Remove focus rectangle
         
         # Set column widths
@@ -519,12 +519,53 @@ class CloudSavePanel(QWidget):
         has_local = backup_info.get('has_local', False)
         has_cloud = backup_info.get('has_cloud', False)
         
-        # Column 0: Checkbox
+        # Column 0: Checkbox (styled)
         checkbox_widget = QWidget()
+        checkbox_widget.setStyleSheet("background-color: transparent;")
         checkbox_layout = QHBoxLayout(checkbox_widget)
         checkbox_layout.setContentsMargins(0, 0, 0, 0)
         checkbox_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
         checkbox = QCheckBox()
+        # Custom checkbox styling - larger and more modern
+        # Try to use checkmark icon if available, otherwise use Unicode checkmark
+        try:
+            from utils import resource_path
+            checkmark_path = resource_path("icons/checkmark.png")
+            if os.path.exists(checkmark_path):
+                checkmark_style = f"image: url({checkmark_path});"
+            else:
+                # Fallback: use a simple filled square
+                checkmark_style = ""
+        except Exception:
+            checkmark_style = ""
+        
+        checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                spacing: 0px;
+            }}
+            QCheckBox::indicator {{
+                width: 24px;
+                height: 24px;
+                border-radius: 4px;
+                border: 2px solid #555555;
+                background-color: #2b2b2b;
+            }}
+            QCheckBox::indicator:hover {{
+                border: 2px solid #888888;
+                background-color: #353535;
+            }}
+            QCheckBox::indicator:checked {{
+                border: 2px solid #4CAF50;
+                background-color: #4CAF50;
+                {checkmark_style}
+            }}
+            QCheckBox::indicator:checked:hover {{
+                border: 2px solid #66BB6A;
+                background-color: #66BB6A;
+            }}
+        """)
+        
         checkbox_layout.addWidget(checkbox)
         self.backup_table.setCellWidget(row, 0, checkbox_widget)
         
@@ -559,7 +600,7 @@ class CloudSavePanel(QWidget):
                     icon_label.setStyleSheet("background-color: transparent;")  # Transparent background
                     pixmap = QPixmap(icon_path)
                     # Scale icon to fit nicely (24x24 pixels for better visibility)
-                    scaled_pixmap = pixmap.scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    scaled_pixmap = pixmap.scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                     icon_label.setPixmap(scaled_pixmap)
                     icon_label.setToolTip(tooltip)
                     state_layout.addWidget(icon_label)
