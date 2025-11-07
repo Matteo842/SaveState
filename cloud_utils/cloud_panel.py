@@ -321,6 +321,7 @@ class CloudSavePanel(QWidget):
         self.backup_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)  # Disable row selection, use checkboxes only
         self.backup_table.setAlternatingRowColors(False)  # Disabled to fix white row bug
         self.backup_table.verticalHeader().setVisible(False)
+        self.backup_table.verticalHeader().setDefaultSectionSize(35)  # Increase row height for better icon visibility
         self.backup_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Remove focus rectangle
         
         # Set column widths
@@ -330,8 +331,8 @@ class CloudSavePanel(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # Profile
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Local Status
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Cloud Status
-        self.backup_table.setColumnWidth(0, 60)
-        self.backup_table.setColumnWidth(1, 80)
+        self.backup_table.setColumnWidth(0, 50)  # Slightly wider for checkbox
+        self.backup_table.setColumnWidth(1, 60)  # Wider for icons with padding
         
         list_layout.addWidget(self.backup_table)
         list_group.setLayout(list_layout)
@@ -529,6 +530,7 @@ class CloudSavePanel(QWidget):
         
         # Column 1: State (Local/Cloud/Both) - with icon
         state_widget = QWidget()
+        state_widget.setStyleSheet("background-color: transparent;")  # Remove dark background
         state_layout = QHBoxLayout(state_widget)
         state_layout.setContentsMargins(0, 0, 0, 0)
         state_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -554,8 +556,9 @@ class CloudSavePanel(QWidget):
                 icon_path = resource_path(f"icons/{icon_name}")
                 if os.path.exists(icon_path):
                     icon_label = QLabel()
+                    icon_label.setStyleSheet("background-color: transparent;")  # Transparent background
                     pixmap = QPixmap(icon_path)
-                    # Scale icon to fit nicely (24x24 pixels)
+                    # Scale icon to fit nicely (24x24 pixels for better visibility)
                     scaled_pixmap = pixmap.scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                     icon_label.setPixmap(scaled_pixmap)
                     icon_label.setToolTip(tooltip)
