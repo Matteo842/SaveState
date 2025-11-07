@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QLineEdit, QProgressBar, QMessageBox, QStackedWidget
 )
 from PySide6.QtCore import Qt, Signal, Slot, QEvent, QThread, QObject, QTimer
-from PySide6.QtGui import QIcon, QColor
+from PySide6.QtGui import QIcon, QColor, QPixmap
 from cloud_utils.cloud_settings_panel import CloudSettingsPanel
 from cloud_utils.google_drive_manager import get_drive_manager
 import cloud_settings_manager
@@ -527,25 +527,56 @@ class CloudSavePanel(QWidget):
         checkbox_layout.addWidget(checkbox)
         self.backup_table.setCellWidget(row, 0, checkbox_widget)
         
-        # Column 1: State (Local/Cloud/Both)
-        if has_local and has_cloud:
-            state_text = "Both"
-            state_color = QColor("#4CAF50")  # Green
-        elif has_local:
-            state_text = "Local"
-            state_color = QColor("#2196F3")  # Blue
-        elif has_cloud:
-            state_text = "Cloud"
-            state_color = QColor("#FF9800")  # Orange
-        else:
-            state_text = "Unknown"
-            state_color = QColor("#AAAAAA")  # Gray
+        # Column 1: State (Local/Cloud/Both) - with icon
+        state_widget = QWidget()
+        state_layout = QHBoxLayout(state_widget)
+        state_layout.setContentsMargins(0, 0, 0, 0)
+        state_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        state_item = QTableWidgetItem(state_text)
-        state_item.setFlags(state_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-        state_item.setForeground(state_color)
-        state_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.backup_table.setItem(row, 1, state_item)
+        # Determine which icon to use
+        if has_local and has_cloud:
+            icon_name = "cloud_local.png"
+            tooltip = "Available locally and in cloud"
+        elif has_local:
+            icon_name = "local.png"
+            tooltip = "Available locally only"
+        elif has_cloud:
+            icon_name = "cloud.png"
+            tooltip = "Available in cloud only"
+        else:
+            icon_name = None
+            tooltip = "Unknown state"
+        
+        # Create icon label
+        if icon_name:
+            try:
+                from utils import resource_path
+                icon_path = resource_path(f"icons/{icon_name}")
+                if os.path.exists(icon_path):
+                    icon_label = QLabel()
+                    pixmap = QPixmap(icon_path)
+                    # Scale icon to fit nicely (24x24 pixels)
+                    scaled_pixmap = pixmap.scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    icon_label.setPixmap(scaled_pixmap)
+                    icon_label.setToolTip(tooltip)
+                    state_layout.addWidget(icon_label)
+                else:
+                    # Fallback to text if icon not found
+                    text_label = QLabel("Both" if has_local and has_cloud else ("Local" if has_local else "Cloud"))
+                    text_label.setToolTip(tooltip)
+                    state_layout.addWidget(text_label)
+            except Exception as e:
+                logging.warning(f"Error loading state icon: {e}")
+                # Fallback to text
+                text_label = QLabel("Both" if has_local and has_cloud else ("Local" if has_local else "Cloud"))
+                text_label.setToolTip(tooltip)
+                state_layout.addWidget(text_label)
+        else:
+            text_label = QLabel("?")
+            text_label.setToolTip(tooltip)
+            state_layout.addWidget(text_label)
+        
+        self.backup_table.setCellWidget(row, 1, state_widget)
         
         # Column 2: Profile (use backup name as profile name)
         profile_name = backup_info['profile']
