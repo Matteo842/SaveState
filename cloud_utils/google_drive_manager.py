@@ -224,22 +224,39 @@ class GoogleDriveManager:
                 logging.error(f"Could not create profile folder: {profile_name}")
                 return False
             
-            # Get list of .zip files to upload
+            # Get list of .zip files to upload (sorted by most recent first)
             zip_files = [f for f in os.listdir(local_path) if f.endswith('.zip')]
-            
             if not zip_files:
                 logging.warning(f"No .zip files found in {local_path}")
                 return True  # Not an error, just nothing to upload
+
+            # Sort by modification time (newest first)
+            try:
+                zip_files_sorted = sorted(
+                    zip_files,
+                    key=lambda name: os.path.getmtime(os.path.join(local_path, name)),
+                    reverse=True
+                )
+            except Exception as e_sort:
+                logging.debug(f"Could not sort zip files by mtime: {e_sort}")
+                zip_files_sorted = zip_files
+
+            # When a max_backups limit is provided, only upload the N most recent files
+            if max_backups and max_backups > 0:
+                files_to_upload = zip_files_sorted[:max_backups]
+                logging.info(f"Max backups set to {max_backups}. Uploading {len(files_to_upload)} most recent file(s).")
+            else:
+                files_to_upload = zip_files_sorted
             
-            logging.info(f"Uploading {len(zip_files)} files for profile '{profile_name}'...")
+            logging.info(f"Uploading {len(files_to_upload)} files for profile '{profile_name}'...")
             
             # Upload each file
-            for idx, filename in enumerate(zip_files, 1):
+            for idx, filename in enumerate(files_to_upload, 1):
                 file_path = os.path.join(local_path, filename)
                 
                 # Report progress
                 if self.progress_callback:
-                    self.progress_callback(idx, len(zip_files), f"Uploading {filename}")
+                    self.progress_callback(idx, len(files_to_upload), f"Uploading {filename}")
                 
                 # Check if file already exists in Drive
                 existing_file_id = None
