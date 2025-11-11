@@ -1162,6 +1162,8 @@ class CloudSavePanel(QWidget):
 
         if auto_connect:
             logging.info("Auto-connect on startup enabled, connecting to Google Drive...")
+            # Disable Cloud button in main window while connecting
+            self._set_main_cloud_button_connecting(True)
             self._perform_auto_connect()
             return
 
@@ -1198,6 +1200,8 @@ class CloudSavePanel(QWidget):
     
     def _on_startup_auth_finished(self, success, error_message):
         """Handle startup authentication completion."""
+        # Restore main window cloud button state regardless of success
+        self._set_main_cloud_button_connecting(False)
         if success:
             logging.info("Startup auto-connect successful")
             self._set_connected(True)
@@ -1460,4 +1464,13 @@ class CloudSavePanel(QWidget):
         self.startup_auth_worker.finished.connect(self.startup_auth_worker.deleteLater)
         self.startup_auth_thread.finished.connect(self.startup_auth_thread.deleteLater)
         self.startup_auth_thread.start()
+
+    def _set_main_cloud_button_connecting(self, connecting: bool):
+        """Update the main window Cloud button to reflect connecting state."""
+        try:
+            if self.main_window and hasattr(self.main_window, 'cloud_button') and self.main_window.cloud_button:
+                self.main_window.cloud_button.setEnabled(not connecting)
+                self.main_window.cloud_button.setText("Connecting..." if connecting else "Cloud Sync")
+        except Exception:
+            pass
 
