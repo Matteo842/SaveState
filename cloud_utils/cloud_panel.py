@@ -185,6 +185,8 @@ class CloudSavePanel(QWidget):
         
         # Periodic sync timer
         self.sync_timer = None
+        self._sync_in_progress = False
+        self._disconnect_after_current_sync = False
         
         # Use stacked widget to switch between main panel and settings
         self.stacked_widget = QStackedWidget(self)
@@ -222,6 +224,9 @@ class CloudSavePanel(QWidget):
             
             # Apply settings to drive manager
             self._apply_settings_to_drive_manager()
+
+            # Setup periodic sync even if not connected (will auto-connect when needed)
+            self._setup_periodic_sync()
         except Exception as e:
             logging.error(f"Error loading cloud settings from disk: {e}")
     
@@ -1151,13 +1156,21 @@ class CloudSavePanel(QWidget):
 
     
     def perform_startup_actions(self):
-        """Perform startup actions (auto-connect and auto-sync) if enabled in settings."""
-        # Check if auto-connect is enabled
-        if self.cloud_settings.get('auto_connect_on_startup', False):
+        """Perform startup actions (auto-connect and/or auto-sync) if enabled in settings."""
+        auto_connect = self.cloud_settings.get('auto_connect_on_startup', False)
+        auto_sync_on_startup = self.cloud_settings.get('auto_sync_on_startup', False)
+
+        if auto_connect:
             logging.info("Auto-connect on startup enabled, connecting to Google Drive...")
             self._perform_auto_connect()
+            return
+
+        # If auto-connect is off but auto-sync-on-startup is enabled, do a one-off connect->sync->disconnect
+        if auto_sync_on_startup:
+            logging.info("Auto-sync on startup enabled (one-off). Connecting for startup sync...")
+            self._ensure_connected_then(self._perform_startup_sync, disconnect_after=True)
         else:
-            logging.debug("Auto-connect on startup disabled")
+            logging.debug("Startup auto connect/sync disabled")
     
     def _perform_auto_connect(self):
         """Perform automatic connection to Google Drive in background."""
@@ -1306,7 +1319,7 @@ class CloudSavePanel(QWidget):
             logging.info(f"Notification: {title} - {message}")
     
     def _setup_periodic_sync(self):
-        """Setup or update periodic sync timer based on settings."""
+        """Setup or update periodic sync timer based on settings. Runs even if not connected."""
         # Stop existing timer if any
         if self.sync_timer:
             self.sync_timer.stop()
@@ -1316,47 +1329,57 @@ class CloudSavePanel(QWidget):
         if not self.cloud_settings.get('auto_sync_enabled', False):
             logging.debug("Periodic sync disabled")
             return
-        
-        if not self.drive_manager.is_connected:
-            logging.warning("Cannot setup periodic sync: not connected to Google Drive")
-            return
-        
+
         # Get interval in hours, convert to milliseconds
         interval_hours = self.cloud_settings.get('auto_sync_interval_hours', 12)
-        interval_ms = interval_hours * 60 * 60 * 1000
+        try:
+            # accept float hours if set manually in JSON
+            interval_hours_val = float(interval_hours)
+        except Exception:
+            interval_hours_val = 12.0
+        interval_ms = int(interval_hours_val * 60 * 60 * 1000)
+        logging.info(f"Periodic sync enabled: every {interval_hours_val:g} hours")
         
         # Create and start timer
         self.sync_timer = QTimer(self)
         self.sync_timer.timeout.connect(self._perform_periodic_sync)
         self.sync_timer.start(interval_ms)
-        
-        logging.info(f"Periodic sync enabled: every {interval_hours} hours")
     
     def _perform_periodic_sync(self):
-        """Perform automatic sync of all profiles."""
+        """Perform automatic sync of all profiles. Connects temporarily if needed."""
+        if self._sync_in_progress:
+            logging.debug("Periodic sync skipped: a sync is already in progress")
+            return
+
+        def start_sync():
+            logging.info("Starting periodic sync...")
+            # Get profiles to sync
+            if self.cloud_settings.get('sync_all_profiles', True):
+                profiles_to_sync = list(self.profiles.keys())
+            else:
+                profiles_to_sync = list(self.profiles.keys())
+
+            if not profiles_to_sync:
+                logging.info("No profiles to sync")
+                return
+
+            self._auto_sync_profiles(profiles_to_sync)
+
+        # If not connected, connect, run, and optionally disconnect
         if not self.drive_manager.is_connected:
-            logging.warning("Periodic sync skipped: not connected")
+            temp_disconnect = not self.cloud_settings.get('auto_connect_on_startup', False)
+            self._ensure_connected_then(start_sync, disconnect_after=temp_disconnect)
             return
         
-        logging.info("Starting periodic sync...")
-        
-        # Get profiles to sync
-        if self.cloud_settings.get('sync_all_profiles', True):
-            # Sync all profiles
-            profiles_to_sync = list(self.profiles.keys())
-        else:
-            # TODO: In future, allow user to select which profiles to sync
-            profiles_to_sync = list(self.profiles.keys())
-        
-        if not profiles_to_sync:
-            logging.info("No profiles to sync")
-            return
-        
-        # Perform sync in background
-        self._auto_sync_profiles(profiles_to_sync)
+        # Already connected
+        start_sync()
     
     def _auto_sync_profiles(self, profile_names):
         """Automatically sync specified profiles in background."""
+        if self._sync_in_progress:
+            logging.debug("Auto sync request ignored: another sync is running")
+            return
+        self._sync_in_progress = True
         # Get max backups setting
         max_backups = None
         if self.cloud_settings.get('max_cloud_backups_enabled', False):
@@ -1394,4 +1417,47 @@ class CloudSavePanel(QWidget):
         
         # Refresh cloud status
         self._refresh_cloud_status()
+
+        # Disconnect if this was a temporary connection
+        try:
+            if self._disconnect_after_current_sync:
+                self.drive_manager.disconnect()
+                self._set_connected(False)
+            self._disconnect_after_current_sync = False
+        except Exception:
+            self._disconnect_after_current_sync = False
+
+        self._sync_in_progress = False
+
+    # ---- Helpers ----
+    def _ensure_connected_then(self, on_connected_callable, disconnect_after: bool = False):
+        """Ensure we're connected, then call the provided function. Optionally disconnect after sync ends."""
+        if self.drive_manager.is_connected:
+            on_connected_callable()
+            return
+
+        # Background connect then call
+        self._disconnect_after_current_sync = bool(disconnect_after)
+
+        def _after_auth(success, error_message):
+            if success:
+                self._set_connected(True)
+                try:
+                    self._refresh_cloud_status()
+                except Exception:
+                    pass
+                on_connected_callable()
+            else:
+                logging.warning(f"Connection attempt failed: {error_message}")
+                self._disconnect_after_current_sync = False
+
+        self.startup_auth_thread = QThread()
+        self.startup_auth_worker = AuthWorker(self.drive_manager)
+        self.startup_auth_worker.moveToThread(self.startup_auth_thread)
+        self.startup_auth_thread.started.connect(self.startup_auth_worker.run)
+        self.startup_auth_worker.finished.connect(_after_auth)
+        self.startup_auth_worker.finished.connect(self.startup_auth_thread.quit)
+        self.startup_auth_worker.finished.connect(self.startup_auth_worker.deleteLater)
+        self.startup_auth_thread.finished.connect(self.startup_auth_thread.deleteLater)
+        self.startup_auth_thread.start()
 

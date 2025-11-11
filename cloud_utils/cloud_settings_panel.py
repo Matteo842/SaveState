@@ -161,6 +161,8 @@ class CloudSettingsPanel(QWidget):
         interval_layout.addWidget(self.sync_interval_spin)
         interval_layout.addStretch(1)
         auto_sync_layout.addLayout(interval_layout)
+
+        # (testing override removed)
         
         auto_sync_group.setLayout(auto_sync_layout)
         auto_sync_group.setMinimumHeight(130)  # Fixed height for alignment

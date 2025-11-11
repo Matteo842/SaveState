@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QProgressBar, QGroupBox, QLineEdit,
     QStyle, QDockWidget, QPlainTextEdit, QTableWidget, QGraphicsOpacityEffect,
     QDialog, QFileDialog, QMenu, QSpinBox, QComboBox, QCheckBox, QFormLayout,
-    QSizeGrip, QMessageBox, QGridLayout
+    QSizeGrip, QMessageBox, QGridLayout, QSystemTrayIcon
 )
 from PySide6.QtGui import QKeyEvent # Added for keyPressEvent
 from PySide6.QtCore import (
@@ -62,6 +62,7 @@ from gui_components.theme_manager import ThemeManager
 from gui_components.profile_creation_manager import ProfileCreationManager
 from gui_components.drag_drop_handler import DragDropHandler
 from cloud_utils.cloud_panel import CloudSavePanel
+import cloud_settings_manager
 import core_logic # Mantenuto per load_profiles
 from gui_handlers import MainWindowHandlers
 
@@ -825,6 +826,10 @@ class MainWindow(QMainWindow):
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
 
+        # System tray support
+        self._allow_close = False
+        self._setup_system_tray()
+
         # Set initial focus to the MainWindow itself to help with keyPressEvent activation
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setFocus()
@@ -1546,21 +1551,79 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Gestisce l'evento di chiusura della finestra principale."""
+        try:
+            if not self._allow_close:
+                # If periodic sync is enabled, minimize to tray instead of exiting
+                cloud_settings = cloud_settings_manager.load_cloud_settings()
+                if bool(cloud_settings.get('auto_sync_enabled')):
+                    if hasattr(self, 'tray_icon') and self.tray_icon and QSystemTrayIcon.isSystemTrayAvailable():
+                        event.ignore()
+                        self.hide()
+                        try:
+                            self.tray_icon.show()
+                            self.tray_icon.showMessage("SaveState", "Running in background for periodic sync.", QSystemTrayIcon.MessageIcon.Information, 3000)
+                        except Exception:
+                            pass
+                        logging.info("SaveState hidden to system tray (periodic sync enabled).")
+                        return
+        except Exception:
+            pass
+
         logging.info("MainWindow closeEvent: Cancelling all running search threads...")
-        
         # Cancella tutti i thread di ricerca in corso
         if hasattr(self, 'cancellation_manager') and self.cancellation_manager:
             self.cancellation_manager.cancel()
-            
         # Ferma il thread di ricerca corrente se esiste
         if hasattr(self, 'current_search_thread') and self.current_search_thread:
             if self.current_search_thread.isRunning():
                 logging.info("Waiting for current search thread to finish...")
                 self.current_search_thread.wait(3000)  # Aspetta max 3 secondi
-                
         # Chiama il closeEvent della classe base
         super().closeEvent(event)
         logging.info("MainWindow closed.")
+
+    # ---- System tray helpers ----
+    def _setup_system_tray(self):
+        try:
+            if not QSystemTrayIcon.isSystemTrayAvailable():
+                logging.debug("System tray not available on this system.")
+                self.tray_icon = None
+                return
+            icon_path = resource_path("icon.png")
+            tray_icon = QSystemTrayIcon(QIcon(icon_path), self)
+            tray_menu = QMenu(self)
+            act_show = tray_menu.addAction("Show SaveState")
+            act_exit = tray_menu.addAction("Exit")
+            act_show.triggered.connect(self._restore_from_tray)
+            def _do_exit():
+                self._allow_close = True
+                try:
+                    tray_icon.hide()
+                except Exception:
+                    pass
+                self.close()
+            act_exit.triggered.connect(_do_exit)
+            tray_icon.setContextMenu(tray_menu)
+            tray_icon.activated.connect(self._on_tray_activated)
+            self.tray_icon = tray_icon
+        except Exception as e:
+            logging.debug(f"System tray setup failed: {e}")
+            self.tray_icon = None
+
+    def _on_tray_activated(self, reason):
+        try:
+            if reason == QSystemTrayIcon.ActivationReason.Trigger:
+                self._restore_from_tray()
+        except Exception:
+            pass
+
+    def _restore_from_tray(self):
+        try:
+            self.showNormal()
+            self.raise_()
+            self.activateWindow()
+        except Exception:
+            pass
 
     # Context menu event handler: show side menu and select row
     def _on_profile_table_context_menu(self, pos):
