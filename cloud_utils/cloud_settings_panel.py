@@ -8,9 +8,44 @@ Shown when clicking settings button while in Cloud Save panel.
 import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QGroupBox, QCheckBox, QSpinBox, QComboBox, QFormLayout, QGridLayout
+    QGroupBox, QCheckBox, QSpinBox, QFormLayout, QGridLayout, QProgressBar
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QThread, QObject
+
+
+class StorageStatusWorker(QObject):
+    """
+    Background worker to fetch Google Drive storage info and
+    SaveState folder size without blocking the UI thread.
+    """
+    finished = Signal(int, object)  # request_id, data dict
+
+    def __init__(self, drive_manager, request_id):
+        super().__init__()
+        self.drive_manager = drive_manager
+        self.request_id = request_id
+
+    def run(self):
+        try:
+            if not self.drive_manager or not getattr(self.drive_manager, 'is_connected', False):
+                self.finished.emit(self.request_id, {'connected': False})
+                return
+
+            info = self.drive_manager.get_storage_info()
+            folder_bytes = int(self.drive_manager.get_app_folder_size())
+
+            total = int(info.get('total', 0)) if isinstance(info, dict) else 0
+            used = int(info.get('used', 0)) if isinstance(info, dict) else 0
+
+            self.finished.emit(self.request_id, {
+                'connected': True,
+                'drive_total': total,
+                'drive_used': used,
+                'folder_bytes': folder_bytes,
+            })
+        except Exception:
+            # On any error, report as not connected/available to keep UI consistent
+            self.finished.emit(self.request_id, {'connected': False})
 
 
 class CloudSettingsPanel(QWidget):
@@ -39,7 +74,6 @@ class CloudSettingsPanel(QWidget):
             'auto_sync_enabled': False,
             'auto_sync_interval_hours': 12,
             'sync_all_profiles': True,
-            'compression_level': 'standard',
             'bandwidth_limit_enabled': False,
             'bandwidth_limit_mbps': 10,
             'show_sync_notifications': True,
@@ -50,6 +84,11 @@ class CloudSettingsPanel(QWidget):
         }
         
         self._init_ui()
+
+        # Async storage refresh management
+        self._usage_thread = None
+        self._usage_worker = None
+        self._usage_request_id = 0
         
     def _init_ui(self):
         """Initialize the UI components."""
@@ -180,47 +219,75 @@ class CloudSettingsPanel(QWidget):
         right_column = QVBoxLayout()
         right_column.setSpacing(8)
         
+        # Storage Status (separate panel)
+        status_group = QGroupBox("Storage Status")
+        status_layout = QVBoxLayout()
+        status_layout.setContentsMargins(8, 12, 8, 12)
+        status_layout.setSpacing(8)
+
+        # Google Drive overall usage
+        drive_row = QHBoxLayout()
+        drive_row.addWidget(QLabel("Google Drive:"))
+        self.drive_usage_bar = QProgressBar()
+        self.drive_usage_bar.setRange(0, 100)
+        self.drive_usage_bar.setValue(0)
+        self.drive_usage_bar.setFormat("Not connected")
+        self.drive_usage_bar.setTextVisible(True)
+        self.drive_usage_bar.setFixedWidth(220)
+        drive_row.addWidget(self.drive_usage_bar)
+        drive_row.addStretch(1)
+        status_layout.addLayout(drive_row)
+        
+        # SaveState app folder usage in cloud
+        folder_row = QHBoxLayout()
+        folder_row.addWidget(QLabel("SaveState (cloud):"))
+        self.savestate_usage_bar = QProgressBar()
+        self.savestate_usage_bar.setRange(0, 100)
+        self.savestate_usage_bar.setValue(0)
+        self.savestate_usage_bar.setFormat("Not connected")
+        self.savestate_usage_bar.setTextVisible(True)
+        self.savestate_usage_bar.setFixedWidth(220)
+        folder_row.addWidget(self.savestate_usage_bar)
+        folder_row.addStretch(1)
+        status_layout.addLayout(folder_row)
+        
+        # Label used when there is no limit (bar hidden) - placed on same row
+        self.savestate_unlimited_label = QLabel("")
+        self.savestate_unlimited_label.setStyleSheet("color: #AAAAAA;")
+        self.savestate_unlimited_label.setVisible(False)
+        folder_row.addWidget(self.savestate_unlimited_label)
+
+        status_group.setLayout(status_layout)
+        status_group.setMinimumHeight(100)
+        right_column.addWidget(status_group)
+
         # Advanced Settings
         advanced_group = QGroupBox("Advanced")
         advanced_layout = QVBoxLayout()
         advanced_layout.setContentsMargins(8, 12, 8, 12)
         advanced_layout.setSpacing(8)
         
-        # Compression
-        comp_layout = QHBoxLayout()
-        comp_layout.addWidget(QLabel("Compression:"))
-        self.compression_combo = QComboBox()
-        self.compression_combo.addItems(["Standard", "Maximum", "None"])
-        compression_map = {'standard': 0, 'maximum': 1, 'stored': 2}
-        self.compression_combo.setCurrentIndex(compression_map.get(self.settings['compression_level'], 0))
-        self.compression_combo.setToolTip("Upload compression level")
-        self.compression_combo.setFixedWidth(130)
-        comp_layout.addWidget(self.compression_combo)
-        comp_layout.addStretch(1)
-        advanced_layout.addLayout(comp_layout)
-        
-        # Bandwidth
+        # Bandwidth (compact single row: checkbox + spinner)
+        bandwidth_row = QHBoxLayout()
+        bandwidth_row.setContentsMargins(0, 0, 0, 0)
+        bandwidth_row.setSpacing(12)
         self.bandwidth_limit_checkbox = QCheckBox("Limit bandwidth")
         self.bandwidth_limit_checkbox.setChecked(self.settings['bandwidth_limit_enabled'])
         self.bandwidth_limit_checkbox.toggled.connect(self._on_bandwidth_limit_toggled)
         self.bandwidth_limit_checkbox.setToolTip("Limit upload/download speed")
-        advanced_layout.addWidget(self.bandwidth_limit_checkbox)
-        
-        bw_layout = QHBoxLayout()
-        bw_layout.addSpacing(20)
-        bw_layout.addWidget(QLabel("Speed:"))
+        bandwidth_row.addWidget(self.bandwidth_limit_checkbox)
         self.bandwidth_limit_spin = QSpinBox()
         self.bandwidth_limit_spin.setRange(1, 1000)
         self.bandwidth_limit_spin.setValue(self.settings['bandwidth_limit_mbps'])
         self.bandwidth_limit_spin.setSuffix(" Mbps")
         self.bandwidth_limit_spin.setFixedWidth(120)
         self.bandwidth_limit_spin.setEnabled(self.settings['bandwidth_limit_enabled'])
-        bw_layout.addWidget(self.bandwidth_limit_spin)
-        bw_layout.addStretch(1)
-        advanced_layout.addLayout(bw_layout)
+        bandwidth_row.addWidget(self.bandwidth_limit_spin)
+        bandwidth_row.addStretch(1)
+        advanced_layout.addLayout(bandwidth_row)
         
         advanced_group.setLayout(advanced_layout)
-        advanced_group.setMinimumHeight(130)  # Fixed height for alignment
+        advanced_group.setMinimumHeight(90)  # Reduced height for compact layout
         right_column.addWidget(advanced_group)
         
         # Storage Limit
@@ -305,6 +372,11 @@ class CloudSettingsPanel(QWidget):
         """Enable/disable max storage spin box based on checkbox."""
         self.max_storage_spin.setEnabled(checked)
         self.max_storage_label.setEnabled(checked)
+        # Also refresh usage UI to reflect limit visibility/state
+        try:
+            self.refresh_storage_status()
+        except Exception:
+            pass
     
     def _on_save_clicked(self):
         """Save settings and return to cloud panel."""
@@ -314,9 +386,6 @@ class CloudSettingsPanel(QWidget):
         self.settings['auto_sync_enabled'] = self.auto_sync_enabled_checkbox.isChecked()
         self.settings['auto_sync_interval_hours'] = self.sync_interval_spin.value()
         self.settings['sync_all_profiles'] = self.sync_all_profiles_checkbox.isChecked()
-        
-        compression_map = {0: 'standard', 1: 'maximum', 2: 'stored'}
-        self.settings['compression_level'] = compression_map.get(self.compression_combo.currentIndex(), 'standard')
         
         self.settings['bandwidth_limit_enabled'] = self.bandwidth_limit_checkbox.isChecked()
         self.settings['bandwidth_limit_mbps'] = self.bandwidth_limit_spin.value()
@@ -360,9 +429,6 @@ class CloudSettingsPanel(QWidget):
         self.sync_interval_spin.setValue(self.settings.get('auto_sync_interval_hours', 12))
         self.sync_all_profiles_checkbox.setChecked(self.settings.get('sync_all_profiles', True))
         
-        compression_map = {'standard': 0, 'maximum': 1, 'stored': 2}
-        self.compression_combo.setCurrentIndex(compression_map.get(self.settings.get('compression_level', 'standard'), 0))
-        
         self.bandwidth_limit_checkbox.setChecked(self.settings.get('bandwidth_limit_enabled', False))
         self.bandwidth_limit_spin.setValue(self.settings.get('bandwidth_limit_mbps', 10))
         
@@ -371,3 +437,126 @@ class CloudSettingsPanel(QWidget):
         self.max_backups_spin.setValue(self.settings.get('max_cloud_backups_count', 5))
         self.max_storage_checkbox.setChecked(self.settings.get('max_cloud_storage_enabled', False))
         self.max_storage_spin.setValue(self.settings.get('max_cloud_storage_gb', 5))
+        
+        # Update usage bars when loading settings
+        try:
+            self.refresh_storage_status()
+        except Exception:
+            pass
+
+    # -------- Storage usage helpers --------
+    def _format_bytes(self, num_bytes: int) -> str:
+        """Return human-readable size (GB/TB with one decimal when useful)."""
+        try:
+            if not isinstance(num_bytes, (int, float)):
+                return "0 B"
+            tb = 1024 ** 4
+            gb = 1024 ** 3
+            if num_bytes >= tb:
+                val = num_bytes / tb
+                return f"{val:.1f} TB" if val < 10 else f"{int(val)} TB"
+            else:
+                val = num_bytes / gb
+                return f"{val:.1f} GB" if val < 10 else f"{int(val)} GB"
+        except Exception:
+            return "0 B"
+
+    def refresh_storage_status(self):
+        """Refresh storage usage in background to avoid UI stalls."""
+        # Set immediate placeholder state
+        self.drive_usage_bar.setFormat("Loading...")
+        self.savestate_usage_bar.setFormat("Loading...")
+        self.savestate_unlimited_label.setVisible(False)
+        self.savestate_usage_bar.setVisible(True)
+
+        # Obtain drive manager via parent
+        drive_manager = None
+        try:
+            if self.cloud_panel and hasattr(self.cloud_panel, 'drive_manager'):
+                drive_manager = self.cloud_panel.drive_manager
+        except Exception:
+            drive_manager = None
+
+        if not drive_manager or not getattr(drive_manager, 'is_connected', False):
+            # Not connected: set steady state and exit
+            self.drive_usage_bar.setFormat("Not connected")
+            self.drive_usage_bar.setValue(0)
+            self.savestate_usage_bar.setFormat("Not connected")
+            self.savestate_usage_bar.setValue(0)
+            return
+
+        # Start/queue a background worker; ignore older results via request_id
+        self._usage_request_id += 1
+        req_id = self._usage_request_id
+
+        # Fire worker
+        try:
+            self._usage_thread = QThread(self)
+            self._usage_worker = StorageStatusWorker(drive_manager, req_id)
+            self._usage_worker.moveToThread(self._usage_thread)
+            self._usage_thread.started.connect(self._usage_worker.run)
+            self._usage_worker.finished.connect(self._on_storage_status_ready)
+            self._usage_worker.finished.connect(self._usage_thread.quit)
+            self._usage_worker.finished.connect(self._usage_worker.deleteLater)
+            self._usage_thread.finished.connect(self._usage_thread.deleteLater)
+            self._usage_thread.start()
+        except Exception:
+            # Fallback: show error-like state
+            self.drive_usage_bar.setFormat("Error")
+            self.savestate_usage_bar.setFormat("Error")
+
+    def _on_storage_status_ready(self, request_id: int, data: object):
+        """Apply storage status once background worker finishes."""
+        if request_id != self._usage_request_id:
+            # Outdated result; ignore
+            return
+
+        try:
+            info = data if isinstance(data, dict) else {}
+            if not info.get('connected'):
+                self.drive_usage_bar.setFormat("Not connected")
+                self.drive_usage_bar.setValue(0)
+                self.savestate_usage_bar.setFormat("Not connected")
+                self.savestate_usage_bar.setValue(0)
+                return
+
+            # Drive overall
+            total = int(info.get('drive_total', 0))
+            used = int(info.get('drive_used', 0))
+            if total > 0:
+                pct = max(0, min(100, int((used / total) * 100)))
+                self.drive_usage_bar.setValue(pct)
+                self.drive_usage_bar.setFormat(f"{self._format_bytes(used)} / {self._format_bytes(total)}")
+            else:
+                self.drive_usage_bar.setValue(0)
+                self.drive_usage_bar.setFormat("Unavailable")
+
+            # SaveState folder
+            folder_bytes = int(info.get('folder_bytes', 0))
+            limit_enabled = bool(self.max_storage_checkbox.isChecked())
+            if limit_enabled:
+                try:
+                    max_gb = int(self.max_storage_spin.value())
+                    denom = max_gb * (1024 ** 3)
+                    if denom > 0:
+                        pct = max(0, min(100, int((folder_bytes / denom) * 100)))
+                        self.savestate_usage_bar.setVisible(True)
+                        self.savestate_unlimited_label.setVisible(False)
+                        self.savestate_usage_bar.setValue(pct)
+                        self.savestate_usage_bar.setFormat(f"{self._format_bytes(folder_bytes)} / {max_gb} GB")
+                    else:
+                        self.savestate_usage_bar.setVisible(True)
+                        self.savestate_unlimited_label.setVisible(False)
+                        self.savestate_usage_bar.setValue(0)
+                        self.savestate_usage_bar.setFormat(self._format_bytes(folder_bytes))
+                except Exception:
+                    self.savestate_usage_bar.setVisible(True)
+                    self.savestate_unlimited_label.setVisible(False)
+                    self.savestate_usage_bar.setFormat(self._format_bytes(folder_bytes))
+            else:
+                self.savestate_usage_bar.setVisible(False)
+                self.savestate_unlimited_label.setVisible(True)
+                self.savestate_unlimited_label.setText(f"{self._format_bytes(folder_bytes)} (no limit)")
+        except Exception:
+            self.drive_usage_bar.setFormat("Error")
+            self.savestate_usage_bar.setFormat("Error")

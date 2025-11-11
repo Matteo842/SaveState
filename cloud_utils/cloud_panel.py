@@ -740,11 +740,35 @@ class CloudSavePanel(QWidget):
         
         # Start authentication
         self.auth_thread.start()
+
+        # Setup a timeout in case the OAuth window is closed/denied and never returns
+        try:
+            if hasattr(self, 'auth_timeout_timer') and self.auth_timeout_timer:
+                try:
+                    self.auth_timeout_timer.stop()
+                except Exception:
+                    pass
+            from PySide6.QtCore import QTimer
+            self.auth_timeout_timer = QTimer(self)
+            self.auth_timeout_timer.setSingleShot(True)
+            # 60 seconds timeout; if exceeded, abort and restore UI
+            self.auth_timeout_timer.timeout.connect(self._on_auth_timeout)
+            self.auth_timeout_timer.start(60000)
+        except Exception:
+            pass
     
     def _on_auth_finished(self, success, error_message):
         """Handle authentication completion."""
         self.progress_bar.setVisible(False)
         self.connect_button.setEnabled(True)
+
+        # Stop timeout timer if running
+        try:
+            if hasattr(self, 'auth_timeout_timer') and self.auth_timeout_timer:
+                self.auth_timeout_timer.stop()
+                self.auth_timeout_timer = None
+        except Exception:
+            pass
         
         if success:
             self._set_connected(True)
@@ -752,6 +776,13 @@ class CloudSavePanel(QWidget):
             
             # Setup periodic sync if enabled
             self._setup_periodic_sync()
+            
+            # Update storage status bars if settings panel is visible
+            try:
+                if self.stacked_widget.currentIndex() == 1 and hasattr(self, 'settings_panel') and self.settings_panel:
+                    self.settings_panel.refresh_storage_status()
+            except Exception:
+                pass
             
             QMessageBox.information(
                 self,
@@ -770,6 +801,32 @@ class CloudSavePanel(QWidget):
                 "• You authorized the application in your browser\n"
                 "• You have an active internet connection"
             )
+
+    def _on_auth_timeout(self):
+        """Abort authentication if it takes too long (e.g., user closed or denied)."""
+        try:
+            logging.warning("Authentication timeout reached. Aborting and restoring UI.")
+            # Best-effort terminate the worker thread if still running
+            if hasattr(self, 'auth_thread') and self.auth_thread and self.auth_thread.isRunning():
+                try:
+                    self.auth_thread.terminate()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Restore UI state
+        try:
+            self.progress_bar.setVisible(False)
+            self.connect_button.setEnabled(True)
+            self._set_connected(False)
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "Authentication Cancelled",
+                "Authentication timed out or was cancelled. Please try connecting again."
+            )
+        except Exception:
+            pass
     
     def _on_disconnect_clicked(self):
         """Handle Google Drive disconnection."""
@@ -778,6 +835,12 @@ class CloudSavePanel(QWidget):
         self._set_connected(False)
         self.cloud_backups.clear()
         self._populate_backup_list()  # Refresh to clear cloud status
+        # If settings panel is open, update usage bars to "Not connected"
+        try:
+            if self.stacked_widget.currentIndex() == 1 and hasattr(self, 'settings_panel') and self.settings_panel:
+                self.settings_panel.refresh_storage_status()
+        except Exception:
+            pass
     
     def _set_connected(self, connected):
         """Update UI based on connection status."""
@@ -1160,6 +1223,11 @@ class CloudSavePanel(QWidget):
         """Show the cloud settings panel."""
         logging.debug("Showing cloud settings panel")
         self.stacked_widget.setCurrentIndex(1)  # Switch to settings panel
+        try:
+            if hasattr(self, 'settings_panel') and self.settings_panel:
+                self.settings_panel.refresh_storage_status()
+        except Exception:
+            pass
     
     def exit_cloud_settings(self):
         """Exit cloud settings and return to main cloud panel."""
@@ -1210,10 +1278,6 @@ class CloudSavePanel(QWidget):
     
     def _apply_settings_to_drive_manager(self):
         """Apply current settings to the Google Drive manager."""
-        # Compression level
-        compression = self.cloud_settings.get('compression_level', 'standard')
-        self.drive_manager.set_compression_level(compression)
-        
         # Bandwidth limit
         if self.cloud_settings.get('bandwidth_limit_enabled', False):
             limit = self.cloud_settings.get('bandwidth_limit_mbps', 10)

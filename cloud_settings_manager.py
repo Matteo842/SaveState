@@ -29,7 +29,6 @@ def load_cloud_settings() -> dict:
         'auto_sync_enabled': False,
         'auto_sync_interval_hours': 12,
         'sync_all_profiles': True,
-        'compression_level': 'standard',
         'bandwidth_limit_enabled': False,
         'bandwidth_limit_mbps': 10,
         'show_sync_notifications': True,
