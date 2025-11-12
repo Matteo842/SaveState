@@ -13,6 +13,8 @@ import os
 import io
 import logging
 import pickle
+import time
+import datetime
 from typing import Optional, List, Dict, Callable
 from pathlib import Path
 
@@ -196,7 +198,7 @@ class GoogleDriveManager:
             return None
     
     def upload_backup(self, local_path: str, profile_name: str, overwrite: bool = True, 
-                      max_backups: Optional[int] = None) -> bool:
+                      max_backups: Optional[int] = None) -> Dict[str, any]:
         """
         Upload a backup folder to Google Drive.
         
@@ -228,7 +230,7 @@ class GoogleDriveManager:
             zip_files = [f for f in os.listdir(local_path) if f.endswith('.zip')]
             if not zip_files:
                 logging.warning(f"No .zip files found in {local_path}")
-                return True  # Not an error, just nothing to upload
+                return {'ok': True, 'uploaded_count': 0, 'skipped_newer_or_same': 0, 'total_candidates': 0}
 
             # Sort by modification time (newest first)
             try:
@@ -249,6 +251,9 @@ class GoogleDriveManager:
                 files_to_upload = zip_files_sorted
             
             logging.info(f"Uploading {len(files_to_upload)} files for profile '{profile_name}'...")
+
+            uploaded_count = 0
+            skipped_newer_or_same = 0
             
             # Upload each file
             for idx, filename in enumerate(files_to_upload, 1):
@@ -264,10 +269,19 @@ class GoogleDriveManager:
                     existing_file_id = self._find_file_in_folder(filename, profile_folder_id)
                 
                 if existing_file_id:
+                    # Avoid overwriting newer cloud files: compare modified times
+                    try:
+                        if not self._is_local_newer(file_path, existing_file_id):
+                            logging.info(f"Skipping upload for '{filename}': cloud version is newer or same age")
+                            skipped_newer_or_same += 1
+                            continue
+                    except Exception as e_cmp:
+                        logging.debug(f"Could not compare modified times for '{filename}': {e_cmp}. Proceeding conservatively with update.")
                     # Update existing file
                     success = self._update_file(existing_file_id, file_path)
                     if success:
                         logging.info(f"Updated file: {filename}")
+                        uploaded_count += 1
                     else:
                         logging.warning(f"Failed to update file: {filename}")
                 else:
@@ -275,6 +289,7 @@ class GoogleDriveManager:
                     success = self._upload_file(file_path, filename, profile_folder_id)
                     if success:
                         logging.info(f"Uploaded file: {filename}")
+                        uploaded_count += 1
                     else:
                         logging.warning(f"Failed to upload file: {filename}")
             
@@ -284,11 +299,16 @@ class GoogleDriveManager:
             if max_backups and max_backups > 0:
                 self._cleanup_old_backups(profile_folder_id, profile_name, max_backups)
             
-            return True
+            return {
+                'ok': True,
+                'uploaded_count': uploaded_count,
+                'skipped_newer_or_same': skipped_newer_or_same,
+                'total_candidates': len(files_to_upload)
+            }
             
         except Exception as e:
             logging.error(f"Error uploading backup: {e}")
-            return False
+            return {'ok': False, 'error': str(e), 'uploaded_count': 0, 'skipped_newer_or_same': 0, 'total_candidates': 0}
     
     def download_backup(self, profile_name: str, local_path: str, overwrite: bool = True) -> bool:
         """
@@ -586,6 +606,39 @@ class GoogleDriveManager:
         except Exception as e:
             logging.error(f"Error finding file '{filename}': {e}")
             return None
+
+    def _get_file_modified_time(self, file_id: str) -> Optional[float]:
+        """Return the Drive file modified time as epoch seconds (UTC)."""
+        try:
+            meta = self.service.files().get(fileId=file_id, fields='modifiedTime').execute()
+            ts = meta.get('modifiedTime')
+            if not ts:
+                return None
+            # Convert RFC3339 to aware datetime
+            try:
+                dt = datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
+            except Exception:
+                # Fallback: strip sub-seconds
+                if 'T' in ts:
+                    main = ts.split('.', 1)[0].replace('Z', '')
+                    dt = datetime.datetime.fromisoformat(main + '+00:00')
+                else:
+                    return None
+            return dt.timestamp()
+        except Exception as e:
+            logging.debug(f"Unable to read modifiedTime for file {file_id}: {e}")
+            return None
+
+    def _is_local_newer(self, local_path: str, remote_file_id: str) -> bool:
+        """True if the local file's mtime is strictly newer than the cloud file."""
+        try:
+            local_ts = os.path.getmtime(local_path)
+        except Exception:
+            return True  # If we cannot read mtime, allow upload
+        remote_ts = self._get_file_modified_time(remote_file_id)
+        if remote_ts is None:
+            return True
+        return local_ts > remote_ts
     
     def _list_files_in_folder(self, folder_id: str) -> List[Dict]:
         """List all files in a folder."""
@@ -612,7 +665,12 @@ class GoogleDriveManager:
                 'parents': [parent_id]
             }
             
-            media = MediaFileUpload(file_path, resumable=True)
+            # Choose chunk size to improve throttling granularity (multiple of 256KB)
+            chunk_size = 1024 * 1024 if self.bandwidth_limit_mbps else None
+            if chunk_size is not None:
+                media = MediaFileUpload(file_path, resumable=True, chunksize=chunk_size)
+            else:
+                media = MediaFileUpload(file_path, resumable=True)
             
             request = self.service.files().create(
                 body=file_metadata,
@@ -621,11 +679,30 @@ class GoogleDriveManager:
             )
             
             response = None
+            total_size = os.path.getsize(file_path)
+            prev_bytes = 0
+            t_prev = time.time()
             while response is None:
                 status, response = request.next_chunk()
                 if status:
+                    # Progress reporting
                     progress = int(status.progress() * 100)
                     logging.debug(f"Upload progress: {progress}%")
+                    # Bandwidth throttling
+                    try:
+                        if self.bandwidth_limit_mbps:
+                            curr_bytes = int(status.progress() * total_size)
+                            delta = max(0, curr_bytes - prev_bytes)
+                            prev_bytes = curr_bytes
+                            t_now = time.time()
+                            elapsed = max(1e-6, t_now - t_prev)
+                            limit_bps = self.bandwidth_limit_mbps * 1024 * 1024 / 8.0
+                            desired = delta / limit_bps if limit_bps > 0 else 0
+                            if desired > elapsed:
+                                time.sleep(desired - elapsed)
+                            t_prev = time.time()
+                    except Exception:
+                        pass
             
             return True
             
@@ -636,7 +713,11 @@ class GoogleDriveManager:
     def _update_file(self, file_id: str, file_path: str) -> bool:
         """Update an existing file in Google Drive."""
         try:
-            media = MediaFileUpload(file_path, resumable=True)
+            chunk_size = 1024 * 1024 if self.bandwidth_limit_mbps else None
+            if chunk_size is not None:
+                media = MediaFileUpload(file_path, resumable=True, chunksize=chunk_size)
+            else:
+                media = MediaFileUpload(file_path, resumable=True)
             
             request = self.service.files().update(
                 fileId=file_id,
@@ -644,11 +725,28 @@ class GoogleDriveManager:
             )
             
             response = None
+            total_size = os.path.getsize(file_path)
+            prev_bytes = 0
+            t_prev = time.time()
             while response is None:
                 status, response = request.next_chunk()
                 if status:
                     progress = int(status.progress() * 100)
                     logging.debug(f"Update progress: {progress}%")
+                    try:
+                        if self.bandwidth_limit_mbps:
+                            curr_bytes = int(status.progress() * total_size)
+                            delta = max(0, curr_bytes - prev_bytes)
+                            prev_bytes = curr_bytes
+                            t_now = time.time()
+                            elapsed = max(1e-6, t_now - t_prev)
+                            limit_bps = self.bandwidth_limit_mbps * 1024 * 1024 / 8.0
+                            desired = delta / limit_bps if limit_bps > 0 else 0
+                            if desired > elapsed:
+                                time.sleep(desired - elapsed)
+                            t_prev = time.time()
+                    except Exception:
+                        pass
             
             return True
             
@@ -662,14 +760,39 @@ class GoogleDriveManager:
             request = self.service.files().get_media(fileId=file_id)
             
             fh = io.FileIO(destination_path, 'wb')
-            downloader = MediaIoBaseDownload(fh, request)
+            # Determine total size for throttling computation
+            try:
+                meta = self.service.files().get(fileId=file_id, fields='size').execute()
+                total_size = int(meta.get('size', 0))
+            except Exception:
+                total_size = 0
+
+            chunk_size = 1024 * 1024 if self.bandwidth_limit_mbps else None
+            downloader = MediaIoBaseDownload(fh, request, chunksize=chunk_size or 1024*1024)
             
             done = False
+            prev_bytes = 0
+            t_prev = time.time()
             while not done:
                 status, done = downloader.next_chunk()
                 if status:
                     progress = int(status.progress() * 100)
                     logging.debug(f"Download progress: {progress}%")
+                    # Throttle
+                    try:
+                        if self.bandwidth_limit_mbps and total_size:
+                            curr_bytes = int(status.progress() * total_size)
+                            delta = max(0, curr_bytes - prev_bytes)
+                            prev_bytes = curr_bytes
+                            t_now = time.time()
+                            elapsed = max(1e-6, t_now - t_prev)
+                            limit_bps = self.bandwidth_limit_mbps * 1024 * 1024 / 8.0
+                            desired = delta / limit_bps if limit_bps > 0 else 0
+                            if desired > elapsed:
+                                time.sleep(desired - elapsed)
+                            t_prev = time.time()
+                    except Exception:
+                        pass
             
             fh.close()
             return True

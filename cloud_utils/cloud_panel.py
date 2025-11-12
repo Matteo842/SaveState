@@ -46,6 +46,7 @@ class UploadWorker(QObject):
     """Worker thread for uploading backups to avoid blocking UI."""
     progress = Signal(int, int, str)  # current, total, message
     finished = Signal(int, int)  # success_count, total_count
+    summary_ready = Signal(dict)  # aggregated stats for UI messaging
     
     def __init__(self, drive_manager, backup_list, backup_base_dir, max_backups=None):
         super().__init__()
@@ -58,6 +59,7 @@ class UploadWorker(QObject):
         """Execute upload in background."""
         success_count = 0
         total = len(self.backup_list)
+        results = []
         
         for idx, backup_name in enumerate(self.backup_list, 1):
             self.progress.emit(idx, total, f"Uploading {backup_name}...")
@@ -65,14 +67,50 @@ class UploadWorker(QObject):
             backup_path = os.path.join(self.backup_base_dir, backup_name)
             
             try:
-                if self.drive_manager.upload_backup(backup_path, backup_name, max_backups=self.max_backups):
+                res = self.drive_manager.upload_backup(backup_path, backup_name, max_backups=self.max_backups)
+                ok = False
+                uploaded_cnt = 0
+                skipped_cnt = 0
+                if isinstance(res, dict):
+                    ok = bool(res.get('ok', True))
+                    uploaded_cnt = int(res.get('uploaded_count', 0))
+                    skipped_cnt = int(res.get('skipped_newer_or_same', 0))
+                else:
+                    ok = bool(res)
+
+                if ok:
                     success_count += 1
                     logging.info(f"Successfully uploaded: {backup_name}")
                 else:
                     logging.error(f"Failed to upload: {backup_name}")
+
+                results.append({
+                    'name': backup_name,
+                    'ok': ok,
+                    'uploaded_count': uploaded_cnt,
+                    'skipped_newer_or_same': skipped_cnt
+                })
             except Exception as e:
                 logging.error(f"Error uploading {backup_name}: {e}")
         
+        # Aggregate and emit summary for UI
+        try:
+            profiles_changed = sum(1 for r in results if r.get('uploaded_count', 0) > 0)
+            files_uploaded = sum(int(r.get('uploaded_count', 0)) for r in results)
+            files_skipped = sum(int(r.get('skipped_newer_or_same', 0)) for r in results)
+            summary = {
+                'profiles_total': total,
+                'profiles_ok': success_count,
+                'profiles_changed': profiles_changed,
+                'profiles_unchanged': max(0, total - profiles_changed),
+                'files_uploaded': files_uploaded,
+                'files_skipped': files_skipped,
+                'details': results,
+            }
+            self.summary_ready.emit(summary)
+        except Exception:
+            pass
+
         self.finished.emit(success_count, total)
 
 
@@ -921,10 +959,12 @@ class CloudSavePanel(QWidget):
         self.upload_thread = QThread()
         self.upload_worker = UploadWorker(self.drive_manager, selected, self.backup_base_dir, max_backups)
         self.upload_worker.moveToThread(self.upload_thread)
+        self._last_upload_summary = None
         
         # Connect signals
         self.upload_thread.started.connect(self.upload_worker.run)
         self.upload_worker.progress.connect(self._on_upload_progress)
+        self.upload_worker.summary_ready.connect(self._on_upload_summary)
         self.upload_worker.finished.connect(self._on_upload_finished)
         self.upload_worker.finished.connect(self.upload_thread.quit)
         self.upload_worker.finished.connect(self.upload_worker.deleteLater)
@@ -944,20 +984,38 @@ class CloudSavePanel(QWidget):
         self.upload_button.setEnabled(True)
         self.download_button.setEnabled(True)
         
-        # Show notification
-        self._show_notification(
-            "Upload Complete",
-            f"Successfully uploaded {success_count} of {total_count} backups to Google Drive."
-        )
+        # Decide message based on summary (skips vs updates)
+        title = "Upload Complete"
+        msg = f"Successfully uploaded {success_count} of {total_count} backups."
+        if isinstance(self._last_upload_summary, dict):
+            changed = int(self._last_upload_summary.get('profiles_changed', 0))
+            unchanged = int(self._last_upload_summary.get('profiles_unchanged', 0))
+            files_up = int(self._last_upload_summary.get('files_uploaded', 0))
+            files_skip = int(self._last_upload_summary.get('files_skipped', 0))
+            if changed == 0 and unchanged > 0:
+                title = "No Upload Needed"
+                msg = f"No changes uploaded. {unchanged} profile(s) had newer or identical backups in the cloud."
+            elif unchanged > 0:
+                title = "Upload Complete (Partial)"
+                msg = (
+                    f"Uploaded changes for {changed} of {total_count} profile(s). "
+                    f"{unchanged} up-to-date (cloud newer or identical)."
+                )
+            # Add file-level stats when available
+            if files_up or files_skip:
+                msg += f"\nFiles: {files_up} uploaded, {files_skip} skipped."
         
-        QMessageBox.information(
-            self,
-            "Upload Complete",
-            f"Successfully uploaded {success_count} of {total_count} backups."
-        )
+        # Show notifications
+        self._show_notification(title, msg)
+        QMessageBox.information(self, title, msg)
         
         # Refresh cloud status
         self._refresh_cloud_status()
+        self._last_upload_summary = None
+
+    def _on_upload_summary(self, summary: dict):
+        """Capture summary from upload worker for final messaging."""
+        self._last_upload_summary = summary
     
     def _on_download_clicked(self):
         """Handle download selected backups from cloud."""
