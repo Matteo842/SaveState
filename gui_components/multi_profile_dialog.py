@@ -8,9 +8,11 @@ import logging
 import re
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
                               QPushButton, QListWidget, QListWidgetItem,
-                              QWidget, QMessageBox, QProgressBar, QCheckBox, QLineEdit)
+                              QWidget, QMessageBox, QProgressBar, QCheckBox, QLineEdit, QStyle)
 from PySide6.QtCore import Qt, Signal, QTimer, QRect, QSize, QEvent
 from PySide6.QtGui import QIcon, QFont, QCursor, QPainter, QPen, QColor
+
+from utils import resource_path
 
 # Helper function to sanitize display names
 def _sanitize_display_name(name):
@@ -241,8 +243,11 @@ class MultiProfileDialog(QDialog):
             parent: Widget genitore
         """
         super().__init__(parent)
-        
-        # Imposta il dialogo come non modale
+
+        # --- Adopt app's custom window style (frameless with custom title bar) ---
+        self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
+        self._drag_pos = None
+        # Keep dialog non-modal to match app interaction model
         self.setWindowModality(Qt.NonModal)
         
         self.files_to_process = files_to_process
@@ -255,9 +260,64 @@ class MultiProfileDialog(QDialog):
         self.setWindowTitle("Manage Profiles")
         self.setMinimumWidth(750)
         self.setMinimumHeight(800)
+        try:
+            self.setWindowIcon(QIcon(resource_path("icon.png")))
+        except Exception:
+            pass
         
-        # Main layout
-        layout = QVBoxLayout(self)
+        # Main layout (title bar + content container)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # --- Custom Title Bar ---
+        self.title_bar = QWidget()
+        self.title_bar.setObjectName("CustomTitleBar")
+        self.title_bar.setMinimumHeight(36)
+        tb_layout = QHBoxLayout()
+        tb_layout.setContentsMargins(12, 4, 12, 4)
+        tb_layout.setSpacing(6)
+        # Window title
+        self.title_label = QLabel("Manage Profiles")
+        self.title_label.setObjectName("TitleLabel")
+        tb_layout.addWidget(self.title_label)
+        tb_layout.addStretch(1)
+        # Close button only (dialogs usually don't need minimize/maximize)
+        style = self.style() if hasattr(self, 'style') else None
+        self.close_button = QPushButton()
+        self.close_button.setObjectName("CloseButton")
+        try:
+            self.close_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton))
+        except Exception:
+            pass
+        self.close_button.setFixedSize(QSize(28, 28))
+        self.close_button.setFlat(True)
+        self.close_button.setIconSize(QSize(14, 14))
+        self.close_button.clicked.connect(self.reject)
+        tb_layout.addWidget(self.close_button)
+        self.title_bar.setLayout(tb_layout)
+        # Make the title bar draggable
+        self.title_bar.installEventFilter(self)
+
+        # Title bar styling (mirror main window look)
+        self.title_bar.setStyleSheet(
+            """
+            QWidget#CustomTitleBar { background-color: #0d0d0d; border-bottom: 1px solid #333333; }
+            QLabel#TitleLabel { color: #f2f2f2; font-size: 14pt; font-weight: 700; }
+            QPushButton#CloseButton {
+                border: none; background: transparent; min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; padding: 0px; border-radius: 4px;
+            }
+            QPushButton#CloseButton:hover { background-color: #b00020; }
+            """
+        )
+        main_layout.addWidget(self.title_bar)
+
+        # Content container with margins like main window
+        content_container = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(8)
+        content_container.setLayout(layout)
         
         # Intestazione
         self.header_label = QLabel(f"<b>{self.total_files} file rilevati</b>")
@@ -370,9 +430,30 @@ class MultiProfileDialog(QDialog):
         buttons_layout.addWidget(self.add_button)
         
         layout.addLayout(buttons_layout)
-        
-        # Set layout
-        self.setLayout(layout)
+
+        # Add content to main layout (beneath title bar)
+        main_layout.addWidget(content_container, stretch=1)
+        self.setLayout(main_layout)
+
+    def eventFilter(self, watched, event):
+        """Enable window dragging from the custom title bar and ignore double-click maximize."""
+        try:
+            if hasattr(self, 'title_bar') and watched is self.title_bar:
+                if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                    pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+                    self._drag_pos = pos - self.frameGeometry().topLeft()
+                    return True
+                if event.type() == QEvent.Type.MouseMove and (event.buttons() & Qt.MouseButton.LeftButton):
+                    if self._drag_pos is not None:
+                        pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+                        self.move(pos - self._drag_pos)
+                        return True
+                if event.type() == QEvent.Type.MouseButtonDblClick:
+                    # Do nothing on double click (no maximize toggle)
+                    return True
+        except Exception:
+            pass
+        return super().eventFilter(watched, event)
     
     def populate_profile_list(self):
         """Populate the list with files to process."""

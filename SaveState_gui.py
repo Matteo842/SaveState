@@ -210,6 +210,9 @@ class MainWindow(QMainWindow):
         # Connect finished signals to hide widgets after animation
         self.fade_out_animation.finished.connect(self.overlay_widget.hide) # Hides the widget itself
         self.fade_out_animation.finished.connect(self._on_overlay_faded_out) # Manages overlay_active flag and hides label
+
+        # Overlay lock flag (keeps overlay visible when True, e.g., during Multi-Profile dialog)
+        self._overlay_locked = False
         
         self.developer_mode_enabled = False # Stato iniziale delle opzioni sviluppatore
         self.log_button_press_timer = None  # Timer per il long press
@@ -1178,6 +1181,10 @@ class MainWindow(QMainWindow):
 
     def _hide_overlay(self):
         """Nasconde l'overlay con animazione."""
+        # If overlay is locked (forced), ignore hide requests
+        if hasattr(self, "_overlay_locked") and self._overlay_locked:
+            logging.debug("_hide_overlay: overlay locked, ignoring hide request")
+            return
         if not hasattr(self, 'overlay_widget') or not self.overlay_widget:
             logging.error("_hide_overlay called but overlay_widget does not exist.")
             return
@@ -1224,6 +1231,57 @@ class MainWindow(QMainWindow):
             self.loading_label.hide()
         # The overlay_widget itself should be hidden by its fade_out_animation.finished.connect(self.overlay_widget.hide) connection
 
+    # --- Overlay lock helpers (force overlay while a secondary UI is active) ---
+    def lock_overlay(self, message_text: str | None = None):
+        """Force overlay to stay visible until unlock_overlay is called.
+        If a fade-out is in progress, cancel it and restore full opacity.
+        """
+        try:
+            self._overlay_locked = True
+
+            # Cancel in-flight fade-out to prevent the overlay from hiding after we lock it
+            try:
+                if hasattr(self, 'fade_out_animation') and self.fade_out_animation.state() == QAbstractAnimation.Running:
+                    self.fade_out_animation.stop()
+                    if hasattr(self, 'overlay_opacity_effect'):
+                        self.overlay_opacity_effect.setOpacity(1.0)
+            except Exception:
+                pass
+
+            # Set message and style
+            if hasattr(self, 'loading_label') and self.loading_label:
+                if message_text:
+                    self.loading_label.setText(message_text)
+                if "padding" not in self.loading_label.styleSheet():
+                    self.loading_label.setStyleSheet("QLabel { color: white; background-color: transparent; font-size: 24pt; font-weight: bold; padding: 20px; }")
+                self.loading_label.adjustSize()
+
+            # Ensure overlay is visible and on top
+            if hasattr(self, 'overlay_widget') and self.overlay_widget:
+                if self.centralWidget():
+                    self.overlay_widget.setGeometry(self.centralWidget().rect())
+                else:
+                    self.overlay_widget.setGeometry(self.rect())
+                self.overlay_widget.setStyleSheet("QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 200); }")
+                self.overlay_widget.raise_()
+                if hasattr(self, 'loading_label') and self.loading_label:
+                    self._center_loading_label()
+                    self.loading_label.show()
+                self.overlay_widget.show()
+                self.overlay_active = True
+
+            logging.debug("Overlay locked (forced visible).")
+        except Exception as e:
+            logging.error(f"Error locking overlay: {e}", exc_info=True)
+
+    def unlock_overlay(self):
+        """Release overlay lock and then hide overlay normally."""
+        try:
+            self._overlay_locked = False
+            self._hide_overlay()
+            logging.debug("Overlay unlocked and hide requested.")
+        except Exception as e:
+            logging.error(f"Error unlocking overlay: {e}", exc_info=True)
     # Handles application-level events
     def changeEvent(self, event):
         """Intercetta eventi di cambio stato."""

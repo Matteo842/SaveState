@@ -722,59 +722,34 @@ class DropEventMixin:
             dialog.rejected.connect(self._cancel_detection_threads)
             # Aggiungiamo anche finished per gestire la chiusura con la X
             dialog.finished.connect(self._cancel_detection_threads)
+            # Gestione completamento (Accepted/Rejected) in modo asincrono
+            dialog.finished.connect(self._on_multi_profile_dialog_finished)
             logging.info("MultiProfileDialog signals connected successfully")
             
             # Salva il riferimento al dialogo come attributo dell'istanza
             self.profile_dialog = dialog
             
-            # Mostra il dialogo e attendi che l'utente faccia la sua scelta
-            result = dialog.exec()
+            # Mostra overlay persistente e disabilita i controlli della MainWindow finché la dialog è attiva
+            try:
+                if hasattr(mw, 'lock_overlay'):
+                    mw.lock_overlay("Multi‑Profile UI is active")
+                elif hasattr(mw, 'show_overlay_message'):
+                    mw.show_overlay_message("Multi-Profile UI is active")
+            except Exception:
+                pass
+            try:
+                mw.set_controls_enabled(False)
+            except Exception:
+                pass
             
-            # Ripristina lo stato dell'UI
-            mw.set_controls_enabled(True)
-            
-            # Nascondi l'overlay se visibile
-            self._hide_overlay_if_visible(mw)
-            
-            if result == QDialog.Accepted:
-                # Ottieni i profili accettati
-                accepted_profiles = dialog.get_accepted_profiles()
-                
-                # Aggiungi i profili accettati, sanificando i nomi
-                added_count = 0
-                for profile_name, profile_data in accepted_profiles.items():
-                    # Applica la stessa sanificazione usata per i profili singoli
-                    sanitized_name = sanitize_profile_name(profile_name)
-                    
-                    # Gestisci nomi duplicati
-                    final_name = sanitized_name
-                    counter = 2
-                    while final_name in mw.profiles:
-                        final_name = f"{sanitized_name} ({counter})"
-                        counter += 1
-                    
-                    mw.profiles[final_name] = profile_data
-                    added_count += 1
-                
-                # Salva i profili
-                if mw.core_logic.save_profiles(mw.profiles):
-                    mw.profile_table_manager.update_profile_table()
-                    mw.status_label.setText(f"Aggiunti {added_count} profili.")
-                    logging.info(f"Saved {added_count} profiles.")
-                else:
-                    mw.status_label.setText("Errore nel salvataggio dei profili.")
-                    logging.error("Failed to save profiles.")
-                    QMessageBox.critical(mw, "Errore", "Impossibile salvare i profili.")
-            else:
-                # This 'else' corresponds to dialog.exec() != QDialog.Accepted
-                mw.status_label.setText("Creazione profili annullata.")
-                logging.info("DragDropHandler.dropEvent: Profile creation cancelled by user.")
-            
-            # Rimuovi il riferimento al dialogo
-            self.profile_dialog = None
-
-            # Whether dialog was accepted or cancelled, or profiles saved/not saved,
-            # the multi-file drop event was handled by DragDropHandler.
+            # Mostra il dialogo in modo NON modale per non bloccare il desktop o altre app
+            dialog.show()
+            try:
+                dialog.raise_()
+                dialog.activateWindow()
+            except Exception:
+                pass
+            # Chiudi qui il flusso dell'evento: la gestione continua nei segnali finished/accepted
             event.acceptProposedAction()
             return True
 
@@ -1249,6 +1224,58 @@ class DropEventMixin:
         # --- FINE Start Fade/Animation Effect ---
         return True
 
+    def _on_multi_profile_dialog_finished(self, result_code: int):
+        """Finalize multi-profile creation asynchronously when dialog finishes."""
+        try:
+            mw = self.main_window
+            dialog = getattr(self, 'profile_dialog', None)
+            # Restore UI state regardless of result
+            try:
+                if hasattr(mw, 'unlock_overlay'):
+                    mw.unlock_overlay()
+                else:
+                    self._hide_overlay_if_visible(mw)
+            except Exception:
+                pass
+            try:
+                mw.set_controls_enabled(True)
+            except Exception:
+                pass
+            # When accepted, collect and save profiles
+            if result_code == QDialog.DialogCode.Accepted and dialog:
+                accepted_profiles = dialog.get_accepted_profiles()
+                added_count = 0
+                for profile_name, profile_data in accepted_profiles.items():
+                    sanitized_name = sanitize_profile_name(profile_name)
+                    final_name = sanitized_name
+                    counter = 2
+                    while final_name in mw.profiles:
+                        final_name = f"{sanitized_name} ({counter})"
+                        counter += 1
+                    mw.profiles[final_name] = profile_data
+                    added_count += 1
+                if mw.core_logic.save_profiles(mw.profiles):
+                    if hasattr(mw, 'profile_table_manager'):
+                        mw.profile_table_manager.update_profile_table()
+                    if hasattr(mw, 'status_label'):
+                        mw.status_label.setText(f"Aggiunti {added_count} profili.")
+                    logging.info(f"Saved {added_count} profiles.")
+                else:
+                    if hasattr(mw, 'status_label'):
+                        mw.status_label.setText("Errore nel salvataggio dei profili.")
+                    logging.error("Failed to save profiles.")
+                    QMessageBox.critical(mw, "Errore", "Impossibile salvare i profili.")
+            else:
+                # Rejected or closed
+                if hasattr(mw, 'status_label'):
+                    mw.status_label.setText("Creazione profili annullata.")
+                logging.info("MultiProfileDialog: Profile creation cancelled by user.")
+        except Exception as e:
+            logging.error(f"Error finalizing multi-profile dialog: {e}", exc_info=True)
+        finally:
+            # Clear dialog reference
+            self.profile_dialog = None
+
     def _cancel_detection_threads(self, *args):
         """Cancella tutti i thread di rilevamento in corso."""
         logging.info(f"MultiProfileDialog closed: Cancelling all detection threads... (args: {args})")
@@ -1345,7 +1372,10 @@ class DropEventMixin:
         # Best-effort: riabilita controlli e nascondi overlay se presente
         try:
             if hasattr(self, 'main_window') and self.main_window:
-                if hasattr(self, '_hide_overlay_if_visible'):
+                # Prefer unlocking overlay (it may be locked during Multi-Profile)
+                if hasattr(self.main_window, 'unlock_overlay'):
+                    self.main_window.unlock_overlay()
+                elif hasattr(self, '_hide_overlay_if_visible'):
                     self._hide_overlay_if_visible(self.main_window)
                 if hasattr(self.main_window, 'set_controls_enabled'):
                     self.main_window.set_controls_enabled(True)
