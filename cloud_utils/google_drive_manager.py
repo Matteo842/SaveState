@@ -15,7 +15,8 @@ import logging
 import pickle
 import time
 import datetime
-from typing import Optional, List, Dict, Callable
+import random
+from typing import Optional, List, Dict, Callable, Callable as _Callable
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -56,6 +57,10 @@ class GoogleDriveManager:
         # Settings
         self.compression_level = 'standard'  # 'standard', 'maximum', 'stored'
         self.bandwidth_limit_mbps = None  # None = unlimited
+
+        # Retry/backoff configuration (transient errors)
+        self._max_retries = 5
+        self._base_backoff_seconds = 0.5
         
     def authenticate(self) -> bool:
         """
@@ -162,11 +167,14 @@ class GoogleDriveManager:
         try:
             # Search for existing folder
             query = f"name='{APP_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-            results = self.service.files().list(
-                q=query,
-                spaces='drive',
-                fields='files(id, name)'
-            ).execute()
+            results = self._execute_with_retries(
+                lambda: self.service.files().list(
+                    q=query,
+                    spaces='drive',
+                    fields='files(id, name)'
+                ).execute(),
+                "list app folder"
+            )
             
             items = results.get('files', [])
             
@@ -181,10 +189,13 @@ class GoogleDriveManager:
                 'mimeType': 'application/vnd.google-apps.folder'
             }
             
-            folder = self.service.files().create(
-                body=file_metadata,
-                fields='id'
-            ).execute()
+            folder = self._execute_with_retries(
+                lambda: self.service.files().create(
+                    body=file_metadata,
+                    fields='id'
+                ).execute(),
+                "create app folder"
+            )
             
             folder_id = folder.get('id')
             logging.info(f"Created new app folder: {folder_id}")
@@ -392,12 +403,15 @@ class GoogleDriveManager:
         try:
             # List all folders in the app folder
             query = f"'{self.app_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
-            results = self.service.files().list(
-                q=query,
-                spaces='drive',
-                fields='files(id, name, modifiedTime)',
-                orderBy='name'
-            ).execute()
+            results = self._execute_with_retries(
+                lambda: self.service.files().list(
+                    q=query,
+                    spaces='drive',
+                    fields='files(id, name, modifiedTime)',
+                    orderBy='name'
+                ).execute(),
+                "list cloud backup folders"
+            )
             
             folders = results.get('files', [])
             backups = []
@@ -498,7 +512,10 @@ class GoogleDriveManager:
                 return False
             
             # Delete the folder (this will also delete all files inside)
-            self.service.files().delete(fileId=profile_folder_id).execute()
+            self._execute_with_retries(
+                lambda: self.service.files().delete(fileId=profile_folder_id).execute(),
+                "delete cloud backup folder"
+            )
             logging.info(f"Deleted cloud backup folder: {profile_name}")
             return True
             
@@ -525,7 +542,10 @@ class GoogleDriveManager:
             return None
         
         try:
-            about = self.service.about().get(fields='storageQuota').execute()
+            about = self._execute_with_retries(
+                lambda: self.service.about().get(fields='storageQuota').execute(),
+                "get storage info"
+            )
             quota = about.get('storageQuota', {})
             
             total = int(quota.get('limit', 0))
@@ -577,11 +597,14 @@ class GoogleDriveManager:
         """Find a folder by name in a parent folder."""
         try:
             query = f"name='{folder_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
-            results = self.service.files().list(
-                q=query,
-                spaces='drive',
-                fields='files(id)'
-            ).execute()
+            results = self._execute_with_retries(
+                lambda: self.service.files().list(
+                    q=query,
+                    spaces='drive',
+                    fields='files(id)'
+                ).execute(),
+                "find folder"
+            )
             
             items = results.get('files', [])
             return items[0]['id'] if items else None
@@ -594,11 +617,14 @@ class GoogleDriveManager:
         """Find a file by name in a folder."""
         try:
             query = f"name='{filename}' and '{folder_id}' in parents and trashed=false"
-            results = self.service.files().list(
-                q=query,
-                spaces='drive',
-                fields='files(id)'
-            ).execute()
+            results = self._execute_with_retries(
+                lambda: self.service.files().list(
+                    q=query,
+                    spaces='drive',
+                    fields='files(id)'
+                ).execute(),
+                "find file"
+            )
             
             items = results.get('files', [])
             return items[0]['id'] if items else None
@@ -610,7 +636,10 @@ class GoogleDriveManager:
     def _get_file_modified_time(self, file_id: str) -> Optional[float]:
         """Return the Drive file modified time as epoch seconds (UTC)."""
         try:
-            meta = self.service.files().get(fileId=file_id, fields='modifiedTime').execute()
+            meta = self._execute_with_retries(
+                lambda: self.service.files().get(fileId=file_id, fields='modifiedTime').execute(),
+                "get file modified time"
+            )
             ts = meta.get('modifiedTime')
             if not ts:
                 return None
@@ -639,17 +668,63 @@ class GoogleDriveManager:
         if remote_ts is None:
             return True
         return local_ts > remote_ts
+
+    # ===== Retry helpers =====
+    def _should_retry_http_error(self, error: HttpError) -> bool:
+        try:
+            status = int(getattr(error, "status_code", None) or getattr(error.resp, "status", 0))
+        except Exception:
+            status = 0
+        # Retry on common transient statuses
+        return status in (408, 429, 500, 502, 503, 504)
+
+    def _sleep_with_backoff(self, attempt: int, context: str):
+        delay = self._base_backoff_seconds * (2 ** attempt)
+        delay = delay + random.uniform(0, 0.25)  # jitter
+        capped = min(delay, 8.0)
+        logging.warning(f"Transient error during {context}. Backing off for {capped:.2f}s (attempt {attempt+1}/{self._max_retries})")
+        try:
+            time.sleep(capped)
+        except Exception:
+            pass
+
+    def _execute_with_retries(self, func: _Callable[[], any], description: str):
+        last_exc = None
+        for attempt in range(self._max_retries):
+            try:
+                return func()
+            except HttpError as e:
+                if self._should_retry_http_error(e):
+                    self._sleep_with_backoff(attempt, description)
+                    last_exc = e
+                    continue
+                last_exc = e
+                break
+            except (OSError, TimeoutError, ConnectionError, BrokenPipeError) as e:  # type: ignore[name-defined]
+                self._sleep_with_backoff(attempt, description)
+                last_exc = e
+                continue
+            except Exception as e:
+                last_exc = e
+                break
+        # Exhausted retries or non-retryable
+        if last_exc:
+            logging.error(f"{description} failed after retries: {last_exc}")
+            raise last_exc
     
     def _list_files_in_folder(self, folder_id: str) -> List[Dict]:
         """List all files in a folder."""
         try:
             query = f"'{folder_id}' in parents and trashed=false"
-            results = self.service.files().list(
-                q=query,
-                spaces='drive',
-                fields='files(id, name, size, modifiedTime)',
-                orderBy='name'
-            ).execute()
+            results = self._execute_with_retries(
+                lambda: self.service.files().list(
+                    q=query,
+                    spaces='drive',
+                    fields='files(id, name, size, modifiedTime)',
+                    orderBy='name'
+                ).execute(),
+                "list files in folder"
+            )
             
             return results.get('files', [])
             
@@ -682,8 +757,16 @@ class GoogleDriveManager:
             total_size = os.path.getsize(file_path)
             prev_bytes = 0
             t_prev = time.time()
+            attempt = 0
             while response is None:
-                status, response = request.next_chunk()
+                try:
+                    status, response = request.next_chunk()
+                except HttpError as e:
+                    if self._should_retry_http_error(e) and attempt < self._max_retries:
+                        self._sleep_with_backoff(attempt, "upload chunk")
+                        attempt += 1
+                        continue
+                    raise
                 if status:
                     # Progress reporting
                     progress = int(status.progress() * 100)
@@ -728,8 +811,16 @@ class GoogleDriveManager:
             total_size = os.path.getsize(file_path)
             prev_bytes = 0
             t_prev = time.time()
+            attempt = 0
             while response is None:
-                status, response = request.next_chunk()
+                try:
+                    status, response = request.next_chunk()
+                except HttpError as e:
+                    if self._should_retry_http_error(e) and attempt < self._max_retries:
+                        self._sleep_with_backoff(attempt, "update chunk")
+                        attempt += 1
+                        continue
+                    raise
                 if status:
                     progress = int(status.progress() * 100)
                     logging.debug(f"Update progress: {progress}%")
@@ -762,7 +853,10 @@ class GoogleDriveManager:
             fh = io.FileIO(destination_path, 'wb')
             # Determine total size for throttling computation
             try:
-                meta = self.service.files().get(fileId=file_id, fields='size').execute()
+                meta = self._execute_with_retries(
+                    lambda: self.service.files().get(fileId=file_id, fields='size').execute(),
+                    "get file size for download"
+                )
                 total_size = int(meta.get('size', 0))
             except Exception:
                 total_size = 0
@@ -773,8 +867,16 @@ class GoogleDriveManager:
             done = False
             prev_bytes = 0
             t_prev = time.time()
+            attempt = 0
             while not done:
-                status, done = downloader.next_chunk()
+                try:
+                    status, done = downloader.next_chunk()
+                except HttpError as e:
+                    if self._should_retry_http_error(e) and attempt < self._max_retries:
+                        self._sleep_with_backoff(attempt, "download chunk")
+                        attempt += 1
+                        continue
+                    raise
                 if status:
                     progress = int(status.progress() * 100)
                     logging.debug(f"Download progress: {progress}%")
@@ -846,11 +948,14 @@ class GoogleDriveManager:
             
             # Get all folders in app folder
             folders_query = f"'{self.app_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
-            folders_result = self.service.files().list(
-                q=folders_query,
-                spaces='drive',
-                fields='files(id)'
-            ).execute()
+            folders_result = self._execute_with_retries(
+                lambda: self.service.files().list(
+                    q=folders_query,
+                    spaces='drive',
+                    fields='files(id)'
+                ).execute(),
+                "list folders for size"
+            )
             
             folders = folders_result.get('files', [])
             
