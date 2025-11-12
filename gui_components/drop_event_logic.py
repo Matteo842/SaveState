@@ -23,6 +23,7 @@ class DropEventMixin:
         # Inizializza il flag per la cancellazione
         self.processing_cancelled = False
         self.profile_dialog = None
+        self._profileAdded_connected = False
     
     def reset_internal_state(self):
         """Resetta lo stato interno per le operazioni di drag & drop."""
@@ -713,6 +714,7 @@ class DropEventMixin:
             
             # Connetti il segnale profileAdded al metodo che gestisce l'analisi
             dialog.profileAdded.connect(self._handle_profile_analysis)
+            self._profileAdded_connected = True
             
             # Connetti il segnale di chiusura del dialogo alla cancellazione dei thread
             logging.info("Connecting MultiProfileDialog signals to _cancel_detection_threads")
@@ -1320,9 +1322,13 @@ class DropEventMixin:
         # 4. Disconnetti il segnale profileAdded per impedire nuove elaborazioni
         if hasattr(self, 'profile_dialog') and self.profile_dialog:
             try:
-                logging.info("Disconnecting profileAdded signal to prevent new file processing")
-                self.profile_dialog.profileAdded.disconnect()
-                logging.info("profileAdded signal disconnected successfully")
+                if getattr(self, '_profileAdded_connected', False):
+                    logging.info("Disconnecting profileAdded signal to prevent new file processing")
+                    self.profile_dialog.profileAdded.disconnect(self._handle_profile_analysis)
+                    self._profileAdded_connected = False
+                    logging.info("profileAdded signal disconnected successfully")
+                else:
+                    logging.debug("profileAdded signal was not connected; skipping disconnect")
             except Exception as e:
                 logging.warning(f"Error disconnecting profileAdded signal: {e}")
         

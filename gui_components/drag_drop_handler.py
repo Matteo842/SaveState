@@ -493,7 +493,15 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                 thread_info['paths_found'].sort(key=lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else 0, reverse=True)
                 
                 # Get best path for this profile
-                best_path, best_score = thread_info['paths_found'][0] if isinstance(thread_info['paths_found'][0], tuple) else (thread_info['paths_found'][0], 0)
+                top_entry = thread_info['paths_found'][0]
+                if isinstance(top_entry, (list, tuple)):
+                    best_path = top_entry[0] if len(top_entry) > 0 else ""
+                    best_score = top_entry[1] if len(top_entry) > 1 else 0
+                elif isinstance(top_entry, dict):
+                    best_path = top_entry.get('path', '')
+                    best_score = top_entry.get('score', 0)
+                else:
+                    best_path, best_score = top_entry, 0
                 
                 # Update profile dialog
                 if self.profile_dialog:
