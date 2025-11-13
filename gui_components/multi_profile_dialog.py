@@ -141,19 +141,20 @@ class ProfileListItem(QWidget):
         # Add the info layout to the main layout
         layout.addLayout(info_layout, 1)  # Stretch factor 1 to give more space
         
-        # Delete button with Unicode trash can icon, now square and 30% larger
+        # Delete button with Unicode trash can icon, larger and easier to click
         self.delete_button = QPushButton("🗑️")
         self.delete_button.setObjectName("MinecraftButton")  # Use same style as Minecraft button
         self.delete_button.setToolTip("Remove this profile")
         self.delete_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.delete_button.setFixedSize(39, 39)  # 30% larger than 30x30
-        self.delete_button.setIconSize(QSize(30, 30))  # Match increased button size
+        # Increase button size while keeping a small border within the item row
+        self.delete_button.setFixedSize(46, 46)
+        self.delete_button.setIconSize(QSize(36, 36))
         self.delete_button.setStyleSheet("""
             QPushButton#MinecraftButton {
                 border: none;
                 padding: 0;
                 background-color: transparent;
-                font-size: 18px;  /* Increased from 14px */
+                font-size: 22px;  /* Larger glyph for better visibility */
                 color: #888;
                 border-radius: 0px;  /* Ensure square shape */
             }
@@ -190,11 +191,11 @@ class ProfileListItem(QWidget):
         font_height = self.name_label.fontMetrics().height()
         save_path_height = self.save_path_label.fontMetrics().height() * 2  # Spazio per due righe
         
-        # Aumentiamo significativamente l'altezza per dare più spazio al testo
+        # Aumentiamo l'altezza base, ma garantiamo che contenga anche il pulsante (con un minimo di bordo)
         base_height = font_height + save_path_height + 30  # Margini più ampi
-        
-        # Imposta un'altezza fissa che sia sufficiente per tutti gli stati dell'elemento
-        self.setFixedHeight(base_height)
+        min_for_button = btn_height + margins.top() + margins.bottom() + 6  # piccolo bordo
+        row_height = max(base_height, min_for_button)
+        self.setFixedHeight(row_height)
     
     def update_save_path(self, save_path, score):
         """Aggiorna il percorso di salvataggio e lo score dopo l'analisi."""
@@ -435,6 +436,19 @@ class MultiProfileDialog(QDialog):
         main_layout.addWidget(content_container, stretch=1)
         self.setLayout(main_layout)
 
+    def _update_add_button_label(self):
+        """Update 'Add Profiles' button to include the number of profiles ready to add."""
+        try:
+            # Only meaningful when analysis is finished
+            if getattr(self, 'analysis_running', False):
+                return
+            if not hasattr(self, 'add_button') or self.add_button is None:
+                return
+            count = len(self.accepted_profiles) if hasattr(self, 'accepted_profiles') else 0
+            text = f"Add {count} profile" if count == 1 else f"Add {count} profiles"
+            self.add_button.setText(text)
+        except Exception:
+            pass
     def eventFilter(self, watched, event):
         """Enable window dragging from the custom title bar and ignore double-click maximize."""
         try:
@@ -536,6 +550,9 @@ class MultiProfileDialog(QDialog):
                 'path': save_path,
                 'score': score
             })
+
+        # Refresh button label if analysis already finished
+        self._update_add_button_label()
     
     def update_progress(self, current_file, status_text):
         """Update the progress bar and status label."""
@@ -551,6 +568,7 @@ class MultiProfileDialog(QDialog):
             self.description_label.setText("The following profiles will be created with the found save paths. "
                                           "You can still remove profiles you don't want to add.")
             self.status_label.setText("Analysis completed.")
+            self._update_add_button_label()
     
     def remove_profile(self, profile_name):
         """Rimuove un profilo dalla lista."""
@@ -569,6 +587,8 @@ class MultiProfileDialog(QDialog):
                 
                 # Aggiorna l'intestazione
                 self.update_header()
+                # Update button label after removal if analysis completed
+                self._update_add_button_label()
                 
                 # Esci dal ciclo
                 break
