@@ -27,6 +27,8 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from googleapiclient.errors import HttpError
 
+import hashlib
+
 # If modifying these scopes, delete the token.pickle file
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
@@ -225,6 +227,30 @@ class GoogleDriveManager:
             logging.error(f"Error creating/finding app folder: {e}")
             return None
     
+    def _compute_local_md5(self, file_path: str) -> Optional[str]:
+        """Compute MD5 hash of a local file."""
+        try:
+            hash_md5 = hashlib.md5()
+            with open(file_path, "rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hash_md5.update(chunk)
+            return hash_md5.hexdigest()
+        except Exception as e:
+            logging.error(f"Error computing MD5 for {file_path}: {e}")
+            return None
+
+    def _get_remote_md5(self, file_id: str) -> Optional[str]:
+        """Get MD5 hash of a remote file from Google Drive metadata."""
+        try:
+            meta = self._execute_with_retries(
+                lambda: self.service.files().get(fileId=file_id, fields='md5Checksum').execute(),
+                "get file md5"
+            )
+            return meta.get('md5Checksum')
+        except Exception as e:
+            logging.error(f"Error getting MD5 for remote file {file_id}: {e}")
+            return None
+
     def upload_backup(self, local_path: str, profile_name: str, overwrite: bool = True, 
                       max_backups: Optional[int] = None) -> Dict[str, any]:
         """
@@ -308,7 +334,16 @@ class GoogleDriveManager:
                     existing_file_id = self._find_file_in_folder(filename, profile_folder_id)
                 
                 if existing_file_id:
-                    # Avoid overwriting newer cloud files: compare modified times
+                    # CHECK 1: MD5 Hash Comparison (Strong Integrity Check)
+                    local_md5 = self._compute_local_md5(file_path)
+                    remote_md5 = self._get_remote_md5(existing_file_id)
+                    
+                    if local_md5 and remote_md5 and local_md5 == remote_md5:
+                        logging.info(f"Skipping upload for '{filename}': content identical (MD5 match)")
+                        skipped_newer_or_same += 1
+                        continue
+
+                    # CHECK 2: Timestamp Fallback (if MD5s differ or check failed)
                     try:
                         if not self._is_local_newer(file_path, existing_file_id):
                             logging.info(f"Skipping upload for '{filename}': cloud version is newer or same age")
@@ -316,6 +351,7 @@ class GoogleDriveManager:
                             continue
                     except Exception as e_cmp:
                         logging.debug(f"Could not compare modified times for '{filename}': {e_cmp}. Proceeding conservatively with update.")
+                    
                     # Update existing file
                     success = self._update_file(existing_file_id, file_path)
                     
@@ -373,7 +409,7 @@ class GoogleDriveManager:
             logging.error(f"Error uploading backup: {e}")
             return {'ok': False, 'error': str(e), 'uploaded_count': 0, 'skipped_newer_or_same': 0, 'total_candidates': 0}
     
-    def download_backup(self, profile_name: str, local_path: str, overwrite: bool = True) -> bool:
+    def download_backup(self, profile_name: str, local_path: str, overwrite: bool = True) -> Dict[str, any]:
         """
         Download a backup folder from Google Drive.
         
@@ -383,28 +419,38 @@ class GoogleDriveManager:
             overwrite: If True, overwrite existing local files; if False, skip existing
             
         Returns:
-            bool: True if download successful, False otherwise
+            Dict: Download statistics
         """
+        result_stats = {
+            'ok': False,
+            'downloaded': 0,
+            'skipped': 0,
+            'failed': 0,
+            'total': 0
+        }
+
         if not self.service or not self.app_folder_id:
             logging.error("Not connected to Google Drive")
-            return False
+            return result_stats
         
         try:
             # Find profile folder in Drive
             profile_folder_id = self._find_folder(profile_name, self.app_folder_id)
             if not profile_folder_id:
                 logging.error(f"Profile folder not found in Drive: {profile_name}")
-                return False
+                return result_stats
             
             # Create local directory if it doesn't exist
             os.makedirs(local_path, exist_ok=True)
             
-            # List all files in the profile folder
+            # List all files in the profile folder (include md5Checksum field)
             files = self._list_files_in_folder(profile_folder_id)
+            result_stats['total'] = len(files)
             
             if not files:
                 logging.warning(f"No files found in cloud folder: {profile_name}")
-                return True  # Not an error, just nothing to download
+                result_stats['ok'] = True
+                return result_stats
             
             logging.info(f"Downloading {len(files)} files for profile '{profile_name}'...")
             
@@ -413,20 +459,33 @@ class GoogleDriveManager:
                 # Check for cancellation before each file
                 if self._cancelled:
                     logging.info(f"Download cancelled for profile '{profile_name}'")
-                    return False
+                    result_stats['ok'] = False
+                    return result_stats
                 
                 file_id = file_info['id']
                 filename = file_info['name']
+                remote_md5 = file_info.get('md5Checksum')
                 local_file_path = os.path.join(local_path, filename)
                 
                 # Report progress
                 if self.progress_callback:
                     self.progress_callback(idx, len(files), f"Downloading {filename}")
                 
-                # Skip if file exists and overwrite is False
-                if not overwrite and os.path.exists(local_file_path):
-                    logging.info(f"Skipping existing file: {filename}")
-                    continue
+                # Check local file if exists
+                if os.path.exists(local_file_path):
+                    # If checksum matches, skip download regardless of overwrite setting
+                    if remote_md5:
+                        local_md5 = self._compute_local_md5(local_file_path)
+                        if local_md5 and local_md5 == remote_md5:
+                            logging.info(f"Skipping download for '{filename}': file exists and MD5 matches")
+                            result_stats['skipped'] += 1
+                            continue
+                    
+                    # If not matching, skip only if overwrite is False
+                    if not overwrite:
+                        logging.info(f"Skipping existing file: {filename}")
+                        result_stats['skipped'] += 1
+                        continue
                 
                 # Download file
                 success = self._download_file(file_id, local_file_path)
@@ -434,19 +493,41 @@ class GoogleDriveManager:
                 # Check for cancellation immediately after download attempt
                 if self._cancelled:
                     logging.info(f"Download cancelled during file '{filename}'")
-                    return False
+                    result_stats['ok'] = False
+                    return result_stats
                 
                 if success:
-                    logging.info(f"Downloaded file: {filename}")
+                    # Verify integrity after download
+                    if remote_md5:
+                        new_local_md5 = self._compute_local_md5(local_file_path)
+                        if new_local_md5 != remote_md5:
+                            logging.error(f"Integrity check failed for {filename}! Remote MD5: {remote_md5}, Local MD5: {new_local_md5}")
+                            # Delete corrupted file
+                            try:
+                                os.remove(local_file_path)
+                                logging.info(f"Deleted corrupted file: {local_file_path}")
+                            except Exception as e_del:
+                                logging.error(f"Failed to delete corrupted file: {e_del}")
+                            result_stats['failed'] += 1
+                            return result_stats # Fail whole batch on corruption? Or just count? Usually fail safe.
+                        else:
+                            logging.info(f"Downloaded and verified file: {filename}")
+                            result_stats['downloaded'] += 1
+                    else:
+                        logging.info(f"Downloaded file (no remote MD5): {filename}")
+                        result_stats['downloaded'] += 1
                 else:
                     logging.warning(f"Failed to download file: {filename}")
+                    result_stats['failed'] += 1
             
             logging.info(f"Download completed for profile '{profile_name}'")
-            return True
+            result_stats['ok'] = True
+            return result_stats
             
         except Exception as e:
             logging.error(f"Error downloading backup: {e}")
-            return False
+            result_stats['ok'] = False
+            return result_stats
     
     def list_cloud_backups(self) -> List[Dict[str, any]]:
         """
@@ -783,7 +864,7 @@ class GoogleDriveManager:
                 lambda: self.service.files().list(
                     q=query,
                     spaces='drive',
-                    fields='files(id, name, size, modifiedTime)',
+                    fields='files(id, name, size, modifiedTime, md5Checksum)',
                     orderBy='name'
                 ).execute(),
                 "list files in folder"

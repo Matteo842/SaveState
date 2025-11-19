@@ -147,7 +147,7 @@ class UploadWorker(QObject):
 class DownloadWorker(QObject):
     """Worker thread for downloading backups to avoid blocking UI."""
     progress = Signal(int, int, str)  # current, total, message
-    finished = Signal(int, int)  # success_count, total_count
+    finished = Signal(int, int, dict)  # success_count, total_count, summary_stats
     profile_created = Signal(str, str)  # profile_name, backup_path (emitted when a new profile is created)
     cancelled = Signal()  # Emitted when operation is cancelled
     
@@ -172,6 +172,14 @@ class DownloadWorker(QObject):
         success_count = 0
         total = len(self.backup_list)
         
+        # Track detailed statistics
+        stats = {
+            'downloaded': 0,
+            'skipped': 0,
+            'failed': 0,
+            'files_total': 0
+        }
+        
         for idx, backup_name in enumerate(self.backup_list, 1):
             # Check for cancellation before processing
             if self._cancelled:
@@ -184,6 +192,7 @@ class DownloadWorker(QObject):
             backup_path = os.path.join(self.backup_base_dir, backup_name)
             
             try:
+                # download_backup now returns a dict with stats
                 download_result = self.drive_manager.download_backup(backup_name, backup_path)
                 
                 # Check for cancellation immediately after download attempt
@@ -192,7 +201,21 @@ class DownloadWorker(QObject):
                     self.cancelled.emit()
                     return
                 
-                if download_result:
+                # Handle result (could be bool or dict depending on version)
+                ok = False
+                if isinstance(download_result, dict):
+                    ok = download_result.get('ok', False)
+                    stats['downloaded'] += download_result.get('downloaded', 0)
+                    stats['skipped'] += download_result.get('skipped', 0)
+                    stats['failed'] += download_result.get('failed', 0)
+                    stats['files_total'] += download_result.get('total', 0)
+                else:
+                    ok = bool(download_result)
+                    # Fallback stats if old version
+                    if ok:
+                        stats['downloaded'] += 1
+                
+                if ok:
                     success_count += 1
                     logging.info(f"Successfully downloaded: {backup_name}")
                     
@@ -210,7 +233,7 @@ class DownloadWorker(QObject):
                     return
                 logging.error(f"Error downloading {backup_name}: {e}")
         
-        self.finished.emit(success_count, total)
+        self.finished.emit(success_count, total, stats)
 
 
 class DeleteWorker(QObject):
@@ -1396,6 +1419,10 @@ class CloudSavePanel(QWidget):
         
         # Show notifications
         self._show_notification(title, msg)
+        
+        # Only show popup if there was actual work done or if we explicitly want to notify
+        # If everything was skipped due to no changes, maybe don't show a modal popup?
+        # For now, we keep it consistent but maybe less intrusive for "No Upload Needed"
         QMessageBox.information(self, title, msg)
         
         # Refresh cloud status
@@ -1546,7 +1573,7 @@ class CloudSavePanel(QWidget):
         except Exception as e:
             logging.error(f"Error auto-creating profile '{profile_name}': {e}", exc_info=True)
     
-    def _on_download_finished(self, success_count, total_count):
+    def _on_download_finished(self, success_count, total_count, stats=None):
         """Handle download completion."""
         self.progress_bar.setVisible(False)
         self._enable_buttons_after_operation()
@@ -1558,17 +1585,30 @@ class CloudSavePanel(QWidget):
         # Restore delete button
         self._set_delete_button_to_delete_mode()
         
-        # Show notification
-        self._show_notification(
-            "Download Complete",
-            f"Successfully downloaded {success_count} of {total_count} backups from Google Drive."
-        )
+        # Determine message based on stats
+        title = "Download Complete"
+        msg = f"Successfully processed {success_count} of {total_count} backups."
         
-        QMessageBox.information(
-            self,
-            "Download Complete",
-            f"Successfully downloaded {success_count} of {total_count} backups."
-        )
+        if stats and isinstance(stats, dict):
+            downloaded = stats.get('downloaded', 0)
+            skipped = stats.get('skipped', 0)
+            failed = stats.get('failed', 0)
+            
+            if downloaded == 0 and skipped > 0:
+                 title = "No Download Needed"
+                 msg = "No files needed to be downloaded. Local files are identical to cloud versions (MD5 match) or newer."
+            elif downloaded > 0:
+                msg = f"Downloaded {downloaded} file(s)."
+                if skipped > 0:
+                    msg += f" Skipped {skipped} file(s) (already up-to-date)."
+            
+            if failed > 0:
+                msg += f"\n\nWarning: {failed} file(s) failed to download or verify."
+
+        # Show notification
+        self._show_notification(title, msg)
+        
+        QMessageBox.information(self, title, msg)
         
         # Refresh local list
         self._populate_backup_list()
