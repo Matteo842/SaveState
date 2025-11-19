@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot, QEvent, QThread, QObject, QTimer
 from PySide6.QtGui import QIcon, QColor, QPixmap
 from cloud_utils.cloud_settings_panel import CloudSettingsPanel
-from cloud_utils.google_drive_manager import get_drive_manager
+from cloud_utils.google_drive_manager import get_drive_manager, StorageCheckWorker
 import cloud_settings_manager
 from utils import resource_path
 
@@ -47,6 +47,7 @@ class UploadWorker(QObject):
     progress = Signal(int, int, str)  # current, total, message
     finished = Signal(int, int)  # success_count, total_count
     summary_ready = Signal(dict)  # aggregated stats for UI messaging
+    cancelled = Signal()  # Emitted when operation is cancelled
     
     def __init__(self, drive_manager, backup_list, backup_base_dir, max_backups=None):
         super().__init__()
@@ -54,6 +55,15 @@ class UploadWorker(QObject):
         self.backup_list = backup_list
         self.backup_base_dir = backup_base_dir
         self.max_backups = max_backups
+        self._cancelled = False
+    
+    def cancel(self):
+        """Request cancellation of the upload operation."""
+        self._cancelled = True
+        # Also request cancellation from drive manager to interrupt chunk operations
+        if self.drive_manager:
+            self.drive_manager.request_cancellation()
+        logging.info("Upload cancellation requested")
     
     def run(self):
         """Execute upload in background."""
@@ -62,6 +72,12 @@ class UploadWorker(QObject):
         results = []
         
         for idx, backup_name in enumerate(self.backup_list, 1):
+            # Check for cancellation
+            if self._cancelled:
+                logging.info(f"Upload cancelled by user at {idx}/{total}")
+                self.cancelled.emit()
+                return
+            
             self.progress.emit(idx, total, f"Uploading {backup_name}...")
             
             backup_path = os.path.join(self.backup_base_dir, backup_name)
@@ -71,12 +87,21 @@ class UploadWorker(QObject):
                 ok = False
                 uploaded_cnt = 0
                 skipped_cnt = 0
+                was_cancelled = False
+                
                 if isinstance(res, dict):
                     ok = bool(res.get('ok', True))
                     uploaded_cnt = int(res.get('uploaded_count', 0))
                     skipped_cnt = int(res.get('skipped_newer_or_same', 0))
+                    was_cancelled = bool(res.get('cancelled', False))
                 else:
                     ok = bool(res)
+                
+                # If cancelled, exit immediately
+                if was_cancelled or self._cancelled:
+                    logging.info(f"Upload cancelled during {backup_name}")
+                    self.cancelled.emit()
+                    return
 
                 if ok:
                     success_count += 1
@@ -91,6 +116,11 @@ class UploadWorker(QObject):
                     'skipped_newer_or_same': skipped_cnt
                 })
             except Exception as e:
+                # Check if cancelled during exception
+                if self._cancelled:
+                    logging.info(f"Upload cancelled during {backup_name} (exception caught)")
+                    self.cancelled.emit()
+                    return
                 logging.error(f"Error uploading {backup_name}: {e}")
         
         # Aggregate and emit summary for UI
@@ -119,6 +149,7 @@ class DownloadWorker(QObject):
     progress = Signal(int, int, str)  # current, total, message
     finished = Signal(int, int)  # success_count, total_count
     profile_created = Signal(str, str)  # profile_name, backup_path (emitted when a new profile is created)
+    cancelled = Signal()  # Emitted when operation is cancelled
     
     def __init__(self, drive_manager, backup_list, backup_base_dir, existing_profiles):
         super().__init__()
@@ -126,6 +157,15 @@ class DownloadWorker(QObject):
         self.backup_list = backup_list
         self.backup_base_dir = backup_base_dir
         self.existing_profiles = existing_profiles  # Dict of existing profiles
+        self._cancelled = False
+    
+    def cancel(self):
+        """Request cancellation of the download operation."""
+        self._cancelled = True
+        # Also request cancellation from drive manager to interrupt chunk operations
+        if self.drive_manager:
+            self.drive_manager.request_cancellation()
+        logging.info("Download cancellation requested")
     
     def run(self):
         """Execute download in background."""
@@ -133,12 +173,26 @@ class DownloadWorker(QObject):
         total = len(self.backup_list)
         
         for idx, backup_name in enumerate(self.backup_list, 1):
+            # Check for cancellation before processing
+            if self._cancelled:
+                logging.info(f"Download cancelled by user at {idx}/{total}")
+                self.cancelled.emit()
+                return
+            
             self.progress.emit(idx, total, f"Downloading {backup_name}...")
             
             backup_path = os.path.join(self.backup_base_dir, backup_name)
             
             try:
-                if self.drive_manager.download_backup(backup_name, backup_path):
+                download_result = self.drive_manager.download_backup(backup_name, backup_path)
+                
+                # Check for cancellation immediately after download attempt
+                if self._cancelled:
+                    logging.info(f"Download cancelled during {backup_name}")
+                    self.cancelled.emit()
+                    return
+                
+                if download_result:
                     success_count += 1
                     logging.info(f"Successfully downloaded: {backup_name}")
                     
@@ -149,6 +203,11 @@ class DownloadWorker(QObject):
                 else:
                     logging.error(f"Failed to download: {backup_name}")
             except Exception as e:
+                # Check if the error is due to cancellation
+                if self._cancelled:
+                    logging.info(f"Download cancelled during {backup_name} (exception caught)")
+                    self.cancelled.emit()
+                    return
                 logging.error(f"Error downloading {backup_name}: {e}")
         
         self.finished.emit(success_count, total)
@@ -158,11 +217,19 @@ class DeleteWorker(QObject):
     """Worker thread for deleting backups from cloud to avoid blocking UI."""
     progress = Signal(int, int, str)  # current, total, message
     finished = Signal(int, int)  # success_count, total_count
+    cancelled = Signal()  # Emitted when operation is cancelled
     
     def __init__(self, drive_manager, backup_list):
         super().__init__()
         self.drive_manager = drive_manager
         self.backup_list = backup_list
+        self._cancelled = False
+    
+    def cancel(self):
+        """Request cancellation of the delete operation."""
+        self._cancelled = True
+        # Note: Delete doesn't involve chunk operations, but we set the flag for consistency
+        logging.info("Delete cancellation requested")
     
     def run(self):
         """Execute deletion in background."""
@@ -170,6 +237,12 @@ class DeleteWorker(QObject):
         total = len(self.backup_list)
         
         for idx, backup_name in enumerate(self.backup_list, 1):
+            # Check for cancellation
+            if self._cancelled:
+                logging.info(f"Delete cancelled by user at {idx}/{total}")
+                self.cancelled.emit()
+                return
+            
             self.progress.emit(idx, total, f"Deleting {backup_name}...")
             
             try:
@@ -182,6 +255,35 @@ class DeleteWorker(QObject):
                 logging.error(f"Error deleting {backup_name}: {e}")
         
         self.finished.emit(success_count, total)
+
+
+class RefreshCloudStatusWorker(QObject):
+    """Worker thread for refreshing cloud backup status to avoid blocking UI."""
+    finished = Signal(dict)  # cloud_backups dict
+    error = Signal(str)  # error message
+    
+    def __init__(self, drive_manager):
+        super().__init__()
+        self.drive_manager = drive_manager
+    
+    def run(self):
+        """Execute cloud status refresh in background."""
+        try:
+            logging.info("Refreshing cloud backup status in background...")
+            cloud_backups_list = self.drive_manager.list_cloud_backups()
+            
+            # Convert to dict for easy lookup
+            cloud_backups = {
+                backup['name']: backup for backup in cloud_backups_list
+            }
+            
+            logging.info(f"Cloud status updated: {len(cloud_backups)} backups in cloud")
+            self.finished.emit(cloud_backups)
+            
+        except Exception as e:
+            error_msg = f"Error refreshing cloud status: {str(e)}"
+            logging.error(error_msg, exc_info=True)
+            self.error.emit(error_msg)
 
 
 class CloudSavePanel(QWidget):
@@ -225,6 +327,10 @@ class CloudSavePanel(QWidget):
         self.sync_timer = None
         self._sync_in_progress = False
         self._disconnect_after_current_sync = False
+        
+        # Track current operation for cancellation
+        self._current_worker = None
+        self._current_operation = None  # 'upload', 'download', 'delete'
         
         # Use stacked widget to switch between main panel and settings
         self.stacked_widget = QStackedWidget(self)
@@ -398,11 +504,13 @@ class CloudSavePanel(QWidget):
         # Refresh button widget
         self.refresh_button = QPushButton("Refresh List")
         self.refresh_button.clicked.connect(self._on_refresh_clicked)
+        # NO minimum width - let it use its natural size
         
         # Search bar widget
         self.filter_search = QLineEdit()
         self.filter_search.setPlaceholderText("Type to filter backups...")
         self.filter_search.textChanged.connect(self._on_search_changed)
+        # NO minimum width - let it use its natural size
         
         # Add both to stacked widget
         self.refresh_search_stack.addWidget(self.refresh_button)  # Index 0
@@ -425,15 +533,36 @@ class CloudSavePanel(QWidget):
         self.delete_button = QPushButton("Delete Selected from Cloud")
         self.delete_button.setObjectName("DangerButton")
         self.delete_button.setEnabled(False)
-        self.delete_button.clicked.connect(self._on_delete_clicked)
-        # Set trash icon (same as delete profile button)
+        self.delete_button.clicked.connect(self._on_delete_or_cancel_clicked)
+        
+        # Calculate width needed for BOTH possible texts and use the larger one
+        # This prevents resizing when switching between "Delete..." and "Cancel..."
+        delete_text = "Delete Selected from Cloud"
+        cancel_text = "Cancel Operation"
+        
+        # Get font metrics to calculate text width
+        from PySide6.QtGui import QFontMetrics
+        font_metrics = self.delete_button.fontMetrics()
+        delete_width = font_metrics.horizontalAdvance(delete_text)
+        cancel_width = font_metrics.horizontalAdvance(cancel_text)
+        
+        # Use the wider text + icon space + padding
+        max_text_width = max(delete_width, cancel_width)
+        # Add space for icon (32px) + padding (40px for margins and spacing)
+        self._delete_button_fixed_width = max_text_width + 32 + 40
+        self.delete_button.setFixedWidth(self._delete_button_fixed_width)
+        
+        # Set trash icon (same as delete profile button) and save it for later
         try:
             from PySide6.QtWidgets import QApplication, QStyle
             style = QApplication.instance().style()
-            delete_icon = style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
-            self.delete_button.setIcon(delete_icon)
+            self._delete_icon = style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+            self._cancel_icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton)
+            self.delete_button.setIcon(self._delete_icon)
         except Exception as e:
             logging.warning(f"Could not set delete button icon: {e}")
+            self._delete_icon = None
+            self._cancel_icon = None
         actions_layout.addWidget(self.delete_button)
         
         # Exit button (icon only, square)
@@ -705,6 +834,88 @@ class CloudSavePanel(QWidget):
         cloud_item.setForeground(cloud_color)
         self.backup_table.setItem(row, 4, cloud_item)
     
+    def _set_delete_button_to_cancel_mode(self):
+        """Transform delete button into cancel button during operations."""
+        self.delete_button.setText("Cancel Operation")
+        if self._cancel_icon:
+            self.delete_button.setIcon(self._cancel_icon)
+        self.delete_button.setEnabled(True)
+        # Change object name to get different styling if needed
+        self.delete_button.setObjectName("CancelButton")
+        # Reapply stylesheet to reflect new object name
+        self.delete_button.setStyleSheet(self.delete_button.styleSheet())
+        # Reapply fixed width to maintain button size
+        self.delete_button.setFixedWidth(self._delete_button_fixed_width)
+    
+    def _set_delete_button_to_delete_mode(self):
+        """Restore delete button to normal state after operations."""
+        self.delete_button.setText("Delete Selected from Cloud")
+        if self._delete_icon:
+            self.delete_button.setIcon(self._delete_icon)
+        # Enable only if connected
+        self.delete_button.setEnabled(self.drive_manager.is_connected)
+        # Restore object name
+        self.delete_button.setObjectName("DangerButton")
+        # Reapply stylesheet to reflect new object name
+        self.delete_button.setStyleSheet(self.delete_button.styleSheet())
+        # Reapply fixed width to maintain button size
+        self.delete_button.setFixedWidth(self._delete_button_fixed_width)
+    
+    def _on_delete_or_cancel_clicked(self):
+        """Handle delete button click - acts as delete or cancel depending on mode."""
+        # Check if we're in cancel mode (operation in progress)
+        if self._current_worker is not None:
+            self._on_cancel_operation_clicked()
+        else:
+            self._on_delete_clicked()
+    
+    def _handle_storage_check_cancellation(self):
+        """Handle cancellation of the storage check operation."""
+        logging.info("Cancelling storage check...")
+        self._storage_check_cancelled = True
+        
+        # Stop thread if running
+        if hasattr(self, '_storage_check_thread') and self._storage_check_thread.isRunning():
+            self._storage_check_thread.quit()
+            # We don't wait() here to keep UI responsive, the thread will finish eventually
+            # and the result will be ignored due to _storage_check_cancelled flag
+        
+        # Restore UI state
+        self.progress_bar.setVisible(False)
+        self._enable_buttons_after_operation()
+        self._set_delete_button_to_delete_mode()
+        
+        # Clear pending selection
+        self._pending_upload_selection = None
+        self._current_operation = None
+        
+        QMessageBox.information(
+            self,
+            "Upload Cancelled",
+            "Upload operation (storage check) was cancelled by user."
+        )
+
+    def _on_cancel_operation_clicked(self):
+        """Cancel the current operation (upload/download/delete)."""
+        # Handle storage check cancellation specially
+        if getattr(self, '_current_operation', None) == 'storage_check':
+            self._handle_storage_check_cancellation()
+            return
+            
+        if self._current_worker is None:
+            return
+        
+        logging.info(f"Cancelling {self._current_operation} operation...")
+        
+        # Call cancel method on worker
+        try:
+            if hasattr(self._current_worker, 'cancel'):
+                self._current_worker.cancel()
+                # Update progress bar to show cancellation
+                self.progress_bar.setFormat("Cancelling operation...")
+        except Exception as e:
+            logging.error(f"Error requesting cancellation: {e}")
+    
     def _on_filter_changed(self, checked):
         """Handle filter checkbox change."""
         self._populate_backup_list()
@@ -904,19 +1115,102 @@ class CloudSavePanel(QWidget):
             self.download_button.setEnabled(False)
             self.delete_button.setEnabled(False)
     
+    def _disable_buttons_during_operation(self):
+        """Disable buttons during cloud operations."""
+        self.upload_button.setEnabled(False)
+        self.download_button.setEnabled(False)
+        # Only disable refresh if it's showing the button (not the search bar)
+        if self.refresh_search_stack.currentIndex() == 0:
+            self.refresh_button.setEnabled(False)
+    
+    def _enable_buttons_after_operation(self):
+        """Re-enable buttons after cloud operations complete."""
+        if self.drive_manager.is_connected:
+            self.upload_button.setEnabled(True)
+            self.download_button.setEnabled(True)
+        # Always re-enable refresh button (if visible)
+        if self.refresh_search_stack.currentIndex() == 0:
+            self.refresh_button.setEnabled(True)
+    
     def _on_upload_clicked(self):
         """Handle upload selected backups to cloud."""
+        # Check if there's already an operation in progress
+        if self._current_worker is not None or getattr(self, '_current_operation', None) == 'storage_check':
+            QMessageBox.warning(
+                self, 
+                "Operation in Progress", 
+                "Please wait for the current operation to complete before starting a new one."
+            )
+            return
+        
         selected = self._get_selected_backups()
         if not selected:
             QMessageBox.warning(self, "No Selection", "Please select backups to upload.")
             return
         
-        # Check storage limit if enabled
+        # Disable buttons immediately and show cancel button
+        self._disable_buttons_during_operation()
+        self._set_delete_button_to_cancel_mode()
+        
+        # Show indeterminate progress bar initially
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setFormat("Preparing upload...")
+        
+        # Force immediate UI update
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        
+        # Check storage limit asynchronously if enabled (avoid blocking the UI thread)
         if self.cloud_settings.get('max_cloud_storage_enabled', False):
             max_storage_gb = self.cloud_settings.get('max_cloud_storage_gb', 5)
-            within_limit, current_gb, max_gb = self.drive_manager.check_storage_limit(max_storage_gb)
             
+            self.progress_bar.setFormat("Checking storage...")
+            
+            # Launch background worker
+            try:
+                self._pending_upload_selection = selected
+                self._current_operation = 'storage_check' # Mark operation type
+                self._storage_check_cancelled = False # Reset cancel flag
+                
+                self._storage_check_thread = QThread()
+                self._storage_check_worker = StorageCheckWorker(self.drive_manager, max_storage_gb)
+                self._storage_check_worker.moveToThread(self._storage_check_thread)
+                self._storage_check_thread.started.connect(self._storage_check_worker.run)
+                self._storage_check_worker.finished.connect(self._on_storage_check_finished)
+                self._storage_check_worker.error.connect(self._on_storage_check_error)
+                self._storage_check_worker.finished.connect(self._storage_check_thread.quit)
+                self._storage_check_worker.finished.connect(self._storage_check_worker.deleteLater)
+                self._storage_check_thread.finished.connect(self._storage_check_thread.deleteLater)
+                self._storage_check_thread.start()
+                return  # Continue after check completes
+            except Exception as e:
+                logging.error(f"Could not start storage check worker: {e}")
+                # Fall through to start upload (but first reset UI state slightly to allow start_upload to handle it)
+                self._current_operation = None
+        
+        # No storage limit enabled or check failed to start; start upload immediately
+        self._start_upload_selected(selected)
+    
+    def _on_storage_check_finished(self, within_limit: bool, current_gb: float, max_gb: int):
+        """Handle completion of background storage limit check."""
+        # Check for cancellation
+        if getattr(self, '_storage_check_cancelled', False):
+            logging.info("Storage check cancelled, ignoring result.")
+            self._current_operation = None
+            return
+
+        # Hide indeterminate progress used for storage check
+        # Don't hide it if we are proceeding to upload, let upload handle it
+        # But if we stop (limit reached), we should hide it.
+        
+        try:
             if not within_limit:
+                self.progress_bar.setVisible(False)
+                self._enable_buttons_after_operation()
+                self._set_delete_button_to_delete_mode()
+                self._current_operation = None
+                
                 QMessageBox.warning(
                     self,
                     "Storage Limit Reached",
@@ -925,31 +1219,88 @@ class CloudSavePanel(QWidget):
                     f"Limit: {max_gb} GB\n\n"
                     f"Please delete old backups or increase the limit in settings."
                 )
+                self._pending_upload_selection = None
                 return
-            
+
             # Warn if close to limit
-            if current_gb > max_gb * 0.8:
-                reply = QMessageBox.question(
-                    self,
-                    "Storage Warning",
-                    f"Cloud storage is at {int((current_gb/max_gb)*100)}% of limit.\n\n"
-                    f"Current: {current_gb} GB\n"
-                    f"Limit: {max_gb} GB\n\n"
-                    f"Continue with upload?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                if reply == QMessageBox.StandardButton.No:
-                    return
-        
+            try:
+                if max_gb and current_gb > (max_gb * 0.8):
+                    # We need to hide progress temporarily to show dialog? 
+                    # Or just show dialog on top.
+                    reply = QMessageBox.question(
+                        self,
+                        "Storage Warning",
+                        f"Cloud storage is at {int((current_gb/max_gb)*100)}% of limit.\n\n"
+                        f"Current: {current_gb} GB\n"
+                        f"Limit: {max_gb} GB\n\n"
+                        f"Continue with upload?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    )
+                    if reply == QMessageBox.StandardButton.No:
+                        self.progress_bar.setVisible(False)
+                        self._enable_buttons_after_operation()
+                        self._set_delete_button_to_delete_mode()
+                        self._current_operation = None
+                        self._pending_upload_selection = None
+                        return
+            except Exception:
+                pass
+
+            # Proceed with upload
+            selected = list(self._pending_upload_selection or [])
+            self._pending_upload_selection = None
+            # Reset operation flag so _start_upload_selected can take over
+            self._current_operation = None 
+            if selected:
+                self._start_upload_selected(selected)
+        except Exception as e:
+            logging.error(f"Error handling storage check result: {e}")
+            self._current_operation = None
+            self.progress_bar.setVisible(False)
+            self._enable_buttons_after_operation()
+            self._set_delete_button_to_delete_mode()
+
+    def _on_storage_check_error(self, message: str):
+        """Handle errors from storage check worker; proceed optimistically (same as check fallback)."""
+        # Check for cancellation
+        if getattr(self, '_storage_check_cancelled', False):
+            self._current_operation = None
+            return
+            
+        logging.warning(f"Storage check failed: {message}. Proceeding with upload.")
+        # Don't hide progress, just proceed
+        try:
+            selected = list(self._pending_upload_selection or [])
+        except Exception:
+            selected = []
+        self._pending_upload_selection = None
+        self._current_operation = None
+        if selected:
+            self._start_upload_selected(selected)
+
+    def _start_upload_selected(self, selected: list[str]):
+        """Start the upload process for the given selected backup names."""
         logging.info(f"Uploading {len(selected)} backups to cloud...")
         
-        # Show progress
+        # Reset cancellation flag in drive manager before starting
+        self.drive_manager.reset_cancellation()
+        
+        # Show progress - UI updates IMMEDIATELY
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, len(selected))
         self.progress_bar.setValue(0)
-        self.upload_button.setEnabled(False)
-        self.download_button.setEnabled(False)
+        self.progress_bar.setFormat("Starting upload...")
+        self._disable_buttons_during_operation()
         
+        # Transform delete button to cancel mode IMMEDIATELY
+        self._set_delete_button_to_cancel_mode()
+        
+        # Use QTimer to allow UI to update before starting the thread
+        # This ensures buttons are disabled and cancel button is shown instantly
+        QTimer.singleShot(50, lambda: self._finalize_upload_start(selected))
+        
+    def _finalize_upload_start(self, selected: list[str]):
+        """Finalize upload start after UI update."""
         # Get max backups setting
         max_backups = None
         if self.cloud_settings.get('max_cloud_backups_enabled', False):
@@ -961,10 +1312,15 @@ class CloudSavePanel(QWidget):
         self.upload_worker.moveToThread(self.upload_thread)
         self._last_upload_summary = None
         
+        # Track current operation for cancellation
+        self._current_worker = self.upload_worker
+        self._current_operation = 'upload'
+        
         # Connect signals
         self.upload_thread.started.connect(self.upload_worker.run)
         self.upload_worker.progress.connect(self._on_upload_progress)
         self.upload_worker.summary_ready.connect(self._on_upload_summary)
+        self.upload_worker.cancelled.connect(self._on_upload_cancelled)
         self.upload_worker.finished.connect(self._on_upload_finished)
         self.upload_worker.finished.connect(self.upload_thread.quit)
         self.upload_worker.finished.connect(self.upload_worker.deleteLater)
@@ -978,11 +1334,44 @@ class CloudSavePanel(QWidget):
         self.progress_bar.setValue(current)
         self.progress_bar.setFormat(f"{message} ({current}/{total})")
     
+    def _on_upload_cancelled(self):
+        """Handle upload cancellation."""
+        self.progress_bar.setVisible(False)
+        self._enable_buttons_after_operation()
+        
+        # Wait for thread to actually terminate before clearing worker
+        if hasattr(self, 'upload_thread') and self.upload_thread is not None:
+            if self.upload_thread.isRunning():
+                self.upload_thread.quit()
+                self.upload_thread.wait(1000)  # Wait up to 1 second
+        
+        # Clear current operation tracking
+        self._current_worker = None
+        self._current_operation = None
+        
+        # Restore delete button
+        self._set_delete_button_to_delete_mode()
+        
+        QMessageBox.information(
+            self,
+            "Upload Cancelled",
+            "Upload operation was cancelled by user."
+        )
+        
+        # Refresh cloud status in case some files were uploaded before cancellation
+        self._refresh_cloud_status()
+    
     def _on_upload_finished(self, success_count, total_count):
         """Handle upload completion."""
         self.progress_bar.setVisible(False)
-        self.upload_button.setEnabled(True)
-        self.download_button.setEnabled(True)
+        self._enable_buttons_after_operation()
+        
+        # Clear current operation tracking
+        self._current_worker = None
+        self._current_operation = None
+        
+        # Restore delete button
+        self._set_delete_button_to_delete_mode()
         
         # Decide message based on summary (skips vs updates)
         title = "Upload Complete"
@@ -1019,6 +1408,15 @@ class CloudSavePanel(QWidget):
     
     def _on_download_clicked(self):
         """Handle download selected backups from cloud."""
+        # Check if there's already an operation in progress
+        if self._current_worker is not None:
+            QMessageBox.warning(
+                self, 
+                "Operation in Progress", 
+                "Please wait for the current operation to complete before starting a new one."
+            )
+            return
+        
         selected = self._get_selected_backups()
         if not selected:
             QMessageBox.warning(self, "No Selection", "Please select backups to download.")
@@ -1026,13 +1424,25 @@ class CloudSavePanel(QWidget):
         
         logging.info(f"Downloading {len(selected)} backups from cloud...")
         
-        # Show progress
+        # Reset cancellation flag in drive manager before starting
+        self.drive_manager.reset_cancellation()
+        
+        # Show progress - UI updates IMMEDIATELY
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, len(selected))
         self.progress_bar.setValue(0)
-        self.upload_button.setEnabled(False)
-        self.download_button.setEnabled(False)
+        self.progress_bar.setFormat("Starting download...")
+        self._disable_buttons_during_operation()
         
+        # Transform delete button to cancel mode IMMEDIATELY
+        self._set_delete_button_to_cancel_mode()
+        
+        # Use QTimer to allow UI to update before starting the thread
+        # This ensures buttons are disabled and cancel button is shown instantly
+        QTimer.singleShot(50, lambda: self._finalize_download_start(selected))
+
+    def _finalize_download_start(self, selected: list[str]):
+        """Finalize download start after UI update."""
         # Create worker and thread
         self.download_thread = QThread()
         self.download_worker = DownloadWorker(
@@ -1043,10 +1453,15 @@ class CloudSavePanel(QWidget):
         )
         self.download_worker.moveToThread(self.download_thread)
         
+        # Track current operation for cancellation
+        self._current_worker = self.download_worker
+        self._current_operation = 'download'
+        
         # Connect signals
         self.download_thread.started.connect(self.download_worker.run)
         self.download_worker.progress.connect(self._on_download_progress)
         self.download_worker.profile_created.connect(self._on_profile_auto_created)
+        self.download_worker.cancelled.connect(self._on_download_cancelled)
         self.download_worker.finished.connect(self._on_download_finished)
         self.download_worker.finished.connect(self.download_thread.quit)
         self.download_worker.finished.connect(self.download_worker.deleteLater)
@@ -1059,6 +1474,49 @@ class CloudSavePanel(QWidget):
         """Handle download progress updates."""
         self.progress_bar.setValue(current)
         self.progress_bar.setFormat(f"{message} ({current}/{total})")
+    
+    def _on_download_cancelled(self):
+        """Handle download cancellation."""
+        self.progress_bar.setVisible(False)
+        self._enable_buttons_after_operation()
+        
+        # Wait for thread to actually terminate before clearing worker
+        if hasattr(self, 'download_thread') and self.download_thread is not None:
+            if self.download_thread.isRunning():
+                self.download_thread.quit()
+                self.download_thread.wait(1000)  # Wait up to 1 second
+        
+        # Clear current operation tracking
+        self._current_worker = None
+        self._current_operation = None
+        
+        # Restore delete button
+        self._set_delete_button_to_delete_mode()
+        
+        # Clean up any empty backup folders created during cancelled download
+        try:
+            if os.path.isdir(self.backup_base_dir):
+                for entry in os.listdir(self.backup_base_dir):
+                    entry_path = os.path.join(self.backup_base_dir, entry)
+                    if os.path.isdir(entry_path):
+                        # Check if folder is empty
+                        try:
+                            if not os.listdir(entry_path):
+                                os.rmdir(entry_path)
+                                logging.info(f"Deleted empty backup folder created during cancelled download: {entry_path}")
+                        except Exception as e_clean:
+                            logging.debug(f"Could not clean empty folder {entry_path}: {e_clean}")
+        except Exception as e:
+            logging.debug(f"Error during cleanup of empty folders: {e}")
+        
+        QMessageBox.information(
+            self,
+            "Download Cancelled",
+            "Download operation was cancelled by user."
+        )
+        
+        # Refresh list in case some files were downloaded before cancellation
+        self._populate_backup_list()
     
     def _on_profile_auto_created(self, profile_name, backup_path):
         """Handle automatic profile creation after download."""
@@ -1091,8 +1549,14 @@ class CloudSavePanel(QWidget):
     def _on_download_finished(self, success_count, total_count):
         """Handle download completion."""
         self.progress_bar.setVisible(False)
-        self.upload_button.setEnabled(True)
-        self.download_button.setEnabled(True)
+        self._enable_buttons_after_operation()
+        
+        # Clear current operation tracking
+        self._current_worker = None
+        self._current_operation = None
+        
+        # Restore delete button
+        self._set_delete_button_to_delete_mode()
         
         # Show notification
         self._show_notification(
@@ -1111,6 +1575,15 @@ class CloudSavePanel(QWidget):
     
     def _on_delete_clicked(self):
         """Handle delete selected backups from cloud."""
+        # Check if there's already an operation in progress
+        if self._current_worker is not None:
+            QMessageBox.warning(
+                self, 
+                "Operation in Progress", 
+                "Please wait for the current operation to complete before starting a new one."
+            )
+            return
+        
         selected = self._get_selected_backups()
         if not selected:
             QMessageBox.warning(self, "No Selection", "Please select backups to delete from cloud.")
@@ -1131,22 +1604,36 @@ class CloudSavePanel(QWidget):
         
         logging.info(f"Deleting {len(selected)} backups from cloud...")
         
-        # Show progress
+        # Reset cancellation flag in drive manager before starting (though delete doesn't use chunks)
+        self.drive_manager.reset_cancellation()
+        
+        # Show progress - UI updates IMMEDIATELY
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, len(selected))
         self.progress_bar.setValue(0)
-        self.upload_button.setEnabled(False)
-        self.download_button.setEnabled(False)
-        self.delete_button.setEnabled(False)
+        self.progress_bar.setFormat("Starting deletion...")
+        self._disable_buttons_during_operation()
+        
+        # Transform delete button to cancel mode IMMEDIATELY
+        self._set_delete_button_to_cancel_mode()
+        
+        # Force immediate UI update before starting thread
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
         
         # Create worker and thread
         self.delete_thread = QThread()
         self.delete_worker = DeleteWorker(self.drive_manager, selected)
         self.delete_worker.moveToThread(self.delete_thread)
         
+        # Track current operation for cancellation
+        self._current_worker = self.delete_worker
+        self._current_operation = 'delete'
+        
         # Connect signals
         self.delete_thread.started.connect(self.delete_worker.run)
         self.delete_worker.progress.connect(self._on_delete_progress)
+        self.delete_worker.cancelled.connect(self._on_delete_cancelled)
         self.delete_worker.finished.connect(self._on_delete_finished)
         self.delete_worker.finished.connect(self.delete_thread.quit)
         self.delete_worker.finished.connect(self.delete_worker.deleteLater)
@@ -1160,12 +1647,44 @@ class CloudSavePanel(QWidget):
         self.progress_bar.setValue(current)
         self.progress_bar.setFormat(f"{message} ({current}/{total})")
     
+    def _on_delete_cancelled(self):
+        """Handle delete cancellation."""
+        self.progress_bar.setVisible(False)
+        self._enable_buttons_after_operation()
+        
+        # Wait for thread to actually terminate before clearing worker
+        if hasattr(self, 'delete_thread') and self.delete_thread is not None:
+            if self.delete_thread.isRunning():
+                self.delete_thread.quit()
+                self.delete_thread.wait(1000)  # Wait up to 1 second
+        
+        # Clear current operation tracking
+        self._current_worker = None
+        self._current_operation = None
+        
+        # Restore delete button
+        self._set_delete_button_to_delete_mode()
+        
+        QMessageBox.information(
+            self,
+            "Deletion Cancelled",
+            "Deletion operation was cancelled by user."
+        )
+        
+        # Refresh cloud status in case some files were deleted before cancellation
+        self._refresh_cloud_status()
+    
     def _on_delete_finished(self, success_count, total_count):
         """Handle delete completion."""
         self.progress_bar.setVisible(False)
-        self.upload_button.setEnabled(True)
-        self.download_button.setEnabled(True)
-        self.delete_button.setEnabled(True)
+        self._enable_buttons_after_operation()
+        
+        # Clear current operation tracking
+        self._current_worker = None
+        self._current_operation = None
+        
+        # Restore delete button
+        self._set_delete_button_to_delete_mode()
         
         # Show notification
         self._show_notification(
@@ -1310,33 +1829,44 @@ class CloudSavePanel(QWidget):
         self.stacked_widget.setCurrentIndex(0)  # Switch back to main panel
     
     def _refresh_cloud_status(self):
-        """Refresh cloud backup status for all backups."""
+        """Refresh cloud backup status for all backups in background."""
         if not self.drive_manager.is_connected:
             return
         
-        logging.info("Refreshing cloud backup status...")
+        logging.info("Starting cloud status refresh...")
         
-        try:
-            # Get list of cloud backups
-            cloud_backups_list = self.drive_manager.list_cloud_backups()
-            
-            # Convert to dict for easy lookup
-            self.cloud_backups = {
-                backup['name']: backup for backup in cloud_backups_list
-            }
-            
-            logging.info(f"Cloud status updated: {len(self.cloud_backups)} backups in cloud")
-            
-            # Repopulate the entire table to include cloud-only backups
-            self._populate_backup_list()
-            
-        except Exception as e:
-            logging.error(f"Error refreshing cloud status: {e}", exc_info=True)
-            QMessageBox.warning(
-                self,
-                "Refresh Error",
-                f"Could not refresh cloud status:\n{str(e)}"
-            )
+        # Create worker and thread for background refresh
+        self.refresh_thread = QThread()
+        self.refresh_worker = RefreshCloudStatusWorker(self.drive_manager)
+        self.refresh_worker.moveToThread(self.refresh_thread)
+        
+        # Connect signals
+        self.refresh_thread.started.connect(self.refresh_worker.run)
+        self.refresh_worker.finished.connect(self._on_refresh_cloud_status_finished)
+        self.refresh_worker.error.connect(self._on_refresh_cloud_status_error)
+        self.refresh_worker.finished.connect(self.refresh_thread.quit)
+        self.refresh_worker.finished.connect(self.refresh_worker.deleteLater)
+        self.refresh_worker.error.connect(self.refresh_thread.quit)
+        self.refresh_worker.error.connect(self.refresh_worker.deleteLater)
+        self.refresh_thread.finished.connect(self.refresh_thread.deleteLater)
+        
+        # Start refresh
+        self.refresh_thread.start()
+    
+    def _on_refresh_cloud_status_finished(self, cloud_backups):
+        """Handle cloud status refresh completion."""
+        self.cloud_backups = cloud_backups
+        
+        # Repopulate the entire table to include cloud-only backups
+        self._populate_backup_list()
+    
+    def _on_refresh_cloud_status_error(self, error_message):
+        """Handle cloud status refresh error."""
+        QMessageBox.warning(
+            self,
+            "Refresh Error",
+            f"Could not refresh cloud status:\n{error_message}"
+        )
     
     def _on_cloud_settings_saved(self, settings):
         """Handle cloud settings being saved."""
@@ -1442,6 +1972,10 @@ class CloudSavePanel(QWidget):
             logging.debug("Auto sync request ignored: another sync is running")
             return
         self._sync_in_progress = True
+        
+        # Reset cancellation flag in drive manager before starting
+        self.drive_manager.reset_cancellation()
+        
         # Get max backups setting
         max_backups = None
         if self.cloud_settings.get('max_cloud_backups_enabled', False):
@@ -1457,8 +1991,12 @@ class CloudSavePanel(QWidget):
         )
         self.auto_sync_worker.moveToThread(self.auto_sync_thread)
         
+        # NOTE: Auto-sync does NOT show cancel button, but we still support cancellation internally
+        # if we add a way to cancel background operations in the future
+        
         # Connect signals
         self.auto_sync_thread.started.connect(self.auto_sync_worker.run)
+        self.auto_sync_worker.cancelled.connect(self._on_auto_sync_cancelled)
         self.auto_sync_worker.finished.connect(self._on_auto_sync_finished)
         self.auto_sync_worker.finished.connect(self.auto_sync_thread.quit)
         self.auto_sync_worker.finished.connect(self.auto_sync_worker.deleteLater)
@@ -1466,6 +2004,33 @@ class CloudSavePanel(QWidget):
         
         # Start sync
         self.auto_sync_thread.start()
+    
+    def _on_auto_sync_cancelled(self):
+        """Handle automatic sync cancellation."""
+        logging.info("Periodic sync was cancelled")
+        
+        # Show notification
+        self._show_notification(
+            "Periodic Sync Cancelled",
+            "Automatic sync was cancelled."
+        )
+        
+        # Refresh cloud status in case some files were synced before cancellation
+        try:
+            self._refresh_cloud_status()
+        except Exception:
+            pass
+
+        # Disconnect if this was a temporary connection
+        try:
+            if self._disconnect_after_current_sync:
+                self.drive_manager.disconnect()
+                self._set_connected(False)
+            self._disconnect_after_current_sync = False
+        except Exception:
+            self._disconnect_after_current_sync = False
+
+        self._sync_in_progress = False
     
     def _on_auto_sync_finished(self, success_count, total_count):
         """Handle automatic sync completion."""

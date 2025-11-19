@@ -18,6 +18,7 @@ import datetime
 import random
 from typing import Optional, List, Dict, Callable, Callable as _Callable
 from pathlib import Path
+from PySide6.QtCore import QObject, Signal
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -61,6 +62,9 @@ class GoogleDriveManager:
         # Retry/backoff configuration (transient errors)
         self._max_retries = 5
         self._base_backoff_seconds = 0.5
+        
+        # Cancellation support
+        self._cancelled = False
         
     def authenticate(self) -> bool:
         """
@@ -152,6 +156,19 @@ class GoogleDriveManager:
         #     self.token_file.unlink()
         
         logging.info("Disconnected from Google Drive")
+    
+    def request_cancellation(self):
+        """Request cancellation of current operation."""
+        self._cancelled = True
+        logging.info("GoogleDriveManager: Cancellation requested")
+    
+    def reset_cancellation(self):
+        """Reset cancellation flag (call before starting a new operation)."""
+        self._cancelled = False
+    
+    def is_cancelled(self) -> bool:
+        """Check if cancellation was requested."""
+        return self._cancelled
     
     def create_app_folder(self) -> Optional[str]:
         """
@@ -268,6 +285,17 @@ class GoogleDriveManager:
             
             # Upload each file
             for idx, filename in enumerate(files_to_upload, 1):
+                # Check for cancellation before each file
+                if self._cancelled:
+                    logging.info(f"Upload cancelled for profile '{profile_name}'")
+                    return {
+                        'ok': False,
+                        'cancelled': True,
+                        'uploaded_count': uploaded_count,
+                        'skipped_newer_or_same': skipped_newer_or_same,
+                        'total_candidates': len(files_to_upload)
+                    }
+                
                 file_path = os.path.join(local_path, filename)
                 
                 # Report progress
@@ -290,6 +318,18 @@ class GoogleDriveManager:
                         logging.debug(f"Could not compare modified times for '{filename}': {e_cmp}. Proceeding conservatively with update.")
                     # Update existing file
                     success = self._update_file(existing_file_id, file_path)
+                    
+                    # Check for cancellation immediately after upload attempt
+                    if self._cancelled:
+                        logging.info(f"Upload cancelled during file '{filename}'")
+                        return {
+                            'ok': False,
+                            'cancelled': True,
+                            'uploaded_count': uploaded_count,
+                            'skipped_newer_or_same': skipped_newer_or_same,
+                            'total_candidates': len(files_to_upload)
+                        }
+                    
                     if success:
                         logging.info(f"Updated file: {filename}")
                         uploaded_count += 1
@@ -298,6 +338,18 @@ class GoogleDriveManager:
                 else:
                     # Upload new file
                     success = self._upload_file(file_path, filename, profile_folder_id)
+                    
+                    # Check for cancellation immediately after upload attempt
+                    if self._cancelled:
+                        logging.info(f"Upload cancelled during file '{filename}'")
+                        return {
+                            'ok': False,
+                            'cancelled': True,
+                            'uploaded_count': uploaded_count,
+                            'skipped_newer_or_same': skipped_newer_or_same,
+                            'total_candidates': len(files_to_upload)
+                        }
+                    
                     if success:
                         logging.info(f"Uploaded file: {filename}")
                         uploaded_count += 1
@@ -358,6 +410,11 @@ class GoogleDriveManager:
             
             # Download each file
             for idx, file_info in enumerate(files, 1):
+                # Check for cancellation before each file
+                if self._cancelled:
+                    logging.info(f"Download cancelled for profile '{profile_name}'")
+                    return False
+                
                 file_id = file_info['id']
                 filename = file_info['name']
                 local_file_path = os.path.join(local_path, filename)
@@ -373,6 +430,12 @@ class GoogleDriveManager:
                 
                 # Download file
                 success = self._download_file(file_id, local_file_path)
+                
+                # Check for cancellation immediately after download attempt
+                if self._cancelled:
+                    logging.info(f"Download cancelled during file '{filename}'")
+                    return False
+                
                 if success:
                     logging.info(f"Downloaded file: {filename}")
                 else:
@@ -759,6 +822,11 @@ class GoogleDriveManager:
             t_prev = time.time()
             attempt = 0
             while response is None:
+                # Check for cancellation
+                if self._cancelled:
+                    logging.info(f"Upload cancelled during file '{filename}'")
+                    return False
+                
                 try:
                     status, response = request.next_chunk()
                 except HttpError as e:
@@ -813,6 +881,11 @@ class GoogleDriveManager:
             t_prev = time.time()
             attempt = 0
             while response is None:
+                # Check for cancellation
+                if self._cancelled:
+                    logging.info(f"Update cancelled during file (id: {file_id})")
+                    return False
+                
                 try:
                     status, response = request.next_chunk()
                 except HttpError as e:
@@ -869,6 +942,19 @@ class GoogleDriveManager:
             t_prev = time.time()
             attempt = 0
             while not done:
+                # Check for cancellation
+                if self._cancelled:
+                    fh.close()
+                    # Try to delete partial file
+                    try:
+                        if os.path.exists(destination_path):
+                            os.remove(destination_path)
+                            logging.info(f"Deleted partial download: {destination_path}")
+                    except Exception as e_del:
+                        logging.warning(f"Could not delete partial download: {e_del}")
+                    logging.info(f"Download cancelled during file (id: {file_id})")
+                    return False
+                
                 try:
                     status, done = downloader.next_chunk()
                 except HttpError as e:
@@ -1040,6 +1126,36 @@ class GoogleDriveManager:
         except Exception as e:
             logging.error(f"Error during backup cleanup for '{profile_name}': {e}")
             # Don't raise - cleanup failure shouldn't fail the upload
+
+
+# ===== UI Worker Helpers (for background usage from Qt) =====
+class StorageCheckWorker(QObject):
+    """
+    Qt worker to check storage limit off the UI thread.
+    Emits:
+        finished(within_limit: bool, current_gb: float, max_gb: int)
+        error(message: str)
+    """
+    finished = Signal(bool, float, int)
+    error = Signal(str)
+
+    def __init__(self, drive_manager: "GoogleDriveManager", max_gb: int):
+        super().__init__()
+        self.drive_manager = drive_manager
+        self.max_gb = int(max_gb)
+
+    def run(self):
+        try:
+            within_limit, current_gb, max_gb = self.drive_manager.check_storage_limit(self.max_gb)
+            # Ensure types for signal
+            try:
+                current_val = float(current_gb)
+            except Exception:
+                current_val = 0.0
+            self.finished.emit(bool(within_limit), current_val, int(max_gb))
+        except Exception as e:
+            logging.error(f"StorageCheckWorker failed: {e}", exc_info=True)
+            self.error.emit(str(e))
 
 
 # Singleton instance
