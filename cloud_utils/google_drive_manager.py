@@ -415,7 +415,7 @@ class GoogleDriveManager:
             logging.error(f"Error uploading backup: {e}")
             return {'ok': False, 'error': str(e), 'uploaded_count': 0, 'skipped_newer_or_same': 0, 'total_candidates': 0}
     
-    def download_backup(self, profile_name: str, local_path: str, overwrite: bool = True) -> Dict[str, any]:
+    def download_backup(self, profile_name: str, local_path: str, overwrite: bool = True, smart_sync: bool = False) -> Dict[str, any]:
         """
         Download a backup folder from Google Drive.
         
@@ -423,6 +423,7 @@ class GoogleDriveManager:
             profile_name: Name of the profile to download
             local_path: Local path where to save the backup
             overwrite: If True, overwrite existing local files; if False, skip existing
+            smart_sync: If True, only overwrite if cloud file is strictly newer
             
         Returns:
             Dict: Download statistics
@@ -487,8 +488,15 @@ class GoogleDriveManager:
                             result_stats['skipped'] += 1
                             continue
                     
+                    # Smart Sync: Skip if local is newer
+                    if smart_sync:
+                        remote_mtime = file_info.get('modifiedTime')
+                        if not self._is_remote_newer(local_file_path, remote_mtime):
+                            logging.info(f"Skipping download for '{filename}': local version is newer or same age")
+                            result_stats['skipped'] += 1
+                            continue
                     # If not matching, skip only if overwrite is False
-                    if not overwrite:
+                    elif not overwrite:
                         logging.info(f"Skipping existing file: {filename}")
                         result_stats['skipped'] += 1
                         continue
@@ -628,8 +636,8 @@ class GoogleDriveManager:
                 logging.error("Upload phase of bidirectional sync failed")
                 return False
             
-            # Then download (without overwriting local files)
-            download_success = self.download_backup(profile_name, local_path, overwrite=False)
+            # Then download (smart sync: only overwrite if remote is newer)
+            download_success = self.download_backup(profile_name, local_path, overwrite=True, smart_sync=True)
             if not download_success:
                 logging.error("Download phase of bidirectional sync failed")
                 return False
@@ -783,6 +791,42 @@ class GoogleDriveManager:
             logging.error(f"Error finding file '{filename}': {e}")
             return None
 
+    @staticmethod
+    def _parse_drive_timestamp(ts: str) -> Optional[float]:
+        """Parse Google Drive timestamp string to epoch seconds."""
+        if not ts:
+            return None
+        try:
+            # Convert RFC3339 to aware datetime
+            dt = datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
+        except Exception:
+            # Fallback: strip sub-seconds
+            if 'T' in ts:
+                try:
+                    main = ts.split('.', 1)[0].replace('Z', '')
+                    dt = datetime.datetime.fromisoformat(main + '+00:00')
+                except Exception:
+                    return None
+            else:
+                return None
+        return dt.timestamp()
+
+    def _is_remote_newer(self, local_path: str, remote_ts_str: str) -> bool:
+        """True if the remote file is strictly newer than the local file."""
+        if not os.path.exists(local_path):
+            return True
+            
+        try:
+            local_ts = os.path.getmtime(local_path)
+        except Exception:
+            return False
+            
+        remote_ts = self._parse_drive_timestamp(remote_ts_str)
+        if remote_ts is None:
+            return False
+            
+        return remote_ts > local_ts
+
     def _get_file_modified_time(self, file_id: str) -> Optional[float]:
         """Return the Drive file modified time as epoch seconds (UTC)."""
         try:
@@ -791,19 +835,7 @@ class GoogleDriveManager:
                 "get file modified time"
             )
             ts = meta.get('modifiedTime')
-            if not ts:
-                return None
-            # Convert RFC3339 to aware datetime
-            try:
-                dt = datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
-            except Exception:
-                # Fallback: strip sub-seconds
-                if 'T' in ts:
-                    main = ts.split('.', 1)[0].replace('Z', '')
-                    dt = datetime.datetime.fromisoformat(main + '+00:00')
-                else:
-                    return None
-            return dt.timestamp()
+            return self._parse_drive_timestamp(ts)
         except Exception as e:
             logging.debug(f"Unable to read modifiedTime for file {file_id}: {e}")
             return None

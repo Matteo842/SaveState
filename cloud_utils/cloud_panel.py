@@ -352,6 +352,54 @@ class RefreshCloudStatusWorker(QObject):
             self.error.emit(error_msg)
 
 
+class BackupScannerWorker(QObject):
+    """Worker thread for scanning local backups to avoid blocking UI."""
+    finished = Signal(dict)  # local_backups dict
+    error = Signal(str)
+
+    def __init__(self, backup_base_dir):
+        super().__init__()
+        self.backup_base_dir = backup_base_dir
+
+    def run(self):
+        """Scan local directory for backups."""
+        local_backups = {}
+        try:
+            if os.path.isdir(self.backup_base_dir):
+                entries = os.listdir(self.backup_base_dir)
+                for entry in entries:
+                    entry_path = os.path.join(self.backup_base_dir, entry)
+                    
+                    # Only process directories
+                    if not os.path.isdir(entry_path):
+                        continue
+                    
+                    # Skip special folders
+                    if entry.startswith('.') or entry == '__pycache__':
+                        continue
+                        
+                    # Count backup files in this folder
+                    try:
+                        backup_files = [f for f in os.listdir(entry_path) if f.endswith('.zip')]
+                        file_count = len(backup_files)
+                    except Exception:
+                        file_count = 0
+                        
+                    local_backups[entry] = {
+                        'name': entry,
+                        'path': entry_path,
+                        'local_file_count': file_count,
+                        'cloud_file_count': 0,
+                        'has_local': True,
+                        'has_cloud': False
+                    }
+            self.finished.emit(local_backups)
+        except Exception as e:
+            logging.error(f"Error scanning backup directory: {e}")
+            self.error.emit(str(e))
+
+
+
 class CloudSavePanel(QWidget):
     """
     Inline panel for Cloud Save management.
@@ -385,6 +433,9 @@ class CloudSavePanel(QWidget):
         
         # Cloud backups cache
         self.cloud_backups = {}
+        
+        # Local backups cache (raw scan results)
+        self.cached_local_backups = {}
         
         # Cloud settings (will be loaded from settings panel)
         self.cloud_settings = {}
@@ -659,55 +710,52 @@ class CloudSavePanel(QWidget):
         main_layout.addLayout(actions_layout)
         
         # Initial population
-        self._populate_backup_list()
+        self.refresh_local_backups()
     
-    def _populate_backup_list(self):
-        """Populate the table with available backups from the backup directory and cloud."""
+    def refresh_local_backups(self):
+        """Start background scan of local backups."""
+        # Show scanning state if table is empty or requested
+        if self.backup_table.rowCount() == 0:
+            # You could add a temporary "Scanning..." row or disable UI here
+            pass
+            
+        if hasattr(self, 'scan_thread') and self.scan_thread is not None:
+            try:
+                if self.scan_thread.isRunning():
+                    return
+            except RuntimeError:
+                # C++ object already deleted, so it's definitely not running
+                self.scan_thread = None
+
+        self.scan_thread = QThread()
+        self.scan_worker = BackupScannerWorker(self.backup_base_dir)
+        self.scan_worker.moveToThread(self.scan_thread)
+        
+        self.scan_thread.started.connect(self.scan_worker.run)
+        self.scan_worker.finished.connect(self._on_scan_finished)
+        self.scan_worker.finished.connect(self.scan_thread.quit)
+        self.scan_worker.finished.connect(self.scan_worker.deleteLater)
+        self.scan_thread.finished.connect(self.scan_thread.deleteLater)
+        
+        self.scan_thread.start()
+
+    def _on_scan_finished(self, local_backups):
+        """Handle completion of local backup scan."""
+        self.cached_local_backups = local_backups
+        self._repopulate_table()
+
+    def _repopulate_table(self):
+        """Refresh the table UI using cached local data and cloud data (no disk I/O)."""
         self.backup_table.setRowCount(0)
         self.local_backups.clear()
         
         show_all = self.show_all_backups_checkbox.isChecked()
         search_text = self.filter_search.text().lower()
         
-        # Dictionary to track all backups (local + cloud)
-        all_backups = {}
+        # copy cached local backups to work with
+        all_backups = self.cached_local_backups.copy()
         
-        # --- Scan local backups ---
-        if os.path.isdir(self.backup_base_dir):
-            try:
-                entries = os.listdir(self.backup_base_dir)
-                
-                for entry in entries:
-                    entry_path = os.path.join(self.backup_base_dir, entry)
-                    
-                    # Only process directories
-                    if not os.path.isdir(entry_path):
-                        continue
-                    
-                    # Skip special folders
-                    if entry.startswith('.') or entry == '__pycache__':
-                        continue
-                    
-                    # Count backup files in this folder
-                    try:
-                        backup_files = [f for f in os.listdir(entry_path) if f.endswith('.zip')]
-                        file_count = len(backup_files)
-                    except Exception:
-                        file_count = 0
-                    
-                    all_backups[entry] = {
-                        'name': entry,
-                        'path': entry_path,
-                        'local_file_count': file_count,
-                        'cloud_file_count': 0,
-                        'has_local': True,
-                        'has_cloud': False
-                    }
-                    
-            except Exception as e:
-                logging.error(f"Error reading backup directory: {e}")
-        
-        # --- Add cloud backups ---
+        # --- Merge cloud backups ---
         if self.drive_manager.is_connected and self.cloud_backups:
             for cloud_name, cloud_info in self.cloud_backups.items():
                 if cloud_name in all_backups:
@@ -981,11 +1029,11 @@ class CloudSavePanel(QWidget):
     
     def _on_filter_changed(self, checked):
         """Handle filter checkbox change."""
-        self._populate_backup_list()
+        self._repopulate_table()
     
     def _on_search_changed(self, text):
         """Handle search text change and switch back to refresh button if empty."""
-        self._populate_backup_list()
+        self._repopulate_table()
         
         # Switch back to refresh button if text is empty
         if not text:
@@ -1027,7 +1075,7 @@ class CloudSavePanel(QWidget):
     def _on_refresh_clicked(self):
         """Refresh the backup list."""
         logging.info("Refreshing backup list...")
-        self._populate_backup_list()
+        self.refresh_local_backups()
         
         # Also refresh cloud status if connected
         if self.drive_manager.is_connected:
@@ -1146,7 +1194,7 @@ class CloudSavePanel(QWidget):
         self.drive_manager.disconnect()
         self._set_connected(False)
         self.cloud_backups.clear()
-        self._populate_backup_list()  # Refresh to clear cloud status
+        self._repopulate_table()  # Refresh to clear cloud status
         # If settings panel is open, update usage bars to "Not connected"
         try:
             if self.stacked_widget.currentIndex() == 1 and hasattr(self, 'settings_panel') and self.settings_panel:
@@ -1591,7 +1639,7 @@ class CloudSavePanel(QWidget):
             logging.debug(f"Error during cleanup of empty folders: {e}")
         
         # Refresh list in case some files were downloaded before cancellation
-        self._populate_backup_list()
+        self.refresh_local_backups()
     
     def _on_profile_auto_created(self, profile_name, backup_path):
         """Handle automatic profile creation after download."""
@@ -1659,7 +1707,7 @@ class CloudSavePanel(QWidget):
         QMessageBox.information(self, title, msg)
         
         # Refresh local list
-        self._populate_backup_list()
+        self.refresh_local_backups()
     
     def _on_delete_clicked(self):
         """Handle delete selected backups from cloud."""
@@ -1808,12 +1856,12 @@ class CloudSavePanel(QWidget):
     def update_backup_dir(self, new_dir):
         """Update the backup directory and refresh the list."""
         self.backup_base_dir = new_dir
-        self._populate_backup_list()
+        self.refresh_local_backups()
     
     def update_profiles(self, profiles):
         """Update the profiles dictionary and refresh the list."""
         self.profiles = profiles
-        self._populate_backup_list()
+        self._repopulate_table()
     
 
     
@@ -1958,7 +2006,7 @@ class CloudSavePanel(QWidget):
         self.cloud_backups = cloud_backups
         
         # Repopulate the entire table to include cloud-only backups
-        self._populate_backup_list()
+        self._repopulate_table()
     
     def _on_refresh_cloud_status_error(self, error_message):
         """Handle cloud status refresh error."""
