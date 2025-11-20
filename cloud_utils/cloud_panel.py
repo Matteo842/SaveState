@@ -45,6 +45,7 @@ class AuthWorker(QObject):
 class UploadWorker(QObject):
     """Worker thread for uploading backups to avoid blocking UI."""
     progress = Signal(int, int, str)  # current, total, message
+    progress_detailed = Signal(int, int, str)  # bytes_current, bytes_total, message
     finished = Signal(int, int)  # success_count, total_count
     summary_ready = Signal(dict)  # aggregated stats for UI messaging
     cancelled = Signal()  # Emitted when operation is cancelled
@@ -56,6 +57,15 @@ class UploadWorker(QObject):
         self.backup_base_dir = backup_base_dir
         self.max_backups = max_backups
         self._cancelled = False
+        self._current_file_msg = ""
+
+    def _on_file_progress(self, idx, total, message):
+        self._current_file_msg = message
+        self.progress.emit(idx, total, message)
+
+    def _on_chunk_progress(self, current_bytes, total_bytes):
+        if self._current_file_msg:
+            self.progress_detailed.emit(current_bytes, total_bytes, self._current_file_msg)
     
     def cancel(self):
         """Request cancellation of the upload operation."""
@@ -67,86 +77,99 @@ class UploadWorker(QObject):
     
     def run(self):
         """Execute upload in background."""
-        success_count = 0
-        total = len(self.backup_list)
-        results = []
+        # Set callbacks
+        self.drive_manager.set_progress_callback(self._on_file_progress)
+        self.drive_manager.set_chunk_callback(self._on_chunk_progress)
         
-        for idx, backup_name in enumerate(self.backup_list, 1):
-            # Check for cancellation
-            if self._cancelled:
-                logging.info(f"Upload cancelled by user at {idx}/{total}")
-                self.cancelled.emit()
-                return
-            
-            self.progress.emit(idx, total, f"Uploading {backup_name}...")
-            
-            backup_path = os.path.join(self.backup_base_dir, backup_name)
-            
-            try:
-                res = self.drive_manager.upload_backup(backup_path, backup_name, max_backups=self.max_backups)
-                ok = False
-                uploaded_cnt = 0
-                skipped_cnt = 0
-                was_cancelled = False
-                
-                if isinstance(res, dict):
-                    ok = bool(res.get('ok', True))
-                    uploaded_cnt = int(res.get('uploaded_count', 0))
-                    skipped_cnt = int(res.get('skipped_newer_or_same', 0))
-                    was_cancelled = bool(res.get('cancelled', False))
-                else:
-                    ok = bool(res)
-                
-                # If cancelled, exit immediately
-                if was_cancelled or self._cancelled:
-                    logging.info(f"Upload cancelled during {backup_name}")
-                    self.cancelled.emit()
-                    return
-
-                if ok:
-                    success_count += 1
-                    logging.info(f"Successfully uploaded: {backup_name}")
-                else:
-                    logging.error(f"Failed to upload: {backup_name}")
-
-                results.append({
-                    'name': backup_name,
-                    'ok': ok,
-                    'uploaded_count': uploaded_cnt,
-                    'skipped_newer_or_same': skipped_cnt
-                })
-            except Exception as e:
-                # Check if cancelled during exception
-                if self._cancelled:
-                    logging.info(f"Upload cancelled during {backup_name} (exception caught)")
-                    self.cancelled.emit()
-                    return
-                logging.error(f"Error uploading {backup_name}: {e}")
-        
-        # Aggregate and emit summary for UI
         try:
-            profiles_changed = sum(1 for r in results if r.get('uploaded_count', 0) > 0)
-            files_uploaded = sum(int(r.get('uploaded_count', 0)) for r in results)
-            files_skipped = sum(int(r.get('skipped_newer_or_same', 0)) for r in results)
-            summary = {
-                'profiles_total': total,
-                'profiles_ok': success_count,
-                'profiles_changed': profiles_changed,
-                'profiles_unchanged': max(0, total - profiles_changed),
-                'files_uploaded': files_uploaded,
-                'files_skipped': files_skipped,
-                'details': results,
-            }
-            self.summary_ready.emit(summary)
-        except Exception:
-            pass
+            success_count = 0
+            total = len(self.backup_list)
+            results = []
+            
+            for idx, backup_name in enumerate(self.backup_list, 1):
+                # Check for cancellation
+                if self._cancelled:
+                    logging.info(f"Upload cancelled by user at {idx}/{total}")
+                    self.cancelled.emit()
+                    return
+                
+                # Set initial message via progress signal (callbacks handle detailed updates)
+                self._current_file_msg = f"Uploading {backup_name} ({idx}/{total})"
+                self.progress.emit(idx, total, self._current_file_msg)
+                
+                backup_path = os.path.join(self.backup_base_dir, backup_name)
+                
+                try:
+                    res = self.drive_manager.upload_backup(backup_path, backup_name, max_backups=self.max_backups)
+                    ok = False
+                    uploaded_cnt = 0
+                    skipped_cnt = 0
+                    was_cancelled = False
+                    
+                    if isinstance(res, dict):
+                        ok = bool(res.get('ok', True))
+                        uploaded_cnt = int(res.get('uploaded_count', 0))
+                        skipped_cnt = int(res.get('skipped_newer_or_same', 0))
+                        was_cancelled = bool(res.get('cancelled', False))
+                    else:
+                        ok = bool(res)
+                    
+                    # If cancelled, exit immediately
+                    if was_cancelled or self._cancelled:
+                        logging.info(f"Upload cancelled during {backup_name}")
+                        self.cancelled.emit()
+                        return
 
-        self.finished.emit(success_count, total)
+                    if ok:
+                        success_count += 1
+                        logging.info(f"Successfully uploaded: {backup_name}")
+                    else:
+                        logging.error(f"Failed to upload: {backup_name}")
+
+                    results.append({
+                        'name': backup_name,
+                        'ok': ok,
+                        'uploaded_count': uploaded_cnt,
+                        'skipped_newer_or_same': skipped_cnt
+                    })
+                except Exception as e:
+                    # Check if cancelled during exception
+                    if self._cancelled:
+                        logging.info(f"Upload cancelled during {backup_name} (exception caught)")
+                        self.cancelled.emit()
+                        return
+                    logging.error(f"Error uploading {backup_name}: {e}")
+            
+            # Aggregate and emit summary for UI
+            try:
+                profiles_changed = sum(1 for r in results if r.get('uploaded_count', 0) > 0)
+                files_uploaded = sum(int(r.get('uploaded_count', 0)) for r in results)
+                files_skipped = sum(int(r.get('skipped_newer_or_same', 0)) for r in results)
+                summary = {
+                    'profiles_total': total,
+                    'profiles_ok': success_count,
+                    'profiles_changed': profiles_changed,
+                    'profiles_unchanged': max(0, total - profiles_changed),
+                    'files_uploaded': files_uploaded,
+                    'files_skipped': files_skipped,
+                    'details': results,
+                }
+                self.summary_ready.emit(summary)
+            except Exception:
+                pass
+
+            self.finished.emit(success_count, total)
+            
+        finally:
+            # Clear callbacks
+            self.drive_manager.set_progress_callback(None)
+            self.drive_manager.set_chunk_callback(None)
 
 
 class DownloadWorker(QObject):
     """Worker thread for downloading backups to avoid blocking UI."""
     progress = Signal(int, int, str)  # current, total, message
+    progress_detailed = Signal(int, int, str)  # bytes_current, bytes_total, message
     finished = Signal(int, int, dict)  # success_count, total_count, summary_stats
     profile_created = Signal(str, str)  # profile_name, backup_path (emitted when a new profile is created)
     cancelled = Signal()  # Emitted when operation is cancelled
@@ -158,6 +181,15 @@ class DownloadWorker(QObject):
         self.backup_base_dir = backup_base_dir
         self.existing_profiles = existing_profiles  # Dict of existing profiles
         self._cancelled = False
+        self._current_file_msg = ""
+
+    def _on_file_progress(self, idx, total, message):
+        self._current_file_msg = message
+        self.progress.emit(idx, total, message)
+
+    def _on_chunk_progress(self, current_bytes, total_bytes):
+        if self._current_file_msg:
+            self.progress_detailed.emit(current_bytes, total_bytes, self._current_file_msg)
     
     def cancel(self):
         """Request cancellation of the download operation."""
@@ -169,71 +201,82 @@ class DownloadWorker(QObject):
     
     def run(self):
         """Execute download in background."""
-        success_count = 0
-        total = len(self.backup_list)
+        # Set callbacks
+        self.drive_manager.set_progress_callback(self._on_file_progress)
+        self.drive_manager.set_chunk_callback(self._on_chunk_progress)
         
-        # Track detailed statistics
-        stats = {
-            'downloaded': 0,
-            'skipped': 0,
-            'failed': 0,
-            'files_total': 0
-        }
-        
-        for idx, backup_name in enumerate(self.backup_list, 1):
-            # Check for cancellation before processing
-            if self._cancelled:
-                logging.info(f"Download cancelled by user at {idx}/{total}")
-                self.cancelled.emit()
-                return
+        try:
+            success_count = 0
+            total = len(self.backup_list)
             
-            self.progress.emit(idx, total, f"Downloading {backup_name}...")
+            # Track detailed statistics
+            stats = {
+                'downloaded': 0,
+                'skipped': 0,
+                'failed': 0,
+                'files_total': 0
+            }
             
-            backup_path = os.path.join(self.backup_base_dir, backup_name)
-            
-            try:
-                # download_backup now returns a dict with stats
-                download_result = self.drive_manager.download_backup(backup_name, backup_path)
-                
-                # Check for cancellation immediately after download attempt
+            for idx, backup_name in enumerate(self.backup_list, 1):
+                # Check for cancellation before processing
                 if self._cancelled:
-                    logging.info(f"Download cancelled during {backup_name}")
+                    logging.info(f"Download cancelled by user at {idx}/{total}")
                     self.cancelled.emit()
                     return
                 
-                # Handle result (could be bool or dict depending on version)
-                ok = False
-                if isinstance(download_result, dict):
-                    ok = download_result.get('ok', False)
-                    stats['downloaded'] += download_result.get('downloaded', 0)
-                    stats['skipped'] += download_result.get('skipped', 0)
-                    stats['failed'] += download_result.get('failed', 0)
-                    stats['files_total'] += download_result.get('total', 0)
-                else:
-                    ok = bool(download_result)
-                    # Fallback stats if old version
-                    if ok:
-                        stats['downloaded'] += 1
+                self._current_file_msg = f"Downloading {backup_name} ({idx}/{total})"
+                self.progress.emit(idx, total, self._current_file_msg)
                 
-                if ok:
-                    success_count += 1
-                    logging.info(f"Successfully downloaded: {backup_name}")
+                backup_path = os.path.join(self.backup_base_dir, backup_name)
+                
+                try:
+                    # download_backup now returns a dict with stats
+                    download_result = self.drive_manager.download_backup(backup_name, backup_path)
                     
-                    # Check if profile exists, if not, emit signal to create it
-                    if backup_name not in self.existing_profiles:
-                        logging.info(f"Profile '{backup_name}' does not exist, will create it automatically")
-                        self.profile_created.emit(backup_name, backup_path)
-                else:
-                    logging.error(f"Failed to download: {backup_name}")
-            except Exception as e:
-                # Check if the error is due to cancellation
-                if self._cancelled:
-                    logging.info(f"Download cancelled during {backup_name} (exception caught)")
-                    self.cancelled.emit()
-                    return
-                logging.error(f"Error downloading {backup_name}: {e}")
-        
-        self.finished.emit(success_count, total, stats)
+                    # Check for cancellation immediately after download attempt
+                    if self._cancelled:
+                        logging.info(f"Download cancelled during {backup_name}")
+                        self.cancelled.emit()
+                        return
+                    
+                    # Handle result (could be bool or dict depending on version)
+                    ok = False
+                    if isinstance(download_result, dict):
+                        ok = download_result.get('ok', False)
+                        stats['downloaded'] += download_result.get('downloaded', 0)
+                        stats['skipped'] += download_result.get('skipped', 0)
+                        stats['failed'] += download_result.get('failed', 0)
+                        stats['files_total'] += download_result.get('total', 0)
+                    else:
+                        ok = bool(download_result)
+                        # Fallback stats if old version
+                        if ok:
+                            stats['downloaded'] += 1
+                    
+                    if ok:
+                        success_count += 1
+                        logging.info(f"Successfully downloaded: {backup_name}")
+                        
+                        # Check if profile exists, if not, emit signal to create it
+                        if backup_name not in self.existing_profiles:
+                            logging.info(f"Profile '{backup_name}' does not exist, will create it automatically")
+                            self.profile_created.emit(backup_name, backup_path)
+                    else:
+                        logging.error(f"Failed to download: {backup_name}")
+                except Exception as e:
+                    # Check if the error is due to cancellation
+                    if self._cancelled:
+                        logging.info(f"Download cancelled during {backup_name} (exception caught)")
+                        self.cancelled.emit()
+                        return
+                    logging.error(f"Error downloading {backup_name}: {e}")
+            
+            self.finished.emit(success_count, total, stats)
+            
+        finally:
+            # Clear callbacks
+            self.drive_manager.set_progress_callback(None)
+            self.drive_manager.set_chunk_callback(None)
 
 
 class DeleteWorker(QObject):
@@ -898,10 +941,13 @@ class CloudSavePanel(QWidget):
         self._storage_check_cancelled = True
         
         # Stop thread if running
-        if hasattr(self, '_storage_check_thread') and self._storage_check_thread.isRunning():
-            self._storage_check_thread.quit()
-            # We don't wait() here to keep UI responsive, the thread will finish eventually
-            # and the result will be ignored due to _storage_check_cancelled flag
+        if hasattr(self, '_storage_check_thread') and self._storage_check_thread:
+            try:
+                if self._storage_check_thread.isRunning():
+                    self._storage_check_thread.quit()
+                    # We don't wait() here to keep UI responsive
+            except RuntimeError:
+                pass
         
         # Restore UI state
         self.progress_bar.setVisible(False)
@@ -911,12 +957,6 @@ class CloudSavePanel(QWidget):
         # Clear pending selection
         self._pending_upload_selection = None
         self._current_operation = None
-        
-        QMessageBox.information(
-            self,
-            "Upload Cancelled",
-            "Upload operation (storage check) was cancelled by user."
-        )
 
     def _on_cancel_operation_clicked(self):
         """Cancel the current operation (upload/download/delete)."""
@@ -1060,12 +1100,6 @@ class CloudSavePanel(QWidget):
                     self.settings_panel.refresh_storage_status()
             except Exception:
                 pass
-            
-            QMessageBox.information(
-                self,
-                "Connected",
-                "Successfully connected to Google Drive!"
-            )
         else:
             self._set_connected(False)
             QMessageBox.warning(
@@ -1084,9 +1118,10 @@ class CloudSavePanel(QWidget):
         try:
             logging.warning("Authentication timeout reached. Aborting and restoring UI.")
             # Best-effort terminate the worker thread if still running
-            if hasattr(self, 'auth_thread') and self.auth_thread and self.auth_thread.isRunning():
+            if hasattr(self, 'auth_thread') and self.auth_thread:
                 try:
-                    self.auth_thread.terminate()
+                    if self.auth_thread.isRunning():
+                        self.auth_thread.terminate()
                 except Exception:
                     pass
         except Exception:
@@ -1177,7 +1212,8 @@ class CloudSavePanel(QWidget):
         
         # Show indeterminate progress bar initially
         self.progress_bar.setVisible(True)
-        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
         self.progress_bar.setFormat("Preparing upload...")
         
         # Force immediate UI update
@@ -1310,7 +1346,7 @@ class CloudSavePanel(QWidget):
         
         # Show progress - UI updates IMMEDIATELY
         self.progress_bar.setVisible(True)
-        self.progress_bar.setRange(0, len(selected))
+        self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat("Starting upload...")
         self._disable_buttons_during_operation()
@@ -1342,6 +1378,7 @@ class CloudSavePanel(QWidget):
         # Connect signals
         self.upload_thread.started.connect(self.upload_worker.run)
         self.upload_worker.progress.connect(self._on_upload_progress)
+        self.upload_worker.progress_detailed.connect(self._on_detailed_progress)
         self.upload_worker.summary_ready.connect(self._on_upload_summary)
         self.upload_worker.cancelled.connect(self._on_upload_cancelled)
         self.upload_worker.finished.connect(self._on_upload_finished)
@@ -1353,9 +1390,25 @@ class CloudSavePanel(QWidget):
         self.upload_thread.start()
     
     def _on_upload_progress(self, current, total, message):
-        """Handle upload progress updates."""
-        self.progress_bar.setValue(current)
-        self.progress_bar.setFormat(f"{message} ({current}/{total})")
+        """Handle upload progress updates (message only)."""
+        # Update text only, let detailed_progress handle the bar value
+        self.progress_bar.setFormat(f"{message}")
+
+    def _on_detailed_progress(self, current_bytes, total_bytes, message):
+        """Handle detailed progress updates (bytes)."""
+        if total_bytes > 0:
+            self.progress_bar.setRange(0, total_bytes)
+            self.progress_bar.setValue(current_bytes)
+            
+            # Format size
+            current_mb = current_bytes / (1024 * 1024)
+            total_mb = total_bytes / (1024 * 1024)
+            
+            self.progress_bar.setFormat(f"{message} - {current_mb:.1f}/{total_mb:.1f} MB")
+        else:
+            # Unknown total size
+            self.progress_bar.setRange(0, 0)
+            self.progress_bar.setFormat(f"{message}")
     
     def _on_upload_cancelled(self):
         """Handle upload cancellation."""
@@ -1364,9 +1417,12 @@ class CloudSavePanel(QWidget):
         
         # Wait for thread to actually terminate before clearing worker
         if hasattr(self, 'upload_thread') and self.upload_thread is not None:
-            if self.upload_thread.isRunning():
-                self.upload_thread.quit()
-                self.upload_thread.wait(1000)  # Wait up to 1 second
+            try:
+                if self.upload_thread.isRunning():
+                    self.upload_thread.quit()
+                    self.upload_thread.wait(1000)  # Wait up to 1 second
+            except RuntimeError:
+                pass # Thread already deleted
         
         # Clear current operation tracking
         self._current_worker = None
@@ -1374,12 +1430,6 @@ class CloudSavePanel(QWidget):
         
         # Restore delete button
         self._set_delete_button_to_delete_mode()
-        
-        QMessageBox.information(
-            self,
-            "Upload Cancelled",
-            "Upload operation was cancelled by user."
-        )
         
         # Refresh cloud status in case some files were uploaded before cancellation
         self._refresh_cloud_status()
@@ -1456,7 +1506,7 @@ class CloudSavePanel(QWidget):
         
         # Show progress - UI updates IMMEDIATELY
         self.progress_bar.setVisible(True)
-        self.progress_bar.setRange(0, len(selected))
+        self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat("Starting download...")
         self._disable_buttons_during_operation()
@@ -1487,6 +1537,7 @@ class CloudSavePanel(QWidget):
         # Connect signals
         self.download_thread.started.connect(self.download_worker.run)
         self.download_worker.progress.connect(self._on_download_progress)
+        self.download_worker.progress_detailed.connect(self._on_detailed_progress)
         self.download_worker.profile_created.connect(self._on_profile_auto_created)
         self.download_worker.cancelled.connect(self._on_download_cancelled)
         self.download_worker.finished.connect(self._on_download_finished)
@@ -1498,9 +1549,9 @@ class CloudSavePanel(QWidget):
         self.download_thread.start()
     
     def _on_download_progress(self, current, total, message):
-        """Handle download progress updates."""
-        self.progress_bar.setValue(current)
-        self.progress_bar.setFormat(f"{message} ({current}/{total})")
+        """Handle download progress updates (message only)."""
+        # Update text only, let detailed_progress handle the bar value
+        self.progress_bar.setFormat(f"{message}")
     
     def _on_download_cancelled(self):
         """Handle download cancellation."""
@@ -1509,9 +1560,12 @@ class CloudSavePanel(QWidget):
         
         # Wait for thread to actually terminate before clearing worker
         if hasattr(self, 'download_thread') and self.download_thread is not None:
-            if self.download_thread.isRunning():
-                self.download_thread.quit()
-                self.download_thread.wait(1000)  # Wait up to 1 second
+            try:
+                if self.download_thread.isRunning():
+                    self.download_thread.quit()
+                    self.download_thread.wait(1000)  # Wait up to 1 second
+            except RuntimeError:
+                pass
         
         # Clear current operation tracking
         self._current_worker = None
@@ -1535,12 +1589,6 @@ class CloudSavePanel(QWidget):
                             logging.debug(f"Could not clean empty folder {entry_path}: {e_clean}")
         except Exception as e:
             logging.debug(f"Error during cleanup of empty folders: {e}")
-        
-        QMessageBox.information(
-            self,
-            "Download Cancelled",
-            "Download operation was cancelled by user."
-        )
         
         # Refresh list in case some files were downloaded before cancellation
         self._populate_backup_list()
@@ -1694,9 +1742,12 @@ class CloudSavePanel(QWidget):
         
         # Wait for thread to actually terminate before clearing worker
         if hasattr(self, 'delete_thread') and self.delete_thread is not None:
-            if self.delete_thread.isRunning():
-                self.delete_thread.quit()
-                self.delete_thread.wait(1000)  # Wait up to 1 second
+            try:
+                if self.delete_thread.isRunning():
+                    self.delete_thread.quit()
+                    self.delete_thread.wait(1000)  # Wait up to 1 second
+            except RuntimeError:
+                pass
         
         # Clear current operation tracking
         self._current_worker = None
@@ -1704,12 +1755,6 @@ class CloudSavePanel(QWidget):
         
         # Restore delete button
         self._set_delete_button_to_delete_mode()
-        
-        QMessageBox.information(
-            self,
-            "Deletion Cancelled",
-            "Deletion operation was cancelled by user."
-        )
         
         # Refresh cloud status in case some files were deleted before cancellation
         self._refresh_cloud_status()
@@ -1873,6 +1918,16 @@ class CloudSavePanel(QWidget):
         if not self.drive_manager.is_connected:
             return
         
+        # Prevent multiple simultaneous refreshes which could cause QThread crash
+        if hasattr(self, 'refresh_thread') and self.refresh_thread is not None:
+            try:
+                if self.refresh_thread.isRunning():
+                    logging.debug("Cloud refresh already in progress, skipping request.")
+                    return
+            except RuntimeError:
+                # C++ object already deleted, so it's definitely not running
+                self.refresh_thread = None
+        
         logging.info("Starting cloud status refresh...")
         
         # Create worker and thread for background refresh
@@ -1895,6 +1950,11 @@ class CloudSavePanel(QWidget):
     
     def _on_refresh_cloud_status_finished(self, cloud_backups):
         """Handle cloud status refresh completion."""
+        # If disconnected while refreshing, discard results
+        if not self.drive_manager.is_connected:
+            logging.debug("Refresh finished but disconnected, discarding results.")
+            return
+
         self.cloud_backups = cloud_backups
         
         # Repopulate the entire table to include cloud-only backups
@@ -1954,7 +2014,11 @@ class CloudSavePanel(QWidget):
         """Setup or update periodic sync timer based on settings. Runs even if not connected."""
         # Stop existing timer if any
         if self.sync_timer:
-            self.sync_timer.stop()
+            try:
+                if self.sync_timer.isActive():
+                    self.sync_timer.stop()
+            except RuntimeError:
+                pass
             self.sync_timer = None
         
         # Check if periodic sync is enabled
@@ -2102,6 +2166,17 @@ class CloudSavePanel(QWidget):
         if self.drive_manager.is_connected:
             on_connected_callable()
             return
+
+        # Avoid overwriting an existing auth thread if it's already running (e.g. auto-connect)
+        if hasattr(self, 'startup_auth_thread') and self.startup_auth_thread is not None:
+            try:
+                if self.startup_auth_thread.isRunning():
+                    logging.debug("Auth thread already running, skipping duplicate connection attempt")
+                    # Ideally we would hook into the existing thread's completion, but for now just skip
+                    # to avoid crashes and duplicate auth flows.
+                    return
+            except RuntimeError:
+                self.startup_auth_thread = None
 
         # Background connect then call
         self._disconnect_after_current_sync = bool(disconnect_after)

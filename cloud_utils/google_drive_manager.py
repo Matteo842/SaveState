@@ -56,6 +56,7 @@ class GoogleDriveManager:
         
         # Progress callback
         self.progress_callback: Optional[Callable[[int, int, str], None]] = None
+        self.chunk_callback: Optional[Callable[[int, int], None]] = None
         
         # Settings
         self.compression_level = 'standard'  # 'standard', 'maximum', 'stored'
@@ -128,13 +129,18 @@ class GoogleDriveManager:
             try:
                 self.service = build('drive', 'v3', credentials=creds)
                 self.credentials = creds
-                self.is_connected = True
                 logging.info("Google Drive service initialized successfully")
                 
                 # Create or find app folder
                 self.app_folder_id = self.create_app_folder()
                 if not self.app_folder_id:
                     logging.warning("Could not create/find app folder")
+                    self.service = None
+                    self.credentials = None
+                    return False
+                
+                # Only set connected status AFTER app folder is confirmed
+                self.is_connected = True
                 
                 return True
                 
@@ -823,14 +829,14 @@ class GoogleDriveManager:
         return status in (408, 429, 500, 502, 503, 504)
 
     def _sleep_with_backoff(self, attempt: int, context: str):
-        delay = self._base_backoff_seconds * (2 ** attempt)
-        delay = delay + random.uniform(0, 0.25)  # jitter
-        capped = min(delay, 8.0)
-        logging.warning(f"Transient error during {context}. Backing off for {capped:.2f}s (attempt {attempt+1}/{self._max_retries})")
         try:
+            delay = self._base_backoff_seconds * (2 ** attempt)
+            delay = delay + random.uniform(0, 0.25)  # jitter
+            capped = min(delay, 8.0)
+            logging.warning(f"Transient error during {context}. Backing off for {capped:.2f}s (attempt {attempt+1}/{self._max_retries})")
             time.sleep(capped)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(f"Error during sleep backoff: {e}")
 
     def _execute_with_retries(self, func: _Callable[[], any], description: str):
         last_exc = None
@@ -844,13 +850,17 @@ class GoogleDriveManager:
                     continue
                 last_exc = e
                 break
-            except (OSError, TimeoutError, ConnectionError, BrokenPipeError) as e:  # type: ignore[name-defined]
-                self._sleep_with_backoff(attempt, description)
+            except Exception as e:  # Catch ALL exceptions to be safe against crashes during retry logic
+                # Check if it's one of the known transient errors or just something unexpected
+                # We retry on almost everything during connection/upload phases to prevent crashes
+                # unless it's clearly fatal.
+                is_likely_transient = isinstance(e, (OSError, TimeoutError, ConnectionError))
+                
+                # Also catch generic Exceptions that might be transient network glitches
+                self._sleep_with_backoff(attempt, f"{description} ({type(e).__name__})")
                 last_exc = e
                 continue
-            except Exception as e:
-                last_exc = e
-                break
+                
         # Exhausted retries or non-retryable
         if last_exc:
             logging.error(f"{description} failed after retries: {last_exc}")
@@ -858,6 +868,10 @@ class GoogleDriveManager:
     
     def _list_files_in_folder(self, folder_id: str) -> List[Dict]:
         """List all files in a folder."""
+        if not self.service:
+            logging.debug("Service unavailable during file list request, skipping.")
+            return []
+            
         try:
             query = f"'{folder_id}' in parents and trashed=false"
             results = self._execute_with_retries(
@@ -873,7 +887,11 @@ class GoogleDriveManager:
             return results.get('files', [])
             
         except Exception as e:
-            logging.error(f"Error listing files in folder: {e}")
+            # Don't log full traceback for simple "service is gone" errors during disconnection
+            if "'NoneType' object has no attribute 'files'" in str(e):
+                logging.warning("Could not list files: Service was disconnected during operation.")
+            else:
+                logging.error(f"Error listing files in folder: {e}")
             return []
     
     def _upload_file(self, file_path: str, filename: str, parent_id: str) -> bool:
@@ -899,6 +917,10 @@ class GoogleDriveManager:
             
             response = None
             total_size = os.path.getsize(file_path)
+            
+            if self.chunk_callback:
+                self.chunk_callback(0, total_size)
+                
             prev_bytes = 0
             t_prev = time.time()
             attempt = 0
@@ -920,6 +942,11 @@ class GoogleDriveManager:
                     # Progress reporting
                     progress = int(status.progress() * 100)
                     logging.debug(f"Upload progress: {progress}%")
+                    
+                    if self.chunk_callback:
+                        current_bytes = int(status.progress() * total_size)
+                        self.chunk_callback(current_bytes, total_size)
+
                     # Bandwidth throttling
                     try:
                         if self.bandwidth_limit_mbps:
@@ -936,6 +963,9 @@ class GoogleDriveManager:
                     except Exception:
                         pass
             
+            if self.chunk_callback:
+                self.chunk_callback(total_size, total_size)
+
             return True
             
         except Exception as e:
@@ -958,6 +988,10 @@ class GoogleDriveManager:
             
             response = None
             total_size = os.path.getsize(file_path)
+            
+            if self.chunk_callback:
+                self.chunk_callback(0, total_size)
+                
             prev_bytes = 0
             t_prev = time.time()
             attempt = 0
@@ -978,6 +1012,11 @@ class GoogleDriveManager:
                 if status:
                     progress = int(status.progress() * 100)
                     logging.debug(f"Update progress: {progress}%")
+                    
+                    if self.chunk_callback:
+                        current_bytes = int(status.progress() * total_size)
+                        self.chunk_callback(current_bytes, total_size)
+
                     try:
                         if self.bandwidth_limit_mbps:
                             curr_bytes = int(status.progress() * total_size)
@@ -993,6 +1032,9 @@ class GoogleDriveManager:
                     except Exception:
                         pass
             
+            if self.chunk_callback:
+                self.chunk_callback(total_size, total_size)
+
             return True
             
         except Exception as e:
@@ -1015,8 +1057,18 @@ class GoogleDriveManager:
             except Exception:
                 total_size = 0
 
+            # Determine chunk size to match upload behavior
+            # If bandwidth limit is enabled, use 1MB chunks for better throttling granularity
+            # If disabled (None), use default chunk size (usually 100MB+) for max speed
             chunk_size = 1024 * 1024 if self.bandwidth_limit_mbps else None
-            downloader = MediaIoBaseDownload(fh, request, chunksize=chunk_size or 1024*1024)
+            
+            if chunk_size:
+                downloader = MediaIoBaseDownload(fh, request, chunksize=chunk_size)
+            else:
+                downloader = MediaIoBaseDownload(fh, request)
+            
+            if self.chunk_callback:
+                self.chunk_callback(0, total_size)
             
             done = False
             prev_bytes = 0
@@ -1047,6 +1099,11 @@ class GoogleDriveManager:
                 if status:
                     progress = int(status.progress() * 100)
                     logging.debug(f"Download progress: {progress}%")
+                    
+                    if self.chunk_callback:
+                        current_bytes = int(status.progress() * total_size)
+                        self.chunk_callback(current_bytes, total_size)
+                    
                     # Throttle
                     try:
                         if self.bandwidth_limit_mbps and total_size:
@@ -1063,6 +1120,9 @@ class GoogleDriveManager:
                     except Exception:
                         pass
             
+            if self.chunk_callback:
+                self.chunk_callback(total_size, total_size)
+                
             fh.close()
             return True
             
@@ -1073,6 +1133,14 @@ class GoogleDriveManager:
     def set_progress_callback(self, callback: Callable[[int, int, str], None]):
         """Set a callback function for progress updates."""
         self.progress_callback = callback
+
+    def set_chunk_callback(self, callback: Callable[[int, int], None]):
+        """
+        Set a callback function for chunk-level progress updates (byte-level).
+        Args:
+            callback: Function accepting (current_bytes, total_bytes)
+        """
+        self.chunk_callback = callback
     
     def set_compression_level(self, level: str):
         """
