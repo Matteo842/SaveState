@@ -24,19 +24,37 @@ class AuthWorker(QObject):
     """Worker thread for Google Drive authentication to avoid blocking UI."""
     finished = Signal(bool, str)  # success, error_message
     
-    def __init__(self, drive_manager):
+    def __init__(self, drive_manager, worker_id):
         super().__init__()
         self.drive_manager = drive_manager
+        self.worker_id = worker_id  # Unique ID to identify this worker
+        self.is_cancelled = False
+    
+    def cancel(self):
+        """Mark this worker as cancelled."""
+        self.is_cancelled = True
+        logging.info(f"AuthWorker {self.worker_id} marked as cancelled")
     
     def run(self):
         """Execute authentication in background."""
         try:
             success = self.drive_manager.authenticate()
+            
+            # Don't emit signal if this worker was cancelled
+            if self.is_cancelled:
+                logging.info(f"AuthWorker {self.worker_id} completed but was cancelled, ignoring results")
+                return
+            
             if success:
                 self.finished.emit(True, "")
             else:
                 self.finished.emit(False, "Authentication failed. Please check your credentials.")
         except Exception as e:
+            # Don't emit signal if this worker was cancelled
+            if self.is_cancelled:
+                logging.info(f"AuthWorker {self.worker_id} failed but was cancelled, ignoring error")
+                return
+            
             error_msg = str(e)
             logging.error(f"Authentication error: {error_msg}")
             self.finished.emit(False, f"Error during authentication: {error_msg}")
@@ -448,6 +466,11 @@ class CloudSavePanel(QWidget):
         # Track current operation for cancellation
         self._current_worker = None
         self._current_operation = None  # 'upload', 'download', 'delete'
+        
+        # Auth worker tracking to handle timeouts properly
+        self._auth_worker_counter = 0
+        self._current_auth_worker = None
+        self._active_auth_threads = []  # Keep references to prevent premature destruction
         
         # Use stacked widget to switch between main panel and settings
         self.stacked_widget = QStackedWidget(self)
@@ -1085,26 +1108,47 @@ class CloudSavePanel(QWidget):
         """Handle Google Drive connection."""
         logging.info("Connecting to Google Drive...")
         
+        # Cancel any previous auth worker (don't kill thread, just ignore its results)
+        if self._current_auth_worker is not None:
+            try:
+                self._current_auth_worker.cancel()
+                logging.info("Cancelled previous auth worker")
+            except Exception as e:
+                logging.debug(f"Could not cancel previous worker: {e}")
+        
+        # Clean up finished threads from the list
+        self._active_auth_threads = [t for t in self._active_auth_threads if t.isRunning()]
+        
         # Show progress
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)  # Indeterminate progress
         self.progress_bar.setFormat("Authenticating...")
         self.connect_button.setEnabled(False)
         
+        # Create worker with unique ID
+        self._auth_worker_counter += 1
+        worker_id = self._auth_worker_counter
+        
         # Create worker and thread
-        self.auth_thread = QThread()
-        self.auth_worker = AuthWorker(self.drive_manager)
-        self.auth_worker.moveToThread(self.auth_thread)
+        auth_thread = QThread()
+        auth_worker = AuthWorker(self.drive_manager, worker_id)
+        auth_worker.moveToThread(auth_thread)
+        
+        # Store reference to current worker
+        self._current_auth_worker = auth_worker
+        
+        # Add thread to active list to prevent premature destruction
+        self._active_auth_threads.append(auth_thread)
         
         # Connect signals
-        self.auth_thread.started.connect(self.auth_worker.run)
-        self.auth_worker.finished.connect(self._on_auth_finished)
-        self.auth_worker.finished.connect(self.auth_thread.quit)
-        self.auth_worker.finished.connect(self.auth_worker.deleteLater)
-        self.auth_thread.finished.connect(self.auth_thread.deleteLater)
+        auth_thread.started.connect(auth_worker.run)
+        auth_worker.finished.connect(self._on_auth_finished)
+        auth_worker.finished.connect(auth_thread.quit)
+        auth_worker.finished.connect(auth_worker.deleteLater)
+        auth_thread.finished.connect(auth_thread.deleteLater)
         
         # Start authentication
-        self.auth_thread.start()
+        auth_thread.start()
 
         # Setup a timeout in case the OAuth window is closed/denied and never returns
         try:
@@ -1135,6 +1179,8 @@ class CloudSavePanel(QWidget):
         except Exception:
             pass
         
+        # Note: auth_thread will be set to None automatically via the lambda signal connection
+        
         if success:
             self._set_connected(True)
             self._refresh_cloud_status()
@@ -1163,17 +1209,22 @@ class CloudSavePanel(QWidget):
 
     def _on_auth_timeout(self):
         """Abort authentication if it takes too long (e.g., user closed or denied)."""
-        try:
-            logging.warning("Authentication timeout reached. Aborting and restoring UI.")
-            # Best-effort terminate the worker thread if still running
-            if hasattr(self, 'auth_thread') and self.auth_thread:
-                try:
-                    if self.auth_thread.isRunning():
-                        self.auth_thread.terminate()
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        logging.warning("Authentication timeout reached. Aborting and restoring UI.")
+        
+        # Cancel the current worker (don't kill thread - let it finish naturally)
+        # The OAuth flow will eventually timeout or complete, but we'll ignore the results
+        if self._current_auth_worker is not None:
+            try:
+                self._current_auth_worker.cancel()
+                logging.info("Cancelled auth worker due to timeout")
+            except Exception as e:
+                logging.debug(f"Could not cancel worker: {e}")
+            self._current_auth_worker = None
+        
+        # NOTE: We do NOT terminate the thread! OAuth flow is blocking and cannot be interrupted.
+        # The thread will finish naturally when OAuth completes or times out.
+        # This prevents the "QThread: Destroyed while thread is still running" crash.
+        
         # Restore UI state
         try:
             self.progress_bar.setVisible(False)
@@ -1183,10 +1234,12 @@ class CloudSavePanel(QWidget):
             QMessageBox.information(
                 self,
                 "Authentication Cancelled",
-                "Authentication timed out or was cancelled. Please try connecting again."
+                "Authentication timed out or was cancelled.\n\n"
+                "You can try connecting again. If you complete the authorization in your browser, "
+                "it will be saved for next time."
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(f"Error restoring UI after timeout: {e}")
     
     def _on_disconnect_clicked(self):
         """Handle Google Drive disconnection."""
@@ -1893,20 +1946,30 @@ class CloudSavePanel(QWidget):
         
         logging.info("Starting automatic connection to Google Drive...")
         
+        # Clean up finished threads from the list
+        self._active_auth_threads = [t for t in self._active_auth_threads if t.isRunning()]
+        
+        # Create worker with unique ID
+        self._auth_worker_counter += 1
+        worker_id = self._auth_worker_counter
+        
         # Create worker and thread for background connection
-        self.startup_auth_thread = QThread()
-        self.startup_auth_worker = AuthWorker(self.drive_manager)
-        self.startup_auth_worker.moveToThread(self.startup_auth_thread)
+        startup_auth_thread = QThread()
+        startup_auth_worker = AuthWorker(self.drive_manager, worker_id)
+        startup_auth_worker.moveToThread(startup_auth_thread)
+        
+        # Add thread to active list to prevent premature destruction
+        self._active_auth_threads.append(startup_auth_thread)
         
         # Connect signals
-        self.startup_auth_thread.started.connect(self.startup_auth_worker.run)
-        self.startup_auth_worker.finished.connect(self._on_startup_auth_finished)
-        self.startup_auth_worker.finished.connect(self.startup_auth_thread.quit)
-        self.startup_auth_worker.finished.connect(self.startup_auth_worker.deleteLater)
-        self.startup_auth_thread.finished.connect(self.startup_auth_thread.deleteLater)
+        startup_auth_thread.started.connect(startup_auth_worker.run)
+        startup_auth_worker.finished.connect(self._on_startup_auth_finished)
+        startup_auth_worker.finished.connect(startup_auth_thread.quit)
+        startup_auth_worker.finished.connect(startup_auth_worker.deleteLater)
+        startup_auth_thread.finished.connect(startup_auth_thread.deleteLater)
         
         # Start authentication
-        self.startup_auth_thread.start()
+        startup_auth_thread.start()
     
     def _on_startup_auth_finished(self, success, error_message):
         """Handle startup authentication completion."""
@@ -2045,7 +2108,7 @@ class CloudSavePanel(QWidget):
         
         try:
             # Try to use system notifications
-            from notifypy import Notify
+            from notifypy import Notify  # pyright: ignore[reportMissingImports]
             
             notification = Notify()
             notification.title = title
@@ -2215,16 +2278,8 @@ class CloudSavePanel(QWidget):
             on_connected_callable()
             return
 
-        # Avoid overwriting an existing auth thread if it's already running (e.g. auto-connect)
-        if hasattr(self, 'startup_auth_thread') and self.startup_auth_thread is not None:
-            try:
-                if self.startup_auth_thread.isRunning():
-                    logging.debug("Auth thread already running, skipping duplicate connection attempt")
-                    # Ideally we would hook into the existing thread's completion, but for now just skip
-                    # to avoid crashes and duplicate auth flows.
-                    return
-            except RuntimeError:
-                self.startup_auth_thread = None
+        # Clean up finished threads from the list
+        self._active_auth_threads = [t for t in self._active_auth_threads if t.isRunning()]
 
         # Background connect then call
         self._disconnect_after_current_sync = bool(disconnect_after)
@@ -2241,15 +2296,23 @@ class CloudSavePanel(QWidget):
                 logging.warning(f"Connection attempt failed: {error_message}")
                 self._disconnect_after_current_sync = False
 
-        self.startup_auth_thread = QThread()
-        self.startup_auth_worker = AuthWorker(self.drive_manager)
-        self.startup_auth_worker.moveToThread(self.startup_auth_thread)
-        self.startup_auth_thread.started.connect(self.startup_auth_worker.run)
-        self.startup_auth_worker.finished.connect(_after_auth)
-        self.startup_auth_worker.finished.connect(self.startup_auth_thread.quit)
-        self.startup_auth_worker.finished.connect(self.startup_auth_worker.deleteLater)
-        self.startup_auth_thread.finished.connect(self.startup_auth_thread.deleteLater)
-        self.startup_auth_thread.start()
+        # Create worker with unique ID
+        self._auth_worker_counter += 1
+        worker_id = self._auth_worker_counter
+        
+        ensure_auth_thread = QThread()
+        ensure_auth_worker = AuthWorker(self.drive_manager, worker_id)
+        ensure_auth_worker.moveToThread(ensure_auth_thread)
+        
+        # Add thread to active list to prevent premature destruction
+        self._active_auth_threads.append(ensure_auth_thread)
+        
+        ensure_auth_thread.started.connect(ensure_auth_worker.run)
+        ensure_auth_worker.finished.connect(_after_auth)
+        ensure_auth_worker.finished.connect(ensure_auth_thread.quit)
+        ensure_auth_worker.finished.connect(ensure_auth_worker.deleteLater)
+        ensure_auth_thread.finished.connect(ensure_auth_thread.deleteLater)
+        ensure_auth_thread.start()
 
     def _set_main_cloud_button_connecting(self, connecting: bool):
         """Update the main window Cloud button to reflect connecting state."""
