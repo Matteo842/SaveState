@@ -1658,6 +1658,14 @@ class MainWindow(QMainWindow):
             if self.current_search_thread.isRunning():
                 logging.info("Waiting for current search thread to finish...")
                 self.current_search_thread.wait(3000)  # Aspetta max 3 secondi
+        
+        # Clean up cloud panel auth threads
+        if hasattr(self, 'cloud_panel') and self.cloud_panel:
+            try:
+                self.cloud_panel.cleanup_on_close()
+            except Exception as e:
+                logging.error(f"Error cleaning up cloud panel: {e}")
+        
         # Chiama il closeEvent della classe base
         super().closeEvent(event)
         logging.info("MainWindow closed.")

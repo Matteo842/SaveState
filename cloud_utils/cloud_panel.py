@@ -471,6 +471,11 @@ class CloudSavePanel(QWidget):
         self._auth_worker_counter = 0
         self._current_auth_worker = None
         self._active_auth_threads = []  # Keep references to prevent premature destruction
+        self._active_auth_workers = []  # Keep worker references to prevent garbage collection
+        
+        # Refresh button cooldown timer
+        self._refresh_cooldown_active = False
+        self._refresh_cooldown_seconds = 3  # 3 seconds cooldown
         
         # Use stacked widget to switch between main panel and settings
         self.stacked_widget = QStackedWidget(self)
@@ -979,8 +984,8 @@ class CloudSavePanel(QWidget):
         self.delete_button.setEnabled(True)
         # Change object name to get different styling if needed
         self.delete_button.setObjectName("CancelButton")
-        # Reapply stylesheet to reflect new object name
-        self.delete_button.setStyleSheet(self.delete_button.styleSheet())
+        # Clear any disabled styling (cancel button is always enabled)
+        self.delete_button.setStyleSheet("")
         # Reapply fixed width to maintain button size
         self.delete_button.setFixedWidth(self._delete_button_fixed_width)
     
@@ -989,12 +994,26 @@ class CloudSavePanel(QWidget):
         self.delete_button.setText("Delete Selected from Cloud")
         if self._delete_icon:
             self.delete_button.setIcon(self._delete_icon)
-        # Enable only if connected
-        self.delete_button.setEnabled(self.drive_manager.is_connected)
         # Restore object name
         self.delete_button.setObjectName("DangerButton")
-        # Reapply stylesheet to reflect new object name
-        self.delete_button.setStyleSheet(self.delete_button.styleSheet())
+        # Enable only if connected and apply appropriate styling
+        if self.drive_manager.is_connected:
+            self.delete_button.setEnabled(True)
+            self.delete_button.setStyleSheet("")  # Use default DangerButton styling
+        else:
+            self.delete_button.setEnabled(False)
+            # Apply disabled styling
+            self.delete_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #555555;
+                    color: #888888;
+                    border: 1px solid #444444;
+                }
+                QPushButton:hover {
+                    background-color: #555555;
+                    color: #888888;
+                }
+            """)
         # Reapply fixed width to maintain button size
         self.delete_button.setFixedWidth(self._delete_button_fixed_width)
     
@@ -1097,12 +1116,46 @@ class CloudSavePanel(QWidget):
     
     def _on_refresh_clicked(self):
         """Refresh the backup list."""
+        # Prevent spam clicking with cooldown
+        if self._refresh_cooldown_active:
+            logging.debug("Refresh button on cooldown, ignoring click")
+            return
+        
         logging.info("Refreshing backup list...")
+        
+        # Disable button and start cooldown
+        self._refresh_cooldown_active = True
+        self.refresh_button.setEnabled(False)
+        original_text = self.refresh_button.text()
+        
+        # Perform refresh
         self.refresh_local_backups()
         
         # Also refresh cloud status if connected
         if self.drive_manager.is_connected:
             self._refresh_cloud_status()
+        
+        # Create countdown timer
+        remaining_seconds = self._refresh_cooldown_seconds
+        
+        def update_countdown():
+            nonlocal remaining_seconds
+            remaining_seconds -= 1
+            if remaining_seconds > 0:
+                self.refresh_button.setText(f"Wait {remaining_seconds}s...")
+            else:
+                # Cooldown finished
+                self.refresh_button.setText(original_text)
+                self.refresh_button.setEnabled(True)
+                self._refresh_cooldown_active = False
+        
+        # Update button text immediately
+        self.refresh_button.setText(f"Wait {remaining_seconds}s...")
+        
+        # Setup timer to update countdown every second
+        QTimer.singleShot(1000, update_countdown)
+        QTimer.singleShot(2000, update_countdown)
+        QTimer.singleShot(3000, update_countdown)
     
     def _on_connect_clicked(self):
         """Handle Google Drive connection."""
@@ -1116,8 +1169,8 @@ class CloudSavePanel(QWidget):
             except Exception as e:
                 logging.debug(f"Could not cancel previous worker: {e}")
         
-        # Clean up finished threads from the list
-        self._active_auth_threads = [t for t in self._active_auth_threads if t.isRunning()]
+        # Clean up finished/deleted threads from the list
+        self._cleanup_finished_auth_threads()
         
         # Show progress
         self.progress_bar.setVisible(True)
@@ -1137,14 +1190,16 @@ class CloudSavePanel(QWidget):
         # Store reference to current worker
         self._current_auth_worker = auth_worker
         
-        # Add thread to active list to prevent premature destruction
+        # Add thread and worker to active lists to prevent premature destruction
         self._active_auth_threads.append(auth_thread)
+        self._active_auth_workers.append(auth_worker)
         
         # Connect signals
         auth_thread.started.connect(auth_worker.run)
         auth_worker.finished.connect(self._on_auth_finished)
         auth_worker.finished.connect(auth_thread.quit)
         auth_worker.finished.connect(auth_worker.deleteLater)
+        auth_worker.finished.connect(lambda: self._remove_worker_from_list(auth_worker))
         auth_thread.finished.connect(auth_thread.deleteLater)
         
         # Start authentication
@@ -1265,6 +1320,8 @@ class CloudSavePanel(QWidget):
             self.upload_button.setEnabled(True)
             self.download_button.setEnabled(True)
             self.delete_button.setEnabled(True)
+            # Clear any disabled styling on delete button
+            self.delete_button.setStyleSheet("")
         else:
             self.connection_status_label.setText("● Not Connected")
             self.connection_status_label.setStyleSheet("color: #FF5555;")
@@ -1273,6 +1330,18 @@ class CloudSavePanel(QWidget):
             self.upload_button.setEnabled(False)
             self.download_button.setEnabled(False)
             self.delete_button.setEnabled(False)
+            # Apply disabled styling to make it visually clear it's disabled
+            self.delete_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #555555;
+                    color: #888888;
+                    border: 1px solid #444444;
+                }
+                QPushButton:hover {
+                    background-color: #555555;
+                    color: #888888;
+                }
+            """)
     
     def _disable_buttons_during_operation(self):
         """Disable buttons during cloud operations."""
@@ -1916,6 +1985,33 @@ class CloudSavePanel(QWidget):
         self.profiles = profiles
         self._repopulate_table()
     
+    def cleanup_on_close(self):
+        """Clean up resources when the application is closing."""
+        try:
+            # Cancel all active auth workers
+            for worker in self._active_auth_workers:
+                try:
+                    worker.cancel()
+                except Exception as e:
+                    logging.debug(f"Could not cancel worker: {e}")
+            
+            # Wait for active auth threads to finish (with timeout)
+            for thread in self._active_auth_threads:
+                try:
+                    if thread.isRunning():
+                        logging.debug(f"Waiting for auth thread to finish...")
+                        if not thread.wait(2000):  # Wait max 2 seconds
+                            logging.warning("Auth thread did not finish in time")
+                except RuntimeError:
+                    # Thread already deleted
+                    pass
+            
+            # Clear the lists
+            self._active_auth_threads.clear()
+            self._active_auth_workers.clear()
+            logging.info("Cloud panel cleanup completed")
+        except Exception as e:
+            logging.error(f"Error during cloud panel cleanup: {e}")
 
     
     def perform_startup_actions(self):
@@ -1946,8 +2042,8 @@ class CloudSavePanel(QWidget):
         
         logging.info("Starting automatic connection to Google Drive...")
         
-        # Clean up finished threads from the list
-        self._active_auth_threads = [t for t in self._active_auth_threads if t.isRunning()]
+        # Clean up finished/deleted threads from the list
+        self._cleanup_finished_auth_threads()
         
         # Create worker with unique ID
         self._auth_worker_counter += 1
@@ -1958,14 +2054,16 @@ class CloudSavePanel(QWidget):
         startup_auth_worker = AuthWorker(self.drive_manager, worker_id)
         startup_auth_worker.moveToThread(startup_auth_thread)
         
-        # Add thread to active list to prevent premature destruction
+        # Add thread and worker to active lists to prevent premature destruction
         self._active_auth_threads.append(startup_auth_thread)
+        self._active_auth_workers.append(startup_auth_worker)
         
         # Connect signals
         startup_auth_thread.started.connect(startup_auth_worker.run)
         startup_auth_worker.finished.connect(self._on_startup_auth_finished)
         startup_auth_worker.finished.connect(startup_auth_thread.quit)
         startup_auth_worker.finished.connect(startup_auth_worker.deleteLater)
+        startup_auth_worker.finished.connect(lambda: self._remove_worker_from_list(startup_auth_worker))
         startup_auth_thread.finished.connect(startup_auth_thread.deleteLater)
         
         # Start authentication
@@ -2272,14 +2370,35 @@ class CloudSavePanel(QWidget):
         self._sync_in_progress = False
 
     # ---- Helpers ----
+    def _remove_worker_from_list(self, worker):
+        """Remove a worker from the active workers list after it finishes."""
+        try:
+            if worker in self._active_auth_workers:
+                self._active_auth_workers.remove(worker)
+                logging.debug(f"Removed worker {getattr(worker, 'worker_id', '?')} from active list")
+        except Exception as e:
+            logging.debug(f"Error removing worker from list: {e}")
+    
+    def _cleanup_finished_auth_threads(self):
+        """Remove finished or deleted threads from the active list."""
+        cleaned_threads = []
+        for t in self._active_auth_threads:
+            try:
+                if t.isRunning():
+                    cleaned_threads.append(t)
+            except RuntimeError:
+                # Thread object was already deleted by Qt
+                pass
+        self._active_auth_threads = cleaned_threads
+    
     def _ensure_connected_then(self, on_connected_callable, disconnect_after: bool = False):
         """Ensure we're connected, then call the provided function. Optionally disconnect after sync ends."""
         if self.drive_manager.is_connected:
             on_connected_callable()
             return
 
-        # Clean up finished threads from the list
-        self._active_auth_threads = [t for t in self._active_auth_threads if t.isRunning()]
+        # Clean up finished/deleted threads from the list
+        self._cleanup_finished_auth_threads()
 
         # Background connect then call
         self._disconnect_after_current_sync = bool(disconnect_after)
@@ -2304,13 +2423,15 @@ class CloudSavePanel(QWidget):
         ensure_auth_worker = AuthWorker(self.drive_manager, worker_id)
         ensure_auth_worker.moveToThread(ensure_auth_thread)
         
-        # Add thread to active list to prevent premature destruction
+        # Add thread and worker to active lists to prevent premature destruction
         self._active_auth_threads.append(ensure_auth_thread)
+        self._active_auth_workers.append(ensure_auth_worker)
         
         ensure_auth_thread.started.connect(ensure_auth_worker.run)
         ensure_auth_worker.finished.connect(_after_auth)
         ensure_auth_worker.finished.connect(ensure_auth_thread.quit)
         ensure_auth_worker.finished.connect(ensure_auth_worker.deleteLater)
+        ensure_auth_worker.finished.connect(lambda: self._remove_worker_from_list(ensure_auth_worker))
         ensure_auth_thread.finished.connect(ensure_auth_thread.deleteLater)
         ensure_auth_thread.start()
 
