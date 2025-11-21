@@ -1,14 +1,15 @@
 PySide6
-winshell
-pywin32
+winshell; sys_platform == 'win32'
+pywin32; sys_platform == 'win32'
+pynput
 vdf
 nbtlib
 thefuzz
 vmu-tools
 
-psutil==5.9.8
-requests==2.31.0
-steamgriddb==1.0.5
+psutil>=5.9.8
+requests>=2.31.0
+steamgriddb
 # For Linux native notifications
 notify-py==0.3.43
 
