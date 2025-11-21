@@ -566,7 +566,18 @@ class CloudSavePanel(QWidget):
         
         self.connect_button = QPushButton("Connect to Google Drive")
         self.connect_button.setObjectName("PrimaryButton")
-        self.connect_button.clicked.connect(self._on_connect_clicked)
+        self.connect_button.clicked.connect(self._on_connect_or_logout_clicked)
+        
+        # Calculate fixed width for both "Connect to Google Drive" and "Logout" texts
+        from PySide6.QtGui import QFontMetrics
+        font_metrics = self.connect_button.fontMetrics()
+        connect_width = font_metrics.horizontalAdvance("Connect to Google Drive")
+        logout_width = font_metrics.horizontalAdvance("Logout")
+        # Use the wider text + padding
+        max_width = max(connect_width, logout_width) + 40
+        self._connect_button_fixed_width = max_width
+        self.connect_button.setFixedWidth(self._connect_button_fixed_width)
+        
         connection_buttons_layout.addWidget(self.connect_button)
         
         self.disconnect_button = QPushButton("Disconnect")
@@ -1157,6 +1168,14 @@ class CloudSavePanel(QWidget):
         QTimer.singleShot(2000, update_countdown)
         QTimer.singleShot(3000, update_countdown)
     
+    def _on_connect_or_logout_clicked(self):
+        """Handle Connect button click - acts as Connect or Logout depending on state."""
+        # Check if we're in logout mode (connected)
+        if self.drive_manager.is_connected:
+            self._on_logout_clicked()
+        else:
+            self._on_connect_clicked()
+    
     def _on_connect_clicked(self):
         """Handle Google Drive connection."""
         logging.info("Connecting to Google Drive...")
@@ -1310,12 +1329,76 @@ class CloudSavePanel(QWidget):
         except Exception:
             pass
     
+    def _on_logout_clicked(self):
+        """Handle logout - delete token file and disconnect."""
+        # Show confirmation dialog (important since button is near disconnect)
+        reply = QMessageBox.question(
+            self,
+            "Confirm Logout",
+            "Are you sure you want to logout from Google Drive?\n\n"
+            "This will delete your saved credentials and you will need to\n"
+            "re-authenticate next time you connect.\n\n"
+            "This action cannot be undone!",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        logging.info("Logging out from Google Drive...")
+        
+        try:
+            # Disconnect first
+            self.drive_manager.disconnect()
+            self._set_connected(False)
+            self.cloud_backups.clear()
+            self._repopulate_table()
+            
+            # Delete token file
+            token_file = self.drive_manager.token_file
+            if token_file.exists():
+                token_file.unlink()
+                logging.info(f"Token file deleted: {token_file}")
+                QMessageBox.information(
+                    self,
+                    "Logout Successful",
+                    "You have been logged out successfully.\n\n"
+                    "Your saved credentials have been deleted."
+                )
+            else:
+                logging.warning("Token file not found during logout")
+                QMessageBox.information(
+                    self,
+                    "Logout Complete",
+                    "Logged out (no saved credentials found)."
+                )
+            
+            # Update settings panel if open
+            try:
+                if self.stacked_widget.currentIndex() == 1 and hasattr(self, 'settings_panel') and self.settings_panel:
+                    self.settings_panel.refresh_storage_status()
+            except Exception:
+                pass
+                
+        except Exception as e:
+            logging.error(f"Error during logout: {e}")
+            QMessageBox.critical(
+                self,
+                "Logout Error",
+                f"An error occurred during logout:\n{str(e)}"
+            )
+    
     def _set_connected(self, connected):
         """Update UI based on connection status."""
         if connected:
+            # Transform connect button to logout button
+            self.connect_button.setText("Logout")
+            self.connect_button.setToolTip("Delete saved credentials and logout from Google Drive")
+            self.connect_button.setEnabled(True)
+            
             self.connection_status_label.setText("● Connected")
             self.connection_status_label.setStyleSheet("color: #4CAF50;")
-            self.connect_button.setEnabled(False)
             self.disconnect_button.setEnabled(True)
             self.upload_button.setEnabled(True)
             self.download_button.setEnabled(True)
@@ -1323,9 +1406,13 @@ class CloudSavePanel(QWidget):
             # Clear any disabled styling on delete button
             self.delete_button.setStyleSheet("")
         else:
+            # Restore connect button
+            self.connect_button.setText("Connect to Google Drive")
+            self.connect_button.setToolTip("")
+            self.connect_button.setEnabled(True)
+            
             self.connection_status_label.setText("● Not Connected")
             self.connection_status_label.setStyleSheet("color: #FF5555;")
-            self.connect_button.setEnabled(True)
             self.disconnect_button.setEnabled(False)
             self.upload_button.setEnabled(False)
             self.download_button.setEnabled(False)
@@ -1342,6 +1429,9 @@ class CloudSavePanel(QWidget):
                     color: #888888;
                 }
             """)
+        
+        # Reapply fixed width to maintain button size
+        self.connect_button.setFixedWidth(self._connect_button_fixed_width)
     
     def _disable_buttons_during_operation(self):
         """Disable buttons during cloud operations."""
