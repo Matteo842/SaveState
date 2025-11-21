@@ -13,6 +13,16 @@ except Exception:
     QThread = None
     Signal = None
 
+# Import banned folder list from config
+try:
+    from config import BANNED_FOLDER_NAMES_LOWER
+except ImportError:
+    # Fallback se config non è disponibile
+    BANNED_FOLDER_NAMES_LOWER = {
+        ".git", ".svn", ".hg", "node_modules", "__pycache__", "venv", "env", ".cache",
+        "Windows", "Program Files", "Program Files (x86)", "$Recycle.Bin", "System Volume Information",
+    }
+
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
@@ -165,13 +175,10 @@ def _guess_common_rom_dirs(executable_path: str | None) -> list[str]:
         os.path.join(user_home, "Emulation"), os.path.join(user_home, "Emulators"),
         os.path.join(user_home, "RetroArch"), os.path.join(user_home, "LaunchBox"),
         os.path.join(user_home, "EmulationStation"),
-        # Evitiamo esplicitamente Documents/Downloads/Desktop per ridurre i falsi positivi
+        os.path.join(user_home, "Desktop"),  # Desktop diretto dell'utente
+        # Evitiamo esplicitamente Documents/Downloads per ridurre i falsi positivi
+        # OneDrive/Documents rimosso per performance (troppo pesante da scansionare)
     ]
-    if system == "Windows":
-        one_drive = os.path.join(user_home, "OneDrive")
-        user_candidates.extend([
-            os.path.join(one_drive, "Documents"), os.path.join(one_drive, "Desktop")
-        ])
 
     likely_roots.extend([p for p in user_candidates if os.path.isdir(p)])
 
@@ -212,12 +219,43 @@ def _guess_common_rom_dirs(executable_path: str | None) -> list[str]:
         except Exception:
             return []
 
+    def _is_network_drive(drive_letter: str) -> bool:
+        """Check if a Windows drive is a network/remote drive (to skip it for performance)."""
+        try:
+            import ctypes
+            drive_path = f"{drive_letter}:\\"
+            drive_type = ctypes.windll.kernel32.GetDriveTypeW(drive_path)
+            # DRIVE_REMOTE = 4 (network drive)
+            # DRIVE_FIXED = 3 (local hard disk)
+            # DRIVE_REMOVABLE = 2 (USB, floppy)
+            # DRIVE_CDROM = 5 (CD/DVD)
+            # DRIVE_NO_ROOT_DIR = 1 (invalid)
+            return drive_type == 4  # Only exclude network drives
+        except Exception:
+            # Se ctypes fallisce, assumiamo che non sia di rete
+            return False
+
     if system == "Windows":
+        # Cartelle da bannare a livello root dei drive (troppo pesanti o irrilevanti)
+        BANNED_DRIVE_ROOT_FOLDERS = {
+            "windows", "program files", "program files (x86)", "programdata", 
+            "users", "perflogs", "$recycle.bin", "system volume information",
+            "windows.old", "intel", "amd", "nvidia", "msocache",
+            "$windows.~bt", "$windows.~ws",  # Windows update temp folders
+            "programdata", "recovery", "boot", "efi",
+        }
+        
         discovered_windows_roots: list[str] = []
         for letter in "CDEFGHIJKLMNOPQRSTUVWXYZ":
             root = f"{letter}:\\"
             if not os.path.isdir(root):
                 continue
+            
+            # Skip network drives (slow and unlikely to contain local ROMs)
+            if _is_network_drive(letter):
+                log.debug(f"Skipping network drive: {root}")
+                continue
+            
             # Known top-level names
             for name in ["Roms", "ROMs", "roms", "ROM", "Games", "games", "Emulation", "Emulators", "RetroArch"]:
                 candidate = os.path.join(root, name)
@@ -227,6 +265,10 @@ def _guess_common_rom_dirs(executable_path: str | None) -> list[str]:
 
             # Generic pattern matches at drive root (cheap): anything containing 'rom' or 'game'
             for entry in _safe_listdir(root):
+                # Skip banned root-level folders (system/heavy folders)
+                if entry.lower() in BANNED_DRIVE_ROOT_FOLDERS:
+                    continue
+                
                 entry_path = os.path.join(root, entry)
                 if not os.path.isdir(entry_path):
                     continue
@@ -272,11 +314,9 @@ def _iter_sav_files(root_dir: str, deep_priority_names: set[str], max_depth: int
     Yields .sav files under root_dir, pruning common heavy/irrelevant folders and limiting depth
     unless the path is within DS-focused folder names (e.g., 'nds', 'Nintendo DS').
     """
-    skip_dir_names = {
-        ".git", ".svn", ".hg", "node_modules", "__pycache__", "venv", "env", ".cache",
-        "Windows", "Program Files", "Program Files (x86)", "$Recycle.Bin", "System Volume Information",
-        "Library", "Caches", "AppData", "Applications", "Android",
-    }
+    # Use comprehensive banned folder list from config.py for maximum performance
+    # This includes browser folders, dev tools, system folders, launchers, etc.
+    skip_dir_names = BANNED_FOLDER_NAMES_LOWER
 
     root_dir_abs = os.path.abspath(root_dir)
     for current_root, dirnames, filenames in os.walk(root_dir_abs):
@@ -290,8 +330,8 @@ def _iter_sav_files(root_dir: str, deep_priority_names: set[str], max_depth: int
             dirnames[:] = []
             continue
 
-        # Prune heavy/irrelevant folders
-        dirnames[:] = [d for d in dirnames if d not in skip_dir_names]
+        # Prune heavy/irrelevant folders (case-insensitive comparison)
+        dirnames[:] = [d for d in dirnames if d.lower() not in skip_dir_names]
 
         for fn in filenames:
             if fn.lower().endswith(".sav"):
