@@ -6,6 +6,7 @@ Permette di visualizzare, selezionare ed eliminare i profili prima di aggiungerl
 import os
 import logging
 import re
+import platform
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
                               QPushButton, QListWidget, QListWidgetItem,
                               QWidget, QMessageBox, QProgressBar, QCheckBox, QLineEdit, QStyle)
@@ -248,6 +249,7 @@ class MultiProfileDialog(QDialog):
         # --- Adopt app's custom window style (frameless with custom title bar) ---
         self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
         self._drag_pos = None
+        self._is_linux = platform.system() == "Linux"  # Check if running on Linux
         # Keep dialog non-modal to match app interaction model
         self.setWindowModality(Qt.NonModal)
         
@@ -454,19 +456,42 @@ class MultiProfileDialog(QDialog):
         try:
             if hasattr(self, 'title_bar') and watched is self.title_bar:
                 if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                    # On Linux, try to use native window dragging via startSystemMove()
+                    if self._is_linux and hasattr(self, 'windowHandle') and self.windowHandle():
+                        try:
+                            # Get global position from event
+                            if hasattr(event, 'globalPosition'):
+                                global_pos = event.globalPosition().toPoint()
+                            else:
+                                global_pos = event.globalPos()
+                            # Use Qt's native window move for better Linux compatibility
+                            self.windowHandle().startSystemMove()
+                            return True
+                        except Exception as e:
+                            logging.debug(f"startSystemMove failed on Linux, falling back to manual drag: {e}")
+                    
+                    # Fallback to manual dragging (for Windows or if startSystemMove fails)
                     pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
                     self._drag_pos = pos - self.frameGeometry().topLeft()
                     return True
+                    
                 if event.type() == QEvent.Type.MouseMove and (event.buttons() & Qt.MouseButton.LeftButton):
                     if self._drag_pos is not None:
                         pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
-                        self.move(pos - self._drag_pos)
+                        new_pos = pos - self._drag_pos
+                        self.move(new_pos)
                         return True
+                        
+                if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+                    # Reset drag position on release
+                    self._drag_pos = None
+                    return True
+                    
                 if event.type() == QEvent.Type.MouseButtonDblClick:
                     # Do nothing on double click (no maximize toggle)
                     return True
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"eventFilter exception: {e}")
         return super().eventFilter(watched, event)
     
     def populate_profile_list(self):

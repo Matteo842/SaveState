@@ -9,7 +9,7 @@ vmu-tools
 
 psutil>=5.9.8
 requests>=2.31.0
-steamgriddb
+# steamgriddb  # Temporarily disabled - not available on all Linux platforms
 # For Linux native notifications
 notify-py==0.3.43
 
