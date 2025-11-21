@@ -727,14 +727,12 @@ class MainWindow(QMainWindow):
         self.cloud_group.setMaximumWidth(170)  # Slightly larger than button to account for margins
         self.cloud_group.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
 
-        # Subtle vertical separator between General and Cloud
+        # Invisible spacer between General and Cloud (replaces visible separator)
         separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.VLine)
-        separator.setFrameShadow(QFrame.Shadow.Plain)
-        separator.setLineWidth(1)
-        separator.setFixedWidth(1)
+        separator.setFrameShape(QFrame.Shape.NoFrame)
+        separator.setFixedWidth(2)  # Just spacing, no visible line
         separator.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
-        separator.setStyleSheet("QFrame { border-left: 1px solid rgba(255, 255, 255, 0.12); background: transparent; }")
+        separator.setStyleSheet("QFrame { background: transparent; border: none; }")
 
         # Row container to place General (left) and Cloud (right of it)
         self.general_cloud_row = QWidget()
