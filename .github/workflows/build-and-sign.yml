@@ -125,7 +125,7 @@ jobs:
 
       - name: 🚀 Create Release with GitHub CLI
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
         run: |
           echo "Creazione Release v${{ env.RELEASE_VERSION }}..."
           
