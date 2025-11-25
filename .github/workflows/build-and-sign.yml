@@ -65,7 +65,7 @@ jobs:
         path: SaveState_v${{ env.RELEASE_VERSION }}_Win.zip
 
   # ===========================
-  # LINUX BUILD
+  # LINUX BUILD (Corretto e Blindato)
   # ===========================
   build_linux:
     runs-on: ubuntu-latest
@@ -86,7 +86,6 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    # --- 🔐 MAGIA ANCHE PER LINUX ---
     - name: 🔐 Restore Secret JSON
       env:
         SECRET_CONTENT: ${{ secrets.CLIENT_SECRET_JSON }}
@@ -99,18 +98,26 @@ jobs:
 
     - name: 🗄️ Create Release Tarball Package
       run: |
+        # Usiamo le virgolette per gestire eventuali spazi nel nome versione
         DIR_NAME="SaveState_v${{ env.RELEASE_VERSION }}_Linux"
-        mkdir $DIR_NAME
-        cp dist/SaveState $DIR_NAME/
-        cp LICENSE $DIR_NAME/
-        cp README.md $DIR_NAME/
-        tar -czvf SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.gz $DIR_NAME
+        
+        # -p evita errori se la cartella esiste già
+        mkdir -p "$DIR_NAME"
+        
+        # -r copia ricorsivamente (fondamentale se SaveState è una cartella o per sicurezza)
+        # Il punto interrogativo dopo SaveState serve nel caso il nome vari leggermente
+        cp -r dist/SaveState* "$DIR_NAME/"
+        cp LICENSE "$DIR_NAME/"
+        cp README.md "$DIR_NAME/"
+        
+        # Creiamo il tar.gz usando le virgolette
+        tar -czvf "SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.gz" "$DIR_NAME"
 
     - name: ⬆️ Upload Linux Package
       uses: actions/upload-artifact@v4
       with:
         name: SaveState-Linux-Package
-        path: SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.gz
+        path: "SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.gz"
 
   # ===========================
   # RELEASE CREATION
