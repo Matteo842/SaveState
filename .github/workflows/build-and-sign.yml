@@ -13,6 +13,7 @@ on:
 env:
   RELEASE_VERSION: ${{ github.event.inputs.version }}
 
+# Diamo i permessi di scrittura a tutto il workflow
 permissions:
   contents: write
 
@@ -37,16 +38,12 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    # --- 🔐 MAGIA QUI SOTTO ---
-    # Questo passaggio crea il file client_secret.json prendendo il contenuto dai Secrets di GitHub
     - name: 🔐 Restore Secret JSON
       shell: powershell
       env:
         SECRET_CONTENT: ${{ secrets.CLIENT_SECRET_JSON }}
       run: |
-        # Crea il file usando il contenuto della variabile segreta
         $env:SECRET_CONTENT | Out-File -FilePath cloud_utils\client_secret.json -Encoding utf8
-        Write-Host "File segreto ripristinato temporaneamente per la build!"
 
     - name: 🔨 Run PyInstaller (Windows)
       run: pyinstaller --clean SaveState-OneFile.spec
@@ -68,7 +65,7 @@ jobs:
         path: SaveState_v${{ env.RELEASE_VERSION }}_Win.zip
 
   # ===========================
-  # LINUX BUILD (Corretto e Blindato)
+  # LINUX BUILD
   # ===========================
   build_linux:
     runs-on: ubuntu-latest
@@ -94,26 +91,17 @@ jobs:
         SECRET_CONTENT: ${{ secrets.CLIENT_SECRET_JSON }}
       run: |
         echo "$SECRET_CONTENT" > cloud_utils/client_secret.json
-        echo "File segreto ripristinato!"
 
     - name: 🔨 Run PyInstaller (Linux)
       run: pyinstaller --clean SaveState-OneFile-Linux.spec
 
     - name: 🗄️ Create Release Tarball Package
       run: |
-        # Usiamo le virgolette per gestire eventuali spazi nel nome versione
         DIR_NAME="SaveState_v${{ env.RELEASE_VERSION }}_Linux"
-        
-        # -p evita errori se la cartella esiste già
         mkdir -p "$DIR_NAME"
-        
-        # -r copia ricorsivamente (fondamentale se SaveState è una cartella o per sicurezza)
-        # Il punto interrogativo dopo SaveState serve nel caso il nome vari leggermente
         cp -r dist/SaveState* "$DIR_NAME/"
         cp LICENSE "$DIR_NAME/"
         cp README.md "$DIR_NAME/"
-        
-        # Creiamo il tar.gz usando le virgolette
         tar -czvf "SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.gz" "$DIR_NAME"
 
     - name: ⬆️ Upload Linux Package
@@ -123,16 +111,36 @@ jobs:
         path: "SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.gz"
 
   # ===========================
-  # RELEASE CREATION
+  # RELEASE CREATION (FIXED)
   # ===========================
   create_release:
     needs: [build_windows, build_linux]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Ridondante ma sicuro
     steps:
+      # FIX 1: Dobbiamo scaricare il codice per poter creare il tag git!
+      - name: ⬇️ Checkout Code
+        uses: actions/checkout@v4
+
       - name: ⬇️ Download all artifacts
         uses: actions/download-artifact@v4
 
-      - name: 🏷️ Create GitHub Release Draft
+      # FIX 2: Creiamo il tag manualmente identificandoci come bot
+      - name: 🏷️ Push Tag Manually
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Crea il tag se non esiste
+          git tag v${{ env.RELEASE_VERSION }} || echo "Tag exists"
+          
+          # Spinge il tag su GitHub
+          git push origin v${{ env.RELEASE_VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📦 Create GitHub Release Draft
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.RELEASE_VERSION }}
