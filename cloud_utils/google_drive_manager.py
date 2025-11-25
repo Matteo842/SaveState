@@ -16,7 +16,7 @@ import pickle
 import time
 import datetime
 import random
-from typing import Optional, List, Dict, Callable, Callable as _Callable
+from typing import Optional, List, Dict, Callable
 from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 
@@ -609,7 +609,7 @@ class GoogleDriveManager:
             return []
     
     def sync_backup(self, profile_name: str, local_path: str, 
-                    direction: str = "bidirectional") -> bool:
+                    direction: str = "bidirectional") -> Dict[str, any]:
         """
         Synchronize a backup between local and cloud.
         
@@ -619,7 +619,7 @@ class GoogleDriveManager:
             direction: Sync direction - "upload", "download", or "bidirectional"
             
         Returns:
-            bool: True if sync successful, False otherwise
+            Dict: Sync result with 'ok' key indicating success
         """
         if direction == "upload":
             return self.upload_backup(local_path, profile_name, overwrite=True)
@@ -631,22 +631,26 @@ class GoogleDriveManager:
             # 2. Download any cloud files that don't exist locally
             
             # First upload
-            upload_success = self.upload_backup(local_path, profile_name, overwrite=True)
-            if not upload_success:
+            upload_result = self.upload_backup(local_path, profile_name, overwrite=True)
+            if not upload_result.get('ok', False):
                 logging.error("Upload phase of bidirectional sync failed")
-                return False
+                return {'ok': False, 'error': 'Upload phase failed', 'phase': 'upload'}
             
             # Then download (smart sync: only overwrite if remote is newer)
-            download_success = self.download_backup(profile_name, local_path, overwrite=True, smart_sync=True)
-            if not download_success:
+            download_result = self.download_backup(profile_name, local_path, overwrite=True, smart_sync=True)
+            if not download_result.get('ok', False):
                 logging.error("Download phase of bidirectional sync failed")
-                return False
+                return {'ok': False, 'error': 'Download phase failed', 'phase': 'download'}
             
             logging.info(f"Bidirectional sync completed for profile '{profile_name}'")
-            return True
+            return {
+                'ok': True,
+                'upload': upload_result,
+                'download': download_result
+            }
         else:
             logging.error(f"Invalid sync direction: {direction}")
-            return False
+            return {'ok': False, 'error': f'Invalid sync direction: {direction}'}
     
     def delete_cloud_backup(self, profile_name: str) -> bool:
         """
@@ -870,7 +874,7 @@ class GoogleDriveManager:
         except Exception as e:
             logging.error(f"Error during sleep backoff: {e}")
 
-    def _execute_with_retries(self, func: _Callable[[], any], description: str):
+    def _execute_with_retries(self, func: Callable[[], any], description: str):
         last_exc = None
         for attempt in range(self._max_retries):
             try:
@@ -1075,6 +1079,7 @@ class GoogleDriveManager:
     
     def _download_file(self, file_id: str, destination_path: str) -> bool:
         """Download a file from Google Drive."""
+        fh = None
         try:
             request = self.service.files().get_media(fileId=file_id)
             
@@ -1110,6 +1115,7 @@ class GoogleDriveManager:
                 # Check for cancellation
                 if self._cancelled:
                     fh.close()
+                    fh = None  # Mark as closed to prevent double-close in finally
                     # Try to delete partial file
                     try:
                         if os.path.exists(destination_path):
@@ -1156,11 +1162,19 @@ class GoogleDriveManager:
                 self.chunk_callback(total_size, total_size)
                 
             fh.close()
+            fh = None  # Mark as closed
             return True
             
         except Exception as e:
             logging.error(f"Error downloading file: {e}")
             return False
+        finally:
+            # Ensure file handle is always closed, even on exception
+            if fh is not None:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
     
     def set_progress_callback(self, callback: Callable[[int, int, str], None]):
         """Set a callback function for progress updates."""
@@ -1270,6 +1284,10 @@ class GoogleDriveManager:
             profile_name: Profile name (for logging)
             max_backups: Maximum number of backups to keep
         """
+        if not self.service:
+            logging.warning(f"Cannot cleanup backups for '{profile_name}': service not available")
+            return
+        
         try:
             # Get all files in folder, sorted by modification time (oldest first)
             query = f"'{folder_id}' in parents and trashed=false"
