@@ -13,7 +13,7 @@ on:
 env:
   RELEASE_VERSION: ${{ github.event.inputs.version }}
 
-# Diamo i permessi di scrittura a tutto il workflow
+# Diamo permessi espliciti a tutto il workflow
 permissions:
   contents: write
 
@@ -111,44 +111,31 @@ jobs:
         path: "SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.gz"
 
   # ===========================
-  # RELEASE CREATION (FIXED)
+  # RELEASE CREATION (GitHub CLI Method)
   # ===========================
   create_release:
     needs: [build_windows, build_linux]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # Ridondante ma sicuro
     steps:
-      # FIX 1: Dobbiamo scaricare il codice per poter creare il tag git!
       - name: ⬇️ Checkout Code
         uses: actions/checkout@v4
 
       - name: ⬇️ Download all artifacts
         uses: actions/download-artifact@v4
 
-      # FIX 2: Creiamo il tag manualmente identificandoci come bot
-      - name: 🏷️ Push Tag Manually
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Crea il tag se non esiste
-          git tag v${{ env.RELEASE_VERSION }} || echo "Tag exists"
-          
-          # Spinge il tag su GitHub
-          git push origin v${{ env.RELEASE_VERSION }}
+      - name: 🚀 Create Release with GitHub CLI
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 📦 Create GitHub Release Draft
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ env.RELEASE_VERSION }}
-          name: SaveState v${{ env.RELEASE_VERSION }}
-          draft: true
-          body: |
-            ## Novità di SaveState v${{ env.RELEASE_VERSION }}
-            (Scrivi qui il changelog...)
-          files: |
-            SaveState-Windows-Package/*
-            SaveState-Linux-Package/*
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Creazione Release v${{ env.RELEASE_VERSION }}..."
+          
+          # Creiamo la release e carichiamo i file in un colpo solo
+          # --draft: La crea come bozza (così puoi modificare il testo)
+          # --generate-notes: Genera automaticamente un changelog base
+          
+          gh release create v${{ env.RELEASE_VERSION }} \
+            SaveState-Windows-Package/* \
+            SaveState-Linux-Package/* \
+            --title "SaveState v${{ env.RELEASE_VERSION }}" \
+            --draft \
+            --generate-notes
