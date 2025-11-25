@@ -39,11 +39,12 @@ jobs:
         pip install pyinstaller
 
     - name: 🔐 Restore Secret JSON
-      shell: powershell
+      shell: bash  # Usa bash anche su Windows per questo comando, è più pulito
       env:
         SECRET_CONTENT: ${{ secrets.CLIENT_SECRET_JSON }}
       run: |
-        $env:SECRET_CONTENT | Out-File -FilePath cloud_utils\client_secret.json -Encoding utf8
+        # Usiamo Python per scrivere il file esattamente come deve essere (UTF-8 puro)
+        python -c "import os; open('cloud_utils/client_secret.json', 'w', encoding='utf-8').write(os.environ['SECRET_CONTENT'])"
 
     - name: 🔨 Run PyInstaller (Windows)
       run: pyinstaller --clean SaveState-OneFile.spec
@@ -87,10 +88,12 @@ jobs:
         pip install pyinstaller
 
     - name: 🔐 Restore Secret JSON
+      shell: bash  # Usa bash anche su Windows per questo comando, è più pulito
       env:
         SECRET_CONTENT: ${{ secrets.CLIENT_SECRET_JSON }}
       run: |
-        echo "$SECRET_CONTENT" > cloud_utils/client_secret.json
+        # Usiamo Python per scrivere il file esattamente come deve essere (UTF-8 puro)
+        python -c "import os; open('cloud_utils/client_secret.json', 'w', encoding='utf-8').write(os.environ['SECRET_CONTENT'])"
 
     - name: 🔨 Run PyInstaller (Linux)
       run: pyinstaller --clean SaveState-OneFile-Linux.spec
