@@ -13,6 +13,9 @@ on:
 env:
   RELEASE_VERSION: ${{ github.event.inputs.version }}
 
+permissions:
+  contents: write
+
 jobs:
   # ===========================
   # WINDOWS BUILD
