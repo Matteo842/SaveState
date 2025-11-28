@@ -837,11 +837,33 @@ class SavePathFinder:
         if len(no_space1) >= 3 and len(no_space2) >= 3:
             if no_space1.startswith(no_space2) or no_space2.startswith(no_space1):
                 return True
+        
+        # Controlla se un nome corto (singola parola) è contenuto come parola completa nell'altro
+        # Questo aiuta con casi come "isaac" in "Binding of Isaac Repentance+"
+        words1 = clean1.split()
+        words2 = clean2.split()
+        
+        # Se uno dei nomi è una singola parola di almeno 4 caratteri, controlla se è una parola nell'altro
+        if len(words1) == 1 and len(words1[0]) >= 4:
+            if words1[0] in words2:
+                logging.debug(f"Word containment match: '{words1[0]}' found in {words2}")
+                return True
+        if len(words2) == 1 and len(words2[0]) >= 4:
+            if words2[0] in words1:
+                logging.debug(f"Word containment match: '{words2[0]}' found in {words1}")
+                return True
                 
         # Controlla fuzzy matching
         if THEFUZZ_AVAILABLE:
             ratio = fuzz.token_sort_ratio(clean1, clean2)
             if ratio >= 88:
+                return True
+            
+            # Usa anche token_set_ratio per matching parziale migliore
+            # Questo gestisce meglio i casi dove un nome è un sottoinsieme dell'altro
+            set_ratio = fuzz.token_set_ratio(clean1, clean2)
+            if set_ratio >= 92:
+                logging.debug(f"Token set ratio match: '{clean1}' vs '{clean2}' = {set_ratio}")
                 return True
                 
         return False
@@ -927,6 +949,16 @@ class SavePathFinder:
             
         if self._are_names_similar(self.context.sanitized_name, folder_name):
             return True
+        
+        # Controlla anche similarità con le abbreviazioni lunghe (es. nome espanso dalla cartella di install)
+        # Questo aiuta quando il nome del gioco è corto ma abbiamo un'espansione dalla directory
+        for abbrev in self.context.game_abbreviations:
+            # Salta abbreviazioni corte, già controllate sopra
+            if not abbrev or len(abbrev) <= len(self.context.sanitized_name):
+                continue
+            if self._are_names_similar(abbrev, folder_name):
+                logging.debug(f"Match found via abbreviation '{abbrev}' for folder '{folder_name}'")
+                return True
             
         return False
     
