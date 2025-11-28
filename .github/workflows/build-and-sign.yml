@@ -1,6 +1,6 @@
 # .github/workflows/build-and-sign.yml
 
-name: 🚀 Build, Package e Rilascio Manuale (Con Firma FIX)
+name: 🚀 Build, Package e Rilascio (PowerShell Method)
 
 on:
   workflow_dispatch:
@@ -47,37 +47,33 @@ jobs:
     - name: 🔨 Run PyInstaller (Windows)
       run: pyinstaller --clean SaveState-OneFile.spec
 
-    # --- STEP AGGIUNTO: Carichiamo il file non firmato per avere l'ID ---
-    - name: 📤 Upload Unsigned Artifact
-      id: upload_unsigned_step  # Questo ID ci serve per il passaggio dopo
-      uses: actions/upload-artifact@v4
-      with:
-        name: Unsigned-SaveState
-        path: dist/SaveState.exe
-        if-no-files-found: error
-        retention-days: 1
-
-    # --- STEP CORRETTO: Ora usiamo l'ID generato sopra ---
-    - name: 🔏 Sign Artifact with SignPath (TEST)
-      uses: signpath/github-action-submit-signing-request@v1
-      with:
-        api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-        organization-id: '${{ secrets.SIGNPATH_ORGANIZATION_ID }}'
-        project-slug: 'SaveState'
-        signing-policy-slug: 'test-signing' 
-        artifact-configuration-slug: 'initial'
-        # AL POSTO DI ARTIFACT-FILE, USIAMO L'ID:
-        github-artifact-id: '${{ steps.upload_unsigned_step.outputs.artifact-id }}'
-        github-token: '${{ secrets.GITHUB_TOKEN }}'
-        wait-for-completion: true
-        output-artifact-directory: 'dist_signed'
+    # --- NUOVO METODO: POWERSHELL DIRETTO (BYPASS ZIP) ---
+    - name: 🔏 Sign Artifact with SignPath (PowerShell)
+      shell: powershell
+      run: |
+        # 1. Installiamo il modulo SignPath ufficiale
+        Install-Module -Name SignPath -Force -Scope CurrentUser
+        
+        # 2. Creiamo la cartella dove atterrerà il file firmato
+        mkdir dist_signed
+        
+        # 3. Lanciamo il comando che hai trovato tu
+        Submit-SigningRequest `
+          -InputArtifactPath "dist\SaveState.exe" `
+          -ApiToken "${{ secrets.SIGNPATH_API_TOKEN }}" `
+          -OrganizationId "${{ secrets.SIGNPATH_ORGANIZATION_ID }}" `
+          -ProjectSlug "SaveState" `
+          -SigningPolicySlug "test-signing" `
+          -ArtifactConfigurationSlug "initial" `
+          -OutputArtifactPath "dist_signed\SaveState.exe" `
+          -WaitForCompletion
 
     - name: 🗄️ Create Release Zip Package
       shell: powershell
       run: |
         $zipName = "SaveState_v${{ env.RELEASE_VERSION }}_Win.zip"
         mkdir release_pack
-        # Prendiamo il file firmato dalla cartella di output di SignPath
+        # Prendiamo il file firmato dalla cartella dist_signed
         copy dist_signed\SaveState.exe release_pack\
         copy LICENSE release_pack\
         copy README.md release_pack\
@@ -90,7 +86,7 @@ jobs:
         path: SaveState_v${{ env.RELEASE_VERSION }}_Win.zip
 
   # ===========================
-  # LINUX BUILD (Nessuna modifica)
+  # LINUX BUILD (Invariato)
   # ===========================
   build_linux:
     runs-on: ubuntu-latest
