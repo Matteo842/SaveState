@@ -1,6 +1,6 @@
 # .github/workflows/build-and-sign.yml
 
-name: 🚀 Build, Package e Rilascio Manuale
+name: 🚀 Build, Package e Rilascio Manuale (Con Firma)
 
 on:
   workflow_dispatch:
@@ -13,13 +13,12 @@ on:
 env:
   RELEASE_VERSION: ${{ github.event.inputs.version }}
 
-# Diamo permessi espliciti a tutto il workflow
 permissions:
   contents: write
 
 jobs:
   # ===========================
-  # WINDOWS BUILD
+  # WINDOWS BUILD + SIGNING
   # ===========================
   build_windows:
     runs-on: windows-latest
@@ -39,22 +38,38 @@ jobs:
         pip install pyinstaller
 
     - name: 🔐 Restore Secret JSON
-      shell: bash  # Usa bash anche su Windows per questo comando, è più pulito
+      shell: bash
       env:
         SECRET_CONTENT: ${{ secrets.CLIENT_SECRET_JSON }}
       run: |
-        # Usiamo Python per scrivere il file esattamente come deve essere (UTF-8 puro)
         python -c "import os; open('cloud_utils/client_secret.json', 'w', encoding='utf-8').write(os.environ['SECRET_CONTENT'])"
 
     - name: 🔨 Run PyInstaller (Windows)
       run: pyinstaller --clean SaveState-OneFile.spec
+
+    # --- INIZIO MODIFICA SIGNPATH ---
+    - name: 🔏 Sign Artifact with SignPath (TEST)
+      uses: signpath/github-action-submit-signing-request@v1
+      with:
+        api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+        organization-id: '${{ secrets.SIGNPATH_ORGANIZATION_ID }}'
+        project-slug: 'SaveState'
+        # Qui usiamo 'test-signing' finché Phillip non approva il certificato Release.
+        # Quando sarà tutto verde, cambierai questa riga in 'release-signing'.
+        signing-policy-slug: 'test-signing' 
+        artifact-configuration-slug: 'initial-version'
+        artifact-file: 'dist/SaveState.exe'
+        wait-for-completion: true
+        output-artifact-directory: 'dist_signed'
+    # --- FINE MODIFICA SIGNPATH ---
 
     - name: 🗄️ Create Release Zip Package
       shell: powershell
       run: |
         $zipName = "SaveState_v${{ env.RELEASE_VERSION }}_Win.zip"
         mkdir release_pack
-        copy dist\SaveState.exe release_pack\
+        # NOTA: Ora copiamo il file dalla cartella 'dist_signed' (quello firmato)
+        copy dist_signed\SaveState.exe release_pack\
         copy LICENSE release_pack\
         copy README.md release_pack\
         Compress-Archive -Path release_pack\* -DestinationPath $zipName
@@ -66,7 +81,7 @@ jobs:
         path: SaveState_v${{ env.RELEASE_VERSION }}_Win.zip
 
   # ===========================
-  # LINUX BUILD
+  # LINUX BUILD (Nessuna modifica qui per ora)
   # ===========================
   build_linux:
     runs-on: ubuntu-latest
@@ -88,11 +103,10 @@ jobs:
         pip install pyinstaller
 
     - name: 🔐 Restore Secret JSON
-      shell: bash  # Usa bash anche su Windows per questo comando, è più pulito
+      shell: bash 
       env:
         SECRET_CONTENT: ${{ secrets.CLIENT_SECRET_JSON }}
       run: |
-        # Usiamo Python per scrivere il file esattamente come deve essere (UTF-8 puro)
         python -c "import os; open('cloud_utils/client_secret.json', 'w', encoding='utf-8').write(os.environ['SECRET_CONTENT'])"
 
     - name: 🔨 Run PyInstaller (Linux)
@@ -114,7 +128,7 @@ jobs:
         path: "SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.gz"
 
   # ===========================
-  # RELEASE CREATION (GitHub CLI Method)
+  # RELEASE CREATION
   # ===========================
   create_release:
     needs: [build_windows, build_linux]
@@ -131,11 +145,6 @@ jobs:
           GH_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
         run: |
           echo "Creazione Release v${{ env.RELEASE_VERSION }}..."
-          
-          # Creiamo la release e carichiamo i file in un colpo solo
-          # --draft: La crea come bozza (così puoi modificare il testo)
-          # --generate-notes: Genera automaticamente un changelog base
-          
           gh release create v${{ env.RELEASE_VERSION }} \
             SaveState-Windows-Package/* \
             SaveState-Linux-Package/* \
