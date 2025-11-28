@@ -1019,6 +1019,32 @@ QPushButton#ExitButton:pressed {
     background-color: #404040;
 }
 
+/* ===== EMPTY STATE WIDGET STYLING (DARK THEME) ===== */
+QWidget#EmptyStateWidget {
+    background-color: transparent;
+}
+QLabel#EmptyStateTitle {
+    color: #E0E0E0;
+    background: transparent;
+    font-size: 18pt;
+    font-weight: bold;
+    padding: 8px 0px;
+}
+QLabel#EmptyStateInstructions {
+    color: #A0A0A0;
+    background: transparent;
+    font-size: 10pt;
+    padding: 10px 20px;
+}
+QLabel#EmptyStateHint {
+    color: #707070;
+    background: transparent;
+    font-size: 9pt;
+    font-style: italic;
+    padding: 5px 0px;
+}
+/* ===== END EMPTY STATE WIDGET ===== */
+
 /* ===== CUSTOM SCROLLBAR STYLING (DARK THEME) ===== */
 QScrollBar:vertical {
     background-color: #2D2D2D;  /* Sfondo track (stesso del widget) */
@@ -1289,6 +1315,32 @@ QPushButton#ExitButton:hover {
 QPushButton#ExitButton:pressed {
     background-color: #C8C8C8;
 }
+
+/* ===== EMPTY STATE WIDGET STYLING (LIGHT THEME) ===== */
+QWidget#EmptyStateWidget {
+    background-color: transparent;
+}
+QLabel#EmptyStateTitle {
+    color: #1E1E1E;
+    background: transparent;
+    font-size: 18pt;
+    font-weight: bold;
+    padding: 8px 0px;
+}
+QLabel#EmptyStateInstructions {
+    color: #555555;
+    background: transparent;
+    font-size: 10pt;
+    padding: 10px 20px;
+}
+QLabel#EmptyStateHint {
+    color: #888888;
+    background: transparent;
+    font-size: 9pt;
+    font-style: italic;
+    padding: 5px 0px;
+}
+/* ===== END EMPTY STATE WIDGET ===== */
 
 /* ===== CUSTOM SCROLLBAR STYLING (LIGHT THEME) ===== */
 QScrollBar:vertical {

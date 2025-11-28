@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 import logging
 import os
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox
+from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QStackedWidget
 from PySide6.QtCore import Qt, QLocale, QCoreApplication, Slot, QSize
 from PySide6.QtGui import QIcon
 import core_logic
@@ -10,6 +10,7 @@ import config
 
 # Import the new manager and utils
 from gui_components import favorites_manager # Assuming it's in gui_components
+from gui_components.empty_state_widget import EmptyStateWidget
 from utils import resource_path # <--- Import from utils
 
 class ProfileListManager:
@@ -30,6 +31,20 @@ class ProfileListManager:
         if not self.empty_star_icon:
             logging.warning(f"Non-favorite icon 'emptystar.png' not found in {empty_star_icon_path}")
         # --- End Loading Icons ---
+
+        # --- Create Empty State Widget ---
+        self.empty_state_widget = EmptyStateWidget()
+        # Insert it into the same layout as the table widget
+        parent_layout = self.table_widget.parent().layout() if self.table_widget.parent() else None
+        if parent_layout:
+            # Find the table's position in the layout and insert empty state at same position
+            table_index = parent_layout.indexOf(self.table_widget)
+            if table_index >= 0:
+                parent_layout.insertWidget(table_index, self.empty_state_widget)
+            else:
+                parent_layout.addWidget(self.empty_state_widget)
+        self.empty_state_widget.hide()  # Start hidden, will be shown if no profiles
+        # --- End Empty State Widget ---
 
         # Configure the table
         self.table_widget.setObjectName("ProfileTable")
@@ -116,26 +131,15 @@ class ProfileListManager:
         # --- End Sorting ---
 
         if not sorted_profiles:
-            # Show "No profile" row
-            self.table_widget.setRowCount(1)
-            item_fav_placeholder = QTableWidgetItem("")
-            item_nome = QTableWidgetItem(
-                "No profiles created."
-            )
-            item_info = QTableWidgetItem("")
-            # Don't set UserRole for placeholder fav or set it to None
-            item_nome.setData(Qt.ItemDataRole.UserRole, None)
-            # Make the row non-selectable
-            flags = item_nome.flags() & ~Qt.ItemFlag.ItemIsSelectable
-            item_fav_placeholder.setFlags(flags)
-            item_nome.setFlags(flags)
-            item_info.setFlags(flags)
-
-            self.table_widget.setItem(0, 0, item_fav_placeholder)
-            self.table_widget.setItem(0, 1, item_nome)
-            self.table_widget.setItem(0, 2, item_info)
+            # Show empty state widget instead of the table
+            self.table_widget.setRowCount(0)
+            self.table_widget.hide()
+            self.empty_state_widget.show()
             self.table_widget.setEnabled(False)
         else:
+            # Hide empty state and show table
+            self.empty_state_widget.hide()
+            self.table_widget.show()
             # Populate table with sorted profiles
             self.table_widget.setEnabled(True)
             row_to_reselect = -1
