@@ -1,6 +1,6 @@
 # .github/workflows/build-and-sign.yml
 
-name: 🚀 Build, Package e Rilascio Manuale (Con Firma)
+name: 🚀 Build, Package e Rilascio Manuale (Con Firma FIX)
 
 on:
   workflow_dispatch:
@@ -47,28 +47,37 @@ jobs:
     - name: 🔨 Run PyInstaller (Windows)
       run: pyinstaller --clean SaveState-OneFile.spec
 
-    # --- INIZIO MODIFICA SIGNPATH ---
+    # --- STEP AGGIUNTO: Carichiamo il file non firmato per avere l'ID ---
+    - name: 📤 Upload Unsigned Artifact
+      id: upload_unsigned_step  # Questo ID ci serve per il passaggio dopo
+      uses: actions/upload-artifact@v4
+      with:
+        name: Unsigned-SaveState
+        path: dist/SaveState.exe
+        if-no-files-found: error
+        retention-days: 1
+
+    # --- STEP CORRETTO: Ora usiamo l'ID generato sopra ---
     - name: 🔏 Sign Artifact with SignPath (TEST)
       uses: signpath/github-action-submit-signing-request@v1
       with:
         api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
         organization-id: '${{ secrets.SIGNPATH_ORGANIZATION_ID }}'
         project-slug: 'SaveState'
-        # Qui usiamo 'test-signing' finché Phillip non approva il certificato Release.
-        # Quando sarà tutto verde, cambierai questa riga in 'release-signing'.
         signing-policy-slug: 'test-signing' 
         artifact-configuration-slug: 'initial-version'
-        artifact-file: 'dist/SaveState.exe'
+        # AL POSTO DI ARTIFACT-FILE, USIAMO L'ID:
+        github-artifact-id: '${{ steps.upload_unsigned_step.outputs.artifact-id }}'
+        github-token: '${{ secrets.GITHUB_TOKEN }}'
         wait-for-completion: true
         output-artifact-directory: 'dist_signed'
-    # --- FINE MODIFICA SIGNPATH ---
 
     - name: 🗄️ Create Release Zip Package
       shell: powershell
       run: |
         $zipName = "SaveState_v${{ env.RELEASE_VERSION }}_Win.zip"
         mkdir release_pack
-        # NOTA: Ora copiamo il file dalla cartella 'dist_signed' (quello firmato)
+        # Prendiamo il file firmato dalla cartella di output di SignPath
         copy dist_signed\SaveState.exe release_pack\
         copy LICENSE release_pack\
         copy README.md release_pack\
@@ -81,7 +90,7 @@ jobs:
         path: SaveState_v${{ env.RELEASE_VERSION }}_Win.zip
 
   # ===========================
-  # LINUX BUILD (Nessuna modifica qui per ora)
+  # LINUX BUILD (Nessuna modifica)
   # ===========================
   build_linux:
     runs-on: ubuntu-latest
