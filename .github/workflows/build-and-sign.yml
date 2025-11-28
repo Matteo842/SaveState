@@ -65,7 +65,7 @@ jobs:
         organization-id: '${{ secrets.SIGNPATH_ORGANIZATION_ID }}'
         project-slug: 'SaveState'
         signing-policy-slug: 'test-signing' 
-        artifact-configuration-slug: 'initial-version'
+        artifact-configuration-slug: 'initial'
         # AL POSTO DI ARTIFACT-FILE, USIAMO L'ID:
         github-artifact-id: '${{ steps.upload_unsigned_step.outputs.artifact-id }}'
         github-token: '${{ secrets.GITHUB_TOKEN }}'
