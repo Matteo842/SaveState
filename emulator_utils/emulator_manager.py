@@ -245,16 +245,32 @@ def is_known_emulator(file_path: str) -> tuple[str, str | None]:
         # Verifica se il percorso contiene uno degli emulatori conosciuti
         target_path_lower = target_path.lower()
         file_name = os.path.basename(target_path_lower)
+        # Ottieni il nome del file senza estensione per un match più preciso
+        file_name_no_ext = os.path.splitext(file_name)[0]
         
         # Controlla prima gli emulatori supportati
         for emulator in KNOWN_EMULATORS:
-            if emulator in file_name or f"\\{emulator}\\" in target_path_lower or f"/{emulator}/" in target_path_lower:
+            # Match più preciso: il nome del file (senza estensione) deve essere uguale all'emulatore
+            # oppure iniziare con il nome dell'emulatore seguito da un carattere non alfanumerico (es. "rpcs3-v0.1")
+            # oppure il path deve contenere l'emulatore come directory
+            if (file_name_no_ext == emulator or 
+                file_name_no_ext.startswith(emulator + "-") or
+                file_name_no_ext.startswith(emulator + "_") or
+                file_name_no_ext.startswith(emulator + ".") or
+                f"\\{emulator}\\" in target_path_lower or 
+                f"/{emulator}/" in target_path_lower):
                 log.info(f"Detected supported emulator '{emulator}' in path: {target_path}")
                 return 'supported', emulator
 
         # Controlla gli emulatori non supportati
         for emulator in UNKNOWN_EMULATORS:
-            if emulator in file_name or f"\\{emulator}\\" in target_path_lower or f"/{emulator}/" in target_path_lower:
+            # Stesso match preciso per evitare falsi positivi (es. "ares" in "LittleNightmaresIII")
+            if (file_name_no_ext == emulator or 
+                file_name_no_ext.startswith(emulator + "-") or
+                file_name_no_ext.startswith(emulator + "_") or
+                file_name_no_ext.startswith(emulator + ".") or
+                f"\\{emulator}\\" in target_path_lower or 
+                f"/{emulator}/" in target_path_lower):
                 log.info(f"Detected unsupported emulator '{emulator}' in path: {target_path}")
                 return 'unsupported', emulator
 
