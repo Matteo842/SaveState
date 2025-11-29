@@ -8,7 +8,7 @@ import os
 import re
 import logging
 import glob
-from typing import List, Dict, Set, Tuple, Optional, Union, Callable
+from typing import List, Dict, Set, Tuple, Optional, NamedTuple
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -37,7 +37,7 @@ class ScoreWeight(Enum):
     INSTALL_DIR_WALK = -500
     DEFAULT_LOCATION = 100
     CONTAINS_SAVES = 600
-    COMMON_SAVE_SUBDIR = 400  # Aumentato da 350 a 500 per dare più priorità alle cartelle save/saves
+    COMMON_SAVE_SUBDIR = 400
     DIRECT_MATCH = 100
     PARENT_MATCH = 100
     EXACT_NAME_MATCH = 400
@@ -45,14 +45,34 @@ class ScoreWeight(Enum):
     GENERIC_FOLDER_PENALTY = -150
     SHORT_NAME_PENALTY = -30
     INSTALL_DIR_NO_SAVES_PENALTY = -300
+
+
+class Threshold:
+    """Soglie e costanti numeriche usate nel modulo."""
+    MIN_ABBREVIATION_LENGTH = 2
+    MIN_WORD_LENGTH_FOR_CONTAINMENT = 4
+    MIN_PREFIX_LENGTH = 3
+    FUZZY_MIN_RATIO = 85
+    FUZZY_HIGH_RATIO = 95
+    FUZZY_TOKEN_SORT_THRESHOLD = 88
+    FUZZY_TOKEN_SET_THRESHOLD = 92
+    OTHER_GAME_MATCH_THRESHOLD = 95
+    MAX_INSTALL_DIR_DEPTH = 3
+    MIN_EXE_SIZE_BYTES = 100 * 1024
+    MAX_USERDATA_SCORE = 1100
+    SHORT_NAME_MAX_LENGTH = 3
+    EXPAND_ABBREV_NAME_LENGTH = 5
+
+
+class PathCandidate(NamedTuple):
+    """Rappresenta un percorso candidato per i salvataggi."""
+    path: str
+    source: str
+    contains_saves: bool
     
 
 class PathScore:
     """Gestisce il calcolo del punteggio per un percorso."""
-    MAX_USERDATA_SCORE = 1100
-    MIN_PREFIX_LENGTH = 3
-    MIN_FUZZY_RATIO = 85
-    HIGH_FUZZY_RATIO = 95
     
     def __init__(self, game_context: 'GameContext'):
         self.game_context = game_context
@@ -87,13 +107,11 @@ class PathScore:
         
         # Applica cap per userdata (ma non per Steam remote che ha priorità speciale)
         if self._is_in_userdata(path_lower) and not path_type['is_steam_remote']:
-            score = min(score, self.MAX_USERDATA_SCORE)
+            score = min(score, Threshold.MAX_USERDATA_SCORE)
             
-        # NUOVO: Applica cap anche alla cartella remote per "ucciderla" come nel vecchio codice
+        # Applica cap anche alla cartella remote per farla scendere sotto i percorsi corretti
         if path_type['is_steam_remote']:
-            # La cartella remote riceve 1500 punti ma viene limitata dal cap
-            # Questo la "uccide" e la fa scendere sotto i percorsi corretti
-            score = min(score, self.MAX_USERDATA_SCORE)
+            score = min(score, Threshold.MAX_USERDATA_SCORE)
             
         return score
     
@@ -210,8 +228,8 @@ class PathScore:
             
         if THEFUZZ_AVAILABLE:
             set_ratio = fuzz.token_set_ratio(cleaned_original, cleaned_folder)
-            if set_ratio > self.MIN_FUZZY_RATIO:
-                return int(((set_ratio - self.MIN_FUZZY_RATIO) / 15) * 300)
+            if set_ratio > Threshold.FUZZY_MIN_RATIO:
+                return int(((set_ratio - Threshold.FUZZY_MIN_RATIO) / 15) * 300)
                 
         return 0
     
@@ -242,7 +260,7 @@ class PathScore:
             penalty += ScoreWeight.GENERIC_FOLDER_PENALTY.value
             
         # Penalità per nomi corti
-        if (len(basename_lower) <= 3 and 
+        if (len(basename_lower) <= Threshold.SHORT_NAME_MAX_LENGTH and 
             basename_lower not in self.game_context.common_save_subdirs_lower and 
             not contains_saves):
             penalty += ScoreWeight.SHORT_NAME_PENALTY.value
@@ -345,7 +363,7 @@ class GameContext:
         
         # Acronimo completo (include tutte le parole, anche quelle ignorate per l'acronimo)
         acr_full = "".join(w[0] for w in words if w).upper()
-        if len(acr_full) >= 2:
+        if len(acr_full) >= Threshold.MIN_ABBREVIATION_LENGTH:
             abbreviations.add(acr_full)
         
         # Acronimo solo parole significative (esclude ignore_words)
@@ -353,18 +371,17 @@ class GameContext:
         significant_words = [w for w in words if w.lower() not in self.ignore_words_lower and len(w) > 1]
         if significant_words:
             acr_sig = "".join(w[0] for w in significant_words if w).upper()
-            if len(acr_sig) >= 2 and acr_sig != acr_full:
+            if len(acr_sig) >= Threshold.MIN_ABBREVIATION_LENGTH and acr_sig != acr_full:
                 abbreviations.add(acr_sig)
                 
         # Acronimo solo da parole maiuscole e numeri (per casi come "The Elder Scrolls V")
         capitalized_words = [w for w in words if (w and w[0].isupper()) or w.isdigit()]
         if capitalized_words:
             acr_caps = "".join(w[0] for w in capitalized_words if w).upper()
-            # Controlla che non sia già presente
             existing = {acr_full}
             if acr_sig:
                 existing.add(acr_sig)
-            if len(acr_caps) >= 2 and acr_caps not in existing:
+            if len(acr_caps) >= Threshold.MIN_ABBREVIATION_LENGTH and acr_caps not in existing:
                 abbreviations.add(acr_caps)
                 
         # Gestisci nomi con due punti
@@ -375,15 +392,19 @@ class GameContext:
         if self.game_install_dir:
             self._add_exe_abbreviations(abbreviations)
         
-        # Se il nome rilevato sembra un diminutivo (<= 5 caratteri),
-        # arricchisci le varianti usando i nomi delle cartelle di installazione
+        # Se il nome rilevato sembra un diminutivo, arricchisci le varianti
+        # usando i nomi delle cartelle di installazione
         try:
-            if self.game_install_dir and isinstance(self.sanitized_name, str) and len(self.sanitized_name) <= 5:
+            if (self.game_install_dir and isinstance(self.sanitized_name, str) and 
+                len(self.sanitized_name) <= Threshold.EXPAND_ABBREV_NAME_LENGTH):
                 self._add_install_dir_abbreviations(abbreviations)
         except Exception as e:
             logging.warning(f"Error expanding abbreviations from install dir: {e}")
             
-        return sorted(list(filter(lambda x: x and len(x) >= 2, abbreviations)), key=len, reverse=True)
+        return sorted(
+            [x for x in abbreviations if x and len(x) >= Threshold.MIN_ABBREVIATION_LENGTH],
+            key=len, reverse=True
+        )
     
     def _add_colon_abbreviations(self, abbreviations: Set[str]):
         """Aggiunge abbreviazioni per giochi con due punti nel nome."""
@@ -398,7 +419,7 @@ class GameContext:
                 caps_words_before = [w for w in words_before if (w and w[0].isupper()) or w.isdigit()]
                 if caps_words_before:
                     acr_before = "".join(w[0] for w in caps_words_before if w).upper()
-                    if len(acr_before) >= 2:
+                    if len(acr_before) >= Threshold.MIN_ABBREVIATION_LENGTH:
                         abbreviations.add(acr_before)
             
             # Parte dopo i due punti
@@ -410,7 +431,7 @@ class GameContext:
                 caps_words_after = [w for w in words_after if w and w[0].isupper() and w.lower() not in {'the', 'a', 'an'}]
                 if caps_words_after:
                     acr_caps_after = "".join(w[0] for w in caps_words_after if w).upper()
-                    if len(acr_caps_after) >= 2:
+                    if len(acr_caps_after) >= Threshold.MIN_ABBREVIATION_LENGTH:
                         abbreviations.add(acr_caps_after)
                         
                 # Acronimo da parole significative dopo i due punti
@@ -419,14 +440,14 @@ class GameContext:
                 
                 if sig_words_caps:
                     acr = "".join(w[0] for w in sig_words_caps if w).upper()
-                    if len(acr) >= 2 and acr != acr_caps_after:
+                    if len(acr) >= Threshold.MIN_ABBREVIATION_LENGTH and acr != acr_caps_after:
                         abbreviations.add(acr)
                 
                 # Aggiungi anche acronimo completo della parte dopo i due punti
                 all_words_after = [w for w in words_after if w]
                 if all_words_after:
                     acr_all_after = "".join(w[0] for w in all_words_after if w).upper()
-                    if len(acr_all_after) >= 2 and acr_all_after not in abbreviations:
+                    if len(acr_all_after) >= Threshold.MIN_ABBREVIATION_LENGTH and acr_all_after not in abbreviations:
                         abbreviations.add(acr_all_after)
                     
     def _add_exe_abbreviations(self, abbreviations: Set[str]):
@@ -448,7 +469,7 @@ class GameContext:
                     break
                     
             exe_name = re.sub(r'[-_]+$', '', exe_name)
-            if len(exe_name) >= 2:
+            if len(exe_name) >= Threshold.MIN_ABBREVIATION_LENGTH:
                 abbreviations.add(exe_name)
     
     def _add_install_dir_abbreviations(self, abbreviations: Set[str]) -> None:
@@ -523,7 +544,7 @@ class GameContext:
             executables = glob.glob(pattern)
             if executables:
                 # Filtra eseguibili troppo piccoli
-                valid_exes = [e for e in executables if os.path.getsize(e) > 100 * 1024]
+                valid_exes = [e for e in executables if os.path.getsize(e) > Threshold.MIN_EXE_SIZE_BYTES]
                 if valid_exes:
                     return os.path.basename(valid_exes[0])
                 elif executables:
@@ -556,42 +577,36 @@ class SavePathFinder:
         self.cancellation_manager = cancellation_manager
         self.path_scorer = PathScore(game_context)
         self.checked_paths: Set[str] = set()
-        self.guesses_data: Dict[str, Tuple[str, str, bool]] = {}
+        self.guesses_data: Dict[str, PathCandidate] = {}
+    
+    def _is_cancelled(self) -> bool:
+        """Verifica se l'operazione è stata cancellata."""
+        return bool(self.cancellation_manager and self.cancellation_manager.check_cancelled())
         
     def find_save_paths(self) -> List[Tuple[str, int]]:
         """Trova i possibili percorsi di salvataggio per il gioco."""
         logging.info(f"Heuristic save search for '{self.context.game_name}' (AppID: {self.context.appid})")
         
-        # Controlla cancellazione all'inizio
-        if self.cancellation_manager and self.cancellation_manager.check_cancelled():
+        if self._is_cancelled():
             logging.info(f"SavePathFinder: Search cancelled at start for '{self.context.game_name}'")
             return []
         
-        # Ottieni locazioni comuni
         common_locations = self._get_common_locations()
         
-        # Cerca nei vari percorsi
-        self._check_steam_userdata()
-        if self.cancellation_manager and self.cancellation_manager.check_cancelled():
-            logging.info(f"SavePathFinder: Search cancelled after Steam userdata check for '{self.context.game_name}'")
-            return []
-            
-        self._perform_direct_path_checks(common_locations)
-        if self.cancellation_manager and self.cancellation_manager.check_cancelled():
-            logging.info(f"SavePathFinder: Search cancelled after direct path checks for '{self.context.game_name}'")
-            return []
-            
-        self._perform_exploratory_search(common_locations)
-        if self.cancellation_manager and self.cancellation_manager.check_cancelled():
-            logging.info(f"SavePathFinder: Search cancelled after exploratory search for '{self.context.game_name}'")
-            return []
-            
-        self._search_install_directory()
-        if self.cancellation_manager and self.cancellation_manager.check_cancelled():
-            logging.info(f"SavePathFinder: Search cancelled after install directory search for '{self.context.game_name}'")
-            return []
+        # Esegui le ricerche in sequenza, interrompendo se cancellato
+        search_steps = [
+            (self._check_steam_userdata, "Steam userdata check"),
+            (lambda: self._perform_direct_path_checks(common_locations), "direct path checks"),
+            (lambda: self._perform_exploratory_search(common_locations), "exploratory search"),
+            (self._search_install_directory, "install directory search"),
+        ]
         
-        # Ordina e restituisci i risultati
+        for step_func, step_name in search_steps:
+            step_func()
+            if self._is_cancelled():
+                logging.info(f"SavePathFinder: Search cancelled after {step_name} for '{self.context.game_name}'")
+                return []
+        
         return self._finalize_results()
     
     def _get_common_locations(self) -> Dict[str, str]:
@@ -634,40 +649,30 @@ class SavePathFinder:
         """Aggiunge un percorso candidato se valido."""
         if not path:
             return False
-            
+        
         try:
-            # Normalizza il percorso
             norm_path = os.path.normpath(path).strip()
             if not norm_path:
                 return False
-                
+            
             norm_path_lower = norm_path.lower()
             
-            # Verifica se già controllato
+            # Early exit per percorsi già controllati o non validi
             if norm_path_lower in self.checked_paths:
                 return False
-                
             self.checked_paths.add(norm_path_lower)
             
-            # Verifica se è una directory
             if not self._is_valid_directory(norm_path):
                 return False
-                
-            # Filtra percorsi non validi
             if self._should_filter_path(norm_path):
                 return False
-                
-            # Verifica match con altri giochi
             if not self._check_other_games_match(norm_path):
                 return False
-                
-            # Controlla contenuto
+            
+            # Aggiungi al dizionario usando PathCandidate
             contains_saves = self._check_save_content(norm_path)
-            
-            # Aggiungi al dizionario
-            self.guesses_data[norm_path_lower] = (norm_path, source_description, contains_saves)
+            self.guesses_data[norm_path_lower] = PathCandidate(norm_path, source_description, contains_saves)
             logging.info(f"Added path: '{norm_path}' (Source: {source_description})")
-            
             return True
             
         except Exception as e:
@@ -724,7 +729,7 @@ class SavePathFinder:
             cleaned_other = self._clean_for_comparison(other_game_name)
             ratio = fuzz.token_set_ratio(cleaned_other, cleaned_folder)
             
-            if ratio > 95:
+            if ratio > Threshold.OTHER_GAME_MATCH_THRESHOLD:
                 logging.warning(
                     f"Path rejected: '{path}' matches other game '{other_game_name}' "
                     f"(AppID: {other_appid}, Ratio: {ratio})"
@@ -834,7 +839,7 @@ class SavePathFinder:
         # Controlla prefisso
         no_space1 = clean1.replace(' ', '')
         no_space2 = clean2.replace(' ', '')
-        if len(no_space1) >= 3 and len(no_space2) >= 3:
+        if len(no_space1) >= Threshold.MIN_PREFIX_LENGTH and len(no_space2) >= Threshold.MIN_PREFIX_LENGTH:
             if no_space1.startswith(no_space2) or no_space2.startswith(no_space1):
                 return True
         
@@ -843,26 +848,24 @@ class SavePathFinder:
         words1 = clean1.split()
         words2 = clean2.split()
         
-        # Se uno dei nomi è una singola parola di almeno 4 caratteri, controlla se è una parola nell'altro
-        if len(words1) == 1 and len(words1[0]) >= 4:
-            if words1[0] in words2:
-                logging.debug(f"Word containment match: '{words1[0]}' found in {words2}")
-                return True
-        if len(words2) == 1 and len(words2[0]) >= 4:
-            if words2[0] in words1:
-                logging.debug(f"Word containment match: '{words2[0]}' found in {words1}")
-                return True
+        # Se uno dei nomi è una singola parola di almeno N caratteri, controlla se è una parola nell'altro
+        min_len = Threshold.MIN_WORD_LENGTH_FOR_CONTAINMENT
+        if len(words1) == 1 and len(words1[0]) >= min_len and words1[0] in words2:
+            logging.debug(f"Word containment match: '{words1[0]}' found in {words2}")
+            return True
+        if len(words2) == 1 and len(words2[0]) >= min_len and words2[0] in words1:
+            logging.debug(f"Word containment match: '{words2[0]}' found in {words1}")
+            return True
                 
         # Controlla fuzzy matching
         if THEFUZZ_AVAILABLE:
             ratio = fuzz.token_sort_ratio(clean1, clean2)
-            if ratio >= 88:
+            if ratio >= Threshold.FUZZY_TOKEN_SORT_THRESHOLD:
                 return True
             
             # Usa anche token_set_ratio per matching parziale migliore
-            # Questo gestisce meglio i casi dove un nome è un sottoinsieme dell'altro
             set_ratio = fuzz.token_set_ratio(clean1, clean2)
-            if set_ratio >= 92:
+            if set_ratio >= Threshold.FUZZY_TOKEN_SET_THRESHOLD:
                 logging.debug(f"Token set ratio match: '{clean1}' vs '{clean2}' = {set_ratio}")
                 return True
                 
@@ -905,8 +908,7 @@ class SavePathFinder:
         logging.info("Performing exploratory search...")
         
         for loc_name, base_folder in locations.items():
-            # Controlla cancellazione
-            if self.cancellation_manager and self.cancellation_manager.check_cancelled():
+            if self._is_cancelled():
                 return
             self._explore_location(loc_name, base_folder)
             
@@ -933,8 +935,7 @@ class SavePathFinder:
                 # Controlla livello 2
                 self._explore_level2(loc_name, lvl1_path, lvl1_name, is_related)
                 
-                # Controlla cancellazione
-                if self.cancellation_manager and self.cancellation_manager.check_cancelled():
+                if self._is_cancelled():
                     return
                     
         except OSError as e:
@@ -977,8 +978,7 @@ class SavePathFinder:
         """Esplora il secondo livello di cartelle."""
         try:
             for lvl2_name in os.listdir(lvl1_path):
-                # Controlla cancellazione durante l'iterazione
-                if self.cancellation_manager and self.cancellation_manager.check_cancelled():
+                if self._is_cancelled():
                     return
                     
                 lvl2_path = os.path.join(lvl1_path, lvl2_name)
@@ -1013,20 +1013,18 @@ class SavePathFinder:
             
         logging.info(f"Searching in install directory: {self.context.game_install_dir}")
         
-        max_depth = 3
         install_depth = self.context.game_install_dir.rstrip(os.sep).count(os.sep)
         
         try:
             for root, dirs, _ in os.walk(self.context.game_install_dir, topdown=True):
-                # Controlla cancellazione ad ogni iterazione
-                if self.cancellation_manager and self.cancellation_manager.check_cancelled():
+                if self._is_cancelled():
                     return
                     
                 # Calcola profondità
                 current_depth = root.rstrip(os.sep).count(os.sep)
                 relative_depth = current_depth - install_depth
                 
-                if relative_depth >= max_depth:
+                if relative_depth >= Threshold.MAX_INSTALL_DIR_DEPTH:
                     dirs[:] = []
                     continue
                     
@@ -1052,20 +1050,19 @@ class SavePathFinder:
         except Exception as e:
             logging.error(f"Error walking install directory: {e}")
     
-    def _finalize_results(self) -> List[Tuple[str, int]]:
+    def _finalize_results(self) -> List[Tuple[str, int, bool]]:
         """Finalizza e ordina i risultati."""
         logging.info("Finalizing results...")
         
-        results = []
-        for path_data in self.guesses_data.values():
-            path, source, contains_saves = path_data
-            score = self.path_scorer.calculate(path, source, contains_saves)
-            # Restituisci anche un hint su eventuali salvataggi rilevati nella directory
-            results.append((path, score, bool(contains_saves)))
-            
+        results = [
+            (candidate.path, 
+             self.path_scorer.calculate(candidate.path, candidate.source, candidate.contains_saves),
+             candidate.contains_saves)
+            for candidate in self.guesses_data.values()
+        ]
+        
         # Ordina per punteggio decrescente
         results.sort(key=lambda x: (-x[1], x[0].lower()))
-        
         logging.info(f"Found {len(results)} potential save paths")
         
         return results
@@ -1123,7 +1120,11 @@ def final_sort_key(guess_tuple: Tuple[str, str, bool], outer_scope_data: Dict) -
     game_context.game_title_sig_words = outer_scope_data.get('game_title_sig_words', [])
     
     scorer = PathScore(game_context)
-    path, source, contains_saves = guess_tuple
+    # Supporta sia tuple che PathCandidate
+    if isinstance(guess_tuple, PathCandidate):
+        path, source, contains_saves = guess_tuple.path, guess_tuple.source, guess_tuple.contains_saves
+    else:
+        path, source, contains_saves = guess_tuple
     score = scorer.calculate(path, source, contains_saves)
     
     return (-score, path.lower())
