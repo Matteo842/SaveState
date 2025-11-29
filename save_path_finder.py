@@ -33,6 +33,7 @@ class ScoreWeight(Enum):
     STEAM_BASE_NO_SAVES = 150
     STEAM_BASE_WITH_SAVES = 650
     PRIME_USER_LOCATION = 1000
+    SAVED_GAMES_BONUS = 150  # Bonus extra per la cartella "Saved Games" (cartella ufficiale Windows)
     DOCUMENTS_GENERIC = 300
     INSTALL_DIR_WALK = -500
     DEFAULT_LOCATION = 100
@@ -40,11 +41,104 @@ class ScoreWeight(Enum):
     COMMON_SAVE_SUBDIR = 400
     DIRECT_MATCH = 100
     PARENT_MATCH = 100
-    EXACT_NAME_MATCH = 400
+    EXACT_NAME_MATCH = 400  # Match fuzzy/parziale
+    PERFECT_NAME_MATCH = 950  # Match perfetto (nome cartella == nome gioco)
     DATA_FOLDER_PENALTY = -500
     GENERIC_FOLDER_PENALTY = -150
     SHORT_NAME_PENALTY = -30
     INSTALL_DIR_NO_SAVES_PENALTY = -300
+
+
+# Mappatura numeri romani <-> arabi per matching nomi giochi
+ROMAN_TO_ARABIC = {
+    'I': '1', 'II': '2', 'III': '3', 'IV': '4', 'V': '5',
+    'VI': '6', 'VII': '7', 'VIII': '8', 'IX': '9', 'X': '10',
+    'XI': '11', 'XII': '12', 'XIII': '13', 'XIV': '14', 'XV': '15',
+    'XVI': '16', 'XVII': '17', 'XVIII': '18', 'XIX': '19', 'XX': '20'
+}
+ARABIC_TO_ROMAN = {v: k for k, v in ROMAN_TO_ARABIC.items()}
+
+
+def normalize_numerals(name: str) -> str:
+    """Normalizza i numeri romani in arabi per confronto.
+    
+    Esempio: "DOOM II" -> "DOOM 2", "Final Fantasy VII" -> "Final Fantasy 7"
+    """
+    if not name:
+        return name
+    
+    words = name.split()
+    normalized = []
+    
+    for word in words:
+        word_upper = word.upper()
+        # Controlla se è un numero romano (deve essere una parola intera)
+        if word_upper in ROMAN_TO_ARABIC:
+            normalized.append(ROMAN_TO_ARABIC[word_upper])
+        else:
+            normalized.append(word)
+    
+    return ' '.join(normalized)
+
+
+def has_version_number(name: str) -> bool:
+    """Verifica se il nome contiene un numero di versione (arabo o romano).
+    
+    Esempio: "DOOM 2" -> True, "DOOM II" -> True, "DOOM" -> False,
+             "HotlineMiami2" -> True, "HotlineMiami" -> False
+    """
+    if not name:
+        return False
+    
+    words = name.split()
+    for word in words:
+        word_upper = word.upper()
+        # Controlla numeri romani (parola intera)
+        if word_upper in ROMAN_TO_ARABIC:
+            return True
+        # Controlla numeri arabi (solo numeri, non parole con numeri tipo "2019")
+        if word.isdigit() and len(word) <= 2:  # Max 2 cifre per versioni (1-99)
+            return True
+        # Controlla numeri attaccati alla fine (es: "HotlineMiami2", "Doom3")
+        # Ma non anni (4 cifre) o numeri troppo lunghi
+        if len(word) > 1 and word[-1].isdigit():
+            # Estrai il suffisso numerico
+            i = len(word) - 1
+            while i > 0 and word[i-1].isdigit():
+                i -= 1
+            num_suffix = word[i:]
+            # Considera versione solo se 1-2 cifre (non anni come "2019")
+            if len(num_suffix) <= 2:
+                return True
+    return False
+
+
+def get_numeral_variants(name: str) -> List[str]:
+    """Genera varianti del nome con numeri romani e arabi.
+    
+    Esempio: "DOOM II" -> ["DOOM II", "DOOM 2"]
+             "DOOM 2" -> ["DOOM 2", "DOOM II"]
+    """
+    if not name:
+        return [name] if name else []
+    
+    variants = {name}
+    words = name.split()
+    
+    for i, word in enumerate(words):
+        word_upper = word.upper()
+        new_words = words.copy()
+        
+        # Romano -> Arabo
+        if word_upper in ROMAN_TO_ARABIC:
+            new_words[i] = ROMAN_TO_ARABIC[word_upper]
+            variants.add(' '.join(new_words))
+        # Arabo -> Romano
+        elif word in ARABIC_TO_ROMAN:
+            new_words[i] = ARABIC_TO_ROMAN[word]
+            variants.add(' '.join(new_words))
+    
+    return list(variants)
 
 
 class Threshold:
@@ -137,12 +231,25 @@ class PathScore:
         is_in_prime_location = self._is_prime_location(path_lower) and not (is_steam_remote or is_steam_base)
         is_install_dir_walk = 'installdirwalk' in source_lower
         
+        # Controlla se è nella cartella "Saved Games" (cartella ufficiale Windows)
+        is_in_saved_games = self._is_in_saved_games(path_lower)
+        
         return {
             'is_steam_remote': is_steam_remote,
             'is_steam_base': is_steam_base,
             'is_in_prime_location': is_in_prime_location,
-            'is_install_dir_walk': is_install_dir_walk
+            'is_install_dir_walk': is_install_dir_walk,
+            'is_in_saved_games': is_in_saved_games
         }
+    
+    def _is_in_saved_games(self, path_lower: str) -> bool:
+        """Verifica se il percorso è nella cartella 'Saved Games'."""
+        try:
+            saved_games = os.path.join(os.path.expanduser('~'), 'Saved Games')
+            saved_games_lower = os.path.normpath(saved_games).lower()
+            return path_lower.startswith(saved_games_lower + os.sep)
+        except Exception:
+            return False
     
     def _is_prime_location(self, path_lower: str) -> bool:
         """Verifica se il percorso è in una locazione primaria."""
@@ -178,7 +285,11 @@ class PathScore:
                 base_score += ScoreWeight.STEAM_BASE_WITH_SAVES.value - ScoreWeight.STEAM_BASE_NO_SAVES.value
             return base_score
         elif path_type['is_in_prime_location']:
-            return ScoreWeight.PRIME_USER_LOCATION.value
+            score = ScoreWeight.PRIME_USER_LOCATION.value
+            # Bonus extra per "Saved Games" - è la cartella ufficiale Windows per i salvataggi
+            if path_type.get('is_in_saved_games', False):
+                score += ScoreWeight.SAVED_GAMES_BONUS.value
+            return score
         elif path_type['is_install_dir_walk']:
             return ScoreWeight.INSTALL_DIR_WALK.value
         else:
@@ -217,6 +328,13 @@ class PathScore:
     
     def _get_name_similarity_score(self, basename_lower: str) -> int:
         """Calcola il bonus per similarità del nome."""
+        # Match perfetto (case-insensitive) - bonus massimo
+        # Es: cartella "DOOM" per gioco "DOOM"
+        game_name_lower = self.game_context.game_name.lower().strip()
+        if basename_lower == game_name_lower:
+            return ScoreWeight.PERFECT_NAME_MATCH.value
+        
+        # Match dopo pulizia (rimuove simboli speciali)
         cleaned_folder = self._clean_for_comparison(basename_lower)
         cleaned_original = self._clean_for_comparison(self.game_context.game_name)
         
@@ -295,7 +413,11 @@ class GameContext:
     
     def __post_init__(self):
         """Inizializza i dati derivati."""
-        self.sanitized_name_base = re.sub(r'^(Play |Launch )', '', self.game_name, flags=re.IGNORECASE)
+        # Rimuovi estensione .exe se presente (può arrivare dal multi-profile)
+        clean_name = self.game_name
+        if clean_name.lower().endswith('.exe'):
+            clean_name = clean_name[:-4]
+        self.sanitized_name_base = re.sub(r'^(Play |Launch )', '', clean_name, flags=re.IGNORECASE)
         self.sanitized_name = re.sub(r'[™®©:]', '', self.sanitized_name_base).strip()
         # Prima carica la configurazione
         self._load_config()
@@ -357,6 +479,12 @@ class GameContext:
         abbreviations.add(self.sanitized_name)
         abbreviations.add(re.sub(r'\s+', '', self.sanitized_name))
         abbreviations.add(re.sub(r'[^a-zA-Z0-9]', '', self.sanitized_name))
+        
+        # Aggiungi varianti con numeri romani/arabi (es: "DOOM II" -> "DOOM 2")
+        for variant in get_numeral_variants(self.sanitized_name):
+            abbreviations.add(variant)
+            abbreviations.add(re.sub(r'\s+', '', variant))
+            abbreviations.add(re.sub(r'[^a-zA-Z0-9]', '', variant))
         
         # Genera acronimi - usa nome originale per preservare numeri
         words = re.findall(r'\b\w+\b', self.game_name)
@@ -835,30 +963,48 @@ class SavePathFinder:
         # Controlla uguaglianza senza spazi
         if clean1.replace(' ', '') == clean2.replace(' ', ''):
             return True
+        
+        # Controlla se uno ha un numero di versione e l'altro no
+        # Es: "DOOM" non deve matchare "DOOM 2" o "DOOM II"
+        has_num1 = has_version_number(clean1)
+        has_num2 = has_version_number(clean2)
+        version_mismatch = has_num1 != has_num2
+        
+        # Normalizza numeri romani/arabi e ricontrolla (es: "DOOM II" vs "DOOM 2")
+        # Ma solo se entrambi hanno numeri o entrambi non li hanno
+        norm1 = normalize_numerals(clean1)
+        norm2 = normalize_numerals(clean2)
+        if not version_mismatch and norm1.replace(' ', '') == norm2.replace(' ', ''):
+            logging.debug(f"Roman numeral match: '{clean1}' == '{clean2}' (normalized)")
+            return True
             
-        # Controlla prefisso
+        # Controlla prefisso - ma NON se c'è mismatch di versione
+        # Es: "doom" non deve matchare "doom2" solo perché è prefisso
         no_space1 = clean1.replace(' ', '')
         no_space2 = clean2.replace(' ', '')
-        if len(no_space1) >= Threshold.MIN_PREFIX_LENGTH and len(no_space2) >= Threshold.MIN_PREFIX_LENGTH:
+        if not version_mismatch and len(no_space1) >= Threshold.MIN_PREFIX_LENGTH and len(no_space2) >= Threshold.MIN_PREFIX_LENGTH:
             if no_space1.startswith(no_space2) or no_space2.startswith(no_space1):
                 return True
         
         # Controlla se un nome corto (singola parola) è contenuto come parola completa nell'altro
         # Questo aiuta con casi come "isaac" in "Binding of Isaac Repentance+"
+        # Ma NON se c'è mismatch di versione (es: "DOOM" non deve matchare "DOOM 2")
         words1 = clean1.split()
         words2 = clean2.split()
         
         # Se uno dei nomi è una singola parola di almeno N caratteri, controlla se è una parola nell'altro
         min_len = Threshold.MIN_WORD_LENGTH_FOR_CONTAINMENT
-        if len(words1) == 1 and len(words1[0]) >= min_len and words1[0] in words2:
-            logging.debug(f"Word containment match: '{words1[0]}' found in {words2}")
-            return True
-        if len(words2) == 1 and len(words2[0]) >= min_len and words2[0] in words1:
-            logging.debug(f"Word containment match: '{words2[0]}' found in {words1}")
-            return True
+        if not version_mismatch:
+            if len(words1) == 1 and len(words1[0]) >= min_len and words1[0] in words2:
+                logging.debug(f"Word containment match: '{words1[0]}' found in {words2}")
+                return True
+            if len(words2) == 1 and len(words2[0]) >= min_len and words2[0] in words1:
+                logging.debug(f"Word containment match: '{words2[0]}' found in {words1}")
+                return True
                 
-        # Controlla fuzzy matching
-        if THEFUZZ_AVAILABLE:
+        # Controlla fuzzy matching - ma NON se c'è mismatch di versione
+        # Es: "DOOM" (90% simile a "DOOM 2") non deve matchare
+        if THEFUZZ_AVAILABLE and not version_mismatch:
             ratio = fuzz.token_sort_ratio(clean1, clean2)
             if ratio >= Threshold.FUZZY_TOKEN_SORT_THRESHOLD:
                 return True
@@ -868,6 +1014,13 @@ class SavePathFinder:
             if set_ratio >= Threshold.FUZZY_TOKEN_SET_THRESHOLD:
                 logging.debug(f"Token set ratio match: '{clean1}' vs '{clean2}' = {set_ratio}")
                 return True
+            
+            # Prova anche con nomi normalizzati (numeri romani -> arabi)
+            if norm1 != clean1 or norm2 != clean2:
+                norm_ratio = fuzz.token_sort_ratio(norm1, norm2)
+                if norm_ratio >= Threshold.FUZZY_TOKEN_SORT_THRESHOLD:
+                    logging.debug(f"Normalized fuzzy match: '{norm1}' vs '{norm2}' = {norm_ratio}")
+                    return True
                 
         return False
     

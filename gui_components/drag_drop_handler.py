@@ -394,14 +394,20 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                         # ma mantieni 'profile_name' (la chiave del dialogo) invariato.
                         name_for_detection_thread = game_details['name']
             
-                # Se non Steam e il nome profilo è troppo breve (acronimo), prova a usare la cartella padre come nome per detection
-                name_for_detection_thread = name_for_detection_thread
+                # Se non Steam e il nome profilo sembra un acronimo (tutto maiuscolo e <= 3 caratteri),
+                # prova a usare la cartella padre come nome per detection
+                # NON sostituire nomi come "DOOM" (4+ caratteri) che sono nomi reali
                 try:
-                    if not is_steam_game and name_for_detection_thread and len(name_for_detection_thread) <= 4:
-                        # Deriva un nome più descrittivo dalla cartella di installazione (se CamelCase o contiene cifre)
-                        base_install = os.path.basename(game_install_dir) if game_install_dir else ''
-                        if base_install and len(base_install) > len(name_for_detection_thread):
-                            name_for_detection_thread = base_install
+                    if not is_steam_game and name_for_detection_thread:
+                        # Considera acronimo solo se: tutto maiuscolo E massimo 3 caratteri
+                        is_likely_acronym = (len(name_for_detection_thread) <= 3 and 
+                                            name_for_detection_thread.isupper() and
+                                            name_for_detection_thread.isalpha())
+                        if is_likely_acronym:
+                            base_install = os.path.basename(game_install_dir) if game_install_dir else ''
+                            if base_install and len(base_install) > len(name_for_detection_thread):
+                                logging.debug(f"Replacing acronym '{name_for_detection_thread}' with folder name '{base_install}'")
+                                name_for_detection_thread = base_install
                 except Exception:
                     pass
 

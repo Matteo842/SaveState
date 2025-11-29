@@ -500,6 +500,9 @@ class MultiProfileDialog(QDialog):
             # Extract profile name from file name
             file_name = os.path.basename(file_path)
             profile_name = os.path.splitext(file_name)[0]
+            # Remove .exe extension if present (for .exe.lnk files)
+            if profile_name.lower().endswith('.exe'):
+                profile_name = profile_name[:-4]
             
             # Create custom item
             item_widget = ProfileListItem(profile_name, file_path)
