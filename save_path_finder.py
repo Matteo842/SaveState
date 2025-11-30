@@ -38,6 +38,7 @@ class ScoreWeight(Enum):
     INSTALL_DIR_WALK = -500
     DEFAULT_LOCATION = 100
     CONTAINS_SAVES = 600
+    CONTAINS_SAVES_DEEP = 800  # Bonus per salvataggi trovati in sottocartelle (ricerca profonda)
     COMMON_SAVE_SUBDIR = 400
     DIRECT_MATCH = 100
     PARENT_MATCH = 100
@@ -47,6 +48,21 @@ class ScoreWeight(Enum):
     GENERIC_FOLDER_PENALTY = -150
     SHORT_NAME_PENALTY = -30
     INSTALL_DIR_NO_SAVES_PENALTY = -300
+
+
+# Estensioni "sicure" per file di salvataggio - versione ristretta per deep scan
+# Queste sono estensioni che indicano quasi certamente un file di salvataggio
+STRICT_SAVE_EXTENSIONS = {
+    '.sav',      # La più classica
+    '.save',     # Comune (es. Spider-Man Remastered)
+    '.slot',     # Slot di salvataggio
+    '.sl2',      # Dark Souls 3
+    '.ess',      # Skyrim
+    '.fos',      # Fallout
+    '.lsf',      # Larian Studios (Divinity, BG3)
+    '.lsb',      # Larian Studios
+    '.profile',  # File profilo giocatore
+}
 
 
 # Mappatura numeri romani <-> arabi per matching nomi giochi
@@ -234,12 +250,16 @@ class PathScore:
         # Controlla se è nella cartella "Saved Games" (cartella ufficiale Windows)
         is_in_saved_games = self._is_in_saved_games(path_lower)
         
+        # Controlla se è nella cartella Documents (ma non in My Games, già coperta da prime)
+        is_in_documents = self._is_in_documents(path_lower) and not is_in_prime_location
+        
         return {
             'is_steam_remote': is_steam_remote,
             'is_steam_base': is_steam_base,
             'is_in_prime_location': is_in_prime_location,
             'is_install_dir_walk': is_install_dir_walk,
-            'is_in_saved_games': is_in_saved_games
+            'is_in_saved_games': is_in_saved_games,
+            'is_in_documents': is_in_documents
         }
     
     def _is_in_saved_games(self, path_lower: str) -> bool:
@@ -248,6 +268,15 @@ class PathScore:
             saved_games = os.path.join(os.path.expanduser('~'), 'Saved Games')
             saved_games_lower = os.path.normpath(saved_games).lower()
             return path_lower.startswith(saved_games_lower + os.sep)
+        except Exception:
+            return False
+    
+    def _is_in_documents(self, path_lower: str) -> bool:
+        """Verifica se il percorso è nella cartella Documents."""
+        try:
+            documents = os.path.join(os.path.expanduser('~'), 'Documents')
+            documents_lower = os.path.normpath(documents).lower()
+            return path_lower.startswith(documents_lower + os.sep)
         except Exception:
             return False
     
@@ -290,6 +319,10 @@ class PathScore:
             if path_type.get('is_in_saved_games', False):
                 score += ScoreWeight.SAVED_GAMES_BONUS.value
             return score
+        elif path_type.get('is_in_documents', False):
+            # Documents è una location comune per i salvataggi ma non "prime"
+            # Riceve un punteggio intermedio tra prime (1000) e default (100)
+            return ScoreWeight.DOCUMENTS_GENERIC.value
         elif path_type['is_install_dir_walk']:
             return ScoreWeight.INSTALL_DIR_WALK.value
         else:
@@ -896,6 +929,55 @@ class SavePathFinder:
         except OSError:
             return False
     
+    def _deep_check_save_content(self, path: str, max_depth: int = 3) -> Tuple[bool, int]:
+        """Cerca file di salvataggio ricorsivamente nelle sottocartelle.
+        
+        Usa una lista ristretta di estensioni "sicure" per evitare falsi positivi.
+        
+        Args:
+            path: Percorso da esplorare
+            max_depth: Profondità massima di ricerca (default: 3)
+            
+        Returns:
+            Tuple (found_saves: bool, count: int) - se trovati e quanti
+        """
+        save_files_found = 0
+        
+        try:
+            for root, dirs, files in os.walk(path, topdown=True):
+                # Controlla cancellazione
+                if self._is_cancelled():
+                    return (save_files_found > 0, save_files_found)
+                
+                # Calcola profondità relativa
+                rel_path = os.path.relpath(root, path)
+                current_depth = 0 if rel_path == '.' else rel_path.count(os.sep) + 1
+                
+                # Limita profondità
+                if current_depth >= max_depth:
+                    dirs[:] = []  # Non scendere oltre
+                    continue
+                
+                # Filtra cartelle da ignorare
+                dirs[:] = [d for d in dirs if d.lower() not in self.context.banned_folder_names_lower]
+                
+                # Cerca file con estensioni sicure
+                for file_name in files:
+                    _, ext = os.path.splitext(file_name.lower())
+                    if ext in STRICT_SAVE_EXTENSIONS:
+                        save_files_found += 1
+                        logging.debug(f"Deep scan found save file: {os.path.join(root, file_name)}")
+                        
+                        # Se troviamo almeno 1 file, abbiamo conferma
+                        # Continuiamo per contare, ma possiamo limitare
+                        if save_files_found >= 5:  # Max 5 file da contare
+                            return (True, save_files_found)
+                            
+        except OSError as e:
+            logging.warning(f"Error in deep save content check for '{path}': {e}")
+            
+        return (save_files_found > 0, save_files_found)
+    
     def _check_steam_userdata(self):
         """Controlla la cartella userdata di Steam."""
         if not (self.context.is_steam_game and self.context.appid and 
@@ -1204,9 +1286,14 @@ class SavePathFinder:
             logging.error(f"Error walking install directory: {e}")
     
     def _finalize_results(self) -> List[Tuple[str, int, bool]]:
-        """Finalizza e ordina i risultati."""
+        """Finalizza e ordina i risultati.
+        
+        Applica una ricerca profonda ai top 3 candidati con punteggio positivo
+        per verificare la presenza effettiva di file di salvataggio.
+        """
         logging.info("Finalizing results...")
         
+        # Prima passata: calcola punteggi base
         results = [
             (candidate.path, 
              self.path_scorer.calculate(candidate.path, candidate.source, candidate.contains_saves),
@@ -1216,6 +1303,49 @@ class SavePathFinder:
         
         # Ordina per punteggio decrescente
         results.sort(key=lambda x: (-x[1], x[0].lower()))
+        
+        # Seconda passata: deep scan sui top 3 candidati con punteggio > 0
+        # Questo aiuta a distinguere tra cartelle config e cartelle save reali
+        if len(results) >= 2:  # Ha senso solo se c'è competizione
+            top_candidates = [(i, r) for i, r in enumerate(results[:3]) if r[1] > 0]
+            
+            if top_candidates:
+                logging.info(f"Performing deep save scan on top {len(top_candidates)} candidates...")
+                
+                deep_scan_results = {}
+                for idx, (path, score, contains_saves) in top_candidates:
+                    if self._is_cancelled():
+                        break
+                    
+                    found_saves, count = self._deep_check_save_content(path)
+                    deep_scan_results[idx] = (found_saves, count)
+                    
+                    if found_saves:
+                        logging.info(f"Deep scan: '{path}' contains {count} save file(s)")
+                    else:
+                        logging.debug(f"Deep scan: '{path}' - no save files found")
+                
+                # Applica bonus ai candidati che hanno effettivamente file di salvataggio
+                # Solo se almeno uno ha trovato save e almeno uno no (per differenziare)
+                has_saves = [idx for idx, (found, _) in deep_scan_results.items() if found]
+                no_saves = [idx for idx, (found, _) in deep_scan_results.items() if not found]
+                
+                if has_saves and no_saves:
+                    logging.info(f"Deep scan differentiation: {len(has_saves)} with saves, {len(no_saves)} without")
+                    
+                    # Ricostruisci results con bonus
+                    new_results = list(results)
+                    for idx in has_saves:
+                        path, score, _ = new_results[idx]
+                        # Bonus significativo per chi ha realmente file di salvataggio
+                        new_score = score + ScoreWeight.CONTAINS_SAVES_DEEP.value
+                        new_results[idx] = (path, new_score, True)  # Aggiorna anche contains_saves
+                        logging.info(f"Applied deep save bonus (+{ScoreWeight.CONTAINS_SAVES_DEEP.value}) to: {path}")
+                    
+                    # Ri-ordina con i nuovi punteggi
+                    results = new_results
+                    results.sort(key=lambda x: (-x[1], x[0].lower()))
+        
         logging.info(f"Found {len(results)} potential save paths")
         
         return results
