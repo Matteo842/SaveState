@@ -6,7 +6,7 @@ import platform # Aggiunto per system detection
 
 # --- Nome Applicazione (per cartella AppData) ---
 APP_NAME = "SaveState"
-APP_VERSION = "1.4.0" # Restored APP_VERSION
+APP_VERSION = "2.0.0" # Restored APP_VERSION
 
 # --- Funzione per Trovare/Creare Cartella Dati App ---
 def get_app_data_folder():
@@ -580,7 +580,7 @@ MAX_SHALLOW_EXPLORE_DEPTH_LINUX = 1
 LINUX_ENABLE_STEAM_USERDATA_REMOTE_SCAN = True
 LINUX_ENABLE_PROTON_DEEP_SCAN_STEAM = True
 LINUX_ENABLE_PROTON_SCAN_NONSTEAM = True
-LINUX_MAX_COMPATDATA_APPIDS_NONSTEAM = 8  # Limit how many compatdata prefixes to scan for non-Steam
+LINUX_MAX_COMPATDATA_APPIDS_NONSTEAM = 100  # Limit how many compatdata prefixes to scan for non-Steam
 LINUX_SKIP_HOME_FALLBACK = False          # Set True to skip scanning the entire home directory
 LINUX_SKIP_KNOWN_LOCATIONS_COMPAT_RECURSE_IF_PROTON_ENABLED = True  # Avoid double-recursing compatdata if Proton scan is on
 LINUX_ENABLE_SNAP_SEARCH = True
@@ -635,6 +635,7 @@ COMMON_SAVE_FILENAMES = {
     'persistent',  # persistent.sfs (es. KSP)
     'quicksave',   # quicksave.sav
     'autosave',    # autosave.dat
+    'savegame',    # savegame.dat (più specifico)
 
     # Aggiungi altre parti comuni che noti
 }
