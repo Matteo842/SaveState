@@ -72,13 +72,38 @@ jobs:
         wait-for-completion: true
         output-artifact-directory: "dist_signed_temp"
 
-    # 3. Estrazione Artifact Firmato
-    # SignPath ci restituisce un artefatto firmato (anch'esso uno zip).
-    - name: Extract Signed Artifact
+    # 3. Gestione Artifact Firmato (Versione Intelligente)
+    - name: Handle Signed Artifact
       shell: powershell
       run: |
-        $signedZip = Get-ChildItem dist_signed_temp\*.zip | Select-Object -First 1
-        Expand-Archive -Path $signedZip.FullName -DestinationPath dist_signed_final
+        # Creiamo la cartella di destinazione finale
+        New-Item -ItemType Directory -Force -Path dist_signed_final
+        
+        # DEBUG: Vediamo cosa diavolo c'è nella cartella temp
+        Write-Host "--- CONTENUTO CARTELLA TEMP ---"
+        Get-ChildItem -Recurse dist_signed_temp
+        Write-Host "-------------------------------"
+
+        # Cerchiamo se c'è direttamente l'EXE
+        $exeFile = Get-ChildItem dist_signed_temp\*.exe | Select-Object -First 1
+        
+        # Cerchiamo se c'è uno ZIP
+        $zipFile = Get-ChildItem dist_signed_temp\*.zip | Select-Object -First 1
+
+        if ($exeFile) {
+            Write-Host "Trovato direttamente il file EXE: $($exeFile.Name)"
+            # Lo spostiamo nella cartella finale
+            Move-Item -Path $exeFile.FullName -Destination dist_signed_final\SaveState.exe
+        }
+        elseif ($zipFile) {
+            Write-Host "Trovato file ZIP: $($zipFile.Name)"
+            # Lo estraiamo
+            Expand-Archive -Path $zipFile.FullName -DestinationPath dist_signed_final
+        }
+        else {
+            Write-Error "ERRORE CRITICO: Non ho trovato né .exe né .zip nella cartella dist_signed_temp!"
+            exit 1
+        }
 
     # ---------------------------------------------------------
     # CREAZIONE PACCHETTO FINALE (RELEASE)
