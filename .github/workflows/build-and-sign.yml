@@ -15,8 +15,7 @@ env:
 
 permissions:
   contents: read
-  # 👇 QUESTO È FONDAMENTALE PER L'ORIGIN VERIFICATION 👇
-  id-token: write 
+  id-token: write # FONDAMENTALE PER L'ORIGIN VERIFICATION
 
 jobs:
   # ===========================
@@ -49,18 +48,19 @@ jobs:
     - name: 🔨 Run PyInstaller (Windows)
       run: pyinstaller --clean SaveState-OneFile.spec
 
-    # --- INIZIO NUOVA PROCEDURA SIGNPATH ---
+    # --- INIZIO CORREZIONE PER SIGNPATH ---
     
-    # 1. Carichiamo l'exe come artefatto temporaneo. 
-    # GitHub lo zippa automaticamente, ma va bene così.
+    # 1. Carichiamo l'exe e diamo un ID a questo step ("upload_step")
     - name: 📤 Upload Unsigned Artifact
+      id: upload_step  # <--- AGGIUNTO QUESTO ID
       uses: actions/upload-artifact@v4
       with:
         name: UnsignedSaveState
         path: dist/SaveState.exe
         retention-days: 1
+        compression-level: 0 # Carichiamo veloce, tanto è temporaneo
 
-    # 2. Usiamo l'Action Ufficiale (che ora ha il permesso id-token per l'Origin Verification)
+    # 2. Passiamo l'ID numerico generato sopra all'Action di SignPath
     - name: 🔏 Sign Artifact with SignPath (Official)
       uses: signpath/github-action-submit-signing-request@v1
       with:
@@ -69,23 +69,18 @@ jobs:
         project-slug: "SaveState"
         signing-policy-slug: "test-signing"
         artifact-configuration-slug: "initial"
-        github-artifact-name: "UnsignedSaveState" # Prende quello caricato sopra
+        github-artifact-id: ${{ steps.upload_step.outputs.artifact-id }} # <--- CORRETTO QUI
         wait-for-completion: true
-        output-artifact-directory: "dist_signed_temp" # Scarica qui il risultato
+        output-artifact-directory: "dist_signed_temp" 
 
-    # 3. Il risultato è uno zip. Lo estraiamo per riavere il nostro exe firmato.
+    # 3. Estraiamo lo zip firmato per riavere l'exe pulito
     - name: 📂 Extract Signed Artifact
       shell: powershell
       run: |
-        # SignPath ci ha ridato uno zip dentro la cartella dist_signed_temp
-        # Lo estraiamo nella cartella dist_signed dove lo script successivo se lo aspetta
         Get-ChildItem "dist_signed_temp\*.zip" | Expand-Archive -DestinationPath dist_signed -Force
-        
-        # Verifica che il file esista (opzionale, per debug)
-        Write-Host "Contenuto cartella firmata:"
-        ls dist_signed
+        Write-Host "File firmato estratto in dist_signed"
 
-    # --- FINE NUOVA PROCEDURA ---
+    # --- FINE CORREZIONE ---
 
     - name: 🗄️ Create Release Zip Package
       shell: powershell
@@ -93,7 +88,7 @@ jobs:
         $zipName = "SaveState_v${{ env.RELEASE_VERSION }}_Win.zip"
         mkdir release_pack
         
-        # Ora copiamo l'exe firmato che abbiamo estratto
+        # Copiamo l'exe firmato estratto
         copy dist_signed\SaveState.exe release_pack\
         copy LICENSE release_pack\
         copy README.md release_pack\
