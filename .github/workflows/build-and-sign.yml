@@ -9,16 +9,14 @@ on:
         description: 'Version Number (e.g., 2.1.0)'
         required: true
         default: '2.0.0'
-  # Opzionale: aggiungi il trigger su tag per rilasci automatici
-  # push:
-  #   tags:
-  #     - 'v*.*.*'
 
 env:
   RELEASE_VERSION: ${{ github.event.inputs.version }}
 
 permissions:
-  contents: read # Default: solo lettura
+  contents: read
+  # 👇 QUESTO È FONDAMENTALE PER L'ORIGIN VERIFICATION 👇
+  id-token: write 
 
 jobs:
   # ===========================
@@ -51,33 +49,51 @@ jobs:
     - name: 🔨 Run PyInstaller (Windows)
       run: pyinstaller --clean SaveState-OneFile.spec
 
-    # --- Signing Method: Direct PowerShell ---
-    - name: 🔏 Sign Artifact with SignPath (PowerShell)
+    # --- INIZIO NUOVA PROCEDURA SIGNPATH ---
+    
+    # 1. Carichiamo l'exe come artefatto temporaneo. 
+    # GitHub lo zippa automaticamente, ma va bene così.
+    - name: 📤 Upload Unsigned Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: UnsignedSaveState
+        path: dist/SaveState.exe
+        retention-days: 1
+
+    # 2. Usiamo l'Action Ufficiale (che ora ha il permesso id-token per l'Origin Verification)
+    - name: 🔏 Sign Artifact with SignPath (Official)
+      uses: signpath/github-action-submit-signing-request@v1
+      with:
+        api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+        organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+        project-slug: "SaveState"
+        signing-policy-slug: "test-signing"
+        artifact-configuration-slug: "initial"
+        github-artifact-name: "UnsignedSaveState" # Prende quello caricato sopra
+        wait-for-completion: true
+        output-artifact-directory: "dist_signed_temp" # Scarica qui il risultato
+
+    # 3. Il risultato è uno zip. Lo estraiamo per riavere il nostro exe firmato.
+    - name: 📂 Extract Signed Artifact
       shell: powershell
       run: |
-        # 1. Install the official SignPath PowerShell module
-        Install-Module -Name SignPath -Force -Scope CurrentUser
+        # SignPath ci ha ridato uno zip dentro la cartella dist_signed_temp
+        # Lo estraiamo nella cartella dist_signed dove lo script successivo se lo aspetta
+        Get-ChildItem "dist_signed_temp\*.zip" | Expand-Archive -DestinationPath dist_signed -Force
         
-        # 2. Create directory for signed artifact
-        mkdir dist_signed
-        
-        # 3. Submit the signing request
-        Submit-SigningRequest `
-          -InputArtifactPath "dist\SaveState.exe" `
-          -ApiToken "${{ secrets.SIGNPATH_API_TOKEN }}" `
-          -OrganizationId "${{ secrets.SIGNPATH_ORGANIZATION_ID }}" `
-          -ProjectSlug "SaveState" `
-          -SigningPolicySlug "test-signing" `
-          -ArtifactConfigurationSlug "initial" `
-          -OutputArtifactPath "dist_signed\SaveState.exe" `
-          -WaitForCompletion
+        # Verifica che il file esista (opzionale, per debug)
+        Write-Host "Contenuto cartella firmata:"
+        ls dist_signed
+
+    # --- FINE NUOVA PROCEDURA ---
 
     - name: 🗄️ Create Release Zip Package
       shell: powershell
       run: |
         $zipName = "SaveState_v${{ env.RELEASE_VERSION }}_Win.zip"
         mkdir release_pack
-        # Copy the signed artifact from the staging directory
+        
+        # Ora copiamo l'exe firmato che abbiamo estratto
         copy dist_signed\SaveState.exe release_pack\
         copy LICENSE release_pack\
         copy README.md release_pack\
@@ -90,7 +106,7 @@ jobs:
         path: SaveState_v${{ env.RELEASE_VERSION }}_Win.zip
 
   # ===========================
-  # LINUX BUILD
+  # LINUX BUILD (Invariato)
   # ===========================
   build-linux:
     runs-on: ubuntu-latest
@@ -137,12 +153,11 @@ jobs:
         path: "SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.gz"
 
   # ===========================
-  # RELEASE CREATION
+  # RELEASE CREATION (Invariato)
   # ===========================
   create-release:
     needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
-    # Permesso necessario solo qui per creare la release
     permissions:
       contents: write 
     steps:
