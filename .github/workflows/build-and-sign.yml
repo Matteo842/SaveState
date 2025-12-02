@@ -1,5 +1,3 @@
-# .github/workflows/build-and-sign.yml
-
 name: 🚀 Build, Package, and Release (PowerShell)
 
 on:
@@ -15,53 +13,46 @@ env:
 
 permissions:
   contents: read
-  id-token: write # FONDAMENTALE PER L'ORIGIN VERIFICATION
+  id-token: write
 
 jobs:
-  # ===========================
-  # WINDOWS BUILD AND SIGNING
-  # ===========================
   build-windows:
     runs-on: windows-latest
     steps:
-    - name: ⬇️ Checkout Repository
+    - name: Checkout
       uses: actions/checkout@v4
-      
-    - name: 🐍 Set up Python
+                
+    - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.13' 
+        python-version: '3.13'
 
-    - name: 📦 Install Dependencies
+    - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller
 
-    - name: 🔐 Restore Secret JSON
+    - name: Restore Secret JSON
       shell: bash
       env:
         SECRET_CONTENT: ${{ secrets.CLIENT_SECRET_JSON }}
       run: |
         python -c "import os; open('cloud_utils/client_secret.json', 'w', encoding='utf-8').write(os.environ['SECRET_CONTENT'])"
 
-    - name: 🔨 Run PyInstaller (Windows)
+    - name: Run PyInstaller
       run: pyinstaller --clean SaveState-OneFile.spec
 
-    # --- INIZIO CORREZIONE PER SIGNPATH ---
-    
-    # 1. Carichiamo l'exe e diamo un ID a questo step ("upload_step")
-    - name: 📤 Upload Unsigned Artifact
-      id: upload_step  # <--- AGGIUNTO QUESTO ID
+    # 🔥 QUI IL FIX: UPLOAD COME FILE, NON COME CARTELLA
+    - name: Upload unsigned EXE
       uses: actions/upload-artifact@v4
       with:
-        name: UnsignedSaveState
+        name: unsigned-exe
         path: dist/SaveState.exe
         retention-days: 1
-        compression-level: 0 # Carichiamo veloce, tanto è temporaneo
 
-    # 2. Passiamo l'ID numerico generato sopra all'Action di SignPath
-    - name: 🔏 Sign Artifact with SignPath (Official)
+    # 🔥 SIGNPATH: ORA GLI PASSIAMO IL FILE DIRETTAMENTE
+    - name: Sign EXE with SignPath
       uses: signpath/github-action-submit-signing-request@v1
       with:
         api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -69,36 +60,27 @@ jobs:
         project-slug: "SaveState"
         signing-policy-slug: "test-signing"
         artifact-configuration-slug: "initial"
-        github-artifact-id: ${{ steps.upload_step.outputs.artifact-id }} # <--- CORRETTO QUI
+        github-artifact-name: "unsigned-exe"
+        github-artifact-path: "SaveState.exe"
         wait-for-completion: true
-        output-artifact-directory: "dist_signed_temp" 
+        output-artifact-directory: "dist_signed"
 
-    # 3. Estraiamo lo zip firmato per riavere l'exe pulito
-    - name: 📂 Extract Signed Artifact
-      shell: powershell
-      run: |
-        Get-ChildItem "dist_signed_temp\*.zip" | Expand-Archive -DestinationPath dist_signed -Force
-        Write-Host "File firmato estratto in dist_signed"
-
-    # --- FINE CORREZIONE ---
-
-    - name: 🗄️ Create Release Zip Package
+    - name: Create Release Zip Package
       shell: powershell
       run: |
         $zipName = "SaveState_v${{ env.RELEASE_VERSION }}_Win.zip"
         mkdir release_pack
-        
-        # Copiamo l'exe firmato estratto
         copy dist_signed\SaveState.exe release_pack\
         copy LICENSE release_pack\
         copy README.md release_pack\
         Compress-Archive -Path release_pack\* -DestinationPath $zipName
         
-    - name: ⬆️ Upload Windows Package
+    - name: Upload Windows Package
       uses: actions/upload-artifact@v4
       with:
         name: SaveState-Windows-Package
         path: SaveState_v${{ env.RELEASE_VERSION }}_Win.zip
+
 
   # ===========================
   # LINUX BUILD (Invariato)
