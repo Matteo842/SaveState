@@ -12,7 +12,7 @@ env:
   RELEASE_VERSION: ${{ github.event.inputs.version }}
 
 permissions:
-  contents: write  # Aumentato a write per poter creare la release
+  contents: write
   id-token: write
 
 jobs:
@@ -44,26 +44,27 @@ jobs:
       run: pyinstaller --clean SaveState-OneFile.spec
 
     # ---------------------------------------------------------
-    # NUOVA FASE DI PREPARAZIONE PER SIGNPATH
+    # NUOVA FASE DI PREPARAZIONE PER SIGNPATH (CORRETTA)
     # ---------------------------------------------------------
 
-    # 1. Poiché hai creato "zip-with-exe", dobbiamo zippare l'EXE PRIMA di inviarlo
+    # 1. FIX: Entriamo in 'dist' così lo zip non avrà cartelle interne
     - name: Prepare Zip for Signing
       shell: powershell
       run: |
-        Compress-Archive -Path dist\SaveState.exe -DestinationPath dist\SaveStateForSigning.zip
+        cd dist
+        Compress-Archive -Path SaveState.exe -DestinationPath SaveStateForSigning.zip
 
-    # 2. Upload dello zip unsigned. 
-    # IMPORTANTE: Aggiungiamo 'id: upload_step' per catturare l'ID che serve a SignPath
+    # 2. Upload dello zip unsigned.
     - name: Upload Unsigned Zip
       id: upload_step
       uses: actions/upload-artifact@v4
       with:
         name: unsigned-zip-artifact
+        # Nota: siccome lo zip è stato creato DENTRO dist, il path è dist/...
         path: dist/SaveStateForSigning.zip
         retention-days: 1
 
-    # 3. Invio a SignPath usando l'ID (risolve l'errore dello screenshot)
+    # 3. Invio a SignPath usando l'ID
     - name: Sign Zip with SignPath
       uses: signpath/github-action-submit-signing-request@v1
       with:
@@ -71,18 +72,16 @@ jobs:
         organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
         project-slug: "SaveState"
         signing-policy-slug: "test-signing"
-        artifact-configuration-slug: "zip-with-exe" # Aggiornato con il tuo nuovo nome
-        github-artifact-id: ${{ steps.upload_step.outputs.artifact-id }} # 🔥 ECCO IL FIX
-        github-token: ${{ secrets.GITHUB_TOKEN }} # Serve per scaricare l'artefatto tramite ID
+        artifact-configuration-slug: "zip-with-exe"
+        github-artifact-id: ${{ steps.upload_step.outputs.artifact-id }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         wait-for-completion: true
         output-artifact-directory: "dist_signed_temp"
 
-    # 4. SignPath ci restituisce uno ZIP firmato. Lo estraiamo.
+    # 4. Estrazione Artifact Firmato
     - name: Extract Signed Artifact
       shell: powershell
       run: |
-        # L'action scarica il file nella cartella dist_signed_temp. 
-        # Cerchiamo il file zip scaricato (il nome potrebbe variare, quindi usiamo *.zip)
         $signedZip = Get-ChildItem dist_signed_temp\*.zip | Select-Object -First 1
         Expand-Archive -Path $signedZip.FullName -DestinationPath dist_signed_final
 
@@ -96,7 +95,7 @@ jobs:
         $zipName = "SaveState_v${{ env.RELEASE_VERSION }}_Win.zip"
         mkdir release_pack
         
-        # Copiamo l'EXE firmato che abbiamo appena estratto
+        # Copiamo l'EXE firmato dalla cartella estratta
         copy dist_signed_final\SaveState.exe release_pack\
         
         copy LICENSE release_pack\
