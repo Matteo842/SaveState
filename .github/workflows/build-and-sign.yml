@@ -1,26 +1,30 @@
 # .github/workflows/build-and-sign.yml
 
-name: 🚀 Build, Package e Rilascio (PowerShell Method)
+name: 🚀 Build, Package, and Release (PowerShell)
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Numero Versione (es. 2.1.0)'
+        description: 'Version Number (e.g., 2.1.0)'
         required: true
         default: '2.0.0'
+  # Opzionale: aggiungi il trigger su tag per rilasci automatici
+  # push:
+  #   tags:
+  #     - 'v*.*.*'
 
 env:
   RELEASE_VERSION: ${{ github.event.inputs.version }}
 
 permissions:
-  contents: write
+  contents: read # Default: solo lettura
 
 jobs:
   # ===========================
-  # WINDOWS BUILD + SIGNING
+  # WINDOWS BUILD AND SIGNING
   # ===========================
-  build_windows:
+  build-windows:
     runs-on: windows-latest
     steps:
     - name: ⬇️ Checkout Repository
@@ -47,17 +51,17 @@ jobs:
     - name: 🔨 Run PyInstaller (Windows)
       run: pyinstaller --clean SaveState-OneFile.spec
 
-    # --- NUOVO METODO: POWERSHELL DIRETTO (BYPASS ZIP) ---
+    # --- Signing Method: Direct PowerShell ---
     - name: 🔏 Sign Artifact with SignPath (PowerShell)
       shell: powershell
       run: |
-        # 1. Installiamo il modulo SignPath ufficiale
+        # 1. Install the official SignPath PowerShell module
         Install-Module -Name SignPath -Force -Scope CurrentUser
         
-        # 2. Creiamo la cartella dove atterrerà il file firmato
+        # 2. Create directory for signed artifact
         mkdir dist_signed
         
-        # 3. Lanciamo il comando che hai trovato tu
+        # 3. Submit the signing request
         Submit-SigningRequest `
           -InputArtifactPath "dist\SaveState.exe" `
           -ApiToken "${{ secrets.SIGNPATH_API_TOKEN }}" `
@@ -73,7 +77,7 @@ jobs:
       run: |
         $zipName = "SaveState_v${{ env.RELEASE_VERSION }}_Win.zip"
         mkdir release_pack
-        # Prendiamo il file firmato dalla cartella dist_signed
+        # Copy the signed artifact from the staging directory
         copy dist_signed\SaveState.exe release_pack\
         copy LICENSE release_pack\
         copy README.md release_pack\
@@ -86,9 +90,9 @@ jobs:
         path: SaveState_v${{ env.RELEASE_VERSION }}_Win.zip
 
   # ===========================
-  # LINUX BUILD (Invariato)
+  # LINUX BUILD
   # ===========================
-  build_linux:
+  build-linux:
     runs-on: ubuntu-latest
     steps:
     - name: ⬇️ Checkout Repository
@@ -108,7 +112,7 @@ jobs:
         pip install pyinstaller
 
     - name: 🔐 Restore Secret JSON
-      shell: bash 
+      shell: bash  
       env:
         SECRET_CONTENT: ${{ secrets.CLIENT_SECRET_JSON }}
       run: |
@@ -135,9 +139,12 @@ jobs:
   # ===========================
   # RELEASE CREATION
   # ===========================
-  create_release:
-    needs: [build_windows, build_linux]
+  create-release:
+    needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
+    # Permesso necessario solo qui per creare la release
+    permissions:
+      contents: write 
     steps:
       - name: ⬇️ Checkout Code
         uses: actions/checkout@v4
@@ -149,7 +156,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
         run: |
-          echo "Creazione Release v${{ env.RELEASE_VERSION }}..."
+          echo "Creating Release v${{ env.RELEASE_VERSION }}..."
           gh release create v${{ env.RELEASE_VERSION }} \
             SaveState-Windows-Package/* \
             SaveState-Linux-Package/* \
