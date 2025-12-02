@@ -44,41 +44,36 @@ jobs:
       run: pyinstaller --clean SaveState-OneFile.spec
 
     # ---------------------------------------------------------
-    # NUOVA FASE DI PREPARAZIONE PER SIGNPATH (CORRETTA)
+    # FASE SIGNPATH (SEMPLIFICATA)
     # ---------------------------------------------------------
 
-    # 1. FIX: Entriamo in 'dist' così lo zip non avrà cartelle interne
-    - name: Prepare Zip for Signing
-      shell: powershell
-      run: |
-        cd dist
-        Compress-Archive -Path SaveState.exe -DestinationPath SaveStateForSigning.zip
-
-    # 2. Upload dello zip unsigned.
-    - name: Upload Unsigned Zip
+    # 1. FIX: NON ZIPPIAMO PIÙ MANUALMENTE.
+    # Carichiamo direttamente l'EXE. GitHub lo trasformerà in un artefatto (che è uno zip implicito).
+    # SignPath riceverà questo artefatto, lo aprirà e troverà subito SaveState.exe.
+    - name: Upload Unsigned EXE
       id: upload_step
       uses: actions/upload-artifact@v4
       with:
-        name: unsigned-zip-artifact
-        # Nota: siccome lo zip è stato creato DENTRO dist, il path è dist/...
-        path: dist/SaveStateForSigning.zip
+        name: unsigned-exe
+        path: dist/SaveState.exe # Carichiamo il file diretto!
         retention-days: 1
 
-    # 3. Invio a SignPath usando l'ID
-    - name: Sign Zip with SignPath
+    # 2. Invio a SignPath usando l'ID
+    - name: Sign with SignPath
       uses: signpath/github-action-submit-signing-request@v1
       with:
         api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
         organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
         project-slug: "SaveState"
         signing-policy-slug: "test-signing"
-        artifact-configuration-slug: "zip-with-exe"
+        artifact-configuration-slug: "zip-with-exe" # Lascia pure questo nome, va bene!
         github-artifact-id: ${{ steps.upload_step.outputs.artifact-id }}
         github-token: ${{ secrets.GITHUB_TOKEN }}
         wait-for-completion: true
         output-artifact-directory: "dist_signed_temp"
 
-    # 4. Estrazione Artifact Firmato
+    # 3. Estrazione Artifact Firmato
+    # SignPath ci restituisce un artefatto firmato (anch'esso uno zip).
     - name: Extract Signed Artifact
       shell: powershell
       run: |
@@ -95,7 +90,7 @@ jobs:
         $zipName = "SaveState_v${{ env.RELEASE_VERSION }}_Win.zip"
         mkdir release_pack
         
-        # Copiamo l'EXE firmato dalla cartella estratta
+        # Copiamo l'EXE firmato
         copy dist_signed_final\SaveState.exe release_pack\
         
         copy LICENSE release_pack\
