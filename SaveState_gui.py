@@ -631,16 +631,15 @@ class MainWindow(QMainWindow):
         ui_settings_group.setLayout(ui_settings_layout)
         settings_grid.addWidget(ui_settings_group, 3, 1)
         
-        # ROW 4, COL 0-1 (spans 2 columns): Restore Configuration
-        restore_config_group = QGroupBox("Restore Configuration Backups")
-        restore_config_layout = QVBoxLayout()
-        restore_config_layout.setContentsMargins(8, 8, 8, 8)
-        restore_config_layout.setSpacing(6)
-        self.settings_restore_button = QPushButton("Restore Profiles and Settings from Backup")
-        self.settings_restore_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
-        restore_config_layout.addWidget(self.settings_restore_button)
-        restore_config_group.setLayout(restore_config_layout)
-        settings_grid.addWidget(restore_config_group, 4, 0, 1, 2)  # span 2 columns
+        # ROW 4, COL 0-1 (spans 2 columns): System Tray Settings
+        tray_settings_group = QGroupBox("System Tray")
+        tray_settings_layout = QVBoxLayout()
+        tray_settings_layout.setContentsMargins(8, 8, 8, 8)
+        tray_settings_layout.setSpacing(6)
+        self.settings_minimize_to_tray_checkbox = QCheckBox("Minimize to tray on close")
+        tray_settings_layout.addWidget(self.settings_minimize_to_tray_checkbox)
+        tray_settings_group.setLayout(tray_settings_layout)
+        settings_grid.addWidget(tray_settings_group, 4, 0, 1, 2)  # span 2 columns
         
         settings_main_layout.addLayout(settings_grid)
         # No stretch - let the grid breathe naturally
@@ -862,7 +861,6 @@ class MainWindow(QMainWindow):
         self.settings_exit_button.clicked.connect(self.handlers.handle_settings_exit)
         self.settings_save_button.clicked.connect(self.handlers.handle_settings_save)
         self.settings_browse_button.clicked.connect(self.handlers.handle_settings_browse)
-        self.settings_restore_button.clicked.connect(self.handlers.handle_settings_restore)
         # Log button connections use handlers
         self.toggle_log_button.pressed.connect(self.handlers.handle_log_button_pressed)
         self.toggle_log_button.released.connect(self.handlers.handle_log_button_released)
@@ -1633,18 +1631,24 @@ class MainWindow(QMainWindow):
         """Gestisce l'evento di chiusura della finestra principale."""
         try:
             if not self._allow_close:
-                # If periodic sync is enabled, minimize to tray instead of exiting
+                # Check if minimize to tray is enabled (either by setting or periodic sync)
+                minimize_to_tray = self.current_settings.get('minimize_to_tray_on_close', False)
                 cloud_settings = cloud_settings_manager.load_cloud_settings()
-                if bool(cloud_settings.get('auto_sync_enabled')):
+                periodic_sync_enabled = bool(cloud_settings.get('auto_sync_enabled'))
+                
+                if minimize_to_tray or periodic_sync_enabled:
                     if hasattr(self, 'tray_icon') and self.tray_icon and QSystemTrayIcon.isSystemTrayAvailable():
                         event.ignore()
                         self.hide()
                         try:
                             self.tray_icon.show()
-                            self.tray_icon.showMessage("SaveState", "Running in background for periodic sync.", QSystemTrayIcon.MessageIcon.Information, 3000)
+                            if periodic_sync_enabled:
+                                self.tray_icon.showMessage("SaveState", "Running in background for periodic sync.", QSystemTrayIcon.MessageIcon.Information, 3000)
+                            else:
+                                self.tray_icon.showMessage("SaveState", "Minimized to system tray.", QSystemTrayIcon.MessageIcon.Information, 2000)
                         except Exception:
                             pass
-                        logging.info("SaveState hidden to system tray (periodic sync enabled).")
+                        logging.info(f"SaveState hidden to system tray (minimize_to_tray={minimize_to_tray}, periodic_sync={periodic_sync_enabled}).")
                         return
         except Exception:
             pass
@@ -1856,6 +1860,24 @@ class MainWindow(QMainWindow):
             # UI settings
             self.settings_global_drag_checkbox.setChecked(self.current_settings.get("enable_global_drag_effect", True))
             self.settings_shorten_paths_checkbox.setChecked(self.current_settings.get("shorten_paths_enabled", True))
+            
+            # Minimize to tray: check if periodic sync forces this behavior
+            try:
+                cloud_settings = cloud_settings_manager.load_cloud_settings()
+                periodic_sync_enabled = bool(cloud_settings.get('auto_sync_enabled', False))
+            except Exception:
+                periodic_sync_enabled = False
+            
+            if periodic_sync_enabled:
+                # Periodic sync forces minimize to tray - show as checked and disabled
+                self.settings_minimize_to_tray_checkbox.setChecked(True)
+                self.settings_minimize_to_tray_checkbox.setEnabled(False)
+                self.settings_minimize_to_tray_checkbox.setToolTip("Forced ON because Periodic Sync is enabled in Cloud settings")
+            else:
+                # Normal behavior - use the saved setting
+                self.settings_minimize_to_tray_checkbox.setChecked(self.current_settings.get("minimize_to_tray_on_close", False))
+                self.settings_minimize_to_tray_checkbox.setEnabled(True)
+                self.settings_minimize_to_tray_checkbox.setToolTip("")
             
             # Toggle UI visibility
             self.profile_group.setVisible(False)

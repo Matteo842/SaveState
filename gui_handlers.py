@@ -350,77 +350,6 @@ class MainWindowHandlers:
             self.main_window.settings_path_edit.setText(os.path.normpath(directory))
 
     @Slot()
-    def handle_settings_restore(self):
-        """Handle restoring JSON backups from inline settings panel."""
-        # Same logic as in settings_dialog.py
-        reply = QMessageBox.question(
-            self.main_window,
-            "Restore Configuration Backups",
-            "This will restore your profiles, settings, and favorites from the backup directory.\n\n"
-            "Current files will be backed up before restoration.\n\n"
-            "Do you want to proceed?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        
-        try:
-            success = core_logic.restore_json_from_backup_root()
-            if success:
-                # Reload settings and profiles
-                try:
-                    reloaded_settings, _first = settings_manager.load_settings()
-                    if isinstance(reloaded_settings, dict):
-                        self.main_window.current_settings = reloaded_settings
-                        # Update UI field
-                        self.main_window.settings_path_edit.setText(reloaded_settings.get("backup_base_dir", ""))
-                    
-                    # Reload favorites
-                    try:
-                        from gui_components import favorites_manager as _fav
-                        _fav._cache_loaded = False
-                        _fav.load_favorites()
-                    except Exception:
-                        pass
-                    
-                    # Reload profiles
-                    self.main_window.profiles = core_logic.load_profiles()
-                    if hasattr(self.main_window, 'profile_table_manager') and self.main_window.profile_table_manager:
-                        self.main_window.profile_table_manager.update_profile_table()
-                    if hasattr(self.main_window, 'updateUiText'):
-                        self.main_window.updateUiText()
-                    if hasattr(self.main_window, 'update_global_drag_listener_state'):
-                        self.main_window.update_global_drag_listener_state()
-                except Exception as e_apply:
-                    logging.warning(f"Applied restore but failed to refresh UI/runtime state: {e_apply}")
-
-                QMessageBox.information(
-                    self.main_window,
-                    "Restore Successful",
-                    "Configuration files have been restored and applied."
-                )
-                
-                # Close settings panel
-                self.main_window.exit_settings_panel()
-                return
-            else:
-                QMessageBox.warning(
-                    self.main_window,
-                    "Restore Failed",
-                    "Could not restore configuration files.\n\n"
-                    "Please check that backup files exist in the .savestate folder."
-                )
-        except Exception as e:
-            logging.error(f"Error restoring JSON backups: {e}", exc_info=True)
-            QMessageBox.critical(
-                self.main_window,
-                "Error",
-                f"An error occurred while restoring backups:\n\n{str(e)}"
-            )
-
-    @Slot()
     def handle_settings_save(self):
         """Save settings from the inline settings panel."""
         try:
@@ -433,6 +362,7 @@ class MainWindowHandlers:
             new_portable_mode = self.main_window.settings_portable_checkbox.isChecked()
             new_global_drag = self.main_window.settings_global_drag_checkbox.isChecked()
             new_shorten_paths = self.main_window.settings_shorten_paths_checkbox.isChecked()
+            new_minimize_to_tray = self.main_window.settings_minimize_to_tray_checkbox.isChecked()
             
             new_max_src_size_mb = -1
             if 0 <= selected_size_index < len(self.main_window.settings_size_options):
@@ -487,6 +417,7 @@ class MainWindowHandlers:
             new_settings["check_free_space_enabled"] = new_check_free_space
             new_settings["enable_global_drag_effect"] = new_global_drag
             new_settings["shorten_paths_enabled"] = new_shorten_paths
+            new_settings["minimize_to_tray_on_close"] = new_minimize_to_tray
             new_settings["portable_config_only"] = new_portable_mode
             
             # Show delete AppData popup only when enabling portable and AppData folder exists
