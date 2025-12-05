@@ -16,9 +16,9 @@ permissions:
   id-token: write
 
 jobs:
-  # ===========================
-  # WINDOWS BUILD (Invariato)
-  # ===========================
+  # =========================================================
+  # 1. WINDOWS BUILD (Firmata e Zippata)
+  # =========================================================
   build-windows:
     runs-on: windows-latest
     steps:
@@ -46,9 +46,7 @@ jobs:
     - name: Run PyInstaller
       run: pyinstaller --clean SaveState-OneFile.spec
 
-    # ---------------------------------------------------------
-    # FASE SIGNPATH
-    # ---------------------------------------------------------
+    # --- SIGNPATH (Firma Digitale) ---
     - name: Upload Unsigned EXE
       id: upload_step
       uses: actions/upload-artifact@v4
@@ -74,26 +72,20 @@ jobs:
       shell: powershell
       run: |
         New-Item -ItemType Directory -Force -Path dist_signed_final
-        
         $exeFile = Get-ChildItem dist_signed_temp\*.exe | Select-Object -First 1
         $zipFile = Get-ChildItem dist_signed_temp\*.zip | Select-Object -First 1
 
         if ($exeFile) {
-            Write-Host "Trovato direttamente il file EXE: $($exeFile.Name)"
             Move-Item -Path $exeFile.FullName -Destination dist_signed_final\SaveState.exe
         }
         elseif ($zipFile) {
-            Write-Host "Trovato file ZIP: $($zipFile.Name)"
             Expand-Archive -Path $zipFile.FullName -DestinationPath dist_signed_final
         }
         else {
-            Write-Error "ERRORE CRITICO: Non ho trovato né .exe né .zip nella cartella dist_signed_temp!"
             exit 1
         }
 
-    # ---------------------------------------------------------
-    # CREAZIONE PACCHETTO WINDOWS
-    # ---------------------------------------------------------
+    # --- IMPACCHETTAMENTO WINDOWS ---
     - name: Create Release Zip Package
       shell: powershell
       run: |
@@ -110,9 +102,9 @@ jobs:
         name: SaveState-Windows-Package
         path: SaveState_v${{ env.RELEASE_VERSION }}_Win.zip
 
-  # ===========================
-  # LINUX BUILD (NOME PULITO: SaveState)
-  # ===========================
+  # =========================================================
+  # 2. LINUX BUILD (AppImage Max Compatibility + Tar.gz)
+  # =========================================================
   build-linux:
     runs-on: ubuntu-latest
     steps:
@@ -142,20 +134,36 @@ jobs:
     - name: 🔨 Run PyInstaller (Linux)
       run: pyinstaller --clean SaveState-OneFile-Linux.spec
 
-    # --- INIZIO CREAZIONE APPIMAGE ---
-    - name: 🖼️ Prepare AppDir Structure (NUCLEAR METHOD)
+    # --- CREAZIONE APPIMAGE (Logica Icone Avanzata) ---
+    - name: 🖼️ Prepare AppDir Structure
       run: |
+        # Pulizia e creazione cartelle (Standard + Legacy Pixmaps)
+        rm -rf AppDir
         mkdir -p AppDir/usr/bin
         mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps/
+        mkdir -p AppDir/usr/share/pixmaps/
+
+        # Copia eseguibile
         cp dist/SaveState AppDir/usr/bin/
         
-        # FIX ICONE (Copia brutale)
+        # 1. Copia Icona ROOT (Base)
         cp icon.png AppDir/SaveState.png
-        cp icon.png AppDir/usr/share/icons/hicolor/256x256/apps/SaveState.png
-        cp icon.png AppDir/.DirIcon
+        
+        # 2. Copia Icona Legacy (Pixmaps) - Per vecchie distro
+        cp icon.png AppDir/usr/share/pixmaps/SaveState.png
+        
+        # 3. Symlink Standard (Freedesktop)
+        # Percorso relativo per arrivare da /usr/share/... fino alla root
+        ln -s ../../../../../../SaveState.png AppDir/usr/share/icons/hicolor/256x256/apps/SaveState.png
+        
+        # 4. Symlink .DirIcon (Per il file manager)
+        cd AppDir
+        ln -s SaveState.png .DirIcon
+        cd ..
 
     - name: 📝 Create .desktop file
       run: |
+        # StartupWMClass è fondamentale per raggruppare l'icona nella Dock
         cat > AppDir/SaveState.desktop <<EOF
         [Desktop Entry]
         Type=Application
@@ -164,6 +172,7 @@ jobs:
         Icon=SaveState
         Categories=Utility;
         Terminal=false
+        StartupWMClass=SaveState
         EOF
 
     - name: 🚀 Build AppImage
@@ -172,28 +181,56 @@ jobs:
         chmod +x appimagetool
         ln -s usr/bin/SaveState AppDir/AppRun
         
-        # MODIFICA 1: Nome output pulito (SaveState.AppImage) invece di SaveState_v2.0_Linux...
+        # Creiamo l'AppImage con nome pulito
         ARCH=x86_64 ./appimagetool AppDir SaveState.AppImage
 
-    # --- IMPACCHETTAMENTO FINALE ---
+    # --- IMPACCHETTAMENTO LINUX (Tar.gz) ---
     - name: 🗄️ Create Release Tarball Package
       run: |
-        # MODIFICA 2: Nome cartella pulito
         DIR_NAME="SaveState" 
         mkdir -p "$DIR_NAME"
         
-        # MODIFICA 3: Spostiamo il file che ora si chiama solo SaveState.AppImage
+        # Spostiamo l'AppImage dentro la cartella
         mv "SaveState.AppImage" "$DIR_NAME/"
         
+        # Aggiungiamo documentazione
         cp LICENSE "$DIR_NAME/"
         cp README.md "$DIR_NAME/"
         
-        # MODIFICA 4: Nome archivio pulito (SaveState.tar.gz)
+        # Comprimiamo in .tar.gz (standard Linux)
         tar -czvf "SaveState.tar.gz" "$DIR_NAME"
 
     - name: ⬆️ Upload Linux Package
       uses: actions/upload-artifact@v4
       with:
         name: SaveState-Linux-Package
-        # MODIFICA 5: Upload del file col nome pulito
         path: "SaveState.tar.gz"
+
+  # =========================================================
+  # 3. RELEASE CREATION (Draft)
+  # =========================================================
+  create-release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write 
+    steps:
+      - name: ⬇️ Checkout Code
+        uses: actions/checkout@v4
+
+      - name: ⬇️ Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: 🚀 Create Release with GitHub CLI
+        env:
+          GH_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
+        run: |
+          echo "Creating Release v${{ env.RELEASE_VERSION }}..."
+          
+          # Prende il contenuto zippato/tarballato dalle cartelle scaricate
+          gh release create v${{ env.RELEASE_VERSION }} \
+            SaveState-Windows-Package/* \
+            SaveState-Linux-Package/* \
+            --title "SaveState v${{ env.RELEASE_VERSION }}" \
+            --draft \
+            --generate-notes
