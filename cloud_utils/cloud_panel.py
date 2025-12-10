@@ -18,6 +18,7 @@ from cloud_utils.cloud_settings_panel import CloudSettingsPanel
 from cloud_utils.google_drive_manager import get_drive_manager, StorageCheckWorker
 import cloud_settings_manager
 from utils import resource_path
+from gui_components import favorites_manager
 
 
 class AuthWorker(QObject):
@@ -813,7 +814,20 @@ class CloudSavePanel(QWidget):
                     }
         
         # --- Filter and populate table ---
-        for backup_name in sorted(all_backups.keys()):
+        
+        # Load favorites for sorting
+        try:
+            favorites = favorites_manager.load_favorites()
+        except Exception:
+            favorites = {}
+
+        # Sort: favorites first, then alphabetical
+        sorted_backups = sorted(
+            all_backups.keys(),
+            key=lambda k: (not favorites.get(k, False), k.lower())
+        )
+        
+        for backup_name in sorted_backups:
             backup = all_backups[backup_name]
             
             # Check if this backup folder matches a profile
@@ -832,6 +846,7 @@ class CloudSavePanel(QWidget):
             # Add profile name to backup info
             backup['profile'] = profile_name
             backup['is_known_profile'] = is_known_profile
+            backup['is_favorite'] = favorites.get(backup_name, False)
             
             self.local_backups.append(backup)
             self._add_backup_row(backup)
@@ -950,6 +965,10 @@ class CloudSavePanel(QWidget):
         # Column 2: Profile (use backup name as profile name)
         profile_name = backup_info['profile']
         is_known = backup_info.get('is_known_profile', False)
+        is_favorite = backup_info.get('is_favorite', False)
+        
+        if is_favorite:
+            profile_name = "★ " + profile_name
         
         profile_item = QTableWidgetItem(profile_name)
         profile_item.setFlags(profile_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
