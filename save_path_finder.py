@@ -1285,11 +1285,27 @@ class SavePathFinder:
         except Exception as e:
             logging.error(f"Error walking install directory: {e}")
     
+    def _is_steam_userdata_path(self, path: str) -> bool:
+        """Verifica se il percorso è nella cartella userdata di Steam."""
+        if not self.context.steam_userdata_path:
+            return False
+        try:
+            path_lower = os.path.normpath(path).lower()
+            userdata_lower = os.path.normpath(self.context.steam_userdata_path).lower()
+            return path_lower.startswith(userdata_lower + os.sep) or path_lower == userdata_lower
+        except Exception:
+            return False
+
     def _finalize_results(self) -> List[Tuple[str, int, bool]]:
         """Finalizza e ordina i risultati.
         
         Applica una ricerca profonda ai top 3 candidati con punteggio positivo
         per verificare la presenza effettiva di file di salvataggio.
+        
+        NOTA: Il bonus deep scan NON viene applicato ai percorsi Steam userdata
+        poiché questi sono già identificati correttamente dal sistema Steam.
+        Il deep scan serve a differenziare tra le "prime locations" (AppData, 
+        LocalLow, Documents, etc.), non a dare vantaggio a Steam userdata.
         """
         logging.info("Finalizing results...")
         
@@ -1318,7 +1334,7 @@ class SavePathFinder:
                         break
                     
                     found_saves, count = self._deep_check_save_content(path)
-                    deep_scan_results[idx] = (found_saves, count)
+                    deep_scan_results[idx] = (found_saves, count, path)
                     
                     if found_saves:
                         logging.info(f"Deep scan: '{path}' contains {count} save file(s)")
@@ -1327,11 +1343,22 @@ class SavePathFinder:
                 
                 # Applica bonus ai candidati che hanno effettivamente file di salvataggio
                 # Solo se almeno uno ha trovato save e almeno uno no (per differenziare)
-                has_saves = [idx for idx, (found, _) in deep_scan_results.items() if found]
-                no_saves = [idx for idx, (found, _) in deep_scan_results.items() if not found]
+                # ESCLUDI percorsi Steam userdata dal bonus - sono già identificati correttamente
+                has_saves = [idx for idx, (found, _, path) in deep_scan_results.items() 
+                            if found and not self._is_steam_userdata_path(path)]
+                no_saves = [idx for idx, (found, _, path) in deep_scan_results.items() 
+                           if not found and not self._is_steam_userdata_path(path)]
+                
+                # Log anche per Steam userdata (solo informativo)
+                steam_with_saves = [idx for idx, (found, _, path) in deep_scan_results.items() 
+                                   if found and self._is_steam_userdata_path(path)]
+                if steam_with_saves:
+                    for idx in steam_with_saves:
+                        path = deep_scan_results[idx][2]
+                        logging.debug(f"Deep scan: Steam userdata path '{path}' has saves (no bonus applied)")
                 
                 if has_saves and no_saves:
-                    logging.info(f"Deep scan differentiation: {len(has_saves)} with saves, {len(no_saves)} without")
+                    logging.info(f"Deep scan differentiation: {len(has_saves)} with saves, {len(no_saves)} without (excluding Steam userdata)")
                     
                     # Ricostruisci results con bonus
                     new_results = list(results)
