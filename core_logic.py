@@ -8,7 +8,8 @@ import config
 import re
 import platform
 import glob
-from datetime import datetime
+import zipfile
+import shutil
 
 # Import the appropriate guess_save_path function based on platform
 if platform.system() == "Linux":
@@ -124,6 +125,93 @@ def sanitize_foldername(name):
         safe_name = "_invalid_profile_name_" # Fallback name
 
     return safe_name
+
+
+def _is_safe_zip_path(member_path: str, target_dir: str) -> bool:
+    """
+    Check if a ZIP member path is safe to extract (prevents Zip Slip vulnerability).
+    
+    A path is considered safe if, when joined with the target directory,
+    the resulting absolute path is still within the target directory.
+    
+    Args:
+        member_path: The path of the file inside the ZIP archive
+        target_dir: The target extraction directory
+        
+    Returns:
+        True if the path is safe, False if it could escape the target directory
+    """
+    # Normalize the target directory to absolute path
+    abs_target = os.path.abspath(target_dir)
+    
+    # Join and normalize the full extraction path
+    # Replace forward slashes with OS separator for cross-platform compatibility
+    normalized_member = member_path.replace('/', os.sep)
+    full_path = os.path.normpath(os.path.join(abs_target, normalized_member))
+    
+    # Check if the resulting path starts with the target directory
+    # We add os.sep to prevent partial matches (e.g., /home/user vs /home/user2)
+    return full_path.startswith(abs_target + os.sep) or full_path == abs_target
+
+
+def _safe_extract_member(zipf: zipfile.ZipFile, member: str, target_dir: str) -> bool:
+    """
+    Safely extract a single ZIP member with Zip Slip protection.
+    
+    Args:
+        zipf: Open ZipFile object
+        member: Member path inside the ZIP
+        target_dir: Target extraction directory
+        
+    Returns:
+        True if extraction succeeded, False if path was unsafe or extraction failed
+    """
+    if not _is_safe_zip_path(member, target_dir):
+        logging.error(f"SECURITY: Blocked unsafe ZIP path (potential path traversal): '{member}'")
+        return False
+    
+    try:
+        zipf.extract(member, target_dir)
+        return True
+    except Exception as e:
+        logging.error(f"Error extracting '{member}': {e}")
+        return False
+
+
+def _safe_extractall(zipf: zipfile.ZipFile, target_dir: str) -> tuple:
+    """
+    Safely extract all members from a ZIP file with Zip Slip protection.
+    
+    Args:
+        zipf: Open ZipFile object
+        target_dir: Target extraction directory
+        
+    Returns:
+        Tuple (success: bool, blocked_paths: list, error_messages: list)
+    """
+    blocked_paths = []
+    error_messages = []
+    all_success = True
+    
+    for member in zipf.namelist():
+        if not _is_safe_zip_path(member, target_dir):
+            blocked_paths.append(member)
+            logging.error(f"SECURITY: Blocked unsafe ZIP path: '{member}'")
+            all_success = False
+            continue
+        
+        try:
+            zipf.extract(member, target_dir)
+        except Exception as e:
+            error_messages.append(f"Error extracting '{member}': {e}")
+            logging.error(f"Error extracting '{member}': {e}")
+            all_success = False
+    
+    if blocked_paths:
+        logging.warning(f"Blocked {len(blocked_paths)} potentially malicious paths in ZIP archive")
+    
+    return all_success, blocked_paths, error_messages
+
 
 # --- Profile Management ---
 
@@ -332,15 +420,243 @@ def manage_backups(profile_name, backup_base_dir, max_backups):
         logging.error(f"Error managing outdated (.zip) backups for '{profile_name}': {e}")
     return deleted_files
 
+# --- Backup Helper Functions ---
+
+def _validate_source_paths(paths_to_process: list) -> tuple:
+    """
+    Validate that all source paths exist.
+    
+    Args:
+        paths_to_process: List of normalized paths to validate
+        
+    Returns:
+        Tuple (success: bool, invalid_paths: list)
+    """
+    invalid_paths = []
+    
+    logging.info("Starting path validation")
+    for path in paths_to_process:
+        try:
+            if not os.path.exists(path):
+                invalid_paths.append(path)
+                logging.warning(f"Path does not exist: '{path}'")
+        except OSError as e_os:
+            invalid_paths.append(f"{path} (Error: OSError: {e_os})")
+            logging.error(f"OS error checking path '{path}': {e_os}")
+        except Exception as e_val:
+            invalid_paths.append(f"{path} (Error: {type(e_val).__name__} - {e_val})")
+            logging.error(f"General error checking path '{path}': {e_val}")
+    
+    if invalid_paths:
+        logging.warning(f"Path validation failed: {len(invalid_paths)} invalid path(s)")
+        return False, invalid_paths
+    
+    logging.info("Path validation successful - All paths OK")
+    return True, []
+
+
+def _check_source_size_limit(paths_to_process: list, max_source_size_mb: int) -> tuple:
+    """
+    Check if total source size is within the specified limit.
+    
+    Args:
+        paths_to_process: List of paths to check
+        max_source_size_mb: Maximum allowed size in MB (-1 to skip check)
+        
+    Returns:
+        Tuple (success: bool, error_message: str or None)
+    """
+    logging.info(f"Checking source size for {len(paths_to_process)} path(s) "
+                 f"(Limit: {'None' if max_source_size_mb == -1 else str(max_source_size_mb) + ' MB'})...")
+    
+    if max_source_size_mb == -1:
+        logging.info("Source size check skipped (limit not set).")
+        return True, None
+    
+    max_source_size_bytes = max_source_size_mb * 1024 * 1024
+    total_size_bytes = _get_actual_total_source_size(paths_to_process)
+    
+    if total_size_bytes == -1:
+        return False, "ERROR: Critical error while calculating total source size."
+    
+    current_size_mb = total_size_bytes / (1024 * 1024)
+    logging.info(f"Total source size: {current_size_mb:.2f} MB")
+    
+    if total_size_bytes > max_source_size_bytes:
+        msg = (f"ERROR: Backup cancelled!\n"
+               f"Total source size ({current_size_mb:.2f} MB) exceeds the limit ({max_source_size_mb} MB).")
+        return False, msg
+    
+    return True, None
+
+
+def _get_compression_settings(compression_mode: str) -> tuple:
+    """
+    Get ZIP compression settings based on mode.
+    
+    Args:
+        compression_mode: One of 'standard', 'best', 'fast', 'none'
+        
+    Returns:
+        Tuple (compression_type, compression_level)
+    """
+    if compression_mode == "best":
+        logging.info("Compression Mode: Maximum (Deflate Level 9)")
+        return zipfile.ZIP_DEFLATED, 9
+    elif compression_mode == "fast":
+        logging.info("Compression Mode: Fast (Deflate Level 1)")
+        return zipfile.ZIP_DEFLATED, 1
+    elif compression_mode == "none":
+        logging.info("Compression Mode: None (Store)")
+        return zipfile.ZIP_STORED, None
+    else:  # "standard" or default
+        logging.info("Compression Mode: Standard (Deflate Level 6)")
+        return zipfile.ZIP_DEFLATED, 6
+
+
+def _detect_duckstation_single_file(profile_name: str, source_path: str) -> str:
+    """
+    Detect if this is a DuckStation profile and return the specific .mcd file to backup.
+    
+    DuckStation stores memory card files (.mcd) in a memcards directory.
+    For single-path profiles pointing to this directory, we backup only the specific
+    memory card file matching the profile name.
+    
+    Args:
+        profile_name: Name of the profile
+        source_path: Single source path (must be a directory)
+        
+    Returns:
+        Path to the .mcd file if DuckStation detected, None otherwise
+    """
+    if not os.path.isdir(source_path):
+        logging.debug(f"Single path is a file '{source_path}'. DuckStation logic not applicable.")
+        return None
+    
+    logging.debug("--- DuckStation Detection ---")
+    normalized_save_path = os.path.normpath(source_path).lower()
+    expected_suffix = os.path.join("duckstation", "memcards").lower()
+    
+    logging.debug(f"  Source path: '{source_path}'")
+    logging.debug(f"  Normalized: '{normalized_save_path}'")
+    logging.debug(f"  Expected suffix: '{expected_suffix}'")
+    
+    if not normalized_save_path.endswith(expected_suffix):
+        logging.debug("Single path is not DuckStation memcards directory. Standard backup.")
+        return None
+    
+    # Extract the actual memory card name from profile name
+    actual_card_name = profile_name
+    prefix = "DuckStation - "
+    if profile_name.startswith(prefix):
+        actual_card_name = profile_name[len(prefix):]
+    
+    mcd_filename = actual_card_name + ".mcd"
+    potential_mcd_path = os.path.join(source_path, mcd_filename)
+    
+    logging.debug(f"  Looking for MCD file: '{potential_mcd_path}'")
+    
+    if os.path.isfile(potential_mcd_path):
+        logging.info(f"DuckStation profile detected. Will backup single file: {mcd_filename}")
+        return potential_mcd_path
+    else:
+        logging.warning(f"Path looks like DuckStation memcards, but '{mcd_filename}' not found. "
+                       f"Performing standard directory backup.")
+        return None
+
+
+def _add_directory_to_zip(zipf: zipfile.ZipFile, source_path: str) -> None:
+    """
+    Add all files from a directory to a ZIP archive, preserving structure.
+    
+    Args:
+        zipf: Open ZipFile object in write mode
+        source_path: Path to the directory to add
+    """
+    base_folder_name = os.path.basename(source_path)
+    len_source_path_parent = len(os.path.dirname(source_path)) + len(os.sep)
+    
+    for foldername, subfolders, filenames in os.walk(source_path):
+        for filename in filenames:
+            file_path_absolute = os.path.join(foldername, filename)
+            # arcname preserves the base folder in the archive
+            arcname = file_path_absolute[len_source_path_parent:]
+            
+            logging.debug(f"  Adding file: '{file_path_absolute}' as '{arcname}'")
+            try:
+                zipf.write(file_path_absolute, arcname=arcname)
+            except FileNotFoundError:
+                logging.warning(f"  Skipped file (not found during walk): '{file_path_absolute}'")
+            except Exception as e:
+                logging.error(f"  Error adding file '{file_path_absolute}' to zip: {e}")
+
+
+def _add_single_file_to_zip(zipf: zipfile.ZipFile, source_path: str) -> None:
+    """
+    Add a single file to a ZIP archive, preserving its parent directory structure.
+    
+    Args:
+        zipf: Open ZipFile object in write mode
+        source_path: Path to the file to add
+        
+    Raises:
+        FileNotFoundError: If the source file doesn't exist
+        Exception: For other errors during archiving
+    """
+    source_dir = os.path.dirname(source_path)
+    source_base_dir = os.path.dirname(source_dir)
+    len_source_base_dir = len(source_base_dir) + len(os.sep)
+    
+    # arcname will be: parent_folder/file_name
+    arcname = source_path[len_source_base_dir:]
+    
+    logging.debug(f"Adding file: '{source_path}' as '{arcname}'")
+    zipf.write(source_path, arcname=arcname)
+
+
+def _write_backup_manifest(zipf: zipfile.ZipFile, profile_name: str, 
+                           paths_to_process: list, is_multiple_paths: bool) -> None:
+    """
+    Write a manifest.json file to the ZIP archive for self-description.
+    
+    Args:
+        zipf: Open ZipFile object in write mode
+        profile_name: Name of the profile being backed up
+        paths_to_process: List of source paths
+        is_multiple_paths: Whether this is a multi-path profile
+    """
+    try:
+        manifest_data = {
+            "schema": 1,
+            "app_version": getattr(config, "APP_VERSION", "unknown"),
+            "created_at": datetime.now().isoformat(),
+            "profile_name": profile_name,
+            "paths": paths_to_process,
+            "multiple_paths": is_multiple_paths,
+            "platform": platform.system(),
+        }
+        zipf.writestr("savestate/manifest.json", json.dumps(manifest_data, indent=2, ensure_ascii=False))
+        logging.debug("Added savestate/manifest.json to the backup archive")
+    except Exception as e:
+        logging.warning(f"Unable to write backup manifest.json: {e}")
+
+
 # --- Backup Function ---
 def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max_source_size_mb, compression_mode="standard"):
     """
-    Esegue il backup usando zipfile. Gestisce un singolo percorso (str) o percorsi multipli (list).
-    Restituisce (bool successo, str messaggio).
+    Perform a backup using zipfile. Handles a single path (str) or multiple paths (list).
+    
+    Args:
+        profile_name: Name of the profile to backup
+        source_paths: Single path string or list of paths to backup
+        backup_base_dir: Base directory for storing backups
+        max_backups: Maximum number of backups to keep (-1 for unlimited)
+        max_source_size_mb: Maximum source size in MB (-1 for no limit)
+        compression_mode: 'standard', 'best', 'fast', or 'none'
+        
+    Returns:
+        Tuple (success: bool, message: str)
     """
-    # Import necessari localmente se non sono globali nel modulo
-    import zipfile
-    # import shutil - non serve qui
     logging.info(f"Starting perform_backup for: '{profile_name}'")
     sanitized_folder_name = sanitize_foldername(profile_name)
     profile_backup_dir = os.path.join(backup_base_dir, sanitized_folder_name)
@@ -348,215 +664,67 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
     logging.debug(f"Backup path built: '{profile_backup_dir}'")
 
     is_multiple_paths = isinstance(source_paths, list)
-    # Normalizza tutti i percorsi subito
     paths_to_process = [os.path.normpath(p) for p in (source_paths if is_multiple_paths else [source_paths])]
     logging.debug(f"Paths to process after normalization: {paths_to_process}")
 
-    # --- Validazione Percorsi Sorgente --- 
-    invalid_paths = []
-    paths_ok = True
-
-    logging.info("Starting path validation")
-    for i, path in enumerate(paths_to_process):
-        try:
-            # Specific checks
-            exists = os.path.exists(path)
-            if not exists:
-                paths_ok = False
-                invalid_paths.append(path)
-                logging.warning(f"Path does not exist: '{path}'")
-        except OSError as e_os:
-            error_msg = f"OSError: {e_os}"
-            paths_ok = False
-            invalid_paths.append(f"{path} (Error: {error_msg})")
-            logging.error(f"OS error checking path '{path}': {e_os}")
-        except Exception as e_val:
-            error_msg = f"Exception: {type(e_val).__name__} - {e_val}"
-            paths_ok = False
-            invalid_paths.append(f"{path} (Error: {error_msg})")
-            logging.error(f"General error checking path '{path}': {e_val}")
-
+    # --- Validate source paths ---
+    paths_ok, invalid_paths = _validate_source_paths(paths_to_process)
     if not paths_ok:
-        # Build a clear error message for the user
         error_details = "\n".join(invalid_paths)
-        error_message_for_ui = f"One or more source paths do not exist or caused errors:\n{error_details}"
-        logging.error(f"Backup error '{profile_name}': {error_message_for_ui}")
-        return False, error_message_for_ui # Return the detailed message
-    
-    logging.info("Path validation successful - All paths OK")
-    # --- End Validation --- No additional file/directory checks here ---
+        error_message = f"One or more source paths do not exist or caused errors:\n{error_details}"
+        logging.error(f"Backup error '{profile_name}': {error_message}")
+        return False, error_message
 
- 
-     # --- Source Size Check ---
-    logging.info(f"Checking source size for {len(paths_to_process)} path(s) (Limit: {'None' if max_source_size_mb == -1 else str(max_source_size_mb) + ' MB'})...")
-    total_size_bytes = 0
-    if max_source_size_mb != -1:
-        max_source_size_bytes = max_source_size_mb * 1024 * 1024
-        total_size_bytes = _get_actual_total_source_size(paths_to_process)
+    # --- Check source size limit ---
+    size_ok, size_error = _check_source_size_limit(paths_to_process, max_source_size_mb)
+    if not size_ok:
+        logging.error(size_error)
+        return False, size_error
 
-        if total_size_bytes == -1: # Indicates a critical error in size calculation by helper
-            msg = "ERROR: Critical error while calculating total source size."
-            logging.error(msg)
-            return False, msg
-
-        current_size_mb = total_size_bytes / (1024*1024)
-        logging.info(f"Total source size: {current_size_mb:.2f} MB")
-        if total_size_bytes > max_source_size_bytes:
-            msg = (f"ERROR: Backup cancelled!\n"
-                   f"Total source size ({current_size_mb:.2f} MB) exceeds the limit ({max_source_size_mb} MB).")
-            logging.error(msg)
-            return False, msg
-    else:
-        logging.info("Source size check skipped (limit not set).")
-    # --- END Size Check ---
-
-
-    # --- Creazione Directory Backup ---
+    # --- Create backup directory ---
     try:
         os.makedirs(profile_backup_dir, exist_ok=True)
     except Exception as e:
-        msg = f"ERROR: Unable to create backup directory'{profile_backup_dir}': {e}"
+        msg = f"ERROR: Unable to create backup directory '{profile_backup_dir}': {e}"
         logging.error(msg, exc_info=True)
         return False, msg
-    # --- FINE Creazione Directory ---
 
-
-    # --- Creazione Archivio ZIP ---
+    # --- Prepare ZIP archive ---
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_profile_name_for_zip = sanitize_foldername(profile_name) # Usa nome profilo per nome file zip
-    archive_name = f"Backup_{safe_profile_name_for_zip}_{timestamp}.zip"
+    archive_name = f"Backup_{sanitized_folder_name}_{timestamp}.zip"
     archive_path = os.path.join(profile_backup_dir, archive_name)
 
-    logging.info(f"Backup startup (ZIP) for '{profile_name}': From {len(paths_to_process)} source/s to '{archive_path}'")
+    logging.info(f"Creating backup for '{profile_name}': {len(paths_to_process)} source(s) -> '{archive_path}'")
 
-    zip_compression = zipfile.ZIP_DEFLATED
-    zip_compresslevel = 6 # Default Standard
-
-    if compression_mode == "best":
-        zip_compresslevel = 9
-        logging.info("Compression Mode: Maximum (Deflate Level 9)")
-    elif compression_mode == "fast":
-        zip_compresslevel = 1
-        logging.info("Compression Mode: Fast (Deflate Level 1)")
-    elif compression_mode == "none":
-        zip_compression = zipfile.ZIP_STORED
-        zip_compresslevel = None # Non applicabile per STORED
-        logging.info("Compression Mode: None (Store)")
-    else: # "standard" or default
-        logging.info("Compression Mode: Standard (Deflate Level 6)")
+    zip_compression, zip_compresslevel = _get_compression_settings(compression_mode)
 
 
     try:
         with zipfile.ZipFile(archive_path, 'w', compression=zip_compression, compresslevel=zip_compresslevel) as zipf:
-            # Scrivi un manifest leggero per rendere il backup auto-descrittivo
-            try:
-                manifest_data = {
-                    "schema": 1,
-                    "app_version": getattr(config, "APP_VERSION", "unknown"),
-                    "created_at": datetime.now().isoformat(),
-                    "profile_name": profile_name,
-                    "paths": paths_to_process,
-                    "multiple_paths": is_multiple_paths,
-                    "platform": platform.system(),
-                }
-                zipf.writestr("savestate/manifest.json", json.dumps(manifest_data, indent=2, ensure_ascii=False))
-                logging.debug("Added savestate/manifest.json to the backup archive")
-            except Exception as e_manifest:
-                logging.warning(f"Unable to write backup manifest.json: {e_manifest}")
+            # Write manifest for self-describing backup
+            _write_backup_manifest(zipf, profile_name, paths_to_process, is_multiple_paths)
 
-            # --- Logica Specifica DuckStation (SOLO se NON multi-percorso) --- START
-            is_duckstation_single_file = False
-            specific_mcd_file_to_backup = None
+            # Check for DuckStation single-file backup (only for single-path profiles)
+            duckstation_mcd_file = None
             if not is_multiple_paths:
-                 single_source_path = paths_to_process[0] # C'è solo un percorso
-                 if os.path.isdir(single_source_path): # Controlla solo se è una directory
-                    logging.debug(f"--- DuckStation Control (Single Path Mode - Directory) ---")
-                    normalized_save_path = os.path.normpath(single_source_path).lower()
-                    expected_suffix = os.path.join("duckstation", "memcards").lower()
-                    logging.debug(f"  Single source path: '{single_source_path}'")
-                    logging.debug(f"  Normalized: '{normalized_save_path}'")
-                    logging.debug(f"  Expected suffix: '{expected_suffix}'")
+                duckstation_mcd_file = _detect_duckstation_single_file(profile_name, paths_to_process[0])
 
-                    if normalized_save_path.endswith(expected_suffix):
-                         actual_card_name = profile_name # Usa il nome profilo come base
-                         prefix = "DuckStation - "
-                         if profile_name.startswith(prefix):
-                             actual_card_name = profile_name[len(prefix):] # Estrai nome reale carta
-                         mcd_filename = actual_card_name + ".mcd"
-                         potential_mcd_path = os.path.join(single_source_path, mcd_filename)
-                         logging.debug(f"  Potential MCD Pathway: '{potential_mcd_path}'")
-                         if os.path.isfile(potential_mcd_path):
-                             is_duckstation_single_file = True
-                             specific_mcd_file_to_backup = potential_mcd_path
-                             logging.info(f"DuckStation profile detected. Preparing single file backup: {mcd_filename}")
-                         else:
-                             logging.warning(f"The path looks like DuckStation memcards, but the specific file '{mcd_filename}' not found in '{single_source_path}'. performing standard directory backups.")
-                    else:
-                         logging.debug(f"Single path is not DuckStation memcards directory. I do standard backups.")
-                 elif os.path.isfile(single_source_path):
-                      logging.debug(f"Single path is a file '{single_source_path}'. Don't applyg DuckStation logic.")
-                 # --- Logica Specifica DuckStation --- END
-
-            # --- Esecuzione Backup ---
-            if is_duckstation_single_file and specific_mcd_file_to_backup:
-                 # Backup solo del file .mcd specifico per DuckStation
-                 try:
-                     mcd_arcname = os.path.basename(specific_mcd_file_to_backup) # Nome file nello zip
-                     logging.debug(f"Adding DuckStation Single File: '{specific_mcd_file_to_backup}' as '{mcd_arcname}'")
-                     zipf.write(specific_mcd_file_to_backup, arcname=mcd_arcname)
-                     logging.info(f"Single file successfully added {mcd_arcname} to the archive.")
-                 except FileNotFoundError:
-                     logging.error(f"  CRITICAL ERROR: DuckStation .mcd file disappeared during backup: '{specific_mcd_file_to_backup}'")
-                     raise # Propaga l'errore per annullare il backup
-                 except Exception as e_write:
-                     logging.error(f"  Error adding DuckStation file '{specific_mcd_file_to_backup}' to the zip: {e_write}", exc_info=True)
-                     raise # Propaga l'errore
+            # --- Execute Backup ---
+            if duckstation_mcd_file:
+                # DuckStation: backup only the specific .mcd file
+                mcd_arcname = os.path.basename(duckstation_mcd_file)
+                logging.debug(f"Adding DuckStation file: '{duckstation_mcd_file}' as '{mcd_arcname}'")
+                zipf.write(duckstation_mcd_file, arcname=mcd_arcname)
+                logging.info(f"DuckStation file '{mcd_arcname}' added to archive.")
             else:
-                 # Standard Backup: Process all paths in the list (or the single one)
-                 logging.debug(f"Executing standard backup for {len(paths_to_process)} path(s).")
-                 for source_path in paths_to_process:
-                     logging.debug(f"Processing source path: {source_path}")
-                     if os.path.isdir(source_path):
-                         # Add the directory content
-                         base_folder_name = os.path.basename(source_path) # Folder name (e.g. SAVEDATA)
-                         len_source_path_parent = len(os.path.dirname(source_path)) + len(os.sep)
-
-                         for foldername, subfolders, filenames in os.walk(source_path):
-                             for filename in filenames:
-                                 file_path_absolute = os.path.join(foldername, filename)
-                                 # Create arcname: base_folder_name / internal_relative_path
-                                 # Example: SAVEDATA/file.txt
-                                 relative_path = file_path_absolute[len_source_path_parent:]
-                                 arcname = relative_path # Already includes the base folder in the calculated relative path
-                                 logging.debug(f"  Adding file: '{file_path_absolute}' as '{arcname}'")
-                                 try:
-                                      zipf.write(file_path_absolute, arcname=arcname)
-                                 except FileNotFoundError:
-                                      logging.warning(f"  Skipped file (not found during walk?): '{file_path_absolute}'")
-                                 except Exception as e_write_walk:
-                                      logging.error(f"  Error adding file '{file_path_absolute}' to zip during walk: {e_write_walk}")
-                     elif os.path.isfile(source_path):
-                         # --- Modified Logic for Single Files (in list or not) ---
-                         # Calculate arcname to preserve relative structure, as os.walk does
-                         source_dir = os.path.dirname(source_path)
-                         # Use the PARENT directory of the file's directory as the base for arcname
-                         # to include the file's directory itself in the archive.
-                         source_base_dir = os.path.dirname(source_dir)
-                         len_source_base_dir = len(source_base_dir) + len(os.sep)
-
-                         # arcname will be: file_folder_name/file_name.bin
-                         # Example: 00000001/GC_S00.bin
-                         arcname = source_path[len_source_base_dir:]
-
-                         logging.debug(f"Adding file (from list/single): '{source_path}' as '{arcname}'")
-                         try:
-                             zipf.write(source_path, arcname=arcname)
-                         except FileNotFoundError:
-                              logging.error(f"  CRITICAL ERROR: Source file disappeared during backup: '{source_path}'")
-                              raise # Propagate to cancel
-                         except Exception as e_write_single:
-                              logging.error(f"  Error adding file '{source_path}' to zip: {e_write_single}", exc_info=True)
-                              raise # Propagate to cancel
+                # Standard backup: process all paths
+                logging.debug(f"Executing standard backup for {len(paths_to_process)} path(s).")
+                for source_path in paths_to_process:
+                    logging.debug(f"Processing source path: {source_path}")
+                    if os.path.isdir(source_path):
+                        _add_directory_to_zip(zipf, source_path)
+                    elif os.path.isfile(source_path):
+                        _add_single_file_to_zip(zipf, source_path)
 
         logging.info(f"Backup archive created successfully: '{archive_path}'")
 
@@ -620,240 +788,349 @@ def list_available_backups(profile_name, backup_base_dir):
 
     return backups
 
+# --- Restore Helper Functions ---
+
+def _validate_restore_archive(archive_path: str) -> tuple:
+    """
+    Validate that the archive exists and is a valid ZIP file.
+    
+    Args:
+        archive_path: Path to the archive file
+        
+    Returns:
+        Tuple (success: bool, error_message: str or None)
+    """
+    if not os.path.isfile(archive_path):
+        return False, f"ERROR: Restore archive not found: '{archive_path}'"
+    
+    if not zipfile.is_zipfile(archive_path):
+        return False, f"ERROR: The selected file is not a valid ZIP archive: '{archive_path}'"
+    
+    return True, None
+
+
+def _cleanup_destination_path(dest_path: str) -> tuple:
+    """
+    Clean up a single destination path before restoration.
+    Creates parent directories if needed and removes existing content.
+    
+    Args:
+        dest_path: The destination path to clean up
+        
+    Returns:
+        Tuple (success: bool, error_message: str or None)
+    """
+    # Ensure the parent directory exists
+    parent_dir = os.path.dirname(dest_path)
+    try:
+        if parent_dir and not os.path.exists(parent_dir):
+            logging.info(f"Creating missing parent directory: '{parent_dir}'")
+            os.makedirs(parent_dir, exist_ok=True)
+    except Exception as e:
+        return False, f"ERROR creating parent directory '{parent_dir}': {e}"
+
+    # Clean existing content
+    if os.path.isdir(dest_path):
+        logging.warning(f"Removing contents of existing directory: '{dest_path}'")
+        try:
+            for item in os.listdir(dest_path):
+                item_path = os.path.join(dest_path, item)
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                    logging.debug(f"  Removed subdirectory: {item_path}")
+                elif os.path.isfile(item_path):
+                    os.remove(item_path)
+                    logging.debug(f"  Removed file: {item_path}")
+            logging.info(f"Contents of '{dest_path}' successfully cleaned.")
+        except Exception as e:
+            return False, f"ERROR during cleanup of destination directory '{dest_path}': {e}"
+    
+    elif os.path.isfile(dest_path):
+        logging.warning(f"Removing existing single file: '{dest_path}'")
+        try:
+            os.remove(dest_path)
+            logging.info(f"Single file successfully removed: '{dest_path}'")
+        except FileNotFoundError:
+            logging.info(f"Destination file '{dest_path}' did not exist, no removal necessary.")
+        except Exception as e:
+            return False, f"ERROR removing destination file '{dest_path}': {e}"
+    else:
+        logging.info(f"Destination path '{dest_path}' does not exist (will be created).")
+    
+    return True, None
+
+
+def _cleanup_all_destination_paths(paths_to_process: list) -> tuple:
+    """
+    Clean up all destination paths before restoration.
+    
+    Args:
+        paths_to_process: List of destination paths
+        
+    Returns:
+        Tuple (success: bool, error_message: str or None)
+    """
+    logging.warning("--- Preparing to clean destination path(s) before restore ---")
+    
+    for dest_path in paths_to_process:
+        success, error = _cleanup_destination_path(dest_path)
+        if not success:
+            logging.error(error, exc_info=True)
+            return False, error
+    
+    logging.warning("--- Destination cleanup completed ---")
+    return True, None
+
+
+def _find_zip_base_folders(zipf: zipfile.ZipFile, dest_map: dict) -> bool:
+    """
+    Check if the ZIP contains base folders matching the destination map.
+    
+    Args:
+        zipf: Open ZipFile object
+        dest_map: Dictionary mapping base folder names to destination paths
+        
+    Returns:
+        True if matching base folders found, False otherwise
+    """
+    for member in zipf.namelist():
+        normalized_path = member.replace('/', os.sep)
+        path_parts = normalized_path.split(os.sep, 1)
+        if len(path_parts) > 0:
+            base_folder = path_parts[0]
+            if base_folder in dest_map:
+                logging.debug(f"Found matching base folder: '{base_folder}' in ZIP member: '{member}'")
+                return True
+    return False
+
+
+def _find_zip_matching_filenames(zipf: zipfile.ZipFile, paths_to_process: list) -> bool:
+    """
+    Check if the ZIP contains files matching destination filenames directly.
+    
+    Args:
+        zipf: Open ZipFile object
+        paths_to_process: List of destination paths
+        
+    Returns:
+        True if matching filenames found, False otherwise
+    """
+    zip_members = zipf.namelist()
+    for dest_path in paths_to_process:
+        dest_filename = os.path.basename(dest_path)
+        for member in zip_members:
+            normalized_m = member.replace('/', os.sep)
+            if normalized_m.endswith(os.sep + dest_filename) or normalized_m == dest_filename:
+                logging.debug(f"Found matching filename: '{dest_filename}' in ZIP member: '{member}'")
+                return True
+    return False
+
+
+def _extract_by_filename_matching(zipf: zipfile.ZipFile, paths_to_process: list) -> tuple:
+    """
+    Extract files from ZIP by matching filenames to destination paths.
+    Used as fallback when base folder matching fails.
+    
+    Args:
+        zipf: Open ZipFile object
+        paths_to_process: List of destination paths
+        
+    Returns:
+        Tuple (success: bool, error_message: str or None)
+    """
+    logging.warning("Base folders not found in ZIP. Trying alternative extraction method based on filenames.")
+    
+    filename_to_dest = {os.path.basename(p): p for p in paths_to_process}
+    logging.debug(f"Filename to destination map: {filename_to_dest}")
+    
+    zip_filename_to_path = {os.path.basename(m.replace('/', os.sep)): m for m in zipf.namelist()}
+    logging.debug(f"ZIP filename to path map: {zip_filename_to_path}")
+    
+    matches_found = False
+    for filename, dest_path in filename_to_dest.items():
+        if filename in zip_filename_to_path:
+            matches_found = True
+            zip_path = zip_filename_to_path[filename]
+            logging.info(f"Found match: {filename} in ZIP as {zip_path}")
+            
+            # Security check: verify zip_path doesn't contain path traversal
+            if '..' in zip_path or zip_path.startswith('/') or zip_path.startswith('\\'):
+                msg = f"SECURITY: Blocked suspicious ZIP path: '{zip_path}'"
+                logging.error(msg)
+                return False, msg
+            
+            try:
+                dest_dir = os.path.dirname(dest_path)
+                if dest_dir and not os.path.exists(dest_dir):
+                    os.makedirs(dest_dir, exist_ok=True)
+                
+                with zipf.open(zip_path) as source, open(dest_path, 'wb') as target:
+                    shutil.copyfileobj(source, target)
+                logging.info(f"Successfully extracted {zip_path} to {dest_path}")
+            except Exception as e:
+                logging.error(f"Error extracting {zip_path} to {dest_path}: {e}")
+                return False, f"Error during alternative extraction method: {e}"
+    
+    if matches_found:
+        return True, None
+    
+    return False, "No matching files found"
+
+
+def _extract_member_to_destination(zipf: zipfile.ZipFile, member_path: str, 
+                                    dest_map: dict, error_messages: list) -> bool:
+    """
+    Extract a single ZIP member to its corresponding destination.
+    
+    Args:
+        zipf: Open ZipFile object
+        member_path: Path of the member inside the ZIP
+        dest_map: Dictionary mapping base folder names to destination paths
+        error_messages: List to append error messages to
+        
+    Returns:
+        True if extraction succeeded, False otherwise
+    """
+    normalized_member_path = member_path.replace('/', os.sep)
+    
+    try:
+        zip_base_folder = normalized_member_path.split(os.sep, 1)[0]
+    except IndexError:
+        logging.warning(f"Skipping member with invalid path format: '{member_path}'")
+        return True  # Not an error, just skip
+    
+    if zip_base_folder not in dest_map:
+        logging.warning(f"ZIP member '{member_path}' (base: '{zip_base_folder}') "
+                       f"doesn't match any destination ({list(dest_map.keys())}). Skipping.")
+        return True  # Not an error, just skip
+    
+    target_dest_path_base = dest_map[zip_base_folder]
+    relative_path = normalized_member_path[len(zip_base_folder):].lstrip(os.sep)
+    full_extract_path = os.path.join(target_dest_path_base, relative_path)
+    
+    # Security check: Zip Slip protection
+    if not _is_safe_zip_path(relative_path, target_dest_path_base):
+        msg = f"SECURITY: Blocked unsafe ZIP path (potential path traversal): '{member_path}'"
+        logging.error(msg)
+        error_messages.append(msg)
+        return False
+    
+    # Handle directories
+    if member_path.endswith('/') or member_path.endswith('\\'):
+        if relative_path:
+            logging.debug(f"  Creating directory from zip: {full_extract_path}")
+            os.makedirs(full_extract_path, exist_ok=True)
+        return True
+    
+    # Handle files
+    file_dir = os.path.dirname(full_extract_path)
+    if file_dir and not os.path.exists(file_dir):
+        logging.debug(f"  Creating directory for file: {file_dir}")
+        os.makedirs(file_dir, exist_ok=True)
+    
+    try:
+        with zipf.open(member_path) as source, open(full_extract_path, 'wb') as target:
+            shutil.copyfileobj(source, target)
+        logging.debug(f"  Extracted file {member_path} -> {full_extract_path}")
+        return True
+    except Exception as e:
+        msg = f"ERROR extracting file '{member_path}' to '{full_extract_path}': {e}"
+        logging.error(msg, exc_info=True)
+        error_messages.append(msg)
+        return False
+
+
 # --- Restore Function ---
 def perform_restore(profile_name, destination_paths, archive_to_restore_path):
     """
-    Performs restoration from a ZIP archive. Handles a single path (str) or multiple paths (list).
-    Returns (bool success, str message).
+    Perform restoration from a ZIP archive. Handles a single path (str) or multiple paths (list).
+    
+    Args:
+        profile_name: Name of the profile being restored
+        destination_paths: Single path string or list of destination paths
+        archive_to_restore_path: Path to the backup archive
+        
+    Returns:
+        Tuple (success: bool, message: str)
     """
-    # Necessary imports locally if they are not global in the module
-    import zipfile
-    import shutil
     logging.info(f"Starting perform_restore for profile: '{profile_name}'")
     logging.info(f"Archive selected for restoration: '{archive_to_restore_path}'")
 
-
     is_multiple_paths = isinstance(destination_paths, list)
-    # Normalize all paths immediately
     paths_to_process = [os.path.normpath(p) for p in (destination_paths if is_multiple_paths else [destination_paths])]
-
     logging.info(f"Target destination path(s): {paths_to_process}")
 
-    # --- Archive Validation ---
-    if not os.path.isfile(archive_to_restore_path):
-        msg = f"ERROR: Restore archive not found: '{archive_to_restore_path}'"
-        logging.error(msg)
-        return False, msg
-    if not zipfile.is_zipfile(archive_to_restore_path):
-        msg = f"ERROR: The selected file is not a valid ZIP archive: '{archive_to_restore_path}'"
-        logging.error(msg)
-        return False, msg
-    # --- END Validation ---
+    # --- Validate archive ---
+    archive_ok, archive_error = _validate_restore_archive(archive_to_restore_path)
+    if not archive_ok:
+        logging.error(archive_error)
+        return False, archive_error
 
-    # --- Destination Cleanup (before extraction) ---
-    logging.warning(f"--- Preparing to clean destination path(s) before restore ---")
-    for dest_path in paths_to_process:
-        # Ensure the parent directory exists for the destination path
-        parent_dir = os.path.dirname(dest_path)
-        try:
-            if parent_dir and not os.path.exists(parent_dir):
-                 logging.info(f"Creating missing parent directory: '{parent_dir}'")
-                 os.makedirs(parent_dir, exist_ok=True)
-        except Exception as e_mkdir:
-             msg = f"ERROR creating parent directory '{parent_dir}' for destination '{dest_path}': {e_mkdir}"
-             logging.error(msg, exc_info=True)
-             # Consider whether to stop here? For now, log and continue.
-             # return False, msg
+    # --- Clean destination paths ---
+    cleanup_ok, cleanup_error = _cleanup_all_destination_paths(paths_to_process)
+    if not cleanup_ok:
+        return False, cleanup_error
 
-        # Check what to do with the existing destination path
-        if os.path.isdir(dest_path):
-            logging.warning(f"Attempting to remove contents of existing directory: '{dest_path}'")
-            try:
-                for item in os.listdir(dest_path):
-                    item_path = os.path.join(dest_path, item)
-                    if os.path.isdir(item_path):
-                        shutil.rmtree(item_path)
-                        logging.debug(f"  Removed subdirectory: {item_path}")
-                    elif os.path.isfile(item_path):
-                        os.remove(item_path)
-                        logging.debug(f"  Removed file: {item_path}")
-                logging.info(f"Contents of '{dest_path}' successfully cleaned.")
-            except Exception as e:
-                msg = f"ERROR during cleanup of destination directory '{dest_path}': {e}"
-                logging.error(msg, exc_info=True)
-                return False, msg
-        elif os.path.isfile(dest_path): # Handles the case of single file destination (e.g. Duckstation .mcd)
-             logging.warning(f"Attempting to remove existing single file: '{dest_path}'")
-             try:
-                 os.remove(dest_path)
-                 logging.info(f"Single file successfully removed: '{dest_path}'")
-             except FileNotFoundError:
-                 logging.info(f"Destination file '{dest_path}' did not exist, no removal necessary.")
-             except Exception as e:
-                 msg = f"ERROR removing destination file '{dest_path}': {e}"
-                 logging.error(msg, exc_info=True)
-                 return False, msg
-        else:
-             # The path doesn't exist, will be created by extraction if necessary
-             logging.info(f"Destination path '{dest_path}' does not exist.")
-    logging.warning(f"--- Destination cleanup completed ---")
-    # --- END Cleanup ---
-
-    # --- Estrazione Archivio ---
-    logging.info(f"Start extraction from '{archive_to_restore_path}'...")
+    # --- Archive Extraction ---
+    logging.info(f"Starting extraction from '{archive_to_restore_path}'...")
     extracted_successfully = True
     error_messages = []
 
     try:
         with zipfile.ZipFile(archive_to_restore_path, 'r') as zipf:
+            zip_members = zipf.namelist()
+            logging.debug(f"ZIP contains {len(zip_members)} members. First 10: {zip_members[:10]}")
 
-            # --- Differentiated extraction logic ---
             if is_multiple_paths:
                 # --- Multi-Path Extraction ---
                 logging.debug("Multi-path restore: Mapping zip content to destination paths.")
-                # Create a map: base folder name (in zip) -> complete destination path
                 dest_map = {os.path.basename(p): p for p in paths_to_process}
                 logging.debug(f"Destination map created: {dest_map}")
 
-                # Check if the zip contains base folders (e.g. 'SAVEDATA/', 'SYSTEM/')
-                # Improved cross-platform compatibility for path checking
-                zip_members = zipf.namelist()
-                logging.debug(f"ZIP contains {len(zip_members)} members. First 10: {zip_members[:10]}")
-                
-                # More robust check that works on both Windows and Linux
-                zip_contains_base_folders = False
-                for m in zip_members:
-                    # Normalize path separators for the current OS
-                    normalized_path = m.replace('/', os.sep)
-                    # Split the path to get the base folder
-                    path_parts = normalized_path.split(os.sep, 1)
-                    if len(path_parts) > 0:
-                        base_folder = path_parts[0]
-                        if base_folder in dest_map:
-                            zip_contains_base_folders = True
-                            logging.debug(f"Found matching base folder: '{base_folder}' in ZIP member: '{m}'")
-                            break
-                
-                logging.debug(f"Does the zip contain base folders matching the destinations? {zip_contains_base_folders}")
+                # Check extraction strategy
+                zip_has_base_folders = _find_zip_base_folders(zipf, dest_map)
+                zip_has_matching_filenames = _find_zip_matching_filenames(zipf, paths_to_process)
 
-                # Independently check if any ZIP entry matches destination filenames directly
-                zip_contains_any_dest_filenames = False
-                if len(zip_members) > 0:
-                    logging.debug("Checking if any ZIP members match destination filenames directly.")
-                    for dest_path in paths_to_process:
-                        dest_filename = os.path.basename(dest_path)
-                        for m in zip_members:
-                            normalized_m = m.replace('/', os.sep)
-                            if normalized_m.endswith(os.sep + dest_filename) or normalized_m == dest_filename:
-                                zip_contains_any_dest_filenames = True
-                                logging.debug(f"Found matching filename: '{dest_filename}' in ZIP member: '{m}'")
-                                break
-                        if zip_contains_any_dest_filenames:
-                            break
+                logging.debug(f"ZIP has base folders: {zip_has_base_folders}, has matching filenames: {zip_has_matching_filenames}")
 
-                if (not zip_contains_base_folders) and zip_contains_any_dest_filenames:
-                    # Nuovo codice: prova a trovare i file basandosi sul nome file finale
-                    logging.warning("Base folders not found in ZIP. Trying alternative extraction method based on filenames.")
-                    
-                    # Crea una mappa dei nomi file (senza percorso) alle destinazioni complete
-                    filename_to_dest = {os.path.basename(p): p for p in paths_to_process}
-                    logging.debug(f"Filename to destination map: {filename_to_dest}")
-                    
-                    # Crea una mappa dei nomi file (senza percorso) ai percorsi completi nel ZIP
-                    zip_files = zipf.namelist()
-                    zip_filename_to_path = {os.path.basename(m.replace('/', os.sep)): m for m in zip_files}
-                    logging.debug(f"ZIP filename to path map: {zip_filename_to_path}")
-                    
-                    # Verifica se possiamo trovare corrispondenze
-                    matches_found = False
-                    for filename, dest_path in filename_to_dest.items():
-                        if filename in zip_filename_to_path:
-                            matches_found = True
-                            zip_path = zip_filename_to_path[filename]
-                            logging.info(f"Found match: {filename} in ZIP as {zip_path}")
-                            
-                            # Estrai il file
-                            try:
-                                # Assicurati che la directory di destinazione esista
-                                dest_dir = os.path.dirname(dest_path)
-                                if dest_dir and not os.path.exists(dest_dir):
-                                    os.makedirs(dest_dir, exist_ok=True)
-                                    
-                                # Estrai il file
-                                with zipf.open(zip_path) as source, open(dest_path, 'wb') as target:
-                                    shutil.copyfileobj(source, target)
-                                logging.info(f"Successfully extracted {zip_path} to {dest_path}")
-                            except Exception as e:
-                                logging.error(f"Error extracting {zip_path} to {dest_path}: {e}")
-                                return False, f"Error during alternative extraction method: {e}"
-                    
-                    if matches_found:
-                        return True, f"Restore completed successfully using alternative extraction method."
-                    
-                    # Se arriviamo qui, non abbiamo trovato corrispondenze
-                    msg = "ERROR: Multi-path restore failed. ZIP does not contain expected base folders nor matching filenames for destinations."
+                # Try alternative filename-based extraction if base folders not found
+                if not zip_has_base_folders and zip_has_matching_filenames:
+                    alt_success, alt_error = _extract_by_filename_matching(zipf, paths_to_process)
+                    if alt_success:
+                        return True, "Restore completed successfully using alternative extraction method."
+                    elif alt_error and alt_error != "No matching files found":
+                        return False, alt_error
+                    # If no matches found, fall through to error below
+
+                # If we can't find base folders, fail with clear error
+                if not zip_has_base_folders:
+                    msg = ("ERROR: Multi-path restore failed. ZIP does not contain expected "
+                           "base folders nor matching filenames for destinations.")
                     logging.error(msg)
-                    logging.error(f"Archive members (example): {zipf.namelist()[:10]}")
-                    logging.error(f"Expected destination map: {dest_map}")
+                    logging.error(f"Archive members (sample): {zip_members[:10]}")
+                    logging.error(f"Expected destinations: {list(dest_map.keys())}")
                     return False, msg
 
-                # Extract member by member to the correct destination
-                for member_path in zipf.namelist():
-                    normalized_member_path = member_path.replace('/', os.sep)
-                    try:
-                        # Get the base part of the path in the zip (e.g. 'SAVEDATA')
-                        zip_base_folder = normalized_member_path.split(os.sep, 1)[0]
-                    except IndexError:
-                        logging.warning(f"Skipping member with potentially invalid path format: '{member_path}'")
-                        continue
+                # Standard multi-path extraction
+                for member_path in zip_members:
+                    if not _extract_member_to_destination(zipf, member_path, dest_map, error_messages):
+                        extracted_successfully = False
 
-                    if zip_base_folder in dest_map:
-                        target_dest_path_base = dest_map[zip_base_folder]
-                        # Get the relative path *inside* the base folder (e.g. 'file.txt' from 'SAVEDATA/file.txt')
-                        relative_path = normalized_member_path[len(zip_base_folder):].lstrip(os.sep)
-                        # Build the complete extraction path
-                        full_extract_path = os.path.join(target_dest_path_base, relative_path)
-
-                        # Ensure the directory for the file exists before extracting
-                        if member_path.endswith('/') or member_path.endswith('\\'): # It's a directory in the zip
-                            if relative_path: # Avoid creating '.' if the relative path is empty
-                                logging.debug(f"  Creating directory from zip: {full_extract_path}")
-                                os.makedirs(full_extract_path, exist_ok=True)
-                        else: # It's a file
-                            file_dir = os.path.dirname(full_extract_path)
-                            if file_dir and not os.path.exists(file_dir): # Ensure it's not empty and create it if it doesn't exist
-                                logging.debug(f"  Creating directory for file: {file_dir}")
-                                os.makedirs(file_dir, exist_ok=True)
-                            try:
-                                # Extract the single file overwriting if it exists
-                                with zipf.open(member_path) as source, open(full_extract_path, 'wb') as target:
-                                    shutil.copyfileobj(source, target)
-                                logging.debug(f"  Extracted file {member_path} -> {full_extract_path}")
-                            except Exception as e_file:
-                                msg = f"ERROR extracting file '{member_path}' to '{full_extract_path}': {e_file}"
-                                logging.error(msg, exc_info=True)
-                                error_messages.append(msg)
-                                extracted_successfully = False # Mark partial failure
-                    else:
-                        # This member doesn't belong to any of the expected base folders
-                        msg = f"WARNING: Zip member '{member_path}' (base: '{zip_base_folder}') doesn't match any expected destination ({list(dest_map.keys())}). Skipping."
-                        logging.warning(msg)
-                        # Consider whether to treat this as an error: error_messages.append(msg); extracted_successfully = False
-
-            else: # Single Path Extraction
-                # --- Single Path Extraction --- (Use extractall for simplicity)
+            else:
+                # --- Single Path Extraction ---
                 single_dest_path = paths_to_process[0]
-                # Ensure the destination directory exists (should already exist from cleanup, but double-check)
                 os.makedirs(single_dest_path, exist_ok=True)
                 logging.debug(f"Single path restore: Extracting all content to '{single_dest_path}'")
-                try:
-                    zipf.extractall(single_dest_path)
-                    logging.info(f"Content successfully extracted to '{single_dest_path}'")
-                except Exception as e_extractall:
-                    msg = f"ERROR during extractall to '{single_dest_path}': {e_extractall}"
-                    logging.error(msg, exc_info=True)
-                    error_messages.append(msg)
+
+                success, blocked, extract_errors = _safe_extractall(zipf, single_dest_path)
+                if blocked:
+                    error_messages.append(f"SECURITY: Blocked {len(blocked)} potentially malicious paths")
                     extracted_successfully = False
+                if extract_errors:
+                    error_messages.extend(extract_errors)
+                    extracted_successfully = False
+                if success:
+                    logging.info(f"Content successfully extracted to '{single_dest_path}'")
 
     except zipfile.BadZipFile:
         msg = f"ERROR: The file is not a valid ZIP archive or is corrupted: '{archive_to_restore_path}'"
