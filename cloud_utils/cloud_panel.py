@@ -1089,13 +1089,17 @@ class CloudSavePanel(QWidget):
         
         # Column 2: Profile (use backup name as profile name)
         profile_name = backup_info['profile']
+        folder_name = backup_info.get('name', profile_name)  # Actual folder name on disk (sanitized)
         is_known = backup_info.get('is_known_profile', False)
         is_favorite = backup_info.get('is_favorite', False)
         
+        display_name = profile_name
         if is_favorite:
-            profile_name = "★ " + profile_name
+            display_name = "★ " + profile_name
         
-        profile_item = QTableWidgetItem(profile_name)
+        profile_item = QTableWidgetItem(display_name)
+        # Store the actual folder name as UserRole data for use in operations
+        profile_item.setData(Qt.ItemDataRole.UserRole, folder_name)
         profile_item.setFlags(profile_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         if is_known:
             profile_item.setForeground(QColor("#4CAF50"))  # Green for known profiles
@@ -2191,17 +2195,24 @@ class CloudSavePanel(QWidget):
         self._refresh_cloud_status()
     
     def _get_selected_backups(self):
-        """Get list of selected backup names."""
+        """Get list of selected backup folder names (sanitized names for file operations)."""
         selected = []
         for row in range(self.backup_table.rowCount()):
             checkbox_widget = self.backup_table.cellWidget(row, 0)
             if checkbox_widget:
                 checkbox = checkbox_widget.findChild(QCheckBox)
                 if checkbox and checkbox.isChecked():
-                    # Column 2 now contains the profile name
+                    # Column 2 contains the profile name; UserRole data contains actual folder name
                     name_item = self.backup_table.item(row, 2)
                     if name_item:
-                        selected.append(name_item.text())
+                        # Get the actual folder name from UserRole data (sanitized name)
+                        folder_name = name_item.data(Qt.ItemDataRole.UserRole)
+                        if not folder_name:
+                            # Fallback to displayed text if no data (shouldn't happen)
+                            folder_name = name_item.text()
+                            if folder_name.startswith("★ "):
+                                folder_name = folder_name[2:]  # Remove star prefix
+                        selected.append(folder_name)
         return selected
     
     def _on_exit_clicked(self):
