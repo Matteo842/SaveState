@@ -19,6 +19,7 @@ from cloud_utils.google_drive_manager import get_drive_manager, StorageCheckWork
 import cloud_settings_manager
 from utils import resource_path
 from gui_components import favorites_manager
+from core_logic import sanitize_foldername
 
 
 class AuthWorker(QObject):
@@ -478,6 +479,12 @@ class CloudSavePanel(QWidget):
         self._refresh_cooldown_active = False
         self._refresh_cooldown_seconds = 3  # 3 seconds cooldown
         
+        # Sorting state for table headers (like Windows Explorer)
+        # None = default sorting (favorites first, then alphabetical)
+        # Otherwise: (column_index, ascending: bool)
+        self._sort_column = None  # Column index being sorted (1=State, 2=Profile, 3=Local, 4=Cloud)
+        self._sort_ascending = True  # True = ascending (A-Z, ▲), False = descending (Z-A, ▼)
+        
         # Use stacked widget to switch between main panel and settings
         self.stacked_widget = QStackedWidget(self)
         
@@ -640,6 +647,19 @@ class CloudSavePanel(QWidget):
         self.backup_table.setColumnWidth(0, 50)  # Slightly wider for checkbox
         self.backup_table.setColumnWidth(1, 60)  # Wider for icons with padding
         
+        # Enable clickable headers for sorting (like Windows Explorer)
+        header.setSectionsClickable(True)
+        header.sectionClicked.connect(self._on_header_clicked)
+        # Style the header to show it's clickable
+        header.setStyleSheet("""
+            QHeaderView::section {
+                padding: 6px;
+            }
+            QHeaderView::section:hover {
+                background-color: #3a3a3a;
+            }
+        """)
+        
         list_layout.addWidget(self.backup_table)
         list_group.setLayout(list_layout)
         main_layout.addWidget(list_group, stretch=1)
@@ -784,6 +804,47 @@ class CloudSavePanel(QWidget):
         self.cached_local_backups = local_backups
         self._repopulate_table()
 
+    def _on_header_clicked(self, logical_index):
+        """Handle click on table header for sorting (like Windows Explorer)."""
+        # Ignore clicks on Select column (index 0)
+        if logical_index == 0:
+            return
+        
+        # Toggle sort order if clicking on the same column
+        if self._sort_column == logical_index:
+            self._sort_ascending = not self._sort_ascending
+        else:
+            # New column selected - start with ascending order
+            self._sort_column = logical_index
+            self._sort_ascending = True
+        
+        # Update header labels to show sort indicator
+        self._update_header_labels()
+        
+        # Re-populate the table with new sorting
+        self._repopulate_table()
+    
+    def _update_header_labels(self):
+        """Update table header labels to show sort indicators (▲/▼)."""
+        base_labels = ["Select", "State", "Profile", "Local Status", "Cloud Status"]
+        
+        for i, label in enumerate(base_labels):
+            if i == self._sort_column:
+                # Add sort indicator arrow
+                arrow = " ▲" if self._sort_ascending else " ▼"
+                self.backup_table.setHorizontalHeaderItem(i, QTableWidgetItem(label + arrow))
+            else:
+                self.backup_table.setHorizontalHeaderItem(i, QTableWidgetItem(label))
+    
+    def _reset_sorting(self):
+        """Reset sorting to default (favorites first, then alphabetical)."""
+        self._sort_column = None
+        self._sort_ascending = True
+        # Reset header labels to remove arrows
+        base_labels = ["Select", "State", "Profile", "Local Status", "Cloud Status"]
+        for i, label in enumerate(base_labels):
+            self.backup_table.setHorizontalHeaderItem(i, QTableWidgetItem(label))
+
     def _repopulate_table(self):
         """Refresh the table UI using cached local data and cloud data (no disk I/O)."""
         self.backup_table.setRowCount(0)
@@ -821,18 +882,81 @@ class CloudSavePanel(QWidget):
         except Exception:
             favorites = {}
 
-        # Sort: favorites first, then alphabetical
-        sorted_backups = sorted(
-            all_backups.keys(),
-            key=lambda k: (not favorites.get(k, False), k.lower())
-        )
-        
-        for backup_name in sorted_backups:
+        # Build reverse mapping: sanitized folder name -> original profile name
+        # This is needed because backup folders are created with sanitized names
+        # (e.g., "Hollow Knight: Silksong" -> "Hollow Knight Silksong")
+        sanitized_to_profile = {}
+        for profile_name in self.profiles.keys():
+            sanitized_name = sanitize_foldername(profile_name)
+            sanitized_to_profile[sanitized_name] = profile_name
+
+        # Prepare backup data with metadata for sorting
+        backup_items = []
+        for backup_name in all_backups.keys():
             backup = all_backups[backup_name]
+            # Resolve original profile name for favorites lookup
+            # Favorites are stored with original profile names, not sanitized folder names
+            original_profile_name = sanitized_to_profile.get(backup_name, backup_name)
+            backup_items.append({
+                'name': backup_name,
+                'data': backup,
+                'is_favorite': favorites.get(original_profile_name, False),
+                'has_local': backup.get('has_local', False),
+                'has_cloud': backup.get('has_cloud', False),
+                'local_file_count': backup.get('local_file_count', 0),
+                'cloud_file_count': backup.get('cloud_file_count', 0),
+            })
+        
+        # Apply sorting based on current sort column
+        if self._sort_column is None:
+            # Default sorting: favorites first, then alphabetical
+            backup_items.sort(key=lambda x: (not x['is_favorite'], x['name'].lower()))
+        elif self._sort_column == 1:
+            # Sort by State: order by (has_local, has_cloud) combination
+            # Both > Local only > Cloud only
+            def state_sort_key(x):
+                if x['has_local'] and x['has_cloud']:
+                    return 0  # Both
+                elif x['has_local']:
+                    return 1  # Local only
+                elif x['has_cloud']:
+                    return 2  # Cloud only
+                else:
+                    return 3  # Unknown
+            backup_items.sort(key=lambda x: (state_sort_key(x), x['name'].lower()), 
+                            reverse=not self._sort_ascending)
+        elif self._sort_column == 2:
+            # Sort by Profile name (alphabetical)
+            backup_items.sort(key=lambda x: x['name'].lower(), 
+                            reverse=not self._sort_ascending)
+        elif self._sort_column == 3:
+            # Sort by Local Status (file count)
+            backup_items.sort(key=lambda x: (x['local_file_count'], x['name'].lower()), 
+                            reverse=not self._sort_ascending)
+        elif self._sort_column == 4:
+            # Sort by Cloud Status (file count)
+            backup_items.sort(key=lambda x: (x['cloud_file_count'], x['name'].lower()), 
+                            reverse=not self._sort_ascending)
+        
+        for item in backup_items:
+            backup_name = item['name']
+            backup = item['data']
             
             # Check if this backup folder matches a profile
-            profile_name = backup_name if backup_name in self.profiles else backup_name
-            is_known_profile = backup_name in self.profiles
+            # Use the sanitized_to_profile mapping to handle sanitized folder names
+            # (e.g., backup folder "Hollow Knight Silksong" matches profile "Hollow Knight: Silksong")
+            if backup_name in self.profiles:
+                # Direct match (folder name == profile name)
+                profile_name = backup_name
+                is_known_profile = True
+            elif backup_name in sanitized_to_profile:
+                # Match via sanitized name lookup
+                profile_name = sanitized_to_profile[backup_name]
+                is_known_profile = True
+            else:
+                # No match found
+                profile_name = backup_name
+                is_known_profile = False
             
             # Filter: if not showing all, skip non-profile backups UNLESS they have cloud sync
             has_cloud = backup.get('has_cloud', False)
@@ -846,7 +970,8 @@ class CloudSavePanel(QWidget):
             # Add profile name to backup info
             backup['profile'] = profile_name
             backup['is_known_profile'] = is_known_profile
-            backup['is_favorite'] = favorites.get(backup_name, False)
+            # Use original profile name for favorites lookup (favorites are stored with original names)
+            backup['is_favorite'] = favorites.get(profile_name, False)
             
             self.local_backups.append(backup)
             self._add_backup_row(backup)
