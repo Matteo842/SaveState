@@ -119,7 +119,7 @@ def ensure_persistent_icon():
         import settings_manager
         import config
         
-        settings = settings_manager.load_settings()
+        settings, _ = settings_manager.load_settings()
         backup_base_dir = settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
         
         if not backup_base_dir:
