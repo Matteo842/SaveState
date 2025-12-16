@@ -226,4 +226,3 @@ The artifact is signed by **SignPath.io** using a certificate from the SignPath 
 ## License
 
 Distributed under the **GNU General Public License v3.0.** See the [`LICENSE`](https://www.gnu.org/licenses/gpl-3.0)file for more information.
-<meta name="google-site-verification" content="7Bjzl-ffojhzWUA5r7T9PhInlHmwFhihKiqSV3dCQeI" />
