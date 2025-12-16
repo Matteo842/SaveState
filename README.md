@@ -215,6 +215,14 @@ pip install -r requirements.txt
 
 ---
 
+## 🔐 Code Signing & Security
+
+This project is supported by the **SignPath Foundation** for free code signing.
+
+[![Code Signing](https://img.shields.io/badge/Code%20Signing-SignPath-007ACC?style=flat-square&logo=e)](https://signpath.org)
+
+The artifact is signed by **SignPath.io** using a certificate from the SignPath Foundation.
+
 ## License
 
 Distributed under the **GNU General Public License v3.0.** See the [`LICENSE`](https://www.gnu.org/licenses/gpl-3.0)file for more information.
