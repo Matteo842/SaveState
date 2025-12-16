@@ -6,6 +6,7 @@ import sys
 import logging
 import re
 import platform
+import shutil
 from utils import resource_path
 from core_logic import sanitize_foldername
 
@@ -85,6 +86,73 @@ def is_packaged():
     """ Controlla se stiamo girando da un eseguibile PyInstaller. """
     # Questi attributi vengono impostati da PyInstaller
     return hasattr(sys, 'frozen') or hasattr(sys, '_MEIPASS')
+
+def ensure_persistent_icon():
+    """
+    Ensures the shortcut icon is available at a persistent path.
+    
+    In script mode: returns the original resource path.
+    In packaged mode: copies the icon from the temporary _MEIPASS folder
+    to a persistent location inside <backup_base_dir>/.savestate/icons/
+    and returns that persistent path.
+    
+    This is necessary because PyInstaller OneFile extracts files to a
+    temporary folder that gets deleted when the exe exits, causing
+    shortcuts to lose their icons.
+    
+    Returns:
+        str: Path to the icon file, or None if not found/failed.
+    """
+    icon_relative_path = os.path.join("icons", "SaveStateIconBK.ico")
+    icon_source = resource_path(icon_relative_path)
+    
+    # In script mode, use the original path directly
+    if not is_packaged():
+        if os.path.exists(icon_source):
+            return icon_source
+        logging.warning(f"Shortcut icon not found at: {icon_source}")
+        return None
+    
+    # In packaged mode, we need to copy the icon to a persistent location
+    # Use the backup directory's .savestate folder (works with portable mode too)
+    try:
+        import settings_manager
+        import config
+        
+        settings = settings_manager.load_settings()
+        backup_base_dir = settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
+        
+        if not backup_base_dir:
+            logging.error("Cannot determine backup_base_dir for persistent icon storage.")
+            return None
+        
+        # Target: <backup_base_dir>/.savestate/icons/SaveStateIconBK.ico
+        savestate_folder = os.path.join(backup_base_dir, ".savestate")
+        icons_folder = os.path.join(savestate_folder, "icons")
+        persistent_icon_path = os.path.join(icons_folder, "SaveStateIconBK.ico")
+        
+        # If icon already exists at persistent location, use it
+        if os.path.exists(persistent_icon_path):
+            logging.debug(f"Using existing persistent icon: {persistent_icon_path}")
+            return persistent_icon_path
+        
+        # Copy icon from temporary _MEIPASS to persistent location
+        if os.path.exists(icon_source):
+            try:
+                os.makedirs(icons_folder, exist_ok=True)
+                shutil.copy2(icon_source, persistent_icon_path)
+                logging.info(f"Shortcut icon copied to persistent location: {persistent_icon_path}")
+                return persistent_icon_path
+            except Exception as e:
+                logging.error(f"Failed to copy icon to persistent location: {e}")
+                return None
+        else:
+            logging.warning(f"Source icon not found in bundle: {icon_source}")
+            return None
+            
+    except Exception as e:
+        logging.error(f"Error in ensure_persistent_icon: {e}", exc_info=True)
+        return None
 
 # Funzione principale per creare lo shortcut (Versione Finale per Script e EXE)
 def get_desktop_path():
@@ -214,18 +282,18 @@ def create_backup_shortcut(profile_name):
 
         # --- 5. Trova e imposta l'icona specifica (o fallback) ---
         logging.debug("Phase 5: Searching and setting icon...")
-        icon_relative_path = os.path.join("icons", "SaveStateIconBK.ico")
-        icon_absolute_path = resource_path(icon_relative_path)
+        # Use ensure_persistent_icon() to get a stable path that survives exe termination
+        icon_absolute_path = ensure_persistent_icon()
         
         if IS_WINDOWS:
             icon_location_string = None
             try:
-                if not os.path.exists(icon_absolute_path):
-                    logging.error(f"Specific shortcut icon NOT FOUND in: {icon_absolute_path}")
+                if not icon_absolute_path or not os.path.exists(icon_absolute_path):
+                    logging.warning(f"Persistent shortcut icon not available, using fallback from executable")
                     icon_location_string = f"{target_exe},0"
-                    logging.warning(f"Use fallback icon from the executable: {icon_location_string}")
                 else:
                     icon_location_string = f"{icon_absolute_path},0"
+                    logging.info(f"Using persistent icon path: {icon_absolute_path}")
             except Exception as e_icon_path:
                 logging.error(f"Error in determining the path of the shortcut icon: {e_icon_path}", exc_info=True)
                 icon_location_string = f"{target_exe},0"
@@ -240,13 +308,13 @@ def create_backup_shortcut(profile_name):
         else:  # Linux
             # Per Linux, aggiungi l'icona al file .desktop
             try:
-                if os.path.exists(icon_absolute_path):
+                if icon_absolute_path and os.path.exists(icon_absolute_path):
                     # Su Linux, possiamo usare direttamente il percorso dell'icona
                     desktop_content.append(f"Icon={icon_absolute_path}")
                     logging.info(f"  Desktop file icon set to: {icon_absolute_path}")
                 else:
                     # Cerca un'icona alternativa o usa un'icona di sistema
-                    logging.warning(f"Icon not found at {icon_absolute_path}, using system icon")
+                    logging.warning(f"Persistent icon not available, using system icon")
                     desktop_content.append("Icon=document-save")
             except Exception as e_icon_set:
                 logging.warning(f"  Unable to set icon for desktop file: {e_icon_set}")
