@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - SaveState</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 20px; color: #333; }
+        h1 { color: #2c3e50; }
+        h2 { color: #34495e; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-top: 30px; }
+        ul { margin-bottom: 20px; }
+        li { margin-bottom: 10px; }
+        a { color: #3498db; }
+    </style>
+</head>
+<body>
+
+    <h1>Privacy Policy for SaveState</h1>
+    <p><strong>Last Updated:</strong> November 26, 2025</p>
+    
+    <p>SaveState ("the Application") is an open-source application developed by Matteo842. This Privacy Policy explains how the Application handles your data, specifically regarding Google Drive integration.</p>
+    
+    <h2>1. Data Collection and Usage</h2>
+    <p>SaveState is designed with privacy as a priority.</p>
+    <ul>
+        <li><strong>No Personal Data Collection:</strong> The Application does not collect, store, or transmit any personal information, usage statistics, or telemetry data to the developer or any third-party servers.</li>
+        <li><strong>Local Operation:</strong> All operations, including backup creation and file management, are performed locally on your device.</li>
+    </ul>
+    
+    <h2>2. Google Drive Integration</h2>
+    <p>The Application offers an optional feature to synchronize your save files with your personal Google Drive account.</p>
+    <ul>
+        <li><strong>Authentication:</strong> Authentication is handled directly via Google's OAuth 2.0 servers. The Application receives an access token which is stored locally on your device (in a <code>token.pickle</code> file). This token is never sent to the developer.</li>
+        <li><strong>Limited Access (Scopes):</strong> The Application requests the restricted scope <code>https://www.googleapis.com/auth/drive.file</code>. This ensures that SaveState can <strong>only</strong> access and modify files and folders that it has created itself. It <strong>cannot</strong> view, modify, or delete any other files in your Google Drive.</li>
+        <li><strong>Data Transmission:</strong> Backup files are encrypted (HTTPS) during transmission directly between your device and Google Drive. No intermediate servers are used.</li>
+    </ul>
+    
+    <h2>3. Data Storage</h2>
+    <ul>
+        <li><strong>Local:</strong> Configuration files and local backups are stored on your device in the Application's directory.</li>
+        <li><strong>Cloud:</strong> Cloud backups are stored in a dedicated folder named "SaveState Backups" within your personal Google Drive storage. You retain full ownership and control over these files.</li>
+    </ul>
+    
+    <h2>4. Third-Party Services</h2>
+    <p>The Application uses Google Drive API Services. Use of Google Drive is subject to Google's Privacy Policy and Terms of Service.</p>
+    
+    <h2>5. Contact</h2>
+    <p>If you have any questions about this Privacy Policy, please contact the developer at <strong>cioffimatteo800@gmail.com</strong> or via the GitHub repository issue tracker: <a href="https://github.com/Matteo842/SaveState/issues">https://github.com/Matteo842/SaveState/issues</a></p>
+
+</body>
+</html>
