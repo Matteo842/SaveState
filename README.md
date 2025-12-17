@@ -223,6 +223,10 @@ This project is supported by the **SignPath Foundation** for free code signing.
 
 The artifact is signed by **SignPath.io** using a certificate from the SignPath Foundation.
 
+## Legal
+* [Privacy Policy](https://github.com/Matteo842/SaveState/blob/main/PRIVACY.html)
+* [Terms of Service](https://github.com/Matteo842/SaveState/blob/main/TERMS.md)
+
 ## License
 
 Distributed under the **GNU General Public License v3.0.** See the [`LICENSE`](https://www.gnu.org/licenses/gpl-3.0)file for more information.
