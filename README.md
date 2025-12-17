@@ -224,7 +224,7 @@ This project is supported by the **SignPath Foundation** for free code signing.
 The artifact is signed by **SignPath.io** using a certificate from the SignPath Foundation.
 
 ## Legal
-* [Privacy Policy](https://matteo842.github.io/SaveState/PRIVACY.html)
+* [Privacy Policy](https://matteo842.github.io/SaveState/privacy.html)
 * [Terms of Service](https://github.com/Matteo842/SaveState/blob/main/TERMS.md)
 
 ## License
