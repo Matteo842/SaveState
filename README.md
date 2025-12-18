@@ -5,7 +5,7 @@
 [![Downloads](https://img.shields.io/github/downloads/Matteo842/SaveState/total.svg)](https://github.com/Matteo842/SaveState/releases)
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/V7V61GBYAX)
 
-A user-friendly GUI application for Windows and Linux to easily back up and restore video game save files, especially useful for games without cloud saves or for managing multiple save locations.
+A user-friendly GUI application for **Windows** and **Linux** to easily back up and restore video game save files. Perfect for games without cloud saves, managing multiple save locations, or syncing your progress across devices.
 
 ![Main GUI](images/gui.png)
 
@@ -13,74 +13,87 @@ A user-friendly GUI application for Windows and Linux to easily back up and rest
 
 **SaveState** aims to prevent the frustration of losing your precious game progress due to corruption, accidental deletion, or system changes.
 
-This tool offers a simple graphical user interface for creating compressed backups of your game save files and folders, managing multiple game profiles, and restoring them whenever needed.
+This tool offers a modern graphical interface for creating compressed backups of your game save files, managing multiple game profiles, syncing to the cloud, and restoring them whenever needed.
 
-Furthermore, SaveState features automatic detection of Steam games and even lets you generate profiles directly from Minecraft worlds or game shortcuts.
-
----
-
-⚠️ Current Status (2025-10-04): This is a personal project currently **under active development.** 
+SaveState features automatic detection of Steam games, support for all major launchers via drag & drop, deep emulator integration, and now **cloud synchronization with Google Drive**.
 
 ---
 
-## Features
+## ✨ Key Features
 
-* **Backup & Restore:** Perform compressed `.zip` backups for selected profiles with a single click. Restore from any available backup.
-* **Automatic Backup Management:**
-    * Configurable number of backups to keep per profile (automatically deletes the oldest).
-    * Configurable backup compression level (Standard/Recommended, Maximum, or None/Stored).
-    * Optional check for minimum free disk space on the backup drive before starting a backup.
-    * Optional check for maximum source folder size to prevent accidental backup of huge folders.
-* **Steam Integration:**
-    * Scans for Steam installation and libraries.
-    * Automatically detects installed Steam games.
-    * Attempts to identify the correct Steam User ID (resolving profile names if the optional `vdf` library is installed).
-    * Suggests save game paths based on Steam UserData conventions.
-    * Configure backup profiles for Steam games directly from the detected list.
-* **Drag & Drop Profile Creation:** Drag a game's shortcut (`.lnk` file) onto the main window to automatically extract the game name and installation path, then initiates a background search for the save location.
-* **Manual Profile Creation:** Easily add any game by specifying a profile name and the path to its save folder.
-* **Multi Profile Creation:** 
-    * Drag a folder OR multiple shortcuts on the main window. 
-    * You can visualize all the profile of the folder and start searching for the save path; 
-    * You can add all the profile visulizing the save path and add all the profile to the list.
-* **Minecraft Java Edition Support:**
-    * Automatically locates the default `.minecraft/saves` folder.
-    * Lists all installed worlds, reading the world name from `level.dat` if the optional `nbtlib` library is present (falls back to folder name otherwise).
-    * Create backup profiles directly from the detected world list.
-* **Desktop Shortcut Creation:** Create `.lnk` shortcuts on your desktop for specific profiles. Clicking the shortcut runs a silent backup for that profile using `backup_runner.py` and shows a desktop notification.
-* **Emulator Support (Experimental):**
-    * Automatic detection and profile creation for supported emulators' save data.
-* **User Interface:**
-    * Clean and simple graphical interface built with PySide6.
-    * Switchable Dark and Light themes.
-    * Profile list showing name and basic backup info (count, last backup date).
-    * Settings dialog to configure paths, limits, theme, language, and more.
-    * Dockable Log Console displaying detailed operation status and errors.
-* **No Administrator Privileges Required**
-* **Portable:** Runs directly from the `.exe` file without installation.
+### ☁️ Cloud Save (Google Drive Integration)
+
+Sync your saves across devices with seamless Google Drive integration:
+- **Upload, download, and sync** your backups to the cloud
+- **Smart Sync Status** shows which files are synced, local-only, or need attention
+- **Configurable auto-sync** with bandwidth limits and storage quotas
+
+![Cloud Settings](images/cloud_settings.png)
+
+### 🛡️ Digitally Signed & Verified
+
+SaveState is **officially signed via SignPath** — no more "Unknown Publisher" warnings or SmartScreen blocks on Windows. Install with confidence.
+
+### 🎮 Universal Launcher Support
+
+Works with **any PC game launcher** — not just Steam! Drag and drop executables or shortcuts from:
+- Steam, Epic Games, GOG Galaxy, Battle.net, Ubisoft Connect, EA App, and more
+
+### 🕹️ Deep RetroArch Integration
+
+Full support for RetroArch with a streamlined setup:
+- Detects your RetroArch installation and cores
+- Guided setup to select a core and identify game/save files  
+- Intelligent path resolution for saves (standard, XDG, Flatpak, Snap layouts)
+
+### ⚙️ Per-Profile Backup Settings
+
+Fine-tune backup behavior for each game individually:
+- Override global settings for max backups, compression mode, max source size, and disk space checks
+
+### 🐧 Linux AppImage & Portable Mode
+
+- **AppImage**: Single file, no dependencies — just download, make executable, and run
+- **Portable Mode**: Store all configs in your backup folder for USB drive usage
+
+### 📦 Core Backup Features
+
+- **One-click backup & restore** with compressed `.zip` archives
+- **Automatic rotation** with configurable backup limits per profile
+- **Direct restore from ZIP** — restore saves even without a profile
+- **Data Safety**: Automatic configuration backups protect against corruption
+- **Inline profile editing** via right-click context menu
+- **Minimize to tray** for silent background auto-backups
+
+### 🎯 Smart Save Detection
+
+The detection engine is intelligent and thorough:
+- **Deep Scan** recursively searches candidate directories when standard scan fails
+- **Fuzzy Matching** handles abbreviated titles and naming variations
+- **Steam Awareness** avoids false positives in Steam Userdata folders
+
+![Application Settings](images/settings.png)
 
 ## Visuals
 
-**Drag & Drop Shortcut for Profile Creation:**
+**Drag & Drop from Any Launcher:**
 ![Drag and Drop GIF](images/drag_and_drop.gif)
 
 
 ## Supported Emulators
 
-SaveState includes experimental support for automatically detecting save data locations for certain emulators, simplifying the profile creation process.
+SaveState automatically detects save data locations for a wide range of emulators:
 
-**Currently Supported in version 2.0:**
+| | | | |
+|-------------|-------------|-------------|-------------|
+| **RetroArch** ★ | Ryujinx | Yuzu | Rpcs3 |
+| **Dolphin** ★ | DuckStation | PPSSPP | Citra |
+| Azahar | mGBA | Snes9x | DeSmuME |
+| Cemu | Flycast | ShadPs4 | SameBoy |
+| PCSX2 \* | Xenia | Eden (yuzu) | melonDS |
+| Gopher64 | Citron | Vita3K | Mednafen/Mednaffe |
 
-|               |              |            |
-|---------------|--------------|------------|
-| Ryujinx       | Yuzu         | Rpcs3      |
-| DuckStation   | Dolphin      | PPSSPP     |
-| Citra         | Azahar       | mGBA       |
-| Snes9x        | DeSmuME      | Cemu       |
-| Flycast       | ShadPs4      | SameBoy    |
-| PCSX2 \*      | xenia        | Eden (yuzu)|
-| melonDS       | Gopher64     | Citron     |
-| Vita3K        | retroarch    | mednaffe   |
+★ *Enhanced integration with guided setup*
 
 ---
 \* PlayStation 2 memory card functionality in `SaveState` utilizes and adapts code from the [mymcplusplus](https://github.com/Adubbz/mymcplusplus) project, which is based on mymc+ by Florian Märkl and the original mymc by Ross Ridge. The mymcplusplus source code is distributed under the GNU General Public License v3.0. `SaveState`, including these derived components, is also licensed under GPLv3.
@@ -109,17 +122,19 @@ Get SaveState up and running on your system.
 
 ### Installation
 
-**Option 1: Using the Release (Recommended for most users)**
+**Option 1: Download Release (Recommended)**
 
-**windows**
-1.  Go to the [**Releases Page**](https://github.com/Matteo842/SaveState/releases/latest) on GitHub.
-2.  Download the `SaveState.exe` file from the latest release assets.
-3.  Place `SaveState.exe` in any folder you like and simply run it. No installation required!
+**Windows**
+1. Go to the [**Releases Page**](https://github.com/Matteo842/SaveState/releases/latest)
+2. Download `SaveState_vX.X.X_Win.zip`
+3. Extract and run — no installation required!
 
-**Linux**
-1.  Go to the [**Releases Page**](https://github.com/Matteo842/SaveState/releases/latest) on GitHub.
-2.  Download the `SaveState-linux.zip` file from the latest release assets.
-3.  Place `SaveState` in any folder you like and simply run it. No installation required!
+**Linux (AppImage)**
+1. Go to the [**Releases Page**](https://github.com/Matteo842/SaveState/releases/latest)
+2. Download `SaveState.tar.gz`
+3. Extract the `.AppImage` file
+4. Make it executable: `chmod +x SaveState*.AppImage`
+5. Run it — no dependencies needed!
 
 **Option 2: Running from Source (for development or advanced users)**
 
