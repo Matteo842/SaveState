@@ -67,26 +67,8 @@ import core_logic # Mantenuto per load_profiles
 from gui_handlers import MainWindowHandlers
 
 # --- COSTANTI GLOBALI PER IDENTIFICARE L'ISTANZA ---
-# Usa stringhe univoche per la tua applicazione
-def sanitize_server_name(name):
-    """
-    Sanitizes server name to be compatible with Linux/Unix systems.
-    Removes or replaces problematic characters that can cause issues with local sockets.
-    """
-    import re
-    # Replace spaces with underscores
-    name = name.replace(' ', '_')
-    # Remove or replace other problematic characters, keeping only alphanumeric, underscores, hyphens, and dots
-    name = re.sub(r'[^a-zA-Z0-9_\-.]', '_', name)
-    # Remove multiple consecutive underscores
-    name = re.sub(r'_+', '_', name)
-    # Remove leading/trailing underscores
-    name = name.strip('_')
-    return name
-
-APP_GUID = "SaveState_App_Unique_GUID_6f459a83-4f6a-4e3e-8c1e-7a4d5e3d2b1a" 
-SHARED_MEM_KEY = sanitize_server_name(f"{APP_GUID}_SharedMem")
-LOCAL_SERVER_NAME = sanitize_server_name(f"{APP_GUID}_LocalServer")
+# Import from config.py for early access in main.py before heavy imports
+from config import SHARED_MEM_KEY, LOCAL_SERVER_NAME
 # --- FINE COSTANTI ---
 
 
@@ -1472,10 +1454,15 @@ class MainWindow(QMainWindow):
             self._bringWindowToFront()
     
     def _bringWindowToFront(self):
-        """Helper method to bring the window to front and activate it."""
+        """Helper method to bring the window to front and activate it.
+        Handles both minimized windows and windows hidden in system tray."""
         try:
+            # If the window is hidden (e.g., in system tray), show it first
+            if self.isHidden():
+                self.showNormal()
+                logging.debug("Window was hidden (system tray), restored to normal state.")
             # If the window is minimized, restore it
-            if self.isMinimized():
+            elif self.isMinimized():
                 self.showNormal()
                 logging.debug("Window was minimized, restored to normal state.")
             
@@ -1694,6 +1681,8 @@ class MainWindow(QMainWindow):
                 except Exception:
                     pass
                 self.close()
+                # Ensure the application event loop terminates
+                QApplication.quit()
             act_exit.triggered.connect(_do_exit)
             tray_icon.setContextMenu(tray_menu)
             tray_icon.activated.connect(self._on_tray_activated)

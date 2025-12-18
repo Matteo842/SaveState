@@ -7,24 +7,22 @@ import argparse
 import config
 import platform
 import glob
-# --- PySide6 Imports ---
-from PySide6.QtWidgets import QApplication, QMessageBox, QDialog
-from PySide6.QtCore import QSharedMemory
-from PySide6.QtGui import QIcon
-from PySide6.QtNetwork import QLocalSocket, QLocalServer
 
-# --- App Imports ---
-import settings_manager
-import backup_runner
-from gui_utils import QtLogHandler
-from utils import resource_path # <--- Import from utils
-from SaveState_gui import MainWindow
-from SaveState_gui import SHARED_MEM_KEY, LOCAL_SERVER_NAME # Importa costanti
+# --- Single Instance Constants (from lightweight config module) ---
+from config import SHARED_MEM_KEY, LOCAL_SERVER_NAME
+
+# --- Minimal PySide6 Imports for Single Instance Check ---
+# These are imported early for fast single-instance detection
+from PySide6.QtCore import QSharedMemory
+from PySide6.QtNetwork import QLocalSocket, QLocalServer
 
 try:
     import pyi_splash  # type: ignore # This module only exists when the app is packaged with PyInstaller
 except ImportError:
     pyi_splash = None # Set to None if not found (e.g. when not running from a bundle)
+
+# NOTE: Heavy imports (QApplication, MainWindow, settings_manager, etc.) 
+# are deferred until after single-instance check to speed up second instance detection
 
 # --- Helper Function for Cleanup ---
 def cleanup_instance_lock(local_server, shared_memory):
@@ -131,13 +129,13 @@ def cleanup_stale_qt_ipc_artifacts(local_server_name: str, shared_memory_key: st
 
 # --- Main Execution Block ---
 if __name__ == "__main__":
-    # --- Configurazione Logging ---
+    # --- Basic Logging Configuration (console only, before heavy imports) ---
     log_level = logging.INFO
     log_format = '%(asctime)s - %(levelname)s - %(message)s'
     log_datefmt = '%H:%M:%S'
     log_formatter = logging.Formatter(log_format, log_datefmt)
     root_logger = logging.getLogger()
-    root_logger.setLevel(log_level) # Imposta livello sul root logger prima
+    root_logger.setLevel(log_level)
 
     # Remove existing handlers if necessary (e.g. in PyInstaller)
     for handler in root_logger.handlers[:]:
@@ -145,55 +143,49 @@ if __name__ == "__main__":
             root_logger.removeHandler(handler)
             handler.close()
         except Exception as e_handler:
-            logging.warning(f"Could not remove/close handler: {e_handler}") # Meno critico
+            pass  # Silent, we're in early startup
 
-    # Create and add new handlers
+    # Create console handler only (Qt handler added later after heavy imports)
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(log_formatter)
-    console_handler.setLevel(logging.INFO) # Console handler level
+    console_handler.setLevel(logging.INFO)
     root_logger.addHandler(console_handler)
 
-    # Qt handler (logging in the GUI) - Now imported
-    qt_log_handler = QtLogHandler()
-    qt_log_handler.setFormatter(log_formatter)
-    qt_log_handler.setLevel(logging.INFO) # Qt handler level
-    root_logger.addHandler(qt_log_handler)
-
-    logging.info("Logging configured.")
+    logging.debug("Basic logging configured (console only).")
 
     # --- Parsing Arguments ---
     parser = argparse.ArgumentParser(description='SaveState GUI or Backup Runner.')
     parser.add_argument("--backup", help="Nome del profilo per cui eseguire un backup silenzioso.")
-    args = parser.parse_args() # Handle exceptions if necessary
+    args = parser.parse_args()
 
     # --- Execution Mode Check ---
     if args.backup:
         # === Silent Backup Mode ===
+        # Import heavy modules only for backup mode
+        import backup_runner
+        
         profile_to_backup = args.backup
         logging.info(f"Detected argument --backup '{profile_to_backup}'. Closing splash and starting silent backup...")
 
-        # ---> AGGIUNTA: Chiudi lo splash di PyInstaller prima <---
         if pyi_splash:
             try:
-                logging.debug("Closing PyInstaller splash screen...")
                 pyi_splash.close()
-                logging.debug("PyInstaller splash screen closed.")
-            except Exception as e_splash_close:
-                logging.warning(f"Could not close PyInstaller splash screen: {e_splash_close}")
-        # ---> FINE AGGIUNTA <---
+            except Exception:
+                pass
 
-        # Execute backup logic directly (now includes notification)
         try:
             backup_success = backup_runner.run_silent_backup(profile_to_backup)
             logging.info(f"Silent backup completed successfully: {backup_success}")
-            sys.exit(0 if backup_success else 1) # Exit immediately after backup
+            sys.exit(0 if backup_success else 1)
         except Exception as e_backup:
             logging.critical(f"Error during silent backup for '{profile_to_backup}': {e_backup}", exc_info=True)
             sys.exit(1)
 
     else:
         # === Normal GUI Mode ===
-        logging.info("No --backup argument, starting GUI mode. Checking single instance...")
+        # IMPORTANT: Do single-instance check BEFORE importing heavy modules!
+        # This makes launching a second instance much faster.
+        logging.debug("GUI mode. Performing fast single-instance check...")
 
         # --- Single Instance Logic ---
         shared_memory = None # Initialize to None
@@ -272,7 +264,22 @@ if __name__ == "__main__":
 
         # If app_should_run is still True, we are the first GUI instance
         if app_should_run:
-            logging.info("First GUI instance. Starting application...")
+            logging.info("First GUI instance. Now importing heavy modules...")
+
+            # --- NOW import heavy modules (only for first instance) ---
+            from PySide6.QtWidgets import QApplication, QMessageBox, QDialog
+            from PySide6.QtGui import QIcon
+            import settings_manager
+            from gui_utils import QtLogHandler
+            from utils import resource_path
+            from SaveState_gui import MainWindow
+
+            # Add Qt log handler now that gui_utils is imported
+            qt_log_handler = QtLogHandler()
+            qt_log_handler.setFormatter(log_formatter)
+            qt_log_handler.setLevel(logging.INFO)
+            root_logger.addHandler(qt_log_handler)
+            logging.info("Heavy modules loaded. Starting application...")
 
             # --- Initialize QApplication and Splash Screen EARLY ---
             app = None # Initialize to None
