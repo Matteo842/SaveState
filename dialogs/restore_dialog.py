@@ -4,12 +4,14 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QPushButton, QFileDialog, QHBoxLayout, QMessageBox
 )
 from PySide6.QtCore import Qt, QLocale, QCoreApplication
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtGui import QBrush, QColor, QIcon
 
 import core_logic
 import config
 import logging
 import os
+from gui_components import lock_backup_manager
+from utils import resource_path
 
 
 class RestoreDialog(QDialog):
@@ -25,6 +27,17 @@ class RestoreDialog(QDialog):
         self._profile_items = []     # References to normal profile backup items
         self._original_window_title = None
         self._original_instruction_text = None
+        
+        # --- Load lock icon ---
+        self.lock_icon = None
+        try:
+            icon_path = resource_path("icons/lock.png")
+            if os.path.exists(icon_path):
+                self.lock_icon = QIcon(icon_path)
+                logging.debug(f"Lock icon loaded for RestoreDialog: {icon_path}")
+        except Exception as e:
+            logging.debug(f"Lock icon not found for RestoreDialog: {e}")
+        # --- End load lock icon ---
         
         # Set title based on whether we have a profile
         if profile_name:
@@ -62,6 +75,9 @@ class RestoreDialog(QDialog):
             system_locale = QLocale.system()
             logging.debug(f"Using system locale for date formatting in RestoreDialog: {system_locale.name()}")
             # --- End localization logic ---
+            
+            # Get locked backup path for this profile
+            locked_backup_path = lock_backup_manager.get_locked_backup_for_profile(profile_name)
 
             # --- Loop to populate the list WITH DATE FORMATTING ---
             # Now we iterate over (name, path, dt_obj)
@@ -81,6 +97,14 @@ class RestoreDialog(QDialog):
                 # Create and add the item to the list
                 item = QListWidgetItem(item_text)
                 item.setData(Qt.ItemDataRole.UserRole, path) # Save the full path
+                
+                # Check if this backup is locked and add lock icon
+                if locked_backup_path:
+                    is_locked = os.path.normcase(os.path.normpath(path)) == os.path.normcase(os.path.normpath(locked_backup_path))
+                    if is_locked and self.lock_icon:
+                        item.setIcon(self.lock_icon)
+                        item.setToolTip("This backup is locked (protected from deletion)")
+                
                 self.backup_list_widget.addItem(item)
                 self._profile_items.append(item)
             # --- End list population loop ---

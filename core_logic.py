@@ -384,37 +384,64 @@ def delete_profile(profiles, profile_name):
 
 # --- Backup/Restore Operations ---
 def manage_backups(profile_name, backup_base_dir, max_backups):
-    """Delete older .zip backups if they exceed the specified limit."""
+    """Delete older .zip backups if they exceed the specified limit.
+    
+    Locked backups are excluded from the count and are never deleted during rotation.
+    """
     deleted_files = []
     sanitized_folder_name = sanitize_foldername(profile_name)
     profile_backup_dir = os.path.join(backup_base_dir, sanitized_folder_name)
     logging.debug(f"ManageBackups - Original name: '{profile_name}', Folder searched: '{profile_backup_dir}'")
+    
+    # Try to get the locked backup path for this profile
+    locked_backup_path = None
+    try:
+        from gui_components import lock_backup_manager
+        locked_backup_path = lock_backup_manager.get_locked_backup_for_profile(profile_name)
+        if locked_backup_path:
+            logging.debug(f"ManageBackups - Locked backup found: {locked_backup_path}")
+    except ImportError:
+        logging.debug("lock_backup_manager not available, skipping lock check")
+    except Exception as e:
+        logging.warning(f"Error checking locked backup: {e}")
 
     try:
         if not os.path.isdir(profile_backup_dir): return deleted_files
 
         logging.info(f"Checking outdated (.zip) backups in: {profile_backup_dir}")
-        backup_files = [f for f in os.listdir(profile_backup_dir) if f.startswith("Backup_") and f.endswith(".zip")]
-
-        if len(backup_files) <= max_backups:
-            logging.info(f"Found {len(backup_files)} backup (.zip) (<= limit {max_backups}).")
+        all_backup_files = [f for f in os.listdir(profile_backup_dir) if f.startswith("Backup_") and f.endswith(".zip")]
+        
+        # Separate locked and unlocked backups
+        unlocked_backup_files = []
+        for f in all_backup_files:
+            full_path = os.path.join(profile_backup_dir, f)
+            if locked_backup_path and os.path.normcase(os.path.normpath(full_path)) == os.path.normcase(os.path.normpath(locked_backup_path)):
+                logging.debug(f"  Excluding locked backup from rotation: {f}")
+            else:
+                unlocked_backup_files.append(f)
+        
+        # Only count unlocked backups against the limit
+        if len(unlocked_backup_files) <= max_backups:
+            logging.info(f"Found {len(unlocked_backup_files)} unlocked backup(s) (.zip) (<= limit {max_backups})."
+                        + (f" (1 locked backup excluded from count)" if locked_backup_path else ""))
             return deleted_files
 
-        num_to_delete = len(backup_files) - max_backups
-        backup_files.sort(key=lambda f: os.path.getmtime(os.path.join(profile_backup_dir, f))) # Ordina dal più vecchio
+        num_to_delete = len(unlocked_backup_files) - max_backups
+        # Sort unlocked backups by modification time (oldest first)
+        unlocked_backup_files.sort(key=lambda f: os.path.getmtime(os.path.join(profile_backup_dir, f)))
 
-        logging.info(f"Deleting {num_to_delete} older (.zip) backup...")
+        logging.info(f"Deleting {num_to_delete} older (.zip) backup(s)...")
         deleted_count = 0
         for i in range(num_to_delete):
-            file_to_delete = os.path.join(profile_backup_dir, backup_files[i])
+            file_to_delete = os.path.join(profile_backup_dir, unlocked_backup_files[i])
             try:
-                logging.info(f"  Deleting: {backup_files[i]}")
+                logging.info(f"  Deleting: {unlocked_backup_files[i]}")
                 os.remove(file_to_delete)
-                deleted_files.append(backup_files[i])
+                deleted_files.append(unlocked_backup_files[i])
                 deleted_count += 1
             except Exception as e:
-                logging.error(f"  Error deleting {backup_files[i]}: {e}")
-        logging.info(f"Deleted {deleted_count} outdated (.zip) backups.")
+                logging.error(f"  Error deleting {unlocked_backup_files[i]}: {e}")
+        logging.info(f"Deleted {deleted_count} outdated (.zip) backup(s).")
 
     except Exception as e:
         logging.error(f"Error managing outdated (.zip) backups for '{profile_name}': {e}")
@@ -1182,7 +1209,10 @@ from steam_utils import (
 
 # --- Function to delete a backup file ---
 def delete_single_backup_file(file_path):
-    """Deletes a single backup file specified by the full path."""
+    """Deletes a single backup file specified by the full path.
+    
+    Returns (False, message) if the backup is locked.
+    """
     if not file_path:
         msg = "ERROR: No file path specified for deletion."
         logging.error(msg)
@@ -1191,6 +1221,19 @@ def delete_single_backup_file(file_path):
         msg = f"ERROR: File to delete not found or is not a valid file: '{file_path}'"
         logging.error(msg)
         return False, msg # Considera errore se file non esiste
+    
+    # Check if the backup is locked
+    try:
+        from gui_components import lock_backup_manager
+        if lock_backup_manager.is_backup_locked(file_path):
+            backup_name = os.path.basename(file_path)
+            msg = f"Cannot delete '{backup_name}': backup is locked. Unlock it first."
+            logging.warning(msg)
+            return False, msg
+    except ImportError:
+        logging.debug("lock_backup_manager not available, skipping lock check")
+    except Exception as e:
+        logging.warning(f"Error checking backup lock status: {e}")
 
     backup_name = os.path.basename(file_path)
     logging.warning(f"Attempting permanent deletion of file: {file_path}")
