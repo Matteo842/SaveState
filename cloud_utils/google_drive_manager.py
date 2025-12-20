@@ -69,9 +69,14 @@ class GoogleDriveManager:
         # Cancellation support
         self._cancelled = False
         
-    def authenticate(self) -> bool:
+    def authenticate(self, auth_url_callback: Optional[Callable[[str], None]] = None) -> bool:
         """
         Authenticate with Google Drive using OAuth2.
+        
+        Args:
+            auth_url_callback: Optional callback that receives the authorization URL.
+                              This allows the UI to display the URL for manual browser opening
+                              (useful on Linux where webbrowser.open() may fail silently).
         
         Returns:
             bool: True if authentication successful, False otherwise
@@ -111,8 +116,87 @@ class GoogleDriveManager:
                         flow = InstalledAppFlow.from_client_secrets_file(
                             str(self.client_secret_file), SCOPES
                         )
-                        creds = flow.run_local_server(port=0)
+                        
+                        # Create local server manually to get the port BEFORE generating auth URL
+                        # This ensures the redirect_uri is correct (fixes Linux browser issue)
+                        import wsgiref.simple_server
+                        import webbrowser
+                        
+                        # Allow HTTP for localhost (required for OAuth on localhost)
+                        os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+                        
+                        host = 'localhost'
+                        
+                        # Create a simple WSGI app to capture the OAuth response
+                        class _AuthResponseHandler:
+                            def __init__(self):
+                                self.authorization_response = None
+                            
+                            def __call__(self, environ, start_response):
+                                from wsgiref.util import request_uri
+                                self.authorization_response = request_uri(environ)
+                                # Send a simple response to the browser
+                                response = b"""
+                                <html><head><title>Authorization Complete</title></head>
+                                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                                <h1>Authorization Successful!</h1>
+                                <p>You can close this window and return to SaveState.</p>
+                                </body></html>
+                                """
+                                start_response('200 OK', [
+                                    ('Content-Type', 'text/html; charset=utf-8'),
+                                    ('Content-Length', str(len(response)))
+                                ])
+                                return [response]
+                        
+                        wsgi_app = _AuthResponseHandler()
+                        
+                        # Create server on random port with timeout
+                        local_server = wsgiref.simple_server.make_server(
+                            host, 0, wsgi_app, handler_class=wsgiref.simple_server.WSGIRequestHandler
+                        )
+                        local_server.timeout = 120  # 2 minute timeout for OAuth
+                        port = local_server.server_port
+                        
+                        # Set redirect_uri BEFORE generating auth URL
+                        redirect_uri = f'http://{host}:{port}/'
+                        flow.redirect_uri = redirect_uri
+                        
+                        # NOW generate auth URL - this will have the correct redirect_uri
+                        auth_url, state = flow.authorization_url(
+                            access_type='offline',
+                            prompt='consent'
+                        )
+                        logging.info(f"Authorization URL generated with redirect_uri: {redirect_uri}")
+                        
+                        # Notify callback with correct URL
+                        if auth_url_callback:
+                            try:
+                                auth_url_callback(auth_url)
+                            except Exception as e_cb:
+                                logging.warning(f"Error in auth_url_callback: {e_cb}")
+                        
+                        # Try to open browser
+                        try:
+                            webbrowser.open(auth_url, new=1)
+                            logging.info("Browser opened for authorization")
+                        except Exception as e_browser:
+                            logging.warning(f"Could not open browser: {e_browser}")
+                        
+                        # Wait for the OAuth redirect (this is blocking)
+                        logging.info(f"Waiting for OAuth response on {redirect_uri}...")
+                        local_server.handle_request()
+                        
+                        # Check if we got a response
+                        if wsgi_app.authorization_response is None:
+                            logging.error("No authorization response received")
+                            return False
+                        
+                        # Fetch token using the authorization response
+                        flow.fetch_token(authorization_response=wsgi_app.authorization_response)
+                        creds = flow.credentials
                         logging.info("OAuth2 flow completed successfully")
+                        
                     except Exception as e:
                         logging.error(f"Error during OAuth2 flow: {e}")
                         return False

@@ -25,6 +25,7 @@ from core_logic import sanitize_foldername
 class AuthWorker(QObject):
     """Worker thread for Google Drive authentication to avoid blocking UI."""
     finished = Signal(bool, str)  # success, error_message
+    auth_url_ready = Signal(str)  # authorization URL for manual browser opening (Linux fix)
     
     def __init__(self, drive_manager, worker_id):
         super().__init__()
@@ -40,7 +41,12 @@ class AuthWorker(QObject):
     def run(self):
         """Execute authentication in background."""
         try:
-            success = self.drive_manager.authenticate()
+            # Define callback to emit auth URL signal
+            def url_callback(url):
+                if not self.is_cancelled:
+                    self.auth_url_ready.emit(url)
+            
+            success = self.drive_manager.authenticate(auth_url_callback=url_callback)
             
             # Don't emit signal if this worker was cancelled
             if self.is_cancelled:
@@ -1363,6 +1369,8 @@ class CloudSavePanel(QWidget):
         
         # Connect signals
         auth_thread.started.connect(auth_worker.run)
+        # Linux fix: show URL for manual browser opening (use QueuedConnection for thread safety)
+        auth_worker.auth_url_ready.connect(self._show_auth_url_dialog, Qt.ConnectionType.QueuedConnection)
         auth_worker.finished.connect(self._on_auth_finished)
         auth_worker.finished.connect(auth_thread.quit)
         auth_worker.finished.connect(auth_worker.deleteLater)
@@ -1428,11 +1436,148 @@ class CloudSavePanel(QWidget):
                 "• You authorized the application in your browser\n"
                 "• You have an active internet connection"
             )
+        
+        # Close the auth URL dialog if it's open
+        self._close_auth_url_dialog()
+
+    def _show_auth_url_dialog(self, url: str):
+        """
+        Show dialog with authorization URL for manual browser opening.
+        This is useful on Linux where webbrowser.open() may fail silently.
+        """
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QApplication
+        from PySide6.QtCore import Qt
+
+        logging.info(f"_show_auth_url_dialog called with URL length: {len(url) if url else 0}")
+        
+        # Close any existing dialog first
+        self._close_auth_url_dialog()
+        
+        # Store URL for copy functionality
+        self._auth_url = url if url else ""
+
+        # Create dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Google Drive Authorization")
+        dialog.setMinimumWidth(550)
+        dialog.setModal(False)  # Non-modal so user can interact with browser
+
+        layout = QVBoxLayout(dialog)
+
+        # Instruction label
+        instruction_label = QLabel(
+            "A browser window should open for authorization.\n\n"
+            "If the browser didn't open automatically, copy the URL below\n"
+            "and paste it into your browser to authorize SaveState:"
+        )
+        instruction_label.setWordWrap(True)
+        layout.addWidget(instruction_label)
+
+        # URL text field (read-only, selectable) - use QLineEdit for single line
+        url_field = QLineEdit()
+        url_field.setText(self._auth_url)
+        url_field.setReadOnly(True)
+        url_field.setStyleSheet("QLineEdit { background-color: #2a2a2a; color: #ffffff; padding: 8px; }")
+        url_field.setCursorPosition(0)  # Show start of URL
+        layout.addWidget(url_field)
+        
+        # Store reference to update if needed
+        self._auth_url_field = url_field
+
+        # Button row
+        button_layout = QHBoxLayout()
+
+        # Copy button
+        copy_button = QPushButton("Copy URL")
+        def copy_url():
+            clipboard = QApplication.clipboard()
+            clipboard.setText(self._auth_url)
+            copy_button.setText("Copied!")
+            logging.info("Auth URL copied to clipboard")
+            # Reset button text after 2 seconds
+            QTimer.singleShot(2000, lambda: copy_button.setText("Copy URL") if copy_button else None)
+        copy_button.clicked.connect(copy_url)
+        button_layout.addWidget(copy_button)
+
+        button_layout.addStretch()
+        
+        # Cancel button
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self._cancel_auth_from_dialog)
+        button_layout.addWidget(cancel_button)
+
+        layout.addLayout(button_layout)
+        
+        # Info label
+        info_label = QLabel("This dialog will close automatically when authorization completes.")
+        info_label.setStyleSheet("color: gray; font-size: 11px;")
+        layout.addWidget(info_label)
+
+        # Store reference to dialog so we can close it later
+        self._auth_url_dialog = dialog
+        
+        # Connect dialog rejected (X button) to cancel auth
+        dialog.rejected.connect(self._cancel_auth_from_dialog)
+
+        dialog.show()
+        logging.info(f"Displayed auth URL dialog for manual browser opening (URL: {self._auth_url[:50]}...)")
+
+    def _close_auth_url_dialog(self):
+        """Close the auth URL dialog if it's open."""
+        try:
+            if hasattr(self, '_auth_url_dialog') and self._auth_url_dialog:
+                # Disconnect rejected signal to prevent recursive cancel
+                try:
+                    self._auth_url_dialog.rejected.disconnect()
+                except Exception:
+                    pass
+                self._auth_url_dialog.close()
+                self._auth_url_dialog.deleteLater()
+                self._auth_url_dialog = None
+                logging.debug("Closed auth URL dialog")
+        except Exception as e:
+            logging.debug(f"Error closing auth URL dialog: {e}")
+            self._auth_url_dialog = None
+    
+    def _cancel_auth_from_dialog(self):
+        """Cancel authentication when user closes the auth URL dialog or clicks Cancel."""
+        logging.info("User cancelled authentication from dialog")
+        
+        # Close the dialog first
+        self._close_auth_url_dialog()
+        
+        # Cancel the current auth worker
+        if self._current_auth_worker is not None:
+            try:
+                self._current_auth_worker.cancel()
+                logging.info("Cancelled auth worker from dialog")
+            except Exception as e:
+                logging.debug(f"Could not cancel auth worker: {e}")
+            self._current_auth_worker = None
+        
+        # Stop timeout timer if running
+        try:
+            if hasattr(self, 'auth_timeout_timer') and self.auth_timeout_timer:
+                self.auth_timeout_timer.stop()
+                self.auth_timeout_timer = None
+        except Exception:
+            pass
+        
+        # Restore UI state
+        try:
+            self.progress_bar.setVisible(False)
+            self.connect_button.setEnabled(True)
+            self._set_connected(False)
+        except Exception as e:
+            logging.debug(f"Error restoring UI after auth cancel: {e}")
 
     def _on_auth_timeout(self):
         """Abort authentication if it takes too long (e.g., user closed or denied)."""
         logging.warning("Authentication timeout reached. Aborting and restoring UI.")
-        
+
+        # Close auth URL dialog if open
+        self._close_auth_url_dialog()
+
         # Cancel the current worker (don't kill thread - let it finish naturally)
         # The OAuth flow will eventually timeout or complete, but we'll ignore the results
         if self._current_auth_worker is not None:
@@ -1442,11 +1587,11 @@ class CloudSavePanel(QWidget):
             except Exception as e:
                 logging.debug(f"Could not cancel worker: {e}")
             self._current_auth_worker = None
-        
+
         # NOTE: We do NOT terminate the thread! OAuth flow is blocking and cannot be interrupted.
         # The thread will finish naturally when OAuth completes or times out.
         # This prevents the "QThread: Destroyed while thread is still running" crash.
-        
+
         # Restore UI state
         try:
             self.progress_bar.setVisible(False)
@@ -2217,6 +2362,33 @@ class CloudSavePanel(QWidget):
     
     def _on_exit_clicked(self):
         """Handle exit button - return to main view."""
+        # Cancel any ongoing authentication
+        if self._current_auth_worker is not None:
+            try:
+                self._current_auth_worker.cancel()
+                logging.info("Cancelled auth worker on exit")
+            except Exception as e:
+                logging.debug(f"Could not cancel auth worker on exit: {e}")
+            self._current_auth_worker = None
+        
+        # Close auth URL dialog if open
+        self._close_auth_url_dialog()
+        
+        # Stop timeout timer if running
+        try:
+            if hasattr(self, 'auth_timeout_timer') and self.auth_timeout_timer:
+                self.auth_timeout_timer.stop()
+                self.auth_timeout_timer = None
+        except Exception:
+            pass
+        
+        # Restore UI state
+        try:
+            self.progress_bar.setVisible(False)
+            self.connect_button.setEnabled(True)
+        except Exception:
+            pass
+        
         if self.main_window:
             self.main_window.exit_cloud_panel()
     
@@ -2233,25 +2405,18 @@ class CloudSavePanel(QWidget):
     def cleanup_on_close(self):
         """Clean up resources when the application is closing."""
         try:
-            # Cancel all active auth workers
+            # Cancel all active auth workers (mark them as cancelled)
             for worker in self._active_auth_workers:
                 try:
                     worker.cancel()
                 except Exception as e:
                     logging.debug(f"Could not cancel worker: {e}")
+
+            # DON'T wait for auth threads - they are blocking on OAuth server
+            # and will terminate on their own (server has timeout) or when process exits.
+            # Waiting would block app shutdown unnecessarily.
             
-            # Wait for active auth threads to finish (with timeout)
-            for thread in self._active_auth_threads:
-                try:
-                    if thread.isRunning():
-                        logging.debug(f"Waiting for auth thread to finish...")
-                        if not thread.wait(2000):  # Wait max 2 seconds
-                            logging.warning("Auth thread did not finish in time")
-                except RuntimeError:
-                    # Thread already deleted
-                    pass
-            
-            # Clear the lists
+            # Clear the lists (threads will be garbage collected when they finish)
             self._active_auth_threads.clear()
             self._active_auth_workers.clear()
             logging.info("Cloud panel cleanup completed")
