@@ -592,6 +592,212 @@ def _detect_duckstation_single_file(profile_name: str, source_path: str) -> str:
         return None
 
 
+def _detect_ymir_saturn_save(profile_data: dict) -> tuple:
+    """
+    Detect if this is a Ymir (Saturn) profile and return info for extracting the specific save.
+    
+    Ymir stores all Saturn saves in a single backup RAM file (bup-int.bin).
+    Each game save is identified by a saturn_save_id (e.g., "SEGARALLY_0").
+    For backup, we extract the specific save to a .bup file.
+    For restore, we import the .bup file back into the backup RAM.
+    
+    Args:
+        profile_data: Dictionary containing profile data with 'emulator' and 'saturn_save_id' keys
+        
+    Returns:
+        Tuple (backup_ram_path: str, saturn_save_id: str) if Ymir detected, (None, None) otherwise
+    """
+    if not isinstance(profile_data, dict):
+        return None, None
+    
+    # Check if this is a Ymir profile
+    emulator = profile_data.get('emulator', '').lower()
+    if emulator != 'ymir':
+        return None, None
+    
+    # Get the Saturn save ID
+    saturn_save_id = profile_data.get('saturn_save_id')
+    if not saturn_save_id:
+        logging.debug("Ymir profile detected but no saturn_save_id found.")
+        return None, None
+    
+    # Find the backup RAM file (bup-int.bin) in the paths
+    paths = profile_data.get('paths', [])
+    if not paths:
+        path = profile_data.get('path')
+        if path:
+            paths = [path]
+    
+    backup_ram_path = None
+    for p in paths:
+        if os.path.basename(p).lower() == 'bup-int.bin' and os.path.isfile(p):
+            backup_ram_path = p
+            break
+        # Also check for external backup files
+        if os.path.basename(p).lower().startswith('bup-ext') and os.path.isfile(p):
+            backup_ram_path = p
+            break
+    
+    if not backup_ram_path:
+        logging.warning(f"Ymir profile detected but no backup RAM file found in paths: {paths}")
+        return None, None
+    
+    logging.info(f"Ymir profile detected: saturn_save_id='{saturn_save_id}', backup_ram='{backup_ram_path}'")
+    return backup_ram_path, saturn_save_id
+
+
+def _perform_ymir_backup(profile_name: str, profile_data: dict, archive_path: str, 
+                          zip_compression, zip_compresslevel) -> tuple:
+    """
+    Perform a specialized backup for Ymir (Saturn) profiles.
+    
+    Extracts the specific game save from backup RAM to a .bup file and adds it to the ZIP.
+    
+    Args:
+        profile_name: Name of the profile
+        profile_data: Profile data dictionary
+        archive_path: Path to the ZIP archive being created
+        zip_compression: ZIP compression type
+        zip_compresslevel: ZIP compression level
+        
+    Returns:
+        Tuple (success: bool, message: str)
+    """
+    import tempfile
+    
+    backup_ram_path, saturn_save_id = _detect_ymir_saturn_save(profile_data)
+    
+    if not backup_ram_path or not saturn_save_id:
+        return False, "Could not detect Ymir backup RAM file or Saturn save ID"
+    
+    try:
+        from emulator_utils.ymir_manager import extract_saturn_save
+    except ImportError as e:
+        logging.error(f"Could not import ymir_manager: {e}")
+        return False, f"Ymir manager not available: {e}"
+    
+    # Create a temporary directory for the extracted save
+    temp_dir = tempfile.mkdtemp(prefix="savestate_ymir_")
+    
+    try:
+        # Extract the save to a .bup file
+        bup_filename = f"{saturn_save_id}.bup"
+        bup_path = os.path.join(temp_dir, bup_filename)
+        
+        logging.info(f"Ymir: Extracting save '{saturn_save_id}' from '{backup_ram_path}'...")
+        extracted_path = extract_saturn_save(backup_ram_path, saturn_save_id, bup_path)
+        
+        if not extracted_path or not os.path.isfile(extracted_path):
+            return False, f"Failed to extract Saturn save '{saturn_save_id}' from backup RAM"
+        
+        logging.info(f"Ymir: Save extracted to '{extracted_path}' ({os.path.getsize(extracted_path)} bytes)")
+        
+        # Create the ZIP archive with the extracted .bup file
+        with zipfile.ZipFile(archive_path, 'w', compression=zip_compression, 
+                            compresslevel=zip_compresslevel) as zipf:
+            
+            # Write manifest
+            manifest_data = {
+                "schema": 1,
+                "app_version": getattr(config, "APP_VERSION", "unknown"),
+                "created_at": datetime.now().isoformat(),
+                "profile_name": profile_name,
+                "emulator": "Ymir",
+                "saturn_save_id": saturn_save_id,
+                "backup_ram_path": backup_ram_path,
+                "platform": platform.system(),
+            }
+            zipf.writestr("savestate/manifest.json", json.dumps(manifest_data, indent=2, ensure_ascii=False))
+            
+            # Add the .bup file
+            zipf.write(extracted_path, arcname=bup_filename)
+            logging.info(f"Ymir: Added '{bup_filename}' to backup archive")
+        
+        return True, f"Ymir save '{saturn_save_id}' backed up successfully"
+        
+    except Exception as e:
+        logging.error(f"Ymir backup failed: {e}", exc_info=True)
+        return False, f"Ymir backup failed: {e}"
+    
+    finally:
+        # Clean up temporary directory
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
+def _perform_ymir_restore(profile_name: str, profile_data: dict, archive_path: str) -> tuple:
+    """
+    Perform a specialized restore for Ymir (Saturn) profiles.
+    
+    Extracts the .bup file from the ZIP and imports it into the backup RAM.
+    
+    Args:
+        profile_name: Name of the profile
+        profile_data: Profile data dictionary
+        archive_path: Path to the ZIP archive to restore from
+        
+    Returns:
+        Tuple (success: bool, message: str)
+    """
+    import tempfile
+    
+    backup_ram_path, saturn_save_id = _detect_ymir_saturn_save(profile_data)
+    
+    if not backup_ram_path:
+        return False, "Could not detect Ymir backup RAM file"
+    
+    try:
+        from emulator_utils.ymir_manager import import_saturn_save
+    except ImportError as e:
+        logging.error(f"Could not import ymir_manager: {e}")
+        return False, f"Ymir manager not available: {e}"
+    
+    # Create a temporary directory for extraction
+    temp_dir = tempfile.mkdtemp(prefix="savestate_ymir_restore_")
+    
+    try:
+        with zipfile.ZipFile(archive_path, 'r') as zipf:
+            # Find the .bup file in the archive
+            bup_file = None
+            for member in zipf.namelist():
+                if member.endswith('.bup') and not member.startswith('savestate/'):
+                    bup_file = member
+                    break
+            
+            if not bup_file:
+                return False, "No .bup save file found in the backup archive"
+            
+            # Extract the .bup file
+            logging.info(f"Ymir: Extracting '{bup_file}' from archive...")
+            zipf.extract(bup_file, temp_dir)
+            extracted_bup_path = os.path.join(temp_dir, bup_file)
+            
+            if not os.path.isfile(extracted_bup_path):
+                return False, f"Failed to extract .bup file from archive"
+        
+        # Import the save into backup RAM
+        logging.info(f"Ymir: Importing save into '{backup_ram_path}'...")
+        success = import_saturn_save(backup_ram_path, extracted_bup_path, overwrite=True)
+        
+        if success:
+            return True, f"Ymir save restored successfully to '{backup_ram_path}'"
+        else:
+            return False, "Failed to import save into backup RAM"
+        
+    except Exception as e:
+        logging.error(f"Ymir restore failed: {e}", exc_info=True)
+        return False, f"Ymir restore failed: {e}"
+    
+    finally:
+        # Clean up temporary directory
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
 def _add_directory_to_zip(zipf: zipfile.ZipFile, source_path: str) -> None:
     """
     Add all files from a directory to a ZIP archive, preserving structure.
@@ -669,7 +875,7 @@ def _write_backup_manifest(zipf: zipfile.ZipFile, profile_name: str,
 
 
 # --- Backup Function ---
-def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max_source_size_mb, compression_mode="standard"):
+def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max_source_size_mb, compression_mode="standard", profile_data=None):
     """
     Perform a backup using zipfile. Handles a single path (str) or multiple paths (list).
     
@@ -680,6 +886,7 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
         max_backups: Maximum number of backups to keep (-1 for unlimited)
         max_source_size_mb: Maximum source size in MB (-1 for no limit)
         compression_mode: 'standard', 'best', 'fast', or 'none'
+        profile_data: Optional profile data dictionary (for emulator-specific handling)
         
     Returns:
         Tuple (success: bool, message: str)
@@ -725,6 +932,26 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
 
     zip_compression, zip_compresslevel = _get_compression_settings(compression_mode)
 
+    # --- Check for Ymir (Saturn) specialized backup ---
+    if profile_data:
+        backup_ram_path, saturn_save_id = _detect_ymir_saturn_save(profile_data)
+        if backup_ram_path and saturn_save_id:
+            logging.info(f"Using Ymir specialized backup for '{profile_name}' (save: {saturn_save_id})")
+            success, message = _perform_ymir_backup(profile_name, profile_data, archive_path, 
+                                                    zip_compression, zip_compresslevel)
+            if success:
+                # Manage old backups
+                deleted_files = manage_backups(profile_name, backup_base_dir, max_backups)
+                deleted_msg = f" Deleted {len(deleted_files)} obsolete backups." if deleted_files else ""
+                return True, f"Backup completed successfully:\n'{archive_name}'" + deleted_msg
+            else:
+                # Try to delete failed archive
+                try:
+                    if os.path.exists(archive_path):
+                        os.remove(archive_path)
+                except Exception:
+                    pass
+                return False, message
 
     try:
         with zipfile.ZipFile(archive_path, 'w', compression=zip_compression, compresslevel=zip_compresslevel) as zipf:
@@ -1068,7 +1295,7 @@ def _extract_member_to_destination(zipf: zipfile.ZipFile, member_path: str,
 
 
 # --- Restore Function ---
-def perform_restore(profile_name, destination_paths, archive_to_restore_path):
+def perform_restore(profile_name, destination_paths, archive_to_restore_path, profile_data=None):
     """
     Perform restoration from a ZIP archive. Handles a single path (str) or multiple paths (list).
     
@@ -1076,6 +1303,7 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path):
         profile_name: Name of the profile being restored
         destination_paths: Single path string or list of destination paths
         archive_to_restore_path: Path to the backup archive
+        profile_data: Optional profile data dictionary (for emulator-specific handling)
         
     Returns:
         Tuple (success: bool, message: str)
@@ -1092,6 +1320,13 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path):
     if not archive_ok:
         logging.error(archive_error)
         return False, archive_error
+
+    # --- Check for Ymir (Saturn) specialized restore ---
+    if profile_data:
+        backup_ram_path, saturn_save_id = _detect_ymir_saturn_save(profile_data)
+        if backup_ram_path:
+            logging.info(f"Using Ymir specialized restore for '{profile_name}'")
+            return _perform_ymir_restore(profile_name, profile_data, archive_to_restore_path)
 
     # --- Clean destination paths ---
     cleanup_ok, cleanup_error = _cleanup_all_destination_paths(paths_to_process)

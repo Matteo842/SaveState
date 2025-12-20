@@ -754,7 +754,8 @@ class MainWindowHandlers:
                 backup_base_dir,
                 max_backups,
                 max_source_size_mb,
-                compression_mode
+                compression_mode,
+                profile_data  # Pass profile data for emulator-specific handling (e.g., Ymir)
             )
 
         self.main_window.worker_thread.finished.connect(self.on_operation_finished)
@@ -908,7 +909,7 @@ class MainWindowHandlers:
                         self.main_window.set_controls_enabled(False)
                         self.main_window.worker_thread = WorkerThread(
                             core_logic.perform_restore,
-                            profile_name, destination_paths, archive_to_restore
+                            profile_name, destination_paths, archive_to_restore, profile_data
                         )
                         self.main_window.worker_thread.finished.connect(self.on_operation_finished)
                         self.main_window.worker_thread.progress.connect(self.main_window.status_label.setText)

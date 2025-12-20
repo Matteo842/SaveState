@@ -329,7 +329,8 @@ def run_silent_backup(profile_name):
             backup_base_dir,
             max_bk,
             max_src_size,
-            compression_mode
+            compression_mode,
+            profile_data  # Pass profile data for emulator-specific handling (e.g., Ymir)
         )
         logging.debug(f"<<<--- POST-CALL core_logic.perform_backup for '{profile_name}'")
         logging.debug(f"      Result: success={success}, error_message='{message}'")

@@ -26,6 +26,7 @@ from .pcsx2_manager import find_pcsx2_profiles
 from .gopher64_manager import find_gopher64_profiles
 from .vita3k_manager import find_vita3k_profiles
 from .mednafen_manager import find_mednafen_profiles
+from .ymir_manager import find_ymir_profiles
 # RetroArch support (core-based front-end)
 from .retroarch_manager import list_retroarch_cores, find_retroarch_profiles
 #from .xemu_manager import find_xemu_profiles
@@ -45,7 +46,7 @@ KNOWN_EMULATORS = [
     # Questi devono corrispondere esattamente alle chiavi in EMULATORS
     'rpcs3', 'yuzu', 'eden', 'citron', 'ppsspp', 'citra', 'azahar', 'ryujinx', 'dolphin',
     'duckstation', 'mgba', 'snes9x', 'desmume', 'melonds', 'cemu', 'flycast', 'shadps4',
-    'sameboy', 'xenia', 'pcsx2', 'gopher64', 'vita3k', 'mednafen', 'mednaffe', 'retroarch',
+    'sameboy', 'xenia', 'pcsx2', 'gopher64', 'vita3k', 'mednafen', 'mednaffe', 'ymir', 'retroarch',
 ]
 
 UNKNOWN_EMULATORS = [
@@ -161,6 +162,10 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'mednaffe': {
         'name': 'Mednaffe',
         'profile_finder': lambda path: find_mednafen_profiles(path)
+    },
+    'ymir': {
+        'name': 'Ymir',
+        'profile_finder': lambda path: find_ymir_profiles(path)
     },
     # RetroArch is a front-end; we expose a special entry primarily for detection.
     # Its finder will return a list of available cores when called, but the UI
