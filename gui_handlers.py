@@ -253,6 +253,12 @@ class MainWindowHandlers:
                 self.main_window.exit_settings_panel()
                 logging.debug("Settings panel toggled OFF (closed).")
             else:
+                # Close profile editor if it's open before showing settings
+                if getattr(self.main_window, '_edit_mode_active', False):
+                    self.main_window.profile_editor_group.setVisible(False)
+                    self.main_window.profile_group.setVisible(True)
+                    self.main_window.exit_profile_edit_mode()
+                    logging.debug("Profile editor closed before opening settings.")
                 # Settings are closed, open them
                 self.main_window.show_settings_panel()
                 logging.debug("Settings panel toggled ON (opened).")

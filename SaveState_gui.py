@@ -1740,6 +1740,12 @@ class MainWindow(QMainWindow):
         try:
             if not profile_name or profile_name not in self.profiles:
                 return
+            
+            # Close settings panel if it's open before showing profile editor
+            if getattr(self, '_settings_mode_active', False):
+                self.exit_settings_panel()
+                logging.debug("Settings panel closed before opening profile editor.")
+            
             self._editing_profile_original_name = profile_name
             data = self.profiles.get(profile_name, {})
             # Populate fields
