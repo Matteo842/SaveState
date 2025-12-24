@@ -47,8 +47,25 @@ class SteamDialog(QDialog):
         self.game_list_widget.setColumnHidden(1, False) # Show AppID column
         self.game_list_widget.setHeaderHidden(True) # Hide header to maintain clean look
         
-        # Increase font size (~20-30% larger)
-        self.game_list_widget.setStyleSheet("font-size: 11pt;")
+        # Styling: larger font, reduced left padding, horizontal separators between rows
+        self.game_list_widget.setStyleSheet("""
+            QTreeWidget {
+                font-size: 11pt;
+                border: none;
+            }
+            QTreeWidget::item {
+                padding: 4px 8px;
+                padding-left: 4px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            }
+            QTreeWidget::item:selected {
+                background-color: rgba(180, 40, 40, 0.8);
+                color: white;
+            }
+            QTreeWidget::item:hover:!selected {
+                background-color: rgba(255, 255, 255, 0.08);
+            }
+        """)
 
         self.status_label = QLabel("Select a game and click Configure.")
         
