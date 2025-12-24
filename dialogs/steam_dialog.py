@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from PySide6.QtWidgets import (
-    QDialog, QListWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QApplication, QInputDialog, QMessageBox, QListWidgetItem, QLineEdit
+    QDialog, QTreeWidget, QTreeWidgetItem, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QApplication, QInputDialog, QMessageBox, QLineEdit
 )
 from PySide6.QtCore import Signal, Slot, Qt, QTimer, QEvent
 
@@ -32,7 +32,24 @@ class SteamDialog(QDialog):
         self.steam_userdata_info = parent.steam_userdata_info if parent and hasattr(parent, 'steam_userdata_info') else {} 
 
         # --- Create UI Widgets ---
-        self.game_list_widget = QListWidget()
+        # Replace QListWidget with QTreeWidget for multi-column support
+        from PySide6.QtWidgets import QHeaderView
+        self.game_list_widget = QTreeWidget()
+        self.game_list_widget.setHeaderLabels(["Game Name", "AppID"])
+        
+        # Configure columns: Name stretches to fill available space, AppID is fixed width at right edge
+        header = self.game_list_widget.header()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(1, 130)  # Fixed width for AppID column
+        header.setStretchLastSection(False)  # Prevent last column from stretching
+        
+        self.game_list_widget.setColumnHidden(1, False) # Show AppID column
+        self.game_list_widget.setHeaderHidden(True) # Hide header to maintain clean look
+        
+        # Increase font size (~20-30% larger)
+        self.game_list_widget.setStyleSheet("font-size: 11pt;")
+
         self.status_label = QLabel("Select a game and click Configure.")
         
         self.search_bar = QLineEdit()
@@ -63,8 +80,9 @@ class SteamDialog(QDialog):
         self.refresh_button.clicked.connect(self.start_steam_scan)
         self.close_button.clicked.connect(self.reject)
         self.search_bar.textChanged.connect(self.filter_game_list)
+        # QTreeWidget emits (current, previous)
         self.game_list_widget.currentItemChanged.connect(
-            lambda item: self.configure_button.setEnabled(item is not None)
+            lambda current, previous: self.configure_button.setEnabled(current is not None)
         )
         self.game_list_widget.itemDoubleClicked.connect(self._handle_double_click)
 
@@ -88,18 +106,35 @@ class SteamDialog(QDialog):
     def populate_game_list(self):
         self.game_list_widget.clear()
         if not self.steam_games_data:
-             self.game_list_widget.addItem("No games found.")
+             # Add a dummy item if no games found
+             from PySide6.QtWidgets import QTreeWidgetItem
+             item = QTreeWidgetItem(["No games found."])
+             self.game_list_widget.addTopLevelItem(item)
              self.configure_button.setEnabled(False) 
              return
 
-        self.configure_button.setEnabled(self.game_list_widget.currentItem() is not None) 
         sorted_games = sorted(self.steam_games_data.items(), key=lambda item: item[1]['name'])
+        
+        from PySide6.QtWidgets import QTreeWidgetItem
         for appid, game_data in sorted_games:
             profile_exists_marker = "[EXISTING PROFILE]" if game_data['name'] in self.profiles else ""
-            item_text = f"{game_data['name']} (AppID: {appid}) {profile_exists_marker}".strip()
-            item = QListWidgetItem(item_text)
-            item.setData(Qt.ItemDataRole.UserRole, appid)
-            self.game_list_widget.addItem(item)
+            # Display name without AppID
+            display_text = f"{game_data['name']} {profile_exists_marker}".strip()
+            
+            # Create TreeItem with Name in Col 0 and AppID in Col 1
+            # Add "AppID: " prefix as requested
+            item = QTreeWidgetItem([display_text, f"AppID: {appid}"])
+            item.setData(0, Qt.ItemDataRole.UserRole, appid)
+            
+            # Align the AppID column (column 1) to the left for better readability
+            item.setTextAlignment(1, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            
+            self.game_list_widget.addTopLevelItem(item)
+        
+        # Clear selection and disable configure button until user explicitly selects a game
+        self.game_list_widget.clearSelection()
+        self.game_list_widget.setCurrentItem(None)
+        self.configure_button.setEnabled(False)
     
     # --- METHOD to emit signal and close ---
     @Slot()
@@ -108,10 +143,13 @@ class SteamDialog(QDialog):
         if not current_item:
             return
 
-        appid = current_item.data(Qt.ItemDataRole.UserRole)
+        appid = current_item.data(0, Qt.ItemDataRole.UserRole)
         game_data = self.steam_games_data.get(appid)
 
         if not game_data or not appid:
+             # Handle case where "No games found" item is selected or similar
+             if current_item.text(0) == "No games found.":
+                 return
              QMessageBox.warning(self, "Error", "Unable to get data for the selected game.")
              return
 
@@ -121,18 +159,18 @@ class SteamDialog(QDialog):
         self.accept() 
         
     # --- METHOD to handle double-click on game list ---
-    @Slot(QListWidgetItem)
-    def _handle_double_click(self, item):
+    @Slot(QTreeWidgetItem, int)
+    def _handle_double_click(self, item, column):
         """Handle double-click on a game in the list to automatically select it."""
         if not item:
             return
             
         # Get the AppID from the item's user data
-        appid = item.data(Qt.ItemDataRole.UserRole)
+        appid = item.data(0, Qt.ItemDataRole.UserRole)
         game_data = self.steam_games_data.get(appid)
         
         if not game_data or not appid:
-            QMessageBox.warning(self, "Error", "Unable to get data for the selected game.")
+            # Handle "No games found"
             return
             
         profile_name = game_data['name']
@@ -373,10 +411,10 @@ class SteamDialog(QDialog):
             self.search_bar.setVisible(False)
             self.game_list_widget.setFocus()
 
-        for i in range(self.game_list_widget.count()):
-            item = self.game_list_widget.item(i)
+        for i in range(self.game_list_widget.topLevelItemCount()):
+            item = self.game_list_widget.topLevelItem(i)
             # Make item visible if text is found in the item's text, case-insensitive
-            item.setHidden(text.lower() not in item.text().lower())
+            item.setHidden(text.lower() not in item.text(0).lower())
 
     def reject(self):
         logging.debug("[SteamDialog] Dialog rejected.")
