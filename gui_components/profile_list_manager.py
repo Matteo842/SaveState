@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 import logging
 import os
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QStackedWidget
+from PySide6.QtWidgets import (QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, 
+                               QStackedWidget, QWidget, QHBoxLayout, QPushButton)
 from PySide6.QtCore import Qt, QLocale, QCoreApplication, Slot, QSize
 from PySide6.QtGui import QIcon
 import core_logic
@@ -30,6 +31,12 @@ class ProfileListManager:
             logging.warning(f"Favorite icon 'star.png' not found in {star_icon_path}")
         if not self.empty_star_icon:
             logging.warning(f"Non-favorite icon 'emptystar.png' not found in {empty_star_icon_path}")
+        
+        # --- Loading Trash Icon ---
+        trash_icon_path = resource_path("icons/trash.png")
+        self.trash_icon_path = trash_icon_path if os.path.exists(trash_icon_path) else None
+        if not self.trash_icon_path:
+            logging.warning(f"Trash icon 'trash.png' not found in {trash_icon_path}")
         # --- End Loading Icons ---
 
         # --- Create Empty State Widget ---
@@ -48,7 +55,7 @@ class ProfileListManager:
 
         # Configure the table
         self.table_widget.setObjectName("ProfileTable")
-        self.table_widget.setColumnCount(3)
+        self.table_widget.setColumnCount(4)  # Added column for delete button
         self.table_widget.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table_widget.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table_widget.verticalHeader().setVisible(False)
@@ -59,7 +66,9 @@ class ProfileListManager:
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) # Column 0: Favorite Icon
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)        # Column 1: Profile Name
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents) # Column 2: Backup Info
-        self.table_widget.verticalHeader().setDefaultSectionSize(32)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)  # Column 3: Delete button
+        self.table_widget.setColumnWidth(3, 45)  # Delete column width (same as favorites column)
+        self.table_widget.verticalHeader().setDefaultSectionSize(36)  # Increased to match manage backups
         self.table_widget.setColumnWidth(0, 32)
 
         # Signal connections
@@ -69,6 +78,8 @@ class ProfileListManager:
         self.table_widget.cellClicked.connect(self.handle_favorite_toggle)
         # Double-click to open save folder
         self.table_widget.cellDoubleClicked.connect(self.handle_double_click)
+        # Selection changed - update delete buttons state
+        self.table_widget.itemSelectionChanged.connect(self._update_delete_buttons_state)
 
         self.retranslate_headers() # Set initial headers
         # self.update_profile_table() # Will be called by MainWindow after __init__
@@ -79,7 +90,8 @@ class ProfileListManager:
         self.table_widget.setHorizontalHeaderLabels([
             "", # Empty header for favorite column
             "Profile",
-            "Backup Info"
+            "Backup Info",
+            ""  # Empty header for delete column
         ])
 
     def get_selected_profile_name(self):
@@ -205,6 +217,10 @@ class ProfileListManager:
                 self.table_widget.setItem(row_index, 0, fav_item)
                 self.table_widget.setItem(row_index, 1, name_item)
                 self.table_widget.setItem(row_index, 2, info_item)
+
+                # --- Create Delete Button (Column 3) ---
+                delete_widget = self._create_delete_button(profile_name)
+                self.table_widget.setCellWidget(row_index, 3, delete_widget)
 
                 # Check if we need to reselect the row
                 if profile_name == selected_profile_name:
@@ -347,3 +363,104 @@ class ProfileListManager:
                 except Exception as e2:
                     logging.error(f"Error opening parent folder: {e2}")
                     self.main_window.status_label.setText(f"Error opening parent folder: {str(e2)}")
+
+    def _create_delete_button(self, profile_name: str) -> QWidget:
+        """Create a styled delete button widget for the profile row."""
+        button_widget = QWidget()
+        button_widget.setStyleSheet("background-color: transparent;")
+        button_layout = QHBoxLayout(button_widget)
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        button = QPushButton()
+        button.setProperty("profile_name", profile_name)
+        button.setEnabled(False)  # Start disabled, will be enabled for selected row
+        button.setVisible(False)  # Start hidden, will be shown only for selected row
+        
+        # Set exact 24x24 size to match the lock checkbox indicator
+        button.setFixedSize(QSize(24, 24))
+        button.setMinimumSize(QSize(24, 24))
+        button.setMaximumSize(QSize(24, 24))
+        button.setIconSize(QSize(16, 16))  # Icon slightly smaller than button
+        button.setToolTip(f"Delete profile '{profile_name}'")
+        
+        # Set trash icon - try custom icon first, then fallback to system icon
+        icon_set = False
+        if self.trash_icon_path and os.path.exists(self.trash_icon_path):
+            trash_icon = QIcon(self.trash_icon_path)
+            if not trash_icon.isNull():
+                button.setIcon(trash_icon)
+                icon_set = True
+                logging.debug(f"Loaded trash icon from: {self.trash_icon_path}")
+        
+        if not icon_set:
+            # Fallback to system trash icon
+            from PySide6.QtWidgets import QApplication, QStyle
+            style = QApplication.instance().style()
+            if style:
+                system_icon = style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+                button.setIcon(system_icon)
+                logging.debug("Using system trash icon as fallback")
+        
+        # Custom button styling - exactly like the lock checkbox in manage backups
+        # Red theme for delete action
+        button.setStyleSheet("""
+            QPushButton {
+                border-radius: 4px;
+                border: 2px solid #555555;
+                background-color: #2b2b2b;
+                padding: 0px;
+                min-width: 24px;
+                max-width: 24px;
+                min-height: 24px;
+                max-height: 24px;
+            }
+            QPushButton:hover {
+                border: 2px solid #888888;
+                background-color: #353535;
+            }
+            QPushButton:pressed {
+                border: 2px solid #b00020;
+                background-color: #b00020;
+            }
+            QPushButton:disabled {
+                border: 2px solid #333333;
+                background-color: #1a1a1a;
+            }
+        """)
+        
+        # Connect to delete handler
+        button.clicked.connect(lambda: self._on_delete_button_clicked(profile_name))
+        
+        button_layout.addWidget(button)
+        return button_widget
+    
+    def _update_delete_buttons_state(self):
+        """Show delete button only for the currently selected row, hide for others."""
+        selected_rows = self.table_widget.selectionModel().selectedRows()
+        selected_row = selected_rows[0].row() if selected_rows else -1
+        
+        for row in range(self.table_widget.rowCount()):
+            button_widget = self.table_widget.cellWidget(row, 3)  # Column 3 is the delete button
+            if button_widget:
+                button = button_widget.findChild(QPushButton)
+                if button:
+                    # Show button only on selected row, hide on others
+                    is_selected = (row == selected_row)
+                    button.setVisible(is_selected)
+                    button.setEnabled(is_selected)
+    
+    def _on_delete_button_clicked(self, profile_name: str):
+        """Handle delete button click by delegating to the main window's delete handler."""
+        if not profile_name or profile_name not in self.profiles:
+            logging.warning(f"Delete button clicked for invalid profile: '{profile_name}'")
+            return
+        
+        logging.debug(f"Delete button clicked for profile: '{profile_name}'")
+        
+        # Ensure the profile is selected in the table before calling the handler
+        self.select_profile_in_table(profile_name)
+        
+        # Delegate to the main window's delete handler
+        if hasattr(self.main_window, 'handlers') and self.main_window.handlers:
+            self.main_window.handlers.handle_delete_profile()

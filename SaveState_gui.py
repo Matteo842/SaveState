@@ -681,7 +681,6 @@ class MainWindow(QMainWindow):
         
         actions_layout.addWidget(self.create_shortcut_button)
         actions_layout.addWidget(self.minecraft_button)
-        actions_layout.addWidget(self.delete_profile_button)
         actions_group.setLayout(actions_layout)
         content_layout.addWidget(actions_group)
         general_group = QGroupBox("General")
@@ -1047,7 +1046,6 @@ class MainWindow(QMainWindow):
         self.settings_button.setText("")
         self.new_profile_button.setText("New Profile...")
         self.steam_button.setText("Manage Steam")
-        self.delete_profile_button.setText("Delete Profile")
         self.backup_button.setText("Backup")
         self.restore_button.setText("Restore...")
         self.manage_backups_button.setText("Manage Backups")
@@ -1308,7 +1306,6 @@ class MainWindow(QMainWindow):
         self.backup_button.setEnabled(has_selection)
         # Restore button is always enabled now - can restore from ZIP without a profile
         self.restore_button.setEnabled(True)
-        self.delete_profile_button.setEnabled(has_selection)
         self.manage_backups_button.setEnabled(has_selection)
         self.create_shortcut_button.setEnabled(has_selection)
         if hasattr(self, 'cloud_button'):
@@ -1401,7 +1398,6 @@ class MainWindow(QMainWindow):
         self.backup_button.setEnabled(enabled and has_selection)
         # Restore button is always enabled - can restore from ZIP without a profile
         self.restore_button.setEnabled(enabled)
-        self.delete_profile_button.setEnabled(enabled and has_selection)
         self.manage_backups_button.setEnabled(enabled and has_selection)
         self.create_shortcut_button.setEnabled(enabled and has_selection)
         self.new_profile_button.setEnabled(enabled)
