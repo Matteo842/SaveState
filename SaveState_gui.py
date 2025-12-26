@@ -1718,6 +1718,40 @@ class MainWindow(QMainWindow):
                 self.update_action_button_states()
                 # Build and show a context menu like Linux/Ubuntu
                 menu = QMenu(self)
+                # Enable translucent background to fix rounded corners black box issue
+                menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+                menu.setWindowFlags(menu.windowFlags() | Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
+                
+                # Apply modern styling to the menu
+                menu.setStyleSheet("""
+                    QMenu {
+                        background-color: #2d2d2d;
+                        border: 1px solid #555555;
+                        border-radius: 6px;
+                        padding: 3px 2px;
+                    }
+                    QMenu::item {
+                        background-color: transparent;
+                        color: #e0e0e0;
+                        padding: 5px 12px;
+                        margin: 1px 3px;
+                        border-radius: 3px;
+                        font-size: 9pt;
+                    }
+                    QMenu::item:selected {
+                        background-color: #8B0000;
+                        color: #ffffff;
+                    }
+                    QMenu::separator {
+                        height: 1px;
+                        background-color: #555555;
+                        margin: 3px 6px;
+                    }
+                    QMenu::icon {
+                        padding-left: 4px;
+                    }
+                """)
+                
                 # Actions
                 act_edit = QAction("Edit Profile", self)
                 act_shortcut = QAction("Create Desktop Shortcut", self)
@@ -1731,6 +1765,7 @@ class MainWindow(QMainWindow):
                 act_edit.triggered.connect(self.handlers.handle_show_edit_profile)
                 act_shortcut.triggered.connect(self.handlers.handle_create_shortcut)
                 menu.addAction(act_edit)
+                menu.addSeparator()  # Dividing line between options
                 menu.addAction(act_shortcut)
                 global_pos = self.profile_table_widget.viewport().mapToGlobal(pos)
                 menu.exec(global_pos)
