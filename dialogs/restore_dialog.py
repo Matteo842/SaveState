@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 from PySide6.QtWidgets import (
     QDialog, QListWidget, QLabel, QDialogButtonBox, QVBoxLayout,
-    QListWidgetItem, QPushButton, QFileDialog, QHBoxLayout, QMessageBox
+    QListWidgetItem, QPushButton, QFileDialog, QHBoxLayout, QMessageBox,
+    QStyledItemDelegate, QStyleOptionViewItem, QStyle
 )
 from PySide6.QtCore import Qt, QLocale, QCoreApplication
-from PySide6.QtGui import QBrush, QColor, QIcon
+from PySide6.QtGui import QBrush, QColor, QIcon, QPalette
 
 import core_logic
 import config
@@ -12,6 +13,54 @@ import logging
 import os
 from gui_components import lock_backup_manager
 from utils import resource_path
+
+
+class RestoreSelectionDelegate(QStyledItemDelegate):
+    """
+    Custom Delegate for restore list selection:
+    - Dark Grey Background (#2A2A2A)
+    - 4px Red Vertical Line on the LEFT edge
+    - White Text
+    """
+    def paint(self, painter, option, index):
+        painter.save()
+        
+        # Check if the item is selected
+        if option.state & QStyle.State_Selected:
+            # 1. Custom Background (same as profile/backup tables: #2A2A2A)
+            bg_color = QColor("#2A2A2A")
+            painter.fillRect(option.rect, bg_color)
+            
+            # 2. Vertical Red Line on the LEFT edge
+            line_width = 4
+            painter.fillRect(
+                option.rect.x(), 
+                option.rect.y(), 
+                line_width, 
+                option.rect.height(), 
+                QColor("#A10808")
+            )
+            
+            # 3. Prepare option for base painting (Text/Icon)
+            opt = QStyleOptionViewItem(option)
+            opt.state &= ~QStyle.State.State_Selected 
+            
+            # Force Text Color to White
+            palette = opt.palette
+            white = QColor(Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.Text, white)
+            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.WindowText, white)
+            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.Text, white)
+            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.WindowText, white)
+            opt.palette = palette
+            
+            # Draw content (icon, text) using the modified option
+            super().paint(painter, opt, index)
+        else:
+            # Standard unselected painting
+            super().paint(painter, option, index)
+            
+        painter.restore()
 
 
 class RestoreDialog(QDialog):
@@ -48,6 +97,11 @@ class RestoreDialog(QDialog):
         
         self.setMinimumWidth(450)
         self.backup_list_widget = QListWidget()
+        
+        # Apply custom selection delegate (matches profile/backup table style)
+        self.restore_delegate = RestoreSelectionDelegate(self.backup_list_widget)
+        self.backup_list_widget.setItemDelegate(self.restore_delegate)
+        
         no_backup_label = None
 
         # --- Retrieve the CURRENT base path from the parent's settings ---
@@ -118,9 +172,26 @@ class RestoreDialog(QDialog):
         self.zip_info_label = QLabel("")
         self.zip_info_label.hide()
 
-        # --- Load from ZIP Button ---
-        self.load_zip_button = QPushButton("Load from ZIP...")
+        # --- Load from ZIP Button (styled for more prominence) ---
+        self.load_zip_button = QPushButton("  Load from ZIP...")
         self.load_zip_button.clicked.connect(self.handle_load_from_zip)
+        # Add folder icon for visual importance
+        from PySide6.QtWidgets import QApplication, QStyle as QSt
+        folder_icon = QApplication.instance().style().standardIcon(QSt.StandardPixmap.SP_FileDialogStart)
+        self.load_zip_button.setIcon(folder_icon)
+        # Style to make it more prominent (blue accent border)
+        self.load_zip_button.setStyleSheet("""
+            QPushButton {
+                padding: 8px 16px;
+                font-weight: bold;
+                border: 2px solid #2196F3;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #2196F3;
+                color: white;
+            }
+        """)
         
         # --- Clear ZIP Button (initially hidden) ---
         self.clear_zip_button = QPushButton("Clear Selection")
