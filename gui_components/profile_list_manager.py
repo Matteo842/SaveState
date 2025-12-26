@@ -365,7 +365,11 @@ class ProfileListManager:
                     self.main_window.status_label.setText(f"Error opening parent folder: {str(e2)}")
 
     def _create_delete_button(self, profile_name: str) -> QWidget:
-        """Create a styled delete button widget for the profile row."""
+        """Create a styled delete button widget for the profile row.
+        
+        Styled to match the Lock checkbox in Manage Backups dialog exactly.
+        """
+        # Container widget with transparent background (like lock checkbox)
         button_widget = QWidget()
         button_widget.setStyleSheet("background-color: transparent;")
         button_layout = QHBoxLayout(button_widget)
@@ -376,12 +380,7 @@ class ProfileListManager:
         button.setProperty("profile_name", profile_name)
         button.setEnabled(False)  # Start disabled, will be enabled for selected row
         button.setVisible(False)  # Start hidden, will be shown only for selected row
-        
-        # Set exact 24x24 size to match the lock checkbox indicator
-        button.setFixedSize(QSize(24, 24))
-        button.setMinimumSize(QSize(24, 24))
-        button.setMaximumSize(QSize(24, 24))
-        button.setIconSize(QSize(16, 16))  # Icon slightly smaller than button
+        button.setFlat(True)  # Flat button for cleaner look
         button.setToolTip(f"Delete profile '{profile_name}'")
         
         # Set trash icon - try custom icon first, then fallback to system icon
@@ -402,18 +401,21 @@ class ProfileListManager:
                 button.setIcon(system_icon)
                 logging.debug("Using system trash icon as fallback")
         
-        # Custom button styling - exactly like the lock checkbox in manage backups
-        # Red theme for delete action
+        # Custom button styling - EXACTLY like the Lock checkbox::indicator in Manage Backups
+        # Using the same dimensions (24x24) and colors
         button.setStyleSheet("""
             QPushButton {
+                width: 24px;
+                height: 24px;
+                min-width: 24px;
+                min-height: 24px;
+                max-width: 24px;
+                max-height: 24px;
                 border-radius: 4px;
                 border: 2px solid #555555;
                 background-color: #2b2b2b;
                 padding: 0px;
-                min-width: 24px;
-                max-width: 24px;
-                min-height: 24px;
-                max-height: 24px;
+                margin: 0px;
             }
             QPushButton:hover {
                 border: 2px solid #888888;
@@ -423,11 +425,10 @@ class ProfileListManager:
                 border: 2px solid #b00020;
                 background-color: #b00020;
             }
-            QPushButton:disabled {
-                border: 2px solid #333333;
-                background-color: #1a1a1a;
-            }
         """)
+        
+        # Set icon size to fit nicely inside the 24x24 button (leaving room for border)
+        button.setIconSize(QSize(16, 16))
         
         # Connect to delete handler
         button.clicked.connect(lambda: self._on_delete_button_clicked(profile_name))
