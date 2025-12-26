@@ -325,10 +325,17 @@ class MainWindow(QMainWindow):
         backup_icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton) # Icona Salva (Floppy)
         self.backup_button.setIcon(backup_icon)
         
-        self.restore_button = QPushButton("Restore...")
+        self.restore_button = QPushButton("Restore")
         self.restore_button.setObjectName("DangerButton")
-        restore_icon = style.standardIcon(QStyle.StandardPixmap.SP_ArrowDown) # Icona Freccia Giù (Download/Load?)
-        self.restore_button.setIcon(restore_icon)
+        restore_icon_path = resource_path("icons/restore.png")
+        if os.path.exists(restore_icon_path):
+            restore_icon = QIcon(restore_icon_path)
+            self.restore_button.setIcon(restore_icon)
+        else:
+            logging.warning(f"File icona Restore non trovato: {restore_icon_path}")
+            # Fallback to standard icon if custom icon is not found
+            restore_icon = style.standardIcon(QStyle.StandardPixmap.SP_ArrowDown)
+            self.restore_button.setIcon(restore_icon)
         
         self.manage_backups_button = QPushButton("Manage Backups")
         manage_icon = style.standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView) # Icona Vista Dettagliata?
@@ -1047,7 +1054,7 @@ class MainWindow(QMainWindow):
         self.new_profile_button.setText("New Profile...")
         self.steam_button.setText("Manage Steam")
         self.backup_button.setText("Backup")
-        self.restore_button.setText("Restore...")
+        self.restore_button.setText("Restore")
         self.manage_backups_button.setText("Manage Backups")
         self.open_backup_dir_button.setText("Open Backup Folder")
         if hasattr(self, 'cloud_button'):
