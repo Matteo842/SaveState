@@ -3,10 +3,10 @@ import os
 from PySide6.QtWidgets import (
     QDialog, QListWidget, QPushButton, QLabel, QHBoxLayout, QVBoxLayout,
     QMessageBox, QApplication, QStyle, QListWidgetItem, QWidget, QCheckBox,
-    QTableWidget, QTableWidgetItem, QHeaderView
+    QTableWidget, QTableWidgetItem, QHeaderView, QStyledItemDelegate, QStyleOptionViewItem
 )
 from PySide6.QtCore import Slot, Qt, QLocale, QCoreApplication, QSize
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QColor, QPalette
 
 # Import necessary logic
 import core_logic
@@ -14,6 +14,56 @@ import config
 import logging
 from gui_components import lock_backup_manager
 from utils import resource_path
+
+
+class BackupSelectionDelegate(QStyledItemDelegate):
+    """
+    Custom Delegate for backup table selection:
+    - Dark Grey Background (#2A2A2A)
+    - 4px Red Vertical Line on the LEFT edge (Column 0 only)
+    - White Text
+    """
+    def paint(self, painter, option, index):
+        painter.save()
+        
+        # Check if the item is selected
+        if option.state & QStyle.State_Selected:
+            # 1. Custom Background (same as profile table: #2A2A2A)
+            bg_color = QColor("#2A2A2A")
+            painter.fillRect(option.rect, bg_color)
+            
+            # 2. Vertical Red Line on the LEFT edge (only for column 0)
+            if index.column() == 0:
+                line_width = 4
+                painter.fillRect(
+                    option.rect.x(), 
+                    option.rect.y(), 
+                    line_width, 
+                    option.rect.height(), 
+                    QColor("#A10808")
+                )
+            
+            # 3. Prepare option for base painting (Text/Icon)
+            # Remove Selected state so the default delegate doesn't overwrite our bg
+            opt = QStyleOptionViewItem(option)
+            opt.state &= ~QStyle.State.State_Selected 
+            
+            # Force Text Color to White
+            palette = opt.palette
+            white = QColor(Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.Text, white)
+            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.WindowText, white)
+            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.Text, white)
+            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.WindowText, white)
+            opt.palette = palette
+            
+            # Draw content (icon, text) using the modified option
+            super().paint(painter, opt, index)
+        else:
+            # Standard unselected painting
+            super().paint(painter, option, index)
+            
+        painter.restore()
 
 
 class ManageBackupsDialog(QDialog):
@@ -53,6 +103,10 @@ class ManageBackupsDialog(QDialog):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)  # Lock column fixed width
         self.backup_table.setColumnWidth(1, 50)  # Lock column width
         self.backup_table.verticalHeader().setDefaultSectionSize(36)
+        
+        # Apply custom selection delegate (matches profile table style)
+        self.backup_delegate = BackupSelectionDelegate(self.backup_table)
+        self.backup_table.setItemDelegate(self.backup_delegate)
         
         self.delete_button = QPushButton("Delete Selected")
         self.delete_button.setObjectName("DangerButton")
