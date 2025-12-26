@@ -835,7 +835,7 @@ QListWidget::item {
     padding: 3px;
 }
 QListWidget::item:selected {
-    background-color: #CC0000; /* Rosso acceso Pokédex per selezione */
+    background-color: #A10808; /* Rosso scuro ufficiale per selezione */
     color: #FFFFFF;
 }
 QPushButton {
@@ -896,7 +896,7 @@ QGroupBox::title {
     padding: 0 5px;             /* Come tema chiaro */
     /* background-color: #2D2D2D; */ /* <-- RIMUOVI/COMMENTA (come tema chiaro) */
     left: 10px;            /* Come tema chiaro */
-    color: #CC0000;             /* Colore titolo scuro */
+    color: #A10808;             /* Colore titolo scuro ufficiale */
 }
 /* --- FINE NUOVE REGOLE --- */
 QStatusBar {
@@ -912,7 +912,7 @@ QProgressBar {
     color: #F0F0F0;
 }
 QProgressBar::chunk {
-    background-color: #CC0000; /* Barra progresso rossa */
+    background-color: #A10808; /* Barra progresso rossa scura */
     width: 10px; /* Larghezza blocchetti barra */
     margin: 1px;
 }
@@ -952,7 +952,7 @@ QTableWidget::item {
 
 /* Stile per item selezionati */
 QTableWidget::item:selected {
-    background-color: #CC0000; /* Rosso Pokédex per selezione */
+    background-color: #A10808; /* Rosso scuro ufficiale per selezione */
     color: #FFFFFF;          /* Testo bianco su selezione */
 }
 
@@ -962,7 +962,7 @@ QHeaderView::section {
     color: #EAEAEA;          /* Testo intestazione chiaro */
     padding: 4px;
     border-top: 0px;         /* Rimuovi bordi header se vuoi look pulito */
-    border-bottom: 1px solid #CC0000; /* Bordo rosso sotto header */
+    border-bottom: 1px solid #A10808; /* Bordo rosso scuro sotto header */
     border-right: 1px solid #4A4A4A;
     border-left: 0px;
     font-weight: bold;        /* Grassetto */
