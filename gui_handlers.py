@@ -9,7 +9,7 @@ import tempfile
 import config
 
 from PySide6.QtWidgets import QMessageBox, QDialog, QInputDialog, QApplication, QFileDialog
-from PySide6.QtCore import Slot, QUrl, QPropertyAnimation, QTimer
+from PySide6.QtCore import Slot, QUrl, QPropertyAnimation, QTimer, Qt
 from PySide6.QtGui import QDesktopServices
 
 # Import dialogs
@@ -536,10 +536,17 @@ class MainWindowHandlers:
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
         if not profile_name: return
 
-        reply = QMessageBox.warning(self.main_window, "Confirm Deletion",
-                                    "Are you sure you want to delete the profile '{0}'?\n(This does not delete already created backup files).".format(profile_name),
-                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                    QMessageBox.StandardButton.No)
+        msg_box = QMessageBox(self.main_window)
+        msg_box.setWindowTitle("Confirm Deletion")
+        msg_box.setIcon(QMessageBox.Icon.Warning)
+        msg_box.setTextFormat(Qt.TextFormat.RichText)
+        msg_box.setText(
+            f"Are you sure you want to delete the profile '{profile_name}'?<br><br>"
+            f"<b>This does not delete already created backup files.</b>"
+        )
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+        reply = msg_box.exec()
         if reply == QMessageBox.StandardButton.Yes:
             # Access main_window.profiles and call core_logic
             if core_logic.delete_profile(self.main_window.profiles, profile_name):
