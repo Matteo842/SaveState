@@ -344,28 +344,6 @@ class MainWindow(QMainWindow):
         open_folder_icon = style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon) # Icona Apri Cartella
         self.open_backup_dir_button.setIcon(open_folder_icon)
         
-        # --- NUOVO PULSANTE COLLEGAMENTO (Stile Minecraft) ---
-        self.create_shortcut_button = QPushButton() # SENZA TESTO
-        self.create_shortcut_button.setObjectName("MinecraftButton") # <-- USA LO STESSO ObjectName!
-
-        # Icona (Usa la stessa icona 'desktop.png')
-        shortcut_icon_path = resource_path("icons/desktop.png")
-        if os.path.exists(shortcut_icon_path):
-            self.create_shortcut_button.setIcon(QIcon(shortcut_icon_path))
-        else:
-            # Se icona manca, mettiamo un testo fallback ma SENZA impostare dimensione icona
-             self.create_shortcut_button.setText("SC") # Shortcut Fallback
-             print(f"WARN: Icona desktop non trovata: {shortcut_icon_path}, uso testo SC.")
-
-        # Dimensioni e icona come pulsante Minecraft
-        mc_button_size = QSize(30, 30) # <-- Dimensione 30x30
-        self.create_shortcut_button.setFixedSize(mc_button_size)
-        self.create_shortcut_button.setIconSize(QSize(24, 24)) # <-- Dimensione icona 24x24
-
-        # Tooltip (Importante perché non c'è testo)
-        self.create_shortcut_button.setToolTip("Create a desktop shortcut to launch the selected profile's game/emulator.")
-        # --- FINE NUOVO PULSANTE (Stile Minecraft) ---
-        
         # Imposta dimensione icone (opzionale, regola i px se necessario)
         icon_size = QSize(16, 16) # Larghezza, Altezza in pixel
         self.new_profile_button.setIconSize(icon_size)
@@ -664,8 +642,6 @@ class MainWindow(QMainWindow):
         actions_layout.addWidget(self.backup_button)
         actions_layout.addWidget(self.restore_button)
         actions_layout.addWidget(self.manage_backups_button)
-        
-        actions_layout.addWidget(self.create_shortcut_button)
         actions_group.setLayout(actions_layout)
         content_layout.addWidget(actions_group)
         general_group = QGroupBox("General")
@@ -834,7 +810,7 @@ class MainWindow(QMainWindow):
         self.log_button_press_timer.timeout.connect(self.handlers.handle_developer_mode_toggle)
 
         # minecraft_button removed - functionality moved to new_profile_menu
-        self.create_shortcut_button.clicked.connect(self.handlers.handle_create_shortcut)
+        # create_shortcut_button removed - functionality available in context menu
         # Right-click context menu on profile table
         self.profile_table_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.profile_table_widget.customContextMenuRequested.connect(self._on_profile_table_context_menu)
@@ -1075,8 +1051,7 @@ class MainWindow(QMainWindow):
             self.overrides_enable_checkbox.setText("Use profile-specific settings")
 
         # --- Update Tooltips and Titles ---
-        if hasattr(self, 'create_shortcut_button'):
-            self.create_shortcut_button.setToolTip("Create a desktop shortcut to launch the selected profile's game/emulator")
+        # create_shortcut_button removed - functionality available in context menu
         # minecraft_button tooltip update removed - button integrated into new_profile_menu
         if hasattr(self, 'toggle_log_button'):
             # Set a generic tooltip, will be updated by handle_toggle_log if needed
@@ -1291,7 +1266,7 @@ class MainWindow(QMainWindow):
         # Restore button is always enabled now - can restore from ZIP without a profile
         self.restore_button.setEnabled(True)
         self.manage_backups_button.setEnabled(has_selection)
-        self.create_shortcut_button.setEnabled(has_selection)
+        # create_shortcut_button removed - functionality available in context menu
         if hasattr(self, 'cloud_button'):
             self.cloud_button.setEnabled(True)
 
@@ -1383,7 +1358,7 @@ class MainWindow(QMainWindow):
         # Restore button is always enabled - can restore from ZIP without a profile
         self.restore_button.setEnabled(enabled)
         self.manage_backups_button.setEnabled(enabled and has_selection)
-        self.create_shortcut_button.setEnabled(enabled and has_selection)
+        # create_shortcut_button removed - functionality available in context menu
         self.new_profile_button.setEnabled(enabled)
         self.steam_button.setEnabled(enabled)
         self.settings_button.setEnabled(enabled)
@@ -1732,7 +1707,9 @@ class MainWindow(QMainWindow):
                 
                 # Actions
                 act_edit = QAction("Edit Profile", self)
-                act_shortcut = QAction("Create Desktop Shortcut", self)
+                act_shortcut = QAction("Create Backup Shortcut", self)
+                act_shortcut.setToolTip("Creates a desktop shortcut to quickly run a backup for this profile")
+                act_shortcut.setStatusTip("Creates a desktop shortcut to quickly run a backup for this profile")
                 # Optional icons
                 try:
                     desktop_icon_path = resource_path("icons/desktop.png")
