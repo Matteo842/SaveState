@@ -326,7 +326,6 @@ class MainWindow(QMainWindow):
         self.backup_button.setIcon(backup_icon)
         
         self.restore_button = QPushButton("Restore")
-        self.restore_button.setObjectName("DangerButton")
         restore_icon_path = resource_path("icons/restore.png")
         if os.path.exists(restore_icon_path):
             restore_icon = QIcon(restore_icon_path)
