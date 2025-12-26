@@ -322,10 +322,34 @@ class MainWindow(QMainWindow):
         self.delete_profile_button.setIcon(delete_prof_icon)
         
         self.backup_button = QPushButton("Backup")
+        self.backup_button.setObjectName("BackupButton")
         backup_icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton) # Icona Salva (Floppy)
         self.backup_button.setIcon(backup_icon)
+        self.backup_button.setStyleSheet("""
+            QPushButton#BackupButton {
+                background-color: #2b2b2b;
+                border: 2px solid #33b5e5;
+                color: #e0e0e0;
+                border-radius: 5px;
+                padding: 6px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QPushButton#BackupButton:hover {
+                background-color: rgba(255, 255, 255, 0.08);
+            }
+            QPushButton#BackupButton:pressed {
+                background-color: rgba(255, 255, 255, 0.15);
+                border-color: #55c9f5;
+            }
+            QPushButton#BackupButton:disabled {
+                border-color: #444444;
+                color: #555555;
+            }
+        """)
         
         self.restore_button = QPushButton("Restore")
+        self.restore_button.setObjectName("RestoreButton")
         restore_icon_path = resource_path("icons/restore.png")
         if os.path.exists(restore_icon_path):
             restore_icon = QIcon(restore_icon_path)
@@ -335,10 +359,55 @@ class MainWindow(QMainWindow):
             # Fallback to standard icon if custom icon is not found
             restore_icon = style.standardIcon(QStyle.StandardPixmap.SP_ArrowDown)
             self.restore_button.setIcon(restore_icon)
+        self.restore_button.setStyleSheet("""
+            QPushButton#RestoreButton {
+                background-color: #2b2b2b;
+                border: 2px solid #2ecc71;
+                color: #e0e0e0;
+                border-radius: 5px;
+                padding: 6px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QPushButton#RestoreButton:hover {
+                background-color: rgba(255, 255, 255, 0.08);
+            }
+            QPushButton#RestoreButton:pressed {
+                background-color: rgba(255, 255, 255, 0.15);
+                border-color: #4ee08e;
+            }
+            QPushButton#RestoreButton:disabled {
+                border-color: #444444;
+                color: #555555;
+            }
+        """)
         
         self.manage_backups_button = QPushButton("Manage Backups")
+        self.manage_backups_button.setObjectName("ManageButton")
         manage_icon = style.standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView) # Icona Vista Dettagliata?
         self.manage_backups_button.setIcon(manage_icon)
+        self.manage_backups_button.setStyleSheet("""
+            QPushButton#ManageButton {
+                background-color: #2b2b2b;
+                border: 2px solid #f1c40f;
+                color: #e0e0e0;
+                border-radius: 5px;
+                padding: 6px;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QPushButton#ManageButton:hover {
+                background-color: rgba(255, 255, 255, 0.08);
+            }
+            QPushButton#ManageButton:pressed {
+                background-color: rgba(255, 255, 255, 0.15);
+                border-color: #ffe045;
+            }
+            QPushButton#ManageButton:disabled {
+                border-color: #444444;
+                color: #555555;
+            }
+        """)
         
         self.open_backup_dir_button = QPushButton("Open Backup Folder")
         open_folder_icon = style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon) # Icona Apri Cartella
@@ -637,11 +706,19 @@ class MainWindow(QMainWindow):
         actions_group = QGroupBox("Actions")
         self.actions_group = actions_group
         actions_layout = QHBoxLayout()
-        actions_layout.setContentsMargins(6, 6, 6, 6)
-        actions_layout.setSpacing(6)
+        # Use margins to shorten buttons slightly from the edges without making them tiny
+        actions_layout.setContentsMargins(20, 8, 20, 8)
+        actions_layout.setSpacing(20)
+
+        # Allow buttons to expand naturally
+        self.backup_button.setMaximumWidth(16777215) # Reset max width to default (QWIDGETSIZE_MAX)
+        self.restore_button.setMaximumWidth(16777215)
+        self.manage_backups_button.setMaximumWidth(16777215)
+        
         actions_layout.addWidget(self.backup_button)
         actions_layout.addWidget(self.restore_button)
         actions_layout.addWidget(self.manage_backups_button)
+        
         actions_group.setLayout(actions_layout)
         content_layout.addWidget(actions_group)
         general_group = QGroupBox("General")
