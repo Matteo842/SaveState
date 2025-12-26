@@ -328,7 +328,7 @@ class MainWindow(QMainWindow):
         self.backup_button.setStyleSheet("""
             QPushButton#BackupButton {
                 background-color: #2b2b2b;
-                border: 2px solid #118eb8;
+                border: 2px solid #5B85AA;
                 color: #e0e0e0;
                 border-radius: 5px;
                 padding: 6px;
@@ -337,11 +337,11 @@ class MainWindow(QMainWindow):
             }
             QPushButton#BackupButton:hover {
                 background-color: rgba(255, 255, 255, 0.08);
-                border-color: #1f9ec9;
+                border-color: #5B85AA;
             }
             QPushButton#BackupButton:pressed {
                 background-color: rgba(255, 255, 255, 0.15);
-                border-color: #1f9ec9;
+                border-color: #5B85AA;
             }
             QPushButton#BackupButton:disabled {
                 border-color: #444444;
@@ -363,7 +363,7 @@ class MainWindow(QMainWindow):
         self.restore_button.setStyleSheet("""
             QPushButton#RestoreButton {
                 background-color: #2b2b2b;
-                border: 2px solid #0c9047;
+                border: 2px solid #799c34;
                 color: #e0e0e0;
                 border-radius: 5px;
                 padding: 6px;
@@ -372,11 +372,11 @@ class MainWindow(QMainWindow):
             }
             QPushButton#RestoreButton:hover {
                 background-color: rgba(255, 255, 255, 0.08);
-                border-color: #27ae60;
+                border-color: #799c34;
             }
             QPushButton#RestoreButton:pressed {
                 background-color: rgba(255, 255, 255, 0.15);
-                border-color: #27ae60;
+                border-color: #799c34;  
             }
             QPushButton#RestoreButton:disabled {
                 border-color: #444444;
