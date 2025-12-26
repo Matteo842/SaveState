@@ -952,8 +952,9 @@ QTableWidget::item {
 
 /* Stile per item selezionati */
 QTableWidget::item:selected {
-    background-color: #A10808; /* Rosso scuro ufficiale per selezione */
+    background-color: transparent; /* Sfondo trasparente per pennello personalizzato (linea rossa laterale) */
     color: #FFFFFF;          /* Testo bianco su selezione */
+    border: none;
 }
 
 /* Stile per le Intestazioni (Header) */

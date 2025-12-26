@@ -3,9 +3,9 @@
 import logging
 import os
 from PySide6.QtWidgets import (QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, 
-                               QStackedWidget, QWidget, QHBoxLayout, QPushButton)
-from PySide6.QtCore import Qt, QLocale, QCoreApplication, Slot, QSize
-from PySide6.QtGui import QIcon
+                               QWidget, QHBoxLayout, QPushButton, QStyledItemDelegate, QStyleOptionViewItem, QStyle)
+from PySide6.QtCore import Qt, QLocale, Slot, QSize
+from PySide6.QtGui import QIcon, QColor, QPalette
 import core_logic
 import config
 
@@ -13,6 +13,60 @@ import config
 from gui_components import favorites_manager # Assuming it's in gui_components
 from gui_components.empty_state_widget import EmptyStateWidget
 from utils import resource_path # <--- Import from utils
+
+class ProfileSelectionDelegate(QStyledItemDelegate):
+    """
+    Custom Delegate to draw the 'Bastard Design' selection:
+    - Dark Grey Background (#484848)
+    - 4px Red Vertical Line on the left edge (Column 0 only)
+    - White Text
+    """
+    def paint(self, painter, option, index):
+        painter.save()
+        
+        # Check if the item is selected
+        if option.state & QStyle.State_Selected:
+            # 1. Custom Background (Darker: #2A2A2A)
+            # User requested "scuriamolo ulteriormente" (darken it further) than #383838
+            bg_color = QColor("#2A2A2A")
+            painter.fillRect(option.rect, bg_color)
+            
+            # 2. Horizontal Red Line at the BOTTOM (height 4px)
+            # Increased from 3px to 4px as requested
+            line_height = 4
+            painter.fillRect(
+                option.rect.x(), 
+                option.rect.y() + option.rect.height() - line_height, 
+                option.rect.width(), 
+                line_height, 
+                QColor("#A10808")
+            )
+            
+            # 3. Prepare option for base painting (Text/Icon)
+            # Remove Selected state so the default delegate doesn't overwrite our bg with standard selection color
+            opt = QStyleOptionViewItem(option)
+            opt.state &= ~QStyle.State.State_Selected 
+            
+            # No content shifting needed as the line is at the bottom
+            
+            # Force Text Color to White
+            palette = opt.palette
+            white = QColor(Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.Text, white)
+            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.WindowText, white)
+            # Ensure it applies to all states involved
+            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.Text, white)
+            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.WindowText, white)
+            opt.palette = palette
+            
+            # Draw content (icon, text) using the modified option
+            super().paint(painter, opt, index)
+        else:
+            # Standard unselected painting
+            super().paint(painter, option, index)
+            
+        painter.restore()
+
 
 class ProfileListManager:
     """Handles the QTableWidget of profiles and related action buttons."""
@@ -35,8 +89,6 @@ class ProfileListManager:
         # --- Loading Trash Icon ---
         trash_icon_path = resource_path("icons/trash.png")
         self.trash_icon_path = trash_icon_path if os.path.exists(trash_icon_path) else None
-        if not self.trash_icon_path:
-            logging.warning(f"Trash icon 'trash.png' not found in {trash_icon_path}")
         # --- End Loading Icons ---
 
         # --- Create Empty State Widget ---
@@ -78,8 +130,11 @@ class ProfileListManager:
         self.table_widget.cellClicked.connect(self.handle_favorite_toggle)
         # Double-click to open save folder
         self.table_widget.cellDoubleClicked.connect(self.handle_double_click)
-        # Selection changed - update delete buttons state
         self.table_widget.itemSelectionChanged.connect(self._update_delete_buttons_state)
+        
+        # Set Custom Delegate
+        self.delegate = ProfileSelectionDelegate(self.table_widget)
+        self.table_widget.setItemDelegate(self.delegate)
 
         self.retranslate_headers() # Set initial headers
         # self.update_profile_table() # Will be called by MainWindow after __init__
@@ -401,8 +456,7 @@ class ProfileListManager:
                 button.setIcon(system_icon)
                 logging.debug("Using system trash icon as fallback")
         
-        # Custom button styling - EXACTLY like the Lock checkbox::indicator in Manage Backups
-        # Using the same dimensions (24x24) and colors
+        # Custom button styling - Transparent default state, visible on hover/press
         button.setStyleSheet("""
             QPushButton {
                 width: 24px;
@@ -412,8 +466,8 @@ class ProfileListManager:
                 max-width: 24px;
                 max-height: 24px;
                 border-radius: 4px;
-                border: 2px solid #555555;
-                background-color: #2b2b2b;
+                border: none;
+                background-color: transparent;
                 padding: 0px;
                 margin: 0px;
             }
@@ -462,6 +516,8 @@ class ProfileListManager:
         # Ensure the profile is selected in the table before calling the handler
         self.select_profile_in_table(profile_name)
         
-        # Delegate to the main window's delete handler
         if hasattr(self.main_window, 'handlers') and self.main_window.handlers:
             self.main_window.handlers.handle_delete_profile()
+
+
+
