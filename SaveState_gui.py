@@ -325,29 +325,7 @@ class MainWindow(QMainWindow):
         self.backup_button.setObjectName("BackupButton")
         backup_icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton) # Icona Salva (Floppy)
         self.backup_button.setIcon(backup_icon)
-        self.backup_button.setStyleSheet("""
-            QPushButton#BackupButton {
-                background-color: #2b2b2b;
-                border: 2px solid #5B85AA;
-                color: #e0e0e0;
-                border-radius: 5px;
-                padding: 6px;
-                font-weight: bold;
-                font-size: 11pt;
-            }
-            QPushButton#BackupButton:hover {
-                background-color: rgba(255, 255, 255, 0.08);
-                border-color: #5B85AA;
-            }
-            QPushButton#BackupButton:pressed {
-                background-color: rgba(255, 255, 255, 0.15);
-                border-color: #5B85AA;
-            }
-            QPushButton#BackupButton:disabled {
-                border-color: #444444;
-                color: #555555;
-            }
-        """)
+        self.backup_button.setStyleSheet("QPushButton { font-weight: bold; font-size: 11pt; color: #2980B9; } QPushButton:disabled { color: #808080; }")
         
         self.restore_button = QPushButton("Restore")
         self.restore_button.setObjectName("RestoreButton")
@@ -360,57 +338,13 @@ class MainWindow(QMainWindow):
             # Fallback to standard icon if custom icon is not found
             restore_icon = style.standardIcon(QStyle.StandardPixmap.SP_ArrowDown)
             self.restore_button.setIcon(restore_icon)
-        self.restore_button.setStyleSheet("""
-            QPushButton#RestoreButton {
-                background-color: #2b2b2b;
-                border: 2px solid #799c34;
-                color: #e0e0e0;
-                border-radius: 5px;
-                padding: 6px;
-                font-weight: bold;
-                font-size: 11pt;
-            }
-            QPushButton#RestoreButton:hover {
-                background-color: rgba(255, 255, 255, 0.08);
-                border-color: #799c34;
-            }
-            QPushButton#RestoreButton:pressed {
-                background-color: rgba(255, 255, 255, 0.15);
-                border-color: #799c34;  
-            }
-            QPushButton#RestoreButton:disabled {
-                border-color: #444444;
-                color: #555555;
-            }
-        """)
+        self.restore_button.setStyleSheet("QPushButton { font-weight: bold; font-size: 11pt; color: #27AE60; } QPushButton:disabled { color: #808080; }")
         
         self.manage_backups_button = QPushButton("Manage Backups")
         self.manage_backups_button.setObjectName("ManageButton")
         manage_icon = style.standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView) # Icona Vista Dettagliata?
         self.manage_backups_button.setIcon(manage_icon)
-        self.manage_backups_button.setStyleSheet("""
-            QPushButton#ManageButton {
-                background-color: #2b2b2b;
-                border: 2px solid #b0b0b0;
-                color: #e0e0e0;
-                border-radius: 5px;
-                padding: 6px;
-                font-weight: bold;
-                font-size: 11pt;
-            }
-            QPushButton#ManageButton:hover {
-                background-color: rgba(255, 255, 255, 0.08);
-                border-color: #ffffff;
-            }
-            QPushButton#ManageButton:pressed {
-                background-color: rgba(255, 255, 255, 0.15);
-                border-color: #ffffff;
-            }
-            QPushButton#ManageButton:disabled {
-                border-color: #444444;
-                color: #555555;
-            }
-        """)
+        self.manage_backups_button.setStyleSheet("QPushButton { font-weight: bold; font-size: 11pt; color: #E0E0E0; } QPushButton:disabled { color: #808080; }")
         
         self.open_backup_dir_button = QPushButton("Open Backup Folder")
         open_folder_icon = style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon) # Icona Apri Cartella
