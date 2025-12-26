@@ -74,7 +74,6 @@ class ManageBackupsDialog(QDialog):
         self.delete_button.setEnabled(False)
         self.delete_all_button.setEnabled(False)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f"Existing backups for '{self.profile_name}':"))
         layout.addWidget(self.backup_table)
         button_layout = QHBoxLayout()
         button_layout.addStretch()
