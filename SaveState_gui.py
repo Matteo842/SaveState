@@ -328,7 +328,7 @@ class MainWindow(QMainWindow):
         self.backup_button.setStyleSheet("""
             QPushButton#BackupButton {
                 background-color: #2b2b2b;
-                border: 2px solid #33b5e5;
+                border: 2px solid #118eb8;
                 color: #e0e0e0;
                 border-radius: 5px;
                 padding: 6px;
@@ -337,10 +337,11 @@ class MainWindow(QMainWindow):
             }
             QPushButton#BackupButton:hover {
                 background-color: rgba(255, 255, 255, 0.08);
+                border-color: #1f9ec9;
             }
             QPushButton#BackupButton:pressed {
                 background-color: rgba(255, 255, 255, 0.15);
-                border-color: #55c9f5;
+                border-color: #1f9ec9;
             }
             QPushButton#BackupButton:disabled {
                 border-color: #444444;
@@ -362,7 +363,7 @@ class MainWindow(QMainWindow):
         self.restore_button.setStyleSheet("""
             QPushButton#RestoreButton {
                 background-color: #2b2b2b;
-                border: 2px solid #2ecc71;
+                border: 2px solid #0c9047;
                 color: #e0e0e0;
                 border-radius: 5px;
                 padding: 6px;
@@ -371,10 +372,11 @@ class MainWindow(QMainWindow):
             }
             QPushButton#RestoreButton:hover {
                 background-color: rgba(255, 255, 255, 0.08);
+                border-color: #27ae60;
             }
             QPushButton#RestoreButton:pressed {
                 background-color: rgba(255, 255, 255, 0.15);
-                border-color: #4ee08e;
+                border-color: #27ae60;
             }
             QPushButton#RestoreButton:disabled {
                 border-color: #444444;
@@ -389,7 +391,7 @@ class MainWindow(QMainWindow):
         self.manage_backups_button.setStyleSheet("""
             QPushButton#ManageButton {
                 background-color: #2b2b2b;
-                border: 2px solid #f1c40f;
+                border: 2px solid #b0b0b0;
                 color: #e0e0e0;
                 border-radius: 5px;
                 padding: 6px;
@@ -398,10 +400,11 @@ class MainWindow(QMainWindow):
             }
             QPushButton#ManageButton:hover {
                 background-color: rgba(255, 255, 255, 0.08);
+                border-color: #ffffff;
             }
             QPushButton#ManageButton:pressed {
                 background-color: rgba(255, 255, 255, 0.15);
-                border-color: #ffe045;
+                border-color: #ffffff;
             }
             QPushButton#ManageButton:disabled {
                 border-color: #444444;
