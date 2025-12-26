@@ -78,6 +78,192 @@ class SavePathDialog(QDialog):
         """Returns the entered path."""
         return self.path_edit.text()
 
+
+class NewProfileDialog(QDialog):
+    """
+    Custom dialog for creating a new profile.
+    Includes option to select from Minecraft worlds directly.
+    """
+    
+    def __init__(self, parent=None, existing_profiles=None):
+        super().__init__(parent)
+        self.setWindowTitle("New Profile")
+        self.setMinimumWidth(400)
+        self.existing_profiles = existing_profiles or {}
+        
+        # Result storage
+        self._profile_name = ""
+        self._minecraft_world_path = None  # If set, this is a Minecraft profile
+        self._is_minecraft_profile = False
+        
+        # Get the style for icons
+        style = QApplication.instance().style()
+        
+        # Main layout
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        
+        # --- Profile Name Section ---
+        name_label = QLabel("Enter a name for the new profile:")
+        layout.addWidget(name_label)
+        
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("Profile name...")
+        layout.addWidget(self.name_edit)
+        
+        # --- Separator with "or" text ---
+        separator_layout = QHBoxLayout()
+        left_line = QLabel()
+        left_line.setFrameShape(QLabel.Shape.HLine)
+        left_line.setFrameShadow(QLabel.Shadow.Sunken)
+        left_line.setStyleSheet("background-color: #555;")
+        left_line.setFixedHeight(1)
+        
+        or_label = QLabel("  or  ")
+        or_label.setStyleSheet("color: #888; font-style: italic;")
+        
+        right_line = QLabel()
+        right_line.setFrameShape(QLabel.Shape.HLine)
+        right_line.setFrameShadow(QLabel.Shadow.Sunken)
+        right_line.setStyleSheet("background-color: #555;")
+        right_line.setFixedHeight(1)
+        
+        separator_layout.addWidget(left_line, 1)
+        separator_layout.addWidget(or_label)
+        separator_layout.addWidget(right_line, 1)
+        layout.addLayout(separator_layout)
+        
+        # --- Minecraft Button ---
+        from PySide6.QtGui import QIcon
+        from utils import resource_path
+        
+        self.minecraft_button = QPushButton("  Select from Minecraft World...")
+        mc_icon_path = resource_path("icons/minecraft.png")
+        if os.path.exists(mc_icon_path):
+            self.minecraft_button.setIcon(QIcon(mc_icon_path))
+        self.minecraft_button.setToolTip("Browse your Minecraft worlds and auto-fill the profile name and save path")
+        self.minecraft_button.setStyleSheet("""
+            QPushButton {
+                padding: 8px 16px;
+                text-align: left;
+            }
+        """)
+        self.minecraft_button.clicked.connect(self._on_minecraft_button_clicked)
+        layout.addWidget(self.minecraft_button)
+        
+        # Spacer
+        layout.addSpacing(8)
+        
+        # --- Dialog Buttons ---
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        button_box.accepted.connect(self._on_accept)
+        button_box.rejected.connect(self.reject)
+        self.button_box = button_box
+        layout.addWidget(button_box)
+        
+        # Focus on name field
+        self.name_edit.setFocus()
+    
+    def _on_minecraft_button_clicked(self):
+        """Opens Minecraft world selection dialog and auto-fills the profile."""
+        try:
+            # Hide this dialog while showing Minecraft dialog (avoid stacked popups)
+            self.hide()
+            # Find Minecraft saves folder
+            saves_folder = minecraft_utils.find_minecraft_saves_folder()
+            
+            if not saves_folder:
+                QMessageBox.warning(self, "Folder Not Found",
+                    "Could not find the standard Minecraft saves folder (.minecraft/saves).\n"
+                    "Make sure that Minecraft Java Edition is installed.")
+                self.show()  # Re-show this dialog
+                return
+            
+            # Get world list
+            worlds_data = minecraft_utils.list_minecraft_worlds(saves_folder)
+            
+            if not worlds_data:
+                QMessageBox.information(self, "No Worlds Found",
+                    f"No worlds found in folder:\n{saves_folder}")
+                self.show()  # Re-show this dialog
+                return
+            
+            # Show world selection dialog (this dialog is hidden, Minecraft dialog shows)
+            dialog = MinecraftWorldsDialog(worlds_data, self.parent())  # Use main window as parent
+            
+            if dialog.exec():
+                selected_world = dialog.get_selected_world_info()
+                if selected_world:
+                    world_name = selected_world.get('world_name', selected_world.get('folder_name'))
+                    world_path = selected_world.get('full_path')
+                    
+                    if world_name and world_path:
+                        # Store minecraft data and accept
+                        self._profile_name = world_name
+                        self._minecraft_world_path = world_path
+                        self._is_minecraft_profile = True
+                        self.accept()  # Close this dialog with success
+                        return
+            
+            # User cancelled Minecraft dialog, re-show this dialog
+            self.show()
+                        
+        except Exception as e:
+            logging.error(f"Error in Minecraft world selection: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"An error occurred: {e}")
+            self.show()  # Re-show this dialog on error
+    
+    def _on_accept(self):
+        """Validates and accepts the manual input."""
+        name = self.name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Name Required", "Please enter a profile name.")
+            self.name_edit.setFocus()
+            return
+        
+        # Validate the name using the same sanitization as profile creation
+        sanitized_name = shortcut_utils.sanitize_profile_name(name)
+        
+        # Check for invalid name - sanitize_foldername returns "_invalid_profile_name_" 
+        # when the input contains only invalid characters
+        if not sanitized_name or sanitized_name == "_invalid_profile_name_":
+            QMessageBox.warning(self, "Invalid Name",
+                f"The profile name '{name}' contains only invalid characters.\n"
+                "Please use letters, numbers, spaces, dashes, or underscores.")
+            self.name_edit.setFocus()
+            self.name_edit.selectAll()
+            return
+        
+        # Check if name already exists
+        if sanitized_name in self.existing_profiles:
+            QMessageBox.warning(self, "Profile Exists",
+                f"A profile named '{sanitized_name}' already exists.")
+            self.name_edit.setFocus()
+            self.name_edit.selectAll()
+            return
+        
+        # If name was modified by sanitization, inform the user
+        if sanitized_name != name:
+            # Just proceed with sanitized name - no need to confuse user
+            pass
+        
+        self._profile_name = sanitized_name  # Use sanitized name
+        self._is_minecraft_profile = False
+        self._minecraft_world_path = None
+        self.accept()
+    
+    def get_profile_name(self):
+        """Returns the profile name (either manually entered or from Minecraft)."""
+        return self._profile_name
+    
+    def is_minecraft_profile(self):
+        """Returns True if the profile was created from a Minecraft world."""
+        return self._is_minecraft_profile
+    
+    def get_minecraft_world_path(self):
+        """Returns the Minecraft world path if applicable, else None."""
+        return self._minecraft_world_path
+
 class ProfileCreationManager:
     """
     Handles user profile creation through manual input,
@@ -168,73 +354,104 @@ class ProfileCreationManager:
     # --- Manual Profile Management ---
     @Slot()
     def handle_new_profile(self):
-        """Handles the creation of a new profile with manual input."""
+        """Handles the creation of a new profile with manual input or Minecraft selection."""
         self.reset_internal_state() # Reset state at the beginning
         mw = self.main_window
         logging.debug("ProfileCreationManager.handle_new_profile - START")
-        profile_name, ok = QInputDialog.getText(mw, "New Profile", "Enter a name for the new profile:")
-        logging.debug(f"ProfileCreationManager.handle_new_profile - Name entered: '{profile_name}', ok={ok}")
-
-        if ok and profile_name:
-            # Clean the entered name
-            profile_name_original = profile_name # Preserve original for messages
-            profile_name = shortcut_utils.sanitize_profile_name(profile_name) # Apply sanitization
-            if not profile_name:
-                 QMessageBox.warning(mw, "Profile Name Error",
-                                     f"The profile name ('{profile_name_original}') contains invalid characters or is empty after cleaning.")
-                 return
-
-            if profile_name in mw.profiles:
-                logging.warning(f"Profile '{profile_name}' already exists.")
-                QMessageBox.warning(mw, "Error", f"A profile named '{profile_name}' already exists.")
-                return
-
-            logging.debug(f"ProfileCreationManager.handle_new_profile - Requesting path for '{profile_name}'...")
+        
+        # Use the new unified dialog that includes Minecraft option
+        profile_dialog = NewProfileDialog(parent=mw, existing_profiles=mw.profiles)
+        
+        if not profile_dialog.exec():
+            logging.debug("handle_new_profile - Dialog cancelled.")
+            return
+        
+        # Get results from dialog
+        profile_name = profile_dialog.get_profile_name()
+        is_minecraft = profile_dialog.is_minecraft_profile()
+        minecraft_path = profile_dialog.get_minecraft_world_path()
+        
+        logging.debug(f"handle_new_profile - Name: '{profile_name}', Minecraft: {is_minecraft}")
+        
+        if not profile_name:
+            logging.debug("handle_new_profile - Empty profile name, exiting.")
+            return
+        
+        # Clean the entered name
+        profile_name_original = profile_name
+        profile_name = shortcut_utils.sanitize_profile_name(profile_name)
+        # Check for invalid name - sanitize_foldername returns "_invalid_profile_name_" 
+        # when the input contains only invalid characters
+        if not profile_name or profile_name == "_invalid_profile_name_":
+            QMessageBox.warning(mw, "Profile Name Error",
+                f"The profile name ('{profile_name_original}') contains invalid characters or is empty after cleaning.")
+            return
+        
+        if profile_name in mw.profiles:
+            logging.warning(f"Profile '{profile_name}' already exists.")
+            QMessageBox.warning(mw, "Error", f"A profile named '{profile_name}' already exists.")
+            return
+        
+        # --- Minecraft Profile: path is already known ---
+        if is_minecraft and minecraft_path:
+            validated_path = self.validate_save_path(minecraft_path, profile_name)
+            if validated_path:
+                mw.profiles[profile_name] = {'path': validated_path}
+                if core_logic.save_profiles(mw.profiles):
+                    logging.info(f"Minecraft profile '{profile_name}' created.")
+                    if hasattr(mw, 'profile_table_manager'):
+                        mw.profile_table_manager.update_profile_table()
+                        mw.profile_table_manager.select_profile_in_table(profile_name)
+                    QMessageBox.information(mw, "Profile Created",
+                        f"Profile '{profile_name}' successfully created for the Minecraft world.")
+                    mw.status_label.setText(f"Profile '{profile_name}' created.")
+                else:
+                    QMessageBox.critical(mw, "Error", "Unable to save the profiles file.")
+                    if profile_name in mw.profiles:
+                        del mw.profiles[profile_name]
+            return
+        
+        # --- Manual Profile: need to ask for path ---
+        logging.debug(f"handle_new_profile - Requesting path for '{profile_name}'...")
+        
+        settings, _ = settings_manager.load_settings()
+        path_dialog = SavePathDialog(
+            parent=mw, 
+            window_title=mw.tr("Save Path for '{0}'").format(profile_name),
+            prompt_text=mw.tr("Now enter the FULL path for the profile's saves:\n'{0}'").format(profile_name),
+            initial_path=settings.get(f"last_save_path_{profile_name}", ""), 
+            browse_dialog_title=mw.tr("Select Save Folder")
+        )
+        result = path_dialog.exec()
+        
+        if result == QDialog.DialogCode.Accepted:
+            input_path = path_dialog.get_path()
+            logging.debug(f"handle_new_profile - Path entered: '{input_path}'")
             
-            # Use custom dialog with browse button instead of QInputDialog
-            settings, _ = settings_manager.load_settings()
-            path_dialog = SavePathDialog(
-                parent=mw, 
-                window_title=mw.tr("Save Path for '{0}'").format(profile_name),
-                prompt_text=mw.tr("Now enter the FULL path for the profile's saves:\n'{0}'").format(profile_name),
-                initial_path=settings.get(f"last_save_path_{profile_name}", ""), 
-                browse_dialog_title=mw.tr("Select Save Folder")
-            )
-            result = path_dialog.exec()
+            validated_path = self.validate_save_path(input_path, profile_name)
             
-            if result == QDialog.DialogCode.Accepted:
-                input_path = path_dialog.get_path()
-                logging.debug(f"ProfileCreationManager.handle_new_profile - Path entered: '{input_path}'")
+            if validated_path:
+                logging.debug(f"handle_new_profile - Valid path: '{validated_path}'.")
+                mw.profiles[profile_name] = {'path': validated_path}
+                logging.debug("handle_new_profile - Attempting to save profiles to file...")
+                save_success = core_logic.save_profiles(mw.profiles)
+                logging.debug(f"handle_new_profile - Result of core_logic.save_profiles: {save_success}")
                 
-                # Use the validation function
-                validated_path = self.validate_save_path(input_path, profile_name)
-
-                if validated_path:
-                    logging.debug(f"handle_new_profile - Valid path: '{validated_path}'.")
-                    mw.profiles[profile_name] = {'path': validated_path} # Save as dictionary
-                    logging.debug("handle_new_profile - Attempting to save profiles to file...")
-                    save_success = core_logic.save_profiles(mw.profiles) # Save using core_logic
-                    logging.debug(f"handle_new_profile - Result of core_logic.save_profiles: {save_success}")
-
-                    if save_success:
-                        logging.info(f"Profile '{profile_name}' created manually.")
-                        # Update the table via the table manager in MainWindow
-                        if hasattr(mw, 'profile_table_manager'):
-                            mw.profile_table_manager.update_profile_table()
-                            mw.profile_table_manager.select_profile_in_table(profile_name) # Select the new
-                        QMessageBox.information(mw, "Success", f"Profile '{profile_name}' created and saved.")
-                        mw.status_label.setText(f"Profile '{profile_name}' created.")
-                    else:
-                        logging.error("handle_new_profile - core_logic.save_profiles returned False.")
-                        QMessageBox.critical(mw, "Error", "Unable to save the profiles file.")
-                        # Remove from memory if saving fails
-                        if profile_name in mw.profiles:
-                            del mw.profiles[profile_name]
-                # else: validate_save_path has already shown the error
-            else:
-                 logging.debug("handle_new_profile - Path input cancelled.")
+                if save_success:
+                    logging.info(f"Profile '{profile_name}' created manually.")
+                    if hasattr(mw, 'profile_table_manager'):
+                        mw.profile_table_manager.update_profile_table()
+                        mw.profile_table_manager.select_profile_in_table(profile_name)
+                    QMessageBox.information(mw, "Success", f"Profile '{profile_name}' created and saved.")
+                    mw.status_label.setText(f"Profile '{profile_name}' created.")
+                else:
+                    logging.error("handle_new_profile - core_logic.save_profiles returned False.")
+                    QMessageBox.critical(mw, "Error", "Unable to save the profiles file.")
+                    if profile_name in mw.profiles:
+                        del mw.profiles[profile_name]
         else:
-            logging.debug("handle_new_profile - Name input cancelled (ok=False or empty name).")
+            logging.debug("handle_new_profile - Path input cancelled.")
+        
         logging.debug("handle_new_profile - END")
     # --- FINE handle_new_profile ---
 

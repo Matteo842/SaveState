@@ -665,28 +665,7 @@ class MainWindow(QMainWindow):
         actions_layout.addWidget(self.restore_button)
         actions_layout.addWidget(self.manage_backups_button)
         
-        # --- Pulsante Minecraft ---
-        self.minecraft_button = QPushButton() # Vuoto, senza testo
-        self.minecraft_button.setObjectName("MinecraftButton")
-        self.minecraft_button.setToolTip("Create a profile from a Minecraft world") # Tooltip è importante
-
-        # Carica icona Minecraft
-        mc_icon_path = resource_path("icons/minecraft.png")
-        if os.path.exists(mc_icon_path):
-            mc_icon = QIcon(mc_icon_path)
-            self.minecraft_button.setIcon(mc_icon)
-        else:
-            print(f"WARN: Icona Minecraft non trovata: {mc_icon_path}")
-            self.minecraft_button.setText("MC") # Fallback testo
-
-        # Imposta dimensione fissa quadrata (es. 30x30, un po' più grande dei flat)
-        mc_button_size = QSize(30, 30)
-        self.minecraft_button.setFixedSize(mc_button_size)
-        # Adatta dimensione icona dentro il pulsante
-        self.minecraft_button.setIconSize(QSize(24, 24)) # Icona 24x24 in pulsante 30x30
-        
         actions_layout.addWidget(self.create_shortcut_button)
-        actions_layout.addWidget(self.minecraft_button)
         actions_group.setLayout(actions_layout)
         content_layout.addWidget(actions_group)
         general_group = QGroupBox("General")
@@ -837,7 +816,7 @@ class MainWindow(QMainWindow):
         self.backup_button.clicked.connect(self.handlers.handle_backup)
         self.restore_button.clicked.connect(self.handlers.handle_restore)
         self.profile_table_widget.itemSelectionChanged.connect(self.update_action_button_states)
-        self.new_profile_button.clicked.connect(self.profile_creation_manager.handle_new_profile) # Stays with manager
+        self.new_profile_button.clicked.connect(self.profile_creation_manager.handle_new_profile)
         self.delete_profile_button.clicked.connect(self.handlers.handle_delete_profile)
         self.steam_button.clicked.connect(self.handlers.handle_steam)
         self.manage_backups_button.clicked.connect(self.handlers.handle_manage_backups)
@@ -854,7 +833,7 @@ class MainWindow(QMainWindow):
         # Timer timeout connection moved HERE
         self.log_button_press_timer.timeout.connect(self.handlers.handle_developer_mode_toggle)
 
-        self.minecraft_button.clicked.connect(self.profile_creation_manager.handle_minecraft_button) # Stays with manager
+        # minecraft_button removed - functionality moved to new_profile_menu
         self.create_shortcut_button.clicked.connect(self.handlers.handle_create_shortcut)
         # Right-click context menu on profile table
         self.profile_table_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -1098,8 +1077,7 @@ class MainWindow(QMainWindow):
         # --- Update Tooltips and Titles ---
         if hasattr(self, 'create_shortcut_button'):
             self.create_shortcut_button.setToolTip("Create a desktop shortcut to launch the selected profile's game/emulator")
-        if hasattr(self, 'minecraft_button'):
-            self.minecraft_button.setToolTip("Create a profile from a Minecraft world")
+        # minecraft_button tooltip update removed - button integrated into new_profile_menu
         if hasattr(self, 'toggle_log_button'):
             # Set a generic tooltip, will be updated by handle_toggle_log if needed
              is_log_visible = self.log_dock_widget.isVisible() if hasattr(self, 'log_dock_widget') else False
@@ -1410,7 +1388,7 @@ class MainWindow(QMainWindow):
         self.steam_button.setEnabled(enabled)
         self.settings_button.setEnabled(enabled)
         self.theme_button.setEnabled(enabled)
-        self.minecraft_button.setEnabled(enabled)
+        # minecraft_button removed - functionality moved to new_profile_menu
         self.toggle_log_button.setEnabled(enabled)
         self.open_backup_dir_button.setEnabled(enabled)
         if hasattr(self, 'cloud_button'):
