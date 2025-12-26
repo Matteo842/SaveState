@@ -1342,13 +1342,17 @@ class MainWindow(QMainWindow):
     def update_action_button_states(self):
         """Aggiorna lo stato abilitato/disabilitato dei pulsanti Azioni."""
         has_selection = self.profile_table_manager.has_selection()
+        has_profiles = len(self.profiles) > 0
         self.backup_button.setEnabled(has_selection)
         # Restore button is always enabled now - can restore from ZIP without a profile
         self.restore_button.setEnabled(True)
         self.manage_backups_button.setEnabled(has_selection)
         # create_shortcut_button removed - functionality available in context menu
+        # Cloud and Open Backup Folder require at least one profile to exist
         if hasattr(self, 'cloud_button'):
-            self.cloud_button.setEnabled(True)
+            self.cloud_button.setEnabled(has_profiles)
+        if hasattr(self, 'open_backup_dir_button'):
+            self.open_backup_dir_button.setEnabled(has_profiles)
 
     @Slot(str)
     def _on_main_search_text_changed(self, text):
@@ -1434,6 +1438,7 @@ class MainWindow(QMainWindow):
         """Abilita o disabilita i controlli principali della UI."""
         self.profile_table_widget.setEnabled(enabled)
         has_selection = self.profile_table_manager.has_selection()
+        has_profiles = len(self.profiles) > 0
         self.backup_button.setEnabled(enabled and has_selection)
         # Restore button is always enabled - can restore from ZIP without a profile
         self.restore_button.setEnabled(enabled)
@@ -1445,9 +1450,10 @@ class MainWindow(QMainWindow):
         self.theme_button.setEnabled(enabled)
         # minecraft_button removed - functionality moved to new_profile_menu
         self.toggle_log_button.setEnabled(enabled)
-        self.open_backup_dir_button.setEnabled(enabled)
+        # Cloud and Open Backup Folder require at least one profile
+        self.open_backup_dir_button.setEnabled(enabled and has_profiles)
         if hasattr(self, 'cloud_button'):
-            self.cloud_button.setEnabled(enabled)
+            self.cloud_button.setEnabled(enabled and has_profiles)
         self.progress_bar.setVisible(not enabled)
         # Editor controls
         if hasattr(self, 'edit_name_edit'):

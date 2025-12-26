@@ -103,18 +103,23 @@ class EmptyStateWidget(QWidget):
         layout.addWidget(self.drop_icon, 0, Qt.AlignmentFlag.AlignHCenter)
         
         # Main instruction text
-        self.title_label = QLabel("No profiles yet")
+        self.title_label = QLabel("Drop your first game here")
         self.title_label.setObjectName("EmptyStateTitle")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.title_label)
         
-        # Instructions text - shorter lines
+        # Instructions text - keywords only, bold and larger
         instructions_text = (
-            "Drag and drop a Steam link, shortcut, or folder onto this window\n"
-            "— or —\n"
-            "Click \"Manage Steam\" to add games from your Steam library"
+            '<span style="font-size: 13pt; font-weight: bold;">Steam link</span>'
+            '  •  '
+            '<span style="font-size: 13pt; font-weight: bold;">Shortcut</span>'
+            '  •  '
+            '<span style="font-size: 13pt; font-weight: bold;">Folder</span>'
+            '<br>— or —<br>'
+            'Click "Manage Steam" to add games from your Steam library'
         )
         self.instructions_label = QLabel(instructions_text)
+        self.instructions_label.setTextFormat(Qt.TextFormat.RichText)
         self.instructions_label.setObjectName("EmptyStateInstructions")
         self.instructions_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.instructions_label)
