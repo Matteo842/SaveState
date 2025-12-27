@@ -323,8 +323,14 @@ class MainWindow(QMainWindow):
         
         self.backup_button = QPushButton("Backup")
         self.backup_button.setObjectName("BackupButton")
-        backup_icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton) # Icona Salva (Floppy)
-        self.backup_button.setIcon(backup_icon)
+        backup_icon_path = resource_path("icons/backup.png")
+        if os.path.exists(backup_icon_path):
+             backup_icon = QIcon(backup_icon_path)
+             self.backup_button.setIcon(backup_icon)
+        else:
+             logging.warning(f"File icona Backup non trovato: {backup_icon_path}")
+             backup_icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton) # Icona Salva (Floppy)
+             self.backup_button.setIcon(backup_icon)
         self.backup_button.setStyleSheet("""
             QPushButton#BackupButton {
                 background-color: #222222;
@@ -333,7 +339,7 @@ class MainWindow(QMainWindow):
                 border-radius: 5px;
                 padding: 8px 12px;
                 font-weight: bold;
-                font-size: 11pt;
+                font-size: 12pt;
             }
             QPushButton#BackupButton:hover {
                 background-color: rgba(255, 255, 255, 0.08);
@@ -368,7 +374,7 @@ class MainWindow(QMainWindow):
                 border-radius: 5px;
                 padding: 8px 12px;
                 font-weight: bold;
-                font-size: 11pt;
+                font-size: 12pt;
             }
             QPushButton#RestoreButton:hover {
                 background-color: rgba(255, 255, 255, 0.08);
@@ -418,10 +424,11 @@ class MainWindow(QMainWindow):
         
         # Imposta dimensione icone (opzionale, regola i px se necessario)
         icon_size = QSize(16, 16) # Larghezza, Altezza in pixel
+        icon_size_action = QSize(16, 16)  # Icone più grandi per pulsanti Backup/Restore
         self.new_profile_button.setIconSize(icon_size)
         self.delete_profile_button.setIconSize(icon_size)
-        self.backup_button.setIconSize(icon_size)
-        self.restore_button.setIconSize(icon_size)
+        self.backup_button.setIconSize(icon_size_action)
+        self.restore_button.setIconSize(icon_size_action)
         self.manage_backups_button.setIconSize(icon_size)
         self.open_backup_dir_button.setIconSize(icon_size)
         self.cloud_button.setIconSize(icon_size)
