@@ -661,6 +661,52 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
         except Exception as e:
             logging.error(f"Error checking if file is an emulator: {e}", exc_info=True)
             return None
+
+    def _is_known_launcher(self, file_path) -> tuple[str, str | None]:
+        """Controlla se il file è un launcher conosciuto e restituisce il suo stato."""
+        try:
+            from launcher_utils.launcher_manager import is_known_launcher
+            return is_known_launcher(file_path)
+        except ImportError:
+            logging.debug("launcher_utils not available yet.")
+            return 'not_found', None
+
+    def _check_if_launcher(self, file_path):
+        """Verifica se il file è un launcher supportato e cerca i profili di gioco.
+        
+        Args:
+            file_path: Il percorso del file da verificare
+        
+        Returns:
+            tuple: (launcher_key, profiles_data) se è un launcher, None altrimenti
+        """
+        try:
+            if not os.path.exists(file_path):
+                return None
+        
+            # Risolvi il collegamento .lnk se necessario
+            target_path = file_path
+            if file_path.lower().endswith('.lnk') and platform.system() == "Windows":
+                try:
+                    import winshell
+                    shortcut = winshell.shortcut(file_path)
+                    resolved_target = shortcut.path
+                
+                    if resolved_target and os.path.exists(resolved_target):
+                        target_path = resolved_target
+                        logging.info(f"_check_if_launcher: Resolved .lnk target to: {target_path}")
+                    else:
+                        logging.warning(f"_check_if_launcher: Could not resolve .lnk target: {resolved_target}")
+                except Exception as e_lnk:
+                    logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
+        
+            # Verifica se è un launcher utilizzando launcher_manager
+            from launcher_utils import launcher_manager
+            launcher_result = launcher_manager.detect_and_find_profiles(target_path)
+            return launcher_result
+        except Exception as e:
+            logging.error(f"Error checking if file is a launcher: {e}", exc_info=True)
+            return None
             
     @Slot(bool, dict)
     def on_detection_finished(self, success, results):

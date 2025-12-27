@@ -455,6 +455,99 @@ class DropEventMixin:
                 event.acceptProposedAction()
                 return
 
+            # Controlla se è un launcher conosciuto (supportato o meno)
+            launcher_status, launcher_name = handler_instance._is_known_launcher(file_path)
+            if launcher_status == 'unsupported':
+                QMessageBox.information(handler_instance.main_window,
+                                        "Launcher Recognized",
+                                        f"The launcher '{launcher_name}' is recognized but not yet supported by SaveState.\n\n"
+                                        "Games from this launcher can still be added manually or via shortcuts.\n"
+                                        "Direct launcher integration is added regularly.")
+                event.acceptProposedAction()
+                return
+            
+            # Se è un launcher supportato, gestiscilo
+            if launcher_status == 'supported':
+                launcher_result = handler_instance._check_if_launcher(file_path)
+                if launcher_result:
+                    launcher_key, profiles_data = launcher_result
+                    logging.info(f"DragDropHandler.dropEvent: Detected launcher: {launcher_key}")
+                    mw = handler_instance.main_window
+                    
+                    if profiles_data and len(profiles_data) > 0:
+                        logging.info(f"Found {launcher_key} games: {len(profiles_data)}")
+                        
+                        # Mostra dialog per selezionare quale gioco creare come profilo
+                        from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
+                        selection_dialog = EmulatorGameSelectionDialog(launcher_key, profiles_data, mw)
+                        if selection_dialog.exec():
+                            selected_profile = selection_dialog.get_selected_profile_data()
+                            if selected_profile:
+                                profile_id = selected_profile.get('id', '')
+                                selected_name = selected_profile.get('name', profile_id)
+                                game_path = selected_profile.get('path', '')
+                                
+                                # Nome profilo basato su launcher e gioco
+                                profile_name = f"{launcher_key} - {selected_name}"
+                                
+                                if profile_name in mw.profiles:
+                                    reply = QMessageBox.question(mw, "Existing Profile",
+                                                            f"A profile named '{profile_name}' already exists. Overwrite it?",
+                                                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                                            QMessageBox.StandardButton.No)
+                                    if reply == QMessageBox.StandardButton.No:
+                                        mw.status_label.setText("Profile creation cancelled.")
+                                        event.acceptProposedAction()
+                                        return
+                                
+                                # Per i giochi da launcher, usiamo il path come directory di installazione
+                                # e avviamo il rilevamento dei salvataggi
+                                if game_path and os.path.isdir(game_path):
+                                    # Avvia rilevamento automatico dei salvataggi
+                                    handler_instance.game_name_suggestion = selected_name
+                                    handler_instance.game_install_dir = game_path
+                                    
+                                    # Usa DetectionWorkerThread per trovare i salvataggi
+                                    from gui_utils import DetectionWorkerThread
+                                    
+                                    mw.set_controls_enabled(False)
+                                    QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+                                    
+                                    handler_instance.detection_thread = DetectionWorkerThread(
+                                        profile_name_suggestion=selected_name,
+                                        game_install_dir=game_path,
+                                        current_settings=mw.current_settings,
+                                        emulator_name=launcher_key,
+                                        cancellation_manager=getattr(mw, 'cancellation_manager', None)
+                                    )
+                                    handler_instance.detection_thread.progress.connect(handler_instance.on_detection_progress)
+                                    handler_instance.detection_thread.finished.connect(handler_instance.on_detection_finished)
+                                    handler_instance.detection_thread.start()
+                                    
+                                    event.acceptProposedAction()
+                                    return
+                                else:
+                                    # Se non c'è un path valido, chiedi manualmente
+                                    QMessageBox.warning(mw, "No Install Path",
+                                        f"Could not determine the installation path for '{selected_name}'.\n\n"
+                                        "Please add this game manually using its executable or shortcut.")
+                        else:
+                            logging.info("User cancelled launcher game selection.")
+                    else:
+                        QMessageBox.warning(mw, f"{launcher_key} Library",
+                            f"No games were found in the {launcher_key} library.\n\n"
+                            "This could be because:\n"
+                            "- The library is empty\n"
+                            "- The launcher is installed in a non-standard location\n"
+                            "- The database format is not compatible")
+                    
+                    # Nascondi l'overlay e ripristina i controlli
+                    self._hide_overlay_if_visible(mw)
+                    mw.set_controls_enabled(True)
+                    QApplication.restoreOverrideCursor()
+                    event.acceptProposedAction()
+                    return
+
             # Se non è 'unsupported', procedi con la normale verifica per emulatori supportati
             emulator_result = handler_instance._check_if_emulator(file_path)
 
