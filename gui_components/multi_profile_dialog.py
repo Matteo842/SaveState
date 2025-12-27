@@ -236,13 +236,16 @@ class MultiProfileDialog(QDialog):
     profileAdded = Signal(dict)
     analysis_completed = Signal()
     
-    def __init__(self, files_to_process, parent=None):
+    def __init__(self, files_to_process, parent=None, launcher_mode=False):
         """
         Inizializza il dialogo.
         
         Args:
-            files_to_process: Lista di file da processare
+            files_to_process: Lista di file da processare. Se launcher_mode è True,
+                             può essere una lista di dizionari con 'name' e 'path'.
             parent: Widget genitore
+            launcher_mode: Se True, i dati sono da un launcher (es. Playnite) con
+                          game names e install directories già definite.
         """
         super().__init__(parent)
 
@@ -253,6 +256,7 @@ class MultiProfileDialog(QDialog):
         # Keep dialog non-modal to match app interaction model
         self.setWindowModality(Qt.NonModal)
         
+        self.launcher_mode = launcher_mode
         self.files_to_process = files_to_process
         self.total_files = len(files_to_process)
         self.processed_files = 0
@@ -495,14 +499,25 @@ class MultiProfileDialog(QDialog):
         return super().eventFilter(watched, event)
     
     def populate_profile_list(self):
-        """Populate the list with files to process."""
-        for file_path in self.files_to_process:
-            # Extract profile name from file name
-            file_name = os.path.basename(file_path)
-            profile_name = os.path.splitext(file_name)[0]
-            # Remove .exe extension if present (for .exe.lnk files)
-            if profile_name.lower().endswith('.exe'):
-                profile_name = profile_name[:-4]
+        """Populate the list with files to process.
+        
+        In launcher_mode, files_to_process is a list of dicts with 'name' and 'path'.
+        Otherwise, it's a list of file paths where name is extracted from filename.
+        """
+        for item_data in self.files_to_process:
+            # Handle both launcher mode (dict) and normal mode (file path string)
+            if self.launcher_mode and isinstance(item_data, dict):
+                # Launcher mode: data has 'name' and 'path' (install dir)
+                profile_name = item_data.get('name', 'Unknown Game')
+                file_path = item_data.get('path', '')  # Install directory used for scanning
+            else:
+                # Normal mode: extract name from file path
+                file_path = item_data
+                file_name = os.path.basename(file_path)
+                profile_name = os.path.splitext(file_name)[0]
+                # Remove .exe extension if present (for .exe.lnk files)
+                if profile_name.lower().endswith('.exe'):
+                    profile_name = profile_name[:-4]
             
             # Create custom item
             item_widget = ProfileListItem(profile_name, file_path)

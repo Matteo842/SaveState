@@ -477,62 +477,53 @@ class DropEventMixin:
                     if profiles_data and len(profiles_data) > 0:
                         logging.info(f"Found {launcher_key} games: {len(profiles_data)}")
                         
-                        # Mostra dialog per selezionare quale gioco creare come profilo
-                        from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
-                        selection_dialog = EmulatorGameSelectionDialog(launcher_key, profiles_data, mw)
-                        if selection_dialog.exec():
-                            selected_profile = selection_dialog.get_selected_profile_data()
-                            if selected_profile:
-                                profile_id = selected_profile.get('id', '')
-                                selected_name = selected_profile.get('name', profile_id)
-                                game_path = selected_profile.get('path', '')
-                                
-                                # Nome profilo basato su launcher e gioco
-                                profile_name = f"{launcher_key} - {selected_name}"
-                                
-                                if profile_name in mw.profiles:
-                                    reply = QMessageBox.question(mw, "Existing Profile",
-                                                            f"A profile named '{profile_name}' already exists. Overwrite it?",
-                                                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                                            QMessageBox.StandardButton.No)
-                                    if reply == QMessageBox.StandardButton.No:
-                                        mw.status_label.setText("Profile creation cancelled.")
-                                        event.acceptProposedAction()
-                                        return
-                                
-                                # Per i giochi da launcher, usiamo il path come directory di installazione
-                                # e avviamo il rilevamento dei salvataggi
-                                if game_path and os.path.isdir(game_path):
-                                    # Avvia rilevamento automatico dei salvataggi
-                                    handler_instance.game_name_suggestion = selected_name
-                                    handler_instance.game_install_dir = game_path
-                                    
-                                    # Usa DetectionWorkerThread per trovare i salvataggi
-                                    from gui_utils import DetectionWorkerThread
-                                    
-                                    mw.set_controls_enabled(False)
-                                    QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-                                    
-                                    handler_instance.detection_thread = DetectionWorkerThread(
-                                        profile_name_suggestion=selected_name,
-                                        game_install_dir=game_path,
-                                        current_settings=mw.current_settings,
-                                        emulator_name=launcher_key,
-                                        cancellation_manager=getattr(mw, 'cancellation_manager', None)
-                                    )
-                                    handler_instance.detection_thread.progress.connect(handler_instance.on_detection_progress)
-                                    handler_instance.detection_thread.finished.connect(handler_instance.on_detection_finished)
-                                    handler_instance.detection_thread.start()
-                                    
-                                    event.acceptProposedAction()
-                                    return
-                                else:
-                                    # Se non c'è un path valido, chiedi manualmente
-                                    QMessageBox.warning(mw, "No Install Path",
-                                        f"Could not determine the installation path for '{selected_name}'.\n\n"
-                                        "Please add this game manually using its executable or shortcut.")
+                        # Usa MultiProfileDialog per mostrare tutti i giochi e permettere
+                        # la selezione multipla, rimozione, e analisi batch
+                        from gui_components.multi_profile_dialog import MultiProfileDialog
+                        
+                        # Converti i profiles_data nel formato atteso da MultiProfileDialog
+                        # profiles_data è già una lista di dict con 'name' e 'path'
+                        multi_dialog = MultiProfileDialog(
+                            profiles_data, 
+                            parent=mw, 
+                            launcher_mode=True
+                        )
+                        multi_dialog.setWindowTitle(f"{launcher_key} Library")
+                        
+                        # Imposta il riferimento al dialog per _handle_profile_analysis
+                        handler_instance.profile_dialog = multi_dialog
+                        
+                        # Connetti i segnali per l'analisi dei giochi
+                        def on_launcher_analysis_requested(data):
+                            if data.get('action') == 'start_analysis':
+                                logging.info(f"Starting batch analysis for {launcher_key} games")
+                                # Avvia l'analisi batch dei giochi del launcher
+                                handler_instance._handle_profile_analysis(data)
+                        
+                        multi_dialog.profileAdded.connect(on_launcher_analysis_requested)
+                        
+                        # Gestisci risultato del dialog
+                        result = multi_dialog.exec()
+                        
+                        if result:
+                            # Utente ha confermato - aggiungi i profili trovati
+                            accepted = multi_dialog.get_accepted_profiles()
+                            logging.info(f"User accepted {len(accepted)} profiles from {launcher_key}")
+                            
+                            for profile_name, profile_data in accepted.items():
+                                save_path = profile_data.get('path', '')
+                                if save_path and os.path.isdir(save_path):
+                                    # Aggiungi direttamente al profili
+                                    mw.profiles[profile_name] = {'path': save_path}
+                                    logging.info(f"Added profile '{profile_name}' with path '{save_path}'")
+                            
+                            # Salva i profili
+                            if accepted:
+                                mw._save_profiles()
+                                mw.update_profile_table()
+                                mw.status_label.setText(f"Added {len(accepted)} profiles from {launcher_key}")
                         else:
-                            logging.info("User cancelled launcher game selection.")
+                            logging.info(f"User cancelled {launcher_key} profile creation")
                     else:
                         QMessageBox.warning(mw, f"{launcher_key} Library",
                             f"No games were found in the {launcher_key} library.\n\n"
