@@ -18,21 +18,49 @@ from utils import resource_path
 
 class BackupSelectionDelegate(QStyledItemDelegate):
     """
-    Custom Delegate for backup table selection:
-    - Dark Grey Background (#2A2A2A)
-    - 4px Red Vertical Line on the LEFT edge (Column 0 only)
-    - White Text
+    Custom Delegate for backup table selection with theme support:
+    - Dark Theme: Dark grey background (#2A2A2A) with red accent line (#A10808), white text
+    - Light Theme: Light teal background (#C8E6E3) with teal accent line (#007c8e), dark text
     """
+    def _is_dark_mode(self, option):
+        """Detect dark mode from the widget's window settings."""
+        try:
+            widget = option.widget
+            if widget:
+                # Traverse up to find a window with current_settings
+                parent = widget.window()
+                if parent and hasattr(parent, 'current_settings'):
+                    return parent.current_settings.get('theme', 'dark') == 'dark'
+                # Try parent's parent (for dialogs)
+                if parent and hasattr(parent, 'parent') and parent.parent():
+                    grandparent = parent.parent()
+                    if hasattr(grandparent, 'current_settings'):
+                        return grandparent.current_settings.get('theme', 'dark') == 'dark'
+        except Exception:
+            pass
+        return True  # Default to dark mode
+    
     def paint(self, painter, option, index):
         painter.save()
         
         # Check if the item is selected
         if option.state & QStyle.State_Selected:
-            # 1. Custom Background (same as profile table: #2A2A2A)
-            bg_color = QColor("#2A2A2A")
+            # Detect theme
+            is_dark = self._is_dark_mode(option)
+            
+            if is_dark:
+                bg_color = QColor("#2A2A2A")       # Dark grey background
+                accent_color = QColor("#A10808")   # Red accent line
+                text_color = QColor(Qt.GlobalColor.white)
+            else:
+                bg_color = QColor("#C8E6E3")       # Light teal background
+                accent_color = QColor("#007c8e")   # Teal accent line
+                text_color = QColor("#1E1E1E")     # Dark text
+            
+            # 1. Custom Background
             painter.fillRect(option.rect, bg_color)
             
-            # 2. Vertical Red Line on the LEFT edge (only for column 0)
+            # 2. Vertical accent line on the LEFT edge (only for column 0)
             if index.column() == 0:
                 line_width = 4
                 painter.fillRect(
@@ -40,7 +68,7 @@ class BackupSelectionDelegate(QStyledItemDelegate):
                     option.rect.y(), 
                     line_width, 
                     option.rect.height(), 
-                    QColor("#A10808")
+                    accent_color
                 )
             
             # 3. Prepare option for base painting (Text/Icon)
@@ -48,13 +76,12 @@ class BackupSelectionDelegate(QStyledItemDelegate):
             opt = QStyleOptionViewItem(option)
             opt.state &= ~QStyle.State.State_Selected 
             
-            # Force Text Color to White
+            # Force Text Color based on theme
             palette = opt.palette
-            white = QColor(Qt.GlobalColor.white)
-            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.Text, white)
-            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.WindowText, white)
-            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.Text, white)
-            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.WindowText, white)
+            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.Text, text_color)
+            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.WindowText, text_color)
+            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.Text, text_color)
+            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.WindowText, text_color)
             opt.palette = palette
             
             # Draw content (icon, text) using the modified option

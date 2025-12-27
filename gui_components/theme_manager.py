@@ -135,3 +135,16 @@ class ThemeManager:
             #    which will read the new value from main_window.current_settings
             logging.info(f"ThemeManager: Theme setting saved successfully. Applying '{new_theme}' theme now.")
             self.update_theme()
+            
+            # 4. Notify components that need to update their theme-aware delegates
+            self._notify_theme_change()
+    
+    def _notify_theme_change(self):
+        """Notify all theme-aware components to update their appearance."""
+        try:
+            # Update profile table delegate
+            if hasattr(self.main_window, 'profile_table_manager') and self.main_window.profile_table_manager:
+                self.main_window.profile_table_manager.update_theme()
+                logging.debug("ThemeManager: Notified profile_table_manager of theme change.")
+        except Exception as e:
+            logging.error(f"ThemeManager: Error notifying components of theme change: {e}", exc_info=True)

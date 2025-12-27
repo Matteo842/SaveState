@@ -16,30 +16,45 @@ from utils import resource_path # <--- Import from utils
 
 class ProfileSelectionDelegate(QStyledItemDelegate):
     """
-    Custom Delegate to draw the 'Bastard Design' selection:
-    - Dark Grey Background (#484848)
-    - 4px Red Vertical Line on the left edge (Column 0 only)
-    - White Text
+    Custom Delegate to draw the selection with theme support:
+    - Dark Theme: Dark grey background (#2A2A2A) with red accent line (#A10808), white text
+    - Light Theme: Light grey background (#D8D8D8) with teal accent line (#007c8e), dark text
     """
+    
+    def __init__(self, parent=None, is_dark_mode=True):
+        super().__init__(parent)
+        self._is_dark_mode = is_dark_mode
+    
+    def set_dark_mode(self, is_dark: bool):
+        """Update the delegate's theme mode. Call parent().viewport().update() after."""
+        self._is_dark_mode = is_dark
+    
     def paint(self, painter, option, index):
         painter.save()
         
         # Check if the item is selected
         if option.state & QStyle.State_Selected:
-            # 1. Custom Background (Darker: #2A2A2A)
-            # User requested "scuriamolo ulteriormente" (darken it further) than #383838
-            bg_color = QColor("#2A2A2A")
+            # Theme-specific colors
+            if self._is_dark_mode:
+                bg_color = QColor("#2A2A2A")       # Dark grey background
+                accent_color = QColor("#A10808")   # Red accent line
+                text_color = QColor(Qt.GlobalColor.white)
+            else:
+                bg_color = QColor("#C8E6E3")       # Light teal-tinted background for selection
+                accent_color = QColor("#007c8e")   # Teal accent line
+                text_color = QColor("#1E1E1E")     # Dark text for readability
+            
+            # 1. Custom Background
             painter.fillRect(option.rect, bg_color)
             
-            # 2. Horizontal Red Line at the BOTTOM (height 4px)
-            # Increased from 3px to 4px as requested
+            # 2. Horizontal accent line at the BOTTOM (height 4px)
             line_height = 4
             painter.fillRect(
                 option.rect.x(), 
                 option.rect.y() + option.rect.height() - line_height, 
                 option.rect.width(), 
                 line_height, 
-                QColor("#A10808")
+                accent_color
             )
             
             # 3. Prepare option for base painting (Text/Icon)
@@ -47,16 +62,13 @@ class ProfileSelectionDelegate(QStyledItemDelegate):
             opt = QStyleOptionViewItem(option)
             opt.state &= ~QStyle.State.State_Selected 
             
-            # No content shifting needed as the line is at the bottom
-            
-            # Force Text Color to White
+            # Force Text Color based on theme
             palette = opt.palette
-            white = QColor(Qt.GlobalColor.white)
-            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.Text, white)
-            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.WindowText, white)
+            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.Text, text_color)
+            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.WindowText, text_color)
             # Ensure it applies to all states involved
-            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.Text, white)
-            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.WindowText, white)
+            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.Text, text_color)
+            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.WindowText, text_color)
             opt.palette = palette
             
             # Draw content (icon, text) using the modified option
@@ -132,12 +144,24 @@ class ProfileListManager:
         self.table_widget.cellDoubleClicked.connect(self.handle_double_click)
         self.table_widget.itemSelectionChanged.connect(self._update_delete_buttons_state)
         
-        # Set Custom Delegate
-        self.delegate = ProfileSelectionDelegate(self.table_widget)
+        # Set Custom Delegate with current theme
+        current_theme = self.main_window.current_settings.get('theme', 'dark')
+        is_dark = (current_theme == 'dark')
+        self.delegate = ProfileSelectionDelegate(self.table_widget, is_dark_mode=is_dark)
         self.table_widget.setItemDelegate(self.delegate)
 
         self.retranslate_headers() # Set initial headers
         # self.update_profile_table() # Will be called by MainWindow after __init__
+
+    def update_theme(self):
+        """Update the delegate's theme mode based on current settings."""
+        current_theme = self.main_window.current_settings.get('theme', 'dark')
+        is_dark = (current_theme == 'dark')
+        self.delegate.set_dark_mode(is_dark)
+        # Force a repaint of the table to apply the new colors
+        self.table_widget.viewport().update()
+
+
 
 
     def retranslate_headers(self):
@@ -456,9 +480,17 @@ class ProfileListManager:
                 button.setIcon(system_icon)
                 logging.debug("Using system trash icon as fallback")
         
-        # Custom button styling - Transparent default state, visible on hover/press
-        button.setStyleSheet("""
-            QPushButton {
+        # Custom button styling - Theme-aware colors
+        current_theme = self.main_window.current_settings.get('theme', 'dark')
+        if current_theme == 'dark':
+            hover_bg = "#353535"
+            pressed_bg = "#b00020"
+        else:
+            hover_bg = "#D0D0D0"
+            pressed_bg = "#D32F2F"
+        
+        button.setStyleSheet(f"""
+            QPushButton {{
                 width: 24px;
                 height: 24px;
                 min-width: 24px;
@@ -470,15 +502,15 @@ class ProfileListManager:
                 background-color: transparent;
                 padding: 0px;
                 margin: 0px;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 border: 2px solid #888888;
-                background-color: #353535;
-            }
-            QPushButton:pressed {
-                border: 2px solid #b00020;
-                background-color: #b00020;
-            }
+                background-color: {hover_bg};
+            }}
+            QPushButton:pressed {{
+                border: 2px solid {pressed_bg};
+                background-color: {pressed_bg};
+            }}
         """)
         
         # Set icon size to fit nicely inside the 24x24 button (leaving room for border)
