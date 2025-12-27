@@ -832,16 +832,57 @@ OTHER_SATURN_SAVE_EXTENSIONS = (
 )
 
 
+def _parse_desktop_file(desktop_path: str) -> Optional[str]:
+    """
+    Parse a Linux .desktop file to extract the Exec path.
+    
+    Args:
+        desktop_path: Path to the .desktop file
+        
+    Returns:
+        The executable path from the Exec= line, or None if not found
+    """
+    try:
+        with open(desktop_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith('Exec='):
+                    # Extract the command (may include arguments)
+                    exec_value = line[5:].strip()
+                    # Remove any arguments (take first part before space, unless quoted)
+                    if exec_value.startswith('"'):
+                        # Handle quoted path
+                        end_quote = exec_value.find('"', 1)
+                        if end_quote > 0:
+                            exec_value = exec_value[1:end_quote]
+                    else:
+                        # Take first word (before any arguments)
+                        exec_value = exec_value.split()[0] if exec_value else ""
+                    
+                    # Remove field codes like %f, %F, %u, %U
+                    exec_value = re.sub(r'%[fFuUdDnNickvm]', '', exec_value).strip()
+                    
+                    if exec_value and os.path.isfile(exec_value):
+                        log.debug(f"Ymir: Extracted executable from .desktop: {exec_value}")
+                        return exec_value
+                    elif exec_value:
+                        log.debug(f"Ymir: .desktop Exec path not found as file: {exec_value}")
+    except Exception as e:
+        log.debug(f"Ymir: Failed to parse .desktop file: {e}")
+    
+    return None
+
+
 def get_ymir_base_dirs(executable_path: Optional[str] = None) -> List[str]:
     """
     Returns a list of potential Ymir base directories to check.
     
     Resolution order:
     1. Portable mode: Directory of the executable (if provided)
-    2. Installed mode: %APPDATA%\\StrikerX3\\Ymir\\ (Windows)
+    2. Installed mode: System-specific paths
     
     Args:
-        executable_path: Optional path to the Ymir executable
+        executable_path: Optional path to the Ymir executable (or .desktop file on Linux)
         
     Returns:
         List of directory paths to check (in priority order)
@@ -851,7 +892,14 @@ def get_ymir_base_dirs(executable_path: Optional[str] = None) -> List[str]:
     
     # 1. Portable mode - check executable directory first
     if executable_path:
-        if os.path.isfile(executable_path):
+        # Handle Linux .desktop files
+        if executable_path.endswith('.desktop') and os.path.isfile(executable_path):
+            real_exec = _parse_desktop_file(executable_path)
+            if real_exec:
+                exe_dir = os.path.dirname(real_exec)
+                potential_dirs.append(exe_dir)
+                log.debug(f"Ymir: Added portable path from .desktop: {exe_dir}")
+        elif os.path.isfile(executable_path):
             exe_dir = os.path.dirname(executable_path)
             potential_dirs.append(exe_dir)
             log.debug(f"Ymir: Added portable path from executable: {exe_dir}")
@@ -862,7 +910,7 @@ def get_ymir_base_dirs(executable_path: Optional[str] = None) -> List[str]:
     # 2. Installed mode - system-specific paths
     # Ymir uses SDL_GetPrefPath("StrikerX3", "Ymir") which results in:
     # Windows: %APPDATA%\StrikerX3\Ymir\
-    # Linux: ~/.local/share/StrikerX3/Ymir/
+    # Linux: ~/.local/share/StrikerX3/Ymir/ or ~/.local/share/Ymir/
     # macOS: ~/Library/Application Support/StrikerX3/Ymir/
     
     if system == "Windows":
@@ -875,10 +923,34 @@ def get_ymir_base_dirs(executable_path: Optional[str] = None) -> List[str]:
     elif system == "Linux":
         user_home = os.path.expanduser("~")
         # SDL uses XDG_DATA_HOME or ~/.local/share
-        xdg_data = os.environ.get('XDG_DATA_HOME', os.path.join(user_home, ".local", "share"))
-        linux_path = os.path.join(xdg_data, YMIR_ORGANIZATION, YMIR_APP_NAME)
-        potential_dirs.append(linux_path)
-        log.debug(f"Ymir: Added Linux path: {linux_path}")
+        xdg_data_env = os.environ.get('XDG_DATA_HOME')
+        xdg_data = xdg_data_env if xdg_data_env else os.path.join(user_home, ".local", "share")
+        
+        # Standard path based on user home (always add this first)
+        standard_xdg = os.path.join(user_home, ".local", "share")
+        
+        # Primary path: ~/.local/share/StrikerX3/Ymir/
+        linux_path_org = os.path.join(standard_xdg, YMIR_ORGANIZATION, YMIR_APP_NAME)
+        potential_dirs.append(linux_path_org)
+        log.debug(f"Ymir: Added Linux path (with org): {linux_path_org}")
+        
+        # Alternative path: ~/.local/share/Ymir/ (some installations)
+        linux_path_alt = os.path.join(standard_xdg, YMIR_APP_NAME)
+        potential_dirs.append(linux_path_alt)
+        log.debug(f"Ymir: Added Linux path (alt): {linux_path_alt}")
+        
+        # If XDG_DATA_HOME is set and different from standard, also check there
+        # (This handles Snap/Flatpak where XDG_DATA_HOME points to sandbox)
+        if xdg_data_env and xdg_data != standard_xdg:
+            sandbox_path_org = os.path.join(xdg_data, YMIR_ORGANIZATION, YMIR_APP_NAME)
+            if sandbox_path_org not in potential_dirs:
+                potential_dirs.append(sandbox_path_org)
+                log.debug(f"Ymir: Added sandbox path (with org): {sandbox_path_org}")
+            
+            sandbox_path_alt = os.path.join(xdg_data, YMIR_APP_NAME)
+            if sandbox_path_alt not in potential_dirs:
+                potential_dirs.append(sandbox_path_alt)
+                log.debug(f"Ymir: Added sandbox path (alt): {sandbox_path_alt}")
     
     elif system == "Darwin":  # macOS
         user_home = os.path.expanduser("~")
@@ -906,14 +978,16 @@ def get_ymir_backup_dirs(executable_path: Optional[str] = None) -> List[str]:
     base_dirs = get_ymir_base_dirs(executable_path)
     found_dirs: List[str] = []
     
+    log.info(f"Ymir: Checking base directories: {base_dirs}")  # DEBUG TEMP
+    
     all_extensions = BACKUP_IMAGE_EXTENSIONS + EXPORTED_BACKUP_EXTENSIONS + OTHER_SATURN_SAVE_EXTENSIONS
     
     for base_dir in base_dirs:
         if not os.path.isdir(base_dir):
-            log.debug(f"Ymir: Base directory does not exist: {base_dir}")
+            log.info(f"Ymir: Base directory does not exist: {base_dir}")  # DEBUG TEMP
             continue
         
-        log.debug(f"Ymir: Checking base directory: {base_dir}")
+        log.info(f"Ymir: Checking existing base directory: {base_dir}")  # DEBUG TEMP
         
         # Check for 'backup' subdirectory (Ymir's standard structure)
         backup_path = os.path.join(base_dir, "backup")
@@ -930,9 +1004,11 @@ def get_ymir_backup_dirs(executable_path: Optional[str] = None) -> List[str]:
         
         # Check for 'state' subdirectory (portable mode stores bup-int.bin here!)
         state_path = os.path.join(base_dir, "state")
+        log.info(f"Ymir: Checking state path: {state_path}, exists={os.path.isdir(state_path)}")  # DEBUG TEMP
         if os.path.isdir(state_path):
             # Check specifically for bup-int.bin or other backup files
             internal_backup = os.path.join(state_path, INTERNAL_BACKUP_FILE)
+            log.info(f"Ymir: Checking bup-int.bin: {internal_backup}, exists={os.path.isfile(internal_backup)}")  # DEBUG TEMP
             if os.path.isfile(internal_backup):
                 log.debug(f"Ymir: Found backup RAM in state directory: {state_path}")
                 found_dirs.append(state_path)
