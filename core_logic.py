@@ -642,7 +642,7 @@ def _detect_ymir_saturn_save(profile_data: dict) -> tuple:
         logging.warning(f"Ymir profile detected but no backup RAM file found in paths: {paths}")
         return None, None
     
-    logging.info(f"Ymir profile detected: saturn_save_id='{saturn_save_id}', backup_ram='{backup_ram_path}'")
+    logging.debug(f"Ymir profile detected: saturn_save_id='{saturn_save_id}', backup_ram='{backup_ram_path}'")
     return backup_ram_path, saturn_save_id
 
 
@@ -684,13 +684,13 @@ def _perform_ymir_backup(profile_name: str, profile_data: dict, archive_path: st
         bup_filename = f"{saturn_save_id}.bup"
         bup_path = os.path.join(temp_dir, bup_filename)
         
-        logging.info(f"Ymir: Extracting save '{saturn_save_id}' from '{backup_ram_path}'...")
+        logging.debug(f"Ymir: Extracting save '{saturn_save_id}' from '{backup_ram_path}'...")
         extracted_path = extract_saturn_save(backup_ram_path, saturn_save_id, bup_path)
         
         if not extracted_path or not os.path.isfile(extracted_path):
             return False, f"Failed to extract Saturn save '{saturn_save_id}' from backup RAM"
         
-        logging.info(f"Ymir: Save extracted to '{extracted_path}' ({os.path.getsize(extracted_path)} bytes)")
+        logging.debug(f"Ymir: Save extracted to '{extracted_path}' ({os.path.getsize(extracted_path)} bytes)")
         
         # Create the ZIP archive with the extracted .bup file
         with zipfile.ZipFile(archive_path, 'w', compression=zip_compression, 
@@ -711,7 +711,7 @@ def _perform_ymir_backup(profile_name: str, profile_data: dict, archive_path: st
             
             # Add the .bup file
             zipf.write(extracted_path, arcname=bup_filename)
-            logging.info(f"Ymir: Added '{bup_filename}' to backup archive")
+            logging.debug(f"Ymir: Added '{bup_filename}' to backup archive")
         
         return True, f"Ymir save '{saturn_save_id}' backed up successfully"
         
@@ -770,7 +770,7 @@ def _perform_ymir_restore(profile_name: str, profile_data: dict, archive_path: s
                 return False, "No .bup save file found in the backup archive"
             
             # Extract the .bup file
-            logging.info(f"Ymir: Extracting '{bup_file}' from archive...")
+            logging.debug(f"Ymir: Extracting '{bup_file}' from archive...")
             zipf.extract(bup_file, temp_dir)
             extracted_bup_path = os.path.join(temp_dir, bup_file)
             
@@ -778,7 +778,7 @@ def _perform_ymir_restore(profile_name: str, profile_data: dict, archive_path: s
                 return False, f"Failed to extract .bup file from archive"
         
         # Import the save into backup RAM
-        logging.info(f"Ymir: Importing save into '{backup_ram_path}'...")
+        logging.debug(f"Ymir: Importing save into '{backup_ram_path}'...")
         success = import_saturn_save(backup_ram_path, extracted_bup_path, overwrite=True)
         
         if success:

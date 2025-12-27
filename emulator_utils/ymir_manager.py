@@ -148,9 +148,9 @@ def parse_saturn_backup_ram(file_path: str) -> List[Dict[str, str]]:
             comment = ""
         
         # Debug: log raw bytes for analysis
-        log.info(f"Ymir: Raw save entry at block {block_idx}:")
-        log.info(f"  Filename bytes: {filename_bytes.hex()} -> '{filename}'")
-        log.info(f"  Comment bytes:  {comment_bytes.hex()} -> '{comment}'")
+        log.debug(f"Ymir: Raw save entry at block {block_idx}:")
+        log.debug(f"  Filename bytes: {filename_bytes.hex()} -> '{filename}'")
+        log.debug(f"  Comment bytes:  {comment_bytes.hex()} -> '{comment}'")
         
         # Read data size (4 bytes at offset 0x1E, big-endian)
         size_bytes = data[offset + 0x1E:offset + 0x1E + 4]
@@ -171,7 +171,7 @@ def parse_saturn_backup_ram(file_path: str) -> List[Dict[str, str]]:
         
         log.debug(f"Ymir: Found save entry - filename='{filename}', comment='{comment}', size={size}")
     
-    log.info(f"Ymir: Parsed {len(saves)} save entries from '{file_path}'")
+    log.debug(f"Ymir: Parsed {len(saves)} save entries from '{file_path}'")
     return saves
 
 
@@ -281,7 +281,7 @@ def extract_saturn_save(backup_ram_path: str, game_id: str, output_path: Optiona
             # Read size (4 bytes big-endian at 0x1E)
             save_size = int.from_bytes(data[offset + 0x1E:offset + 0x1E + 4], byteorder='big')
             
-            log.info(f"Ymir: Found save at block {block_idx}: filename='{filename}', size={save_size}")
+            log.debug(f"Ymir: Found save at block {block_idx}: filename='{filename}', size={save_size}")
             break
     
     if save_block is None:
@@ -290,11 +290,11 @@ def extract_saturn_save(backup_ram_path: str, game_id: str, output_path: Optiona
     
     # Read the block list to get all data blocks
     block_list = _read_block_list(data, save_block, block_size, total_blocks)
-    log.info(f"Ymir: Save uses {len(block_list)} blocks: {block_list}")
+    log.debug(f"Ymir: Save uses {len(block_list)} blocks: {block_list}")
     
     # Extract the data from all blocks
     save_data = _extract_save_data(data, block_list, block_size, save_size)
-    log.info(f"Ymir: Extracted {len(save_data)} bytes of save data")
+    log.debug(f"Ymir: Extracted {len(save_data)} bytes of save data")
     
     # Generate output path if not provided
     if output_path is None:
@@ -417,7 +417,7 @@ def import_saturn_save(backup_ram_path: str, bup_file_path: str, overwrite: bool
         log.warning(f"Ymir: .bup file has less data than expected ({len(save_data)} < {data_size})")
         data_size = len(save_data)
     
-    log.info(f"Ymir: Parsed .bup file: filename='{filename}', comment='{comment}', size={data_size}")
+    log.debug(f"Ymir: Parsed .bup file: filename='{filename}', comment='{comment}', size={data_size}")
     
     # Read the backup RAM file
     try:
@@ -475,7 +475,7 @@ def import_saturn_save(backup_ram_path: str, bup_file_path: str, overwrite: bool
                 existing_filename = existing_filename_bytes.decode('shift_jis', errors='replace').rstrip('\x00 ')
             
             if existing_filename == filename:
-                log.info(f"Ymir: Found existing save '{filename}' at block {block_idx}, will overwrite")
+                log.debug(f"Ymir: Found existing save '{filename}' at block {block_idx}, will overwrite")
                 # Get all blocks used by this save
                 block_list = _read_block_list(bytes(ram_data), block_idx, block_size, total_blocks)
                 existing_blocks = set(block_list)
@@ -488,7 +488,7 @@ def import_saturn_save(backup_ram_path: str, bup_file_path: str, overwrite: bool
                     for i in range(1, block_size):
                         ram_data[blk_offset + i] = 0x00
                 
-                log.info(f"Ymir: Cleared {len(block_list)} blocks from existing save")
+                log.debug(f"Ymir: Cleared {len(block_list)} blocks from existing save")
                 break
     
     # Calculate required blocks
@@ -521,7 +521,7 @@ def import_saturn_save(backup_ram_path: str, bup_file_path: str, overwrite: bool
             return False
     
     required_blocks = estimated_blocks
-    log.info(f"Ymir: Save requires {required_blocks} blocks")
+    log.debug(f"Ymir: Save requires {required_blocks} blocks")
     
     # Find free blocks
     free_blocks = []
@@ -542,7 +542,7 @@ def import_saturn_save(backup_ram_path: str, bup_file_path: str, overwrite: bool
     
     # Allocate blocks
     allocated_blocks = free_blocks[:required_blocks]
-    log.info(f"Ymir: Allocating blocks: {allocated_blocks}")
+    log.debug(f"Ymir: Allocating blocks: {allocated_blocks}")
     
     # Write the save to backup RAM
     first_block = allocated_blocks[0]
@@ -913,7 +913,7 @@ def get_ymir_backup_dirs(executable_path: Optional[str] = None) -> List[str]:
             log.debug(f"Ymir: Base directory does not exist: {base_dir}")
             continue
         
-        log.info(f"Ymir: Checking base directory: {base_dir}")
+        log.debug(f"Ymir: Checking base directory: {base_dir}")
         
         # Check for 'backup' subdirectory (Ymir's standard structure)
         backup_path = os.path.join(base_dir, "backup")
@@ -922,7 +922,7 @@ def get_ymir_backup_dirs(executable_path: Optional[str] = None) -> List[str]:
             try:
                 for entry in os.listdir(backup_path):
                     if entry.lower().endswith(all_extensions):
-                        log.info(f"Ymir: Found backup directory with saves: {backup_path}")
+                        log.debug(f"Ymir: Found backup directory with saves: {backup_path}")
                         found_dirs.append(backup_path)
                         break
             except OSError:
@@ -934,14 +934,14 @@ def get_ymir_backup_dirs(executable_path: Optional[str] = None) -> List[str]:
             # Check specifically for bup-int.bin or other backup files
             internal_backup = os.path.join(state_path, INTERNAL_BACKUP_FILE)
             if os.path.isfile(internal_backup):
-                log.info(f"Ymir: Found backup RAM in state directory: {state_path}")
+                log.debug(f"Ymir: Found backup RAM in state directory: {state_path}")
                 found_dirs.append(state_path)
             else:
                 # Check for other save files
                 try:
                     for entry in os.listdir(state_path):
                         if entry.lower().endswith(all_extensions):
-                            log.info(f"Ymir: Found save files in state directory: {state_path}")
+                            log.debug(f"Ymir: Found save files in state directory: {state_path}")
                             found_dirs.append(state_path)
                             break
                 except OSError:
@@ -950,14 +950,14 @@ def get_ymir_backup_dirs(executable_path: Optional[str] = None) -> List[str]:
         # Check if backup files exist directly in base directory
         internal_backup = os.path.join(base_dir, INTERNAL_BACKUP_FILE)
         if os.path.isfile(internal_backup):
-            log.info(f"Ymir: Found backup files in base directory: {base_dir}")
+            log.debug(f"Ymir: Found backup files in base directory: {base_dir}")
             found_dirs.append(base_dir)
         else:
             # Check for other Saturn save formats in base directory
             try:
                 for entry in os.listdir(base_dir):
                     if entry.lower().endswith(all_extensions):
-                        log.info(f"Ymir: Found Saturn save files in base directory: {base_dir}")
+                        log.debug(f"Ymir: Found Saturn save files in base directory: {base_dir}")
                         found_dirs.append(base_dir)
                         break
             except OSError:
@@ -1034,7 +1034,7 @@ def find_ymir_profiles(custom_path: Optional[str] = None) -> Optional[List[Dict[
             continue
     
     if not backup_files:
-        log.info(f"Ymir: No backup files found in directory: {backup_dir}")
+        log.debug(f"Ymir: No backup files found in directory: {backup_dir}")
         return []
     
     # Group files by type
@@ -1060,11 +1060,10 @@ def find_ymir_profiles(custom_path: Optional[str] = None) -> Optional[List[Dict[
             external_backup_paths.append(file_path)
     
     # Parse backup RAM files to extract individual game saves
-    all_backup_ram_paths: List[str] = []
-    parsed_games: Dict[str, Dict] = {}  # filename -> {comment, paths}
+    # Each game save is stored with its source file path
+    parsed_games: Dict[str, Dict] = {}  # game_id -> {comment, size, source, source_path}
     
     if internal_backup_path:
-        all_backup_ram_paths.append(internal_backup_path)
         # Parse the internal backup RAM to find individual game saves
         save_entries = parse_saturn_backup_ram(internal_backup_path)
         for entry in save_entries:
@@ -1073,12 +1072,12 @@ def find_ymir_profiles(custom_path: Optional[str] = None) -> Optional[List[Dict[
                 parsed_games[game_id] = {
                     'comment': entry['comment'],
                     'size': entry['size'],
-                    'source': 'internal'
+                    'source': 'internal',
+                    'source_path': internal_backup_path  # Store the specific file path
                 }
     
-    # Also add external backup paths
-    all_backup_ram_paths.extend(sorted(external_backup_paths))
-    for ext_path in external_backup_paths:
+    # Also parse external backup paths
+    for ext_path in sorted(external_backup_paths):
         save_entries = parse_saturn_backup_ram(ext_path)
         for entry in save_entries:
             game_id = entry['filename']
@@ -1086,7 +1085,8 @@ def find_ymir_profiles(custom_path: Optional[str] = None) -> Optional[List[Dict[
                 parsed_games[game_id] = {
                     'comment': entry['comment'],
                     'size': entry['size'],
-                    'source': 'external'
+                    'source': 'external',
+                    'source_path': ext_path  # Store the specific file path
                 }
     
     # Create profiles based on parsed games
@@ -1094,6 +1094,7 @@ def find_ymir_profiles(custom_path: Optional[str] = None) -> Optional[List[Dict[
         # Create individual profiles for each game found in backup RAM
         for game_id, game_info in parsed_games.items():
             comment = game_info['comment']
+            source_path = game_info['source_path']
             
             # Use filename (game_id) as primary name - it's usually more descriptive
             # Format: "SEGARALLY_0" -> "Sega Rally 0" or lookup in database
@@ -1104,18 +1105,18 @@ def find_ymir_profiles(custom_path: Optional[str] = None) -> Optional[List[Dict[
             profiles.append({
                 'id': profile_id,
                 'name': display_name,
-                'paths': all_backup_ram_paths.copy(),  # All backup RAM files contain this game's data
+                'paths': [source_path],  # Only the specific backup RAM file containing this save
                 'emulator': 'Ymir',
                 'saturn_save_id': game_id  # Store original ID for reference
             })
-            log.debug(f"Ymir: Found game '{display_name}' (ID: {game_id}, comment: {comment})")
+            log.debug(f"Ymir: Found game '{display_name}' (ID: {game_id}, source: {source_path})")
     
-    elif all_backup_ram_paths:
+    elif internal_backup_path:
         # Fallback: couldn't parse, just show generic backup RAM profile
         profiles.append({
             'id': 'ymir_backup_ram',
             'name': 'Saturn Backup RAM',
-            'paths': all_backup_ram_paths,
+            'paths': [internal_backup_path],
             'emulator': 'Ymir'
         })
         log.debug(f"Ymir: Fallback - showing generic Backup RAM profile")
