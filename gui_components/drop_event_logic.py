@@ -479,9 +479,6 @@ class DropEventMixin:
                         
                         # Usa MultiProfileDialog per mostrare tutti i giochi e permettere
                         # la selezione multipla, rimozione, e analisi batch
-                        from gui_components.multi_profile_dialog import MultiProfileDialog
-                        
-                        # Converti i profiles_data nel formato atteso da MultiProfileDialog
                         # profiles_data è già una lista di dict con 'name' e 'path'
                         multi_dialog = MultiProfileDialog(
                             profiles_data, 
