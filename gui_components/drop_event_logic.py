@@ -13,7 +13,7 @@ from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
 from dialogs.retroarch_dialog import RetroArchCoreSelectionDialog
 from gui_utils import DetectionWorkerThread  # Import DetectionWorkerThread
 from shortcut_utils import sanitize_profile_name  # Import sanitize_profile_name
-from .multi_profile_dialog import MultiProfileDialog
+# Note: MultiProfileDialog is imported locally where needed to avoid import issues in Flatpak
 
 # It's assumed that DetectionWorkerThread, shortcut_utils, emulator_manager, 
 # EmulatorGameSelectionDialog, and MultiProfileDialog will be accessed via handler_instance.main_window or handler_instance directly.
@@ -480,6 +480,8 @@ class DropEventMixin:
                         # Usa MultiProfileDialog per mostrare tutti i giochi e permettere
                         # la selezione multipla, rimozione, e analisi batch
                         # profiles_data è già una lista di dict con 'name' e 'path'
+                        # Import locally to avoid import issues in Flatpak environments
+                        from gui_components.multi_profile_dialog import MultiProfileDialog
                         multi_dialog = MultiProfileDialog(
                             profiles_data, 
                             parent=mw, 
@@ -791,6 +793,8 @@ class DropEventMixin:
                 return False
             
             # Crea il dialogo per la gestione dei profili
+            # Import locally to avoid import issues in Flatpak environments
+            from gui_components.multi_profile_dialog import MultiProfileDialog
             dialog = MultiProfileDialog(files_to_process, parent=mw)
             
             # Connetti il segnale profileAdded al metodo che gestisce l'analisi
