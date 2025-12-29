@@ -374,12 +374,12 @@ class SteamDialog(QDialog):
             validator_func = main_window.profile_creation_manager.validate_save_path
             logging.debug("[SteamDialog] Using MainWindow's profile path validator.")
         else:
-            # Fallback to a very simple validation (exists and is a directory?)
-            logging.warning("[SteamDialog] MainWindow validator not found, using basic os.path.isdir validation.")
+            # Fallback to a very simple validation (exists - accepts both files and directories)
+            logging.warning("[SteamDialog] MainWindow validator not found, using basic os.path.exists validation.")
             def basic_validator(path_to_validate, _profile_name):
-                if not path_to_validate or not os.path.isdir(path_to_validate):
+                if not path_to_validate or not os.path.exists(path_to_validate):
                      QMessageBox.warning(self, "Path Error", 
-                                         "The specified path does not exist or is not a valid folder.") 
+                                         "The specified path does not exist.") 
                      return None
                 return path_to_validate 
             validator_func = basic_validator

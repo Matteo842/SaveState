@@ -1172,6 +1172,10 @@ def find_ymir_profiles(custom_path: Optional[str] = None) -> Optional[List[Dict[
             comment = game_info['comment']
             source_path = game_info['source_path']
             
+            # Use the directory containing the backup RAM file, not the file itself
+            # This is required because SaveState validates paths as directories
+            source_dir = os.path.dirname(source_path)
+            
             # Use filename (game_id) as primary name - it's usually more descriptive
             # Format: "SEGARALLY_0" -> "Sega Rally 0" or lookup in database
             display_name = _format_saturn_game_name(game_id, comment)
@@ -1181,21 +1185,23 @@ def find_ymir_profiles(custom_path: Optional[str] = None) -> Optional[List[Dict[
             profiles.append({
                 'id': profile_id,
                 'name': display_name,
-                'paths': [source_path],  # Only the specific backup RAM file containing this save
+                'paths': [source_dir],  # Directory containing the backup RAM file
                 'emulator': 'Ymir',
                 'saturn_save_id': game_id  # Store original ID for reference
             })
-            log.debug(f"Ymir: Found game '{display_name}' (ID: {game_id}, source: {source_path})")
+            log.debug(f"Ymir: Found game '{display_name}' (ID: {game_id}, source: {source_dir})")
     
     elif internal_backup_path:
         # Fallback: couldn't parse, just show generic backup RAM profile
+        # Use directory containing the backup RAM file
+        backup_dir = os.path.dirname(internal_backup_path)
         profiles.append({
             'id': 'ymir_backup_ram',
             'name': 'Saturn Backup RAM',
-            'paths': [internal_backup_path],
+            'paths': [backup_dir],
             'emulator': 'Ymir'
         })
-        log.debug(f"Ymir: Fallback - showing generic Backup RAM profile")
+        log.debug(f"Ymir: Fallback - showing generic Backup RAM profile at {backup_dir}")
     
     # Group other Saturn saves by game name (from filename stem)
     if other_saturn_saves:
@@ -1209,17 +1215,28 @@ def find_ymir_profiles(custom_path: Optional[str] = None) -> Optional[List[Dict[
             display_name = sanitize_profile_display_name(game_name)
             profile_id = f"ymir_saturn_{re.sub(r'[^a-zA-Z0-9_]', '_', game_name.lower())}"
             
+            # Get unique directories containing the save files
+            save_dirs = sorted(set(os.path.dirname(fp) for fp in file_paths))
+            
             profiles.append({
                 'id': profile_id,
                 'name': display_name,
-                'paths': sorted(file_paths),
+                'paths': save_dirs,
                 'emulator': 'Ymir'
             })
-            log.debug(f"Ymir: Found Saturn save '{display_name}' with {len(file_paths)} file(s)")
+            log.debug(f"Ymir: Found Saturn save '{display_name}' in {len(save_dirs)} directory(ies)")
     
     # Create profiles for exported saves (individual game saves)
-    for exported_path in sorted(exported_paths):
-        filename = os.path.basename(exported_path)
+    # Group by directory to avoid creating multiple profiles for same location
+    exported_dirs: Dict[str, List[str]] = {}
+    for exported_path in exported_paths:
+        export_dir = os.path.dirname(exported_path)
+        exported_dirs.setdefault(export_dir, []).append(exported_path)
+    
+    for export_dir, files in exported_dirs.items():
+        # Use the first file's name for the profile name
+        first_file = sorted(files)[0]
+        filename = os.path.basename(first_file)
         stem = os.path.splitext(filename)[0]
         
         # Extract game name from filename (format: GAMENAME_YYYYMMDD_HHMM.bup)
@@ -1231,15 +1248,15 @@ def find_ymir_profiles(custom_path: Optional[str] = None) -> Optional[List[Dict[
             display_name = parts[0]
         
         display_name = sanitize_profile_display_name(display_name)
-        profile_id = f"ymir_exported_{re.sub(r'[^a-zA-Z0-9_]', '_', stem.lower())}"
+        profile_id = f"ymir_exported_{re.sub(r'[^a-zA-Z0-9_]', '_', os.path.basename(export_dir).lower())}"
         
         profiles.append({
             'id': profile_id,
             'name': f"{display_name} (Exported)",
-            'paths': [exported_path],
+            'paths': [export_dir],
             'emulator': 'Ymir'
         })
-        log.debug(f"Ymir: Found exported save '{display_name}'")
+        log.debug(f"Ymir: Found exported saves in '{export_dir}' ({len(files)} file(s))")
     
     log.info(f"Ymir: Built {len(profiles)} profile(s) from {len(backup_dirs)} directory(ies)")
     return profiles

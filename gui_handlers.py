@@ -1101,7 +1101,8 @@ class MainWindowHandlers:
             if hasattr(mw, 'profile_creation_manager') and hasattr(mw.profile_creation_manager, 'validate_save_path'):
                 validator = mw.profile_creation_manager.validate_save_path
             else:
-                validator = lambda p, _n: p if os.path.isdir(p) else None
+                # Fallback: accept both files and directories
+                validator = lambda p, _n: p if os.path.exists(p) else None
             validated_path = validator(new_path_input, new_name)
             if not validated_path:
                 return  # Validator shows message

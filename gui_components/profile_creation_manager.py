@@ -310,9 +310,9 @@ class ProfileCreationManager:
     # --- HELPER METHOD FOR PATH VALIDATION (Moved here) ---
     def validate_save_path(self, path_to_check, context_profile_name="profile"):
         """
-        Checks if a path is valid as a save folder.
+        Checks if a path is valid as a save path.
         Verifies that it is not empty, not a drive root,
-        and that it is a valid folder.
+        and that it exists (either as a folder or a file).
         Shows a QMessageBox in case of error using the parent main_window.
         Returns the normalized path if valid, otherwise None.
         """
@@ -338,16 +338,18 @@ class ProfileCreationManager:
                 return None
         except Exception as e_root:
             logging.warning(f"Root path check failed during validation: {e_root}", exc_info=True)
-            # Non bloccare per questo errore, procedi con isdir
+            # Non bloccare per questo errore, procedi con exists
 
-        # Controllo Esistenza e Tipo (Directory)
-        if not os.path.isdir(norm_path):
+        # Controllo Esistenza (accetta sia file che directory)
+        # Some emulators (like Ymir/Saturn) use single files as save data
+        if not os.path.exists(norm_path):
             QMessageBox.warning(mw, "Path Error",
-                                f"The specified path does not exist or is not a valid folder:\n'{norm_path}'")
+                                f"The specified path does not exist:\n'{norm_path}'")
             return None
 
         # Se tutti i controlli passano, restituisce il percorso normalizzato
-        logging.debug(f"Path validation: '{norm_path}' is considered valid.")
+        path_type = "file" if os.path.isfile(norm_path) else "directory"
+        logging.debug(f"Path validation: '{norm_path}' is a valid {path_type}.")
         return norm_path
     # --- FINE validate_save_path ---
 
