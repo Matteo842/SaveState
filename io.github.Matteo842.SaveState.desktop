@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=SaveState
+Comment=Game save backup manager
+Exec=savestate
+Icon=io.github.Matteo842.SaveState
+Categories=Game;Utility;
+Terminal=false
