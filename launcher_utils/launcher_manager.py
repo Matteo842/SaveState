@@ -7,6 +7,7 @@ from typing import Dict, List, Any, Optional
 
 # Import specific launcher profile finders
 from .playnite_manager import find_playnite_profiles
+from .heroic_manager import find_heroic_profiles
 
 # Configure basic logging for this module
 log = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ ProfileFinder = type(lambda path: {})
 # Questi launcher hanno implementazioni complete per estrarre i giochi
 KNOWN_LAUNCHERS = [
     'playnite',
+    'heroic',
 ]
 
 # Lista di launcher conosciuti ma non ancora supportati (blacklist)
@@ -35,9 +37,7 @@ UNKNOWN_LAUNCHERS = [
     'rockstar games', 'rockstargameslauncher',
     'battle.net', 'battlenet',
     # Launcher Linux
-    'heroic', 'heroicgameslauncher',
     'lutris',
-    'legendary',
     # Altri
     'itch', 'itchio',
     'indiegala',
@@ -49,6 +49,10 @@ LAUNCHERS: Dict[str, Dict[str, Any]] = {
     'playnite': {
         'name': 'Playnite',
         'profile_finder': lambda path: find_playnite_profiles(path)
+    },
+    'heroic': {
+        'name': 'Heroic Games Launcher',
+        'profile_finder': lambda path: find_heroic_profiles(path)
     },
 }
 
@@ -133,15 +137,31 @@ def is_known_launcher(file_path: str) -> tuple[str, str | None]:
         
         # Controlla prima i launcher supportati
         for launcher in KNOWN_LAUNCHERS:
+            is_match = False
+            
+            # Controllo base per tutti i launcher
             if (file_name_no_ext == launcher or 
                 file_name_no_ext.startswith(launcher + "-") or
                 file_name_no_ext.startswith(launcher + "_") or
                 file_name_no_ext.startswith(launcher + ".") or
                 f"\\{launcher}\\" in target_path_lower or 
-                f"/{launcher}/" in target_path_lower or
-                # Controllo specifico per Playnite
+                f"/{launcher}/" in target_path_lower):
+                is_match = True
+            
+            # Controllo specifico per Playnite
+            if launcher == 'playnite' and (
                 'playnite.desktopapp' in file_name_no_ext or
                 'playnite.fullscreenapp' in file_name_no_ext):
+                is_match = True
+            
+            # Controllo specifico per Heroic
+            if launcher == 'heroic' and (
+                'heroicgameslauncher' in file_name_no_ext or
+                'heroic games launcher' in target_path_lower or
+                'heroic-games-launcher' in target_path_lower):
+                is_match = True
+            
+            if is_match:
                 log.info(f"Detected supported launcher '{launcher}' in path: {target_path}")
                 return 'supported', launcher
 
@@ -190,12 +210,16 @@ def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] 
     # Iterate through the configured launchers
     for keyword, config in LAUNCHERS.items():
         # Check if the keyword is in the target path
-        # Per Playnite, controlliamo anche nomi specifici
+        # Per ogni launcher, controlliamo anche nomi specifici/varianti
         is_match = False
         if keyword == 'playnite':
             is_match = ('playnite' in target_path_lower or
                        'playnite.desktopapp' in target_path_lower or
                        'playnite.fullscreenapp' in target_path_lower)
+        elif keyword == 'heroic':
+            is_match = ('heroic' in target_path_lower or
+                       'heroicgameslauncher' in target_path_lower or
+                       'heroic-games-launcher' in target_path_lower)
         else:
             is_match = keyword in target_path_lower
             
