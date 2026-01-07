@@ -220,6 +220,42 @@ class MainWindow(QMainWindow):
         self.restore_button = QPushButton()        # Crea pulsante Ripristina
         self.manage_backups_button = QPushButton() # Crea pulsante Gestisci Backup
         self.open_backup_dir_button = QPushButton() # Crea pulsante Apri Cartella
+        
+        # Backup All button (small, icon-only, to appear in Profiles header)
+        self.backup_all_button = QPushButton()
+        self.backup_all_button.setObjectName("BackupAllButton")
+        self.backup_all_button.setToolTip("Backup all profiles")
+        backup_all_icon_path = resource_path("icons/backup.png")
+        if os.path.exists(backup_all_icon_path):
+            self.backup_all_button.setIcon(QIcon(backup_all_icon_path))
+        self.backup_all_button.setText("Backup All")
+        self.backup_all_button.setFixedSize(QSize(90, 22))
+        self.backup_all_button.setIconSize(QSize(14, 14))
+        # Backup All Button Style - Label-like integration
+        # No border at all (even on hover) to avoid cutting issues
+        # Text highlights on hover ("illuminare soltanto la scritta")
+        self.backup_all_button.setStyleSheet("""
+            QPushButton#BackupAllButton {
+                background-color: #2D2D2D;
+                border: none;
+                border-radius: 4px;
+                color: #aaaaaa;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 9pt;
+                padding: 2px 10px;
+            }
+            QPushButton#BackupAllButton:hover {
+                background-color: #2D2D2D; /* Keep background same to mask line */
+                color: #3498DB; /* Brighter blue text glow */
+            }
+            QPushButton#BackupAllButton:pressed {
+                color: #1a5276;
+            }
+            QPushButton#BackupAllButton:disabled {
+                color: #555555;
+            }
+        """)
+        
         # New visible Cloud entry
         self.cloud_button = QPushButton("Cloud Sync")
         
@@ -504,11 +540,20 @@ class MainWindow(QMainWindow):
         content_layout.setContentsMargins(12, 8, 12, 4)
         content_layout.setSpacing(4)
         content_container.setLayout(content_layout)
+        
+        # Create Profiles group - button positioned in title area via absolute positioning
         profile_group = QGroupBox("Profiles")
+        profile_group.setObjectName("ProfilesGroup")
         self.profile_group = profile_group
         profile_layout = QVBoxLayout()
         profile_layout.setContentsMargins(6, 6, 6, 6)
         profile_layout.setSpacing(4)
+        
+        # Position Backup All button in the title bar of the group box (top-right)
+        self.backup_all_button.setParent(profile_group)
+        # We'll position it in resizeEvent or after show - for now set initial position
+        # The button will be repositioned in _position_backup_all_button() called after layout
+        
         profile_layout.addWidget(self.profile_table_widget)
         profile_group.setLayout(profile_layout)
         content_layout.addWidget(profile_group, stretch=1)
@@ -877,6 +922,7 @@ class MainWindow(QMainWindow):
 
         # Connessioni ai metodi della classe handlers
         self.backup_button.clicked.connect(self.handlers.handle_backup)
+        self.backup_all_button.clicked.connect(self.handlers.handle_backup_all)
         self.restore_button.clicked.connect(self.handlers.handle_restore)
         self.profile_table_widget.itemSelectionChanged.connect(self.update_action_button_states)
         self.new_profile_button.clicked.connect(self.profile_creation_manager.handle_new_profile)
@@ -1844,6 +1890,28 @@ class MainWindow(QMainWindow):
                     if isinstance(first_path, str):
                         path_value = first_path
             self.edit_path_edit.setText(path_value)
+            
+            # Visual warning if path doesn't exist or is inside backup folder
+            path_warning = ""
+            if path_value:
+                import os
+                backup_base = self.current_settings.get('backup_base_dir', '')
+                backup_base_norm = os.path.normpath(backup_base).lower() if backup_base else ""
+                path_norm = os.path.normpath(path_value).lower()
+                
+                if backup_base_norm and path_norm.startswith(backup_base_norm):
+                    path_warning = "⚠️ CRITICAL: Path is inside backup folder! This will cause recursive backups."
+                    self.edit_path_edit.setStyleSheet("QLineEdit { border: 2px solid #FF0000; background-color: #3a2020; }")
+                elif not os.path.exists(path_value):
+                    path_warning = "⚠️ Path does not exist! The game may have been uninstalled."
+                    self.edit_path_edit.setStyleSheet("QLineEdit { border: 2px solid #FFA500; background-color: #3a3020; }")
+                else:
+                    self.edit_path_edit.setStyleSheet("")  # Reset to default
+                    
+                self.edit_path_edit.setToolTip(path_warning if path_warning else "Save game folder path")
+            else:
+                self.edit_path_edit.setStyleSheet("")
+                self.edit_path_edit.setToolTip("Save game folder path")
 
             # Populate overrides UI from profile or global settings
             use_overrides = False
@@ -2049,5 +2117,40 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'settings_icon_normal') and self.settings_icon_normal:
             self.settings_button.setIcon(self.settings_icon_normal)
             logging.debug("Settings icon restored to normal icon")
+
+    def resizeEvent(self, event):
+        """Handle window resize - reposition floating elements."""
+        super().resizeEvent(event)
+        self._position_backup_all_button()
+    
+    def showEvent(self, event):
+        """Handle window show - position floating elements."""
+        super().showEvent(event)
+        # Use a timer to position after layout is complete
+        QTimer.singleShot(0, self._position_backup_all_button)
+    
+    def _position_backup_all_button(self):
+        """Position the Backup All button in the top-right of the Profiles group header."""
+        if not hasattr(self, 'backup_all_button') or not hasattr(self, 'profile_group'):
+            return
+        
+        try:
+            # Get the profile group dimensions
+            group_width = self.profile_group.width()
+            
+            # Position button at top-right of the group box, in the title area
+            button_width = self.backup_all_button.width()
+            button_height = self.backup_all_button.height()
+            
+            # X: 60px from right - balanced alignment
+            # Y: -1 to align text baseline better with "Profiles"
+            x_pos = group_width - button_width - 60  
+            y_pos = -1
+            
+            self.backup_all_button.move(x_pos, y_pos)
+            
+            self.backup_all_button.move(x_pos, y_pos)
+        except Exception as e:
+            logging.debug(f"Error positioning backup_all_button: {e}")
 
 # --- End of MainWindow class definition ---

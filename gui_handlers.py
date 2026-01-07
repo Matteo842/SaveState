@@ -585,6 +585,193 @@ class MainWindowHandlers:
                     self.main_window.profile_table_manager.update_profile_table()
             # else: delete_profile failed (already handled by core_logic likely)
 
+    # Starts backup process for ALL profiles sequentially.
+    @Slot()
+    def handle_backup_all(self):
+        """Backup all profiles sequentially."""
+        profiles = self.main_window.profiles
+        if not profiles:
+            QMessageBox.information(self.main_window, "No Profiles", "There are no profiles to backup.")
+            return
+        
+        # Check for existing worker thread
+        if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
+            QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+            return
+        
+        # Confirmation dialog
+        profile_count = len(profiles)
+        reply = QMessageBox.question(
+            self.main_window,
+            "Backup All Profiles",
+            f"This will backup all {profile_count} profile(s).\n\n"
+            f"Do you want to proceed?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # Get global settings for backup
+        effective = {
+            'backup_base_dir': self.main_window.current_settings.get('backup_base_dir', config.BACKUP_BASE_DIR),
+            'max_backups': self.main_window.current_settings.get('max_backups', config.MAX_BACKUPS),
+            'max_source_size_mb': self.main_window.current_settings.get('max_source_size_mb', 200),
+            'compression_mode': self.main_window.current_settings.get('compression_mode', 'standard'),
+        }
+        
+        self.main_window.status_label.setText(f"Starting backup for all {profile_count} profiles...")
+        self.main_window.set_controls_enabled(False)
+        
+        def backup_all_task():
+            """Worker function to backup all profiles."""
+            results = []
+            failed = []
+            skipped = []
+            
+            for idx, (profile_name, profile_data) in enumerate(profiles.items(), 1):
+                logging.info(f"[Backup All] Processing {idx}/{profile_count}: '{profile_name}'")
+                
+                if not isinstance(profile_data, dict):
+                    skipped.append(f"{profile_name} (invalid data)")
+                    logging.warning(f"[Backup All] Skipping '{profile_name}': invalid profile data")
+                    continue
+                
+                # Get profile-specific overrides if available
+                profile_effective = effective.copy()
+                try:
+                    if profile_data.get('use_profile_overrides') and isinstance(profile_data.get('overrides'), dict):
+                        ov = profile_data.get('overrides')
+                        if 'max_backups' in ov: profile_effective['max_backups'] = int(ov['max_backups'])
+                        if 'max_source_size_mb' in ov: profile_effective['max_source_size_mb'] = int(ov['max_source_size_mb'])
+                        if 'compression_mode' in ov: profile_effective['compression_mode'] = str(ov['compression_mode'])
+                except Exception as e:
+                    logging.warning(f"[Backup All] Error reading overrides for '{profile_name}': {e}")
+                
+                # Get source paths
+                source_paths = []
+                paths_data = profile_data.get('paths')
+                path_data = profile_data.get('path')
+                
+                if isinstance(paths_data, list) and paths_data and all(isinstance(p, str) for p in paths_data):
+                    source_paths = paths_data
+                elif isinstance(path_data, str) and path_data:
+                    source_paths = [path_data]
+                else:
+                    skipped.append(f"{profile_name} (no valid path)")
+                    logging.warning(f"[Backup All] Skipping '{profile_name}': no valid source path")
+                    continue
+                
+                # SAFETY CHECK 1: Verify source paths exist
+                valid_paths = []
+                for sp in source_paths:
+                    if os.path.exists(sp):
+                        valid_paths.append(sp)
+                    else:
+                        logging.warning(f"[Backup All] Path does not exist for '{profile_name}': {sp}")
+                
+                if not valid_paths:
+                    skipped.append(f"{profile_name} (path not found)")
+                    logging.warning(f"[Backup All] Skipping '{profile_name}': all source paths are missing")
+                    continue
+                
+                source_paths = valid_paths
+                
+                # SAFETY CHECK 2: Prevent recursive backup (source path inside backup folder)
+                backup_base = os.path.normpath(profile_effective['backup_base_dir']).lower()
+                is_recursive = False
+                for sp in source_paths:
+                    norm_sp = os.path.normpath(sp).lower()
+                    if norm_sp.startswith(backup_base):
+                        logging.error(f"[Backup All] BLOCKED: '{profile_name}' source path is INSIDE backup folder! Path: {sp}")
+                        is_recursive = True
+                        break
+                
+                if is_recursive:
+                    failed.append(f"{profile_name}: Source path is inside backup folder (would cause recursive backup)")
+                    continue
+                
+                # Perform the backup
+                try:
+                    success, message = core_logic.perform_backup(
+                        profile_name,
+                        source_paths,
+                        profile_effective['backup_base_dir'],
+                        profile_effective['max_backups'],
+                        profile_effective['max_source_size_mb'],
+                        profile_effective['compression_mode'],
+                        profile_data
+                    )
+                    
+                    if success:
+                        results.append(profile_name)
+                        logging.info(f"[Backup All] Success: '{profile_name}'")
+                    else:
+                        failed.append(f"{profile_name}: {message}")
+                        logging.error(f"[Backup All] Failed: '{profile_name}' - {message}")
+                        
+                except Exception as e:
+                    failed.append(f"{profile_name}: {str(e)}")
+                    logging.error(f"[Backup All] Exception for '{profile_name}': {e}", exc_info=True)
+            
+            # Build summary
+            summary = f"Backup All completed.\n\n"
+            summary += f"✓ Successful: {len(results)}\n"
+            if failed:
+                summary += f"✗ Failed: {len(failed)}\n"
+            if skipped:
+                summary += f"⊘ Skipped: {len(skipped)}\n"
+            
+            all_success = len(failed) == 0 and len(skipped) == 0
+            
+            # Store detailed results in a list that the callback can access
+            backup_all_results.clear()
+            backup_all_results.extend([results, failed, skipped])
+            
+            return all_success, summary
+        
+        # Shared list to store results (accessible by callback via closure)
+        backup_all_results = []
+        
+        def on_backup_all_finished(success, message):
+            """Callback when backup all is finished."""
+            self.main_window.set_controls_enabled(True)
+            
+            # Retrieve detailed results from shared list
+            if len(backup_all_results) >= 3:
+                results, failed, skipped = backup_all_results
+            else:
+                results, failed, skipped = [], [], []
+            
+            # Show detailed result
+            if success and len(failed) == 0:
+                QMessageBox.information(self.main_window, "Backup All Completed", message)
+                self.main_window.status_label.setText(f"Backup All completed: {len(results)} profile(s) backed up.")
+            else:
+                # Build detailed message
+                detail_msg = message + "\n"
+                if failed:
+                    detail_msg += "\n--- Failed ---\n" + "\n".join(failed[:10])
+                    if len(failed) > 10:
+                        detail_msg += f"\n... and {len(failed) - 10} more"
+                if skipped:
+                    detail_msg += "\n\n--- Skipped ---\n" + "\n".join(skipped[:5])
+                    if len(skipped) > 5:
+                        detail_msg += f"\n... and {len(skipped) - 5} more"
+                
+                QMessageBox.warning(self.main_window, "Backup All Completed with Issues", detail_msg)
+                self.main_window.status_label.setText(f"Backup All: {len(results)} succeeded, {len(failed)} failed, {len(skipped)} skipped.")
+            
+            # Refresh the profile table to show updated backup info
+            self.main_window.profile_table_manager.update_profile_table()
+        
+        from gui_utils import WorkerThread
+        self.main_window.worker_thread = WorkerThread(backup_all_task)
+        self.main_window.worker_thread.finished.connect(on_backup_all_finished)
+        self.main_window.worker_thread.start()
+        logging.info(f"Started Backup All worker thread for {profile_count} profiles.")
+
     # Starts the backup process for the selected profile in a worker thread.
     @Slot()
     def handle_backup(self):
@@ -694,6 +881,41 @@ class MainWindowHandlers:
             compression_mode = effective['compression_mode']
             check_space = effective['check_free_space_enabled']
             min_gb_required = config.MIN_FREE_SPACE_GB
+            
+            # SAFETY CHECK 1: Verify source paths exist
+            valid_paths = []
+            missing_paths = []
+            for sp in source_paths:
+                if os.path.exists(sp):
+                    valid_paths.append(sp)
+                else:
+                    missing_paths.append(sp)
+                    logging.warning(f"[Backup] Path does not exist for '{profile_name}': {sp}")
+            
+            if not valid_paths:
+                QMessageBox.critical(self.main_window, "Path Not Found",
+                    f"Cannot backup '{profile_name}':\n\n"
+                    f"The save path does not exist:\n{chr(10).join(missing_paths)}\n\n"
+                    f"The game may have been uninstalled. Please edit the profile to update the path, or delete this profile.")
+                logging.error(f"[Backup] Blocked: all source paths missing for '{profile_name}'")
+                self.main_window.set_controls_enabled(True)
+                return
+            
+            source_paths = valid_paths
+            
+            # SAFETY CHECK 2: Prevent recursive backup (source path inside backup folder)
+            backup_base_norm = os.path.normpath(backup_base_dir).lower()
+            for sp in source_paths:
+                norm_sp = os.path.normpath(sp).lower()
+                if norm_sp.startswith(backup_base_norm):
+                    QMessageBox.critical(self.main_window, "Invalid Source Path",
+                        f"CRITICAL ERROR: Cannot backup '{profile_name}'!\n\n"
+                        f"The source path is INSIDE the backup folder:\n{sp}\n\n"
+                        f"This would cause recursive backups (backup of backups) and data loss.\n\n"
+                        f"Please edit this profile and set the correct save game path.")
+                    logging.error(f"[Backup] BLOCKED RECURSIVE: '{profile_name}' source path is inside backup folder: {sp}")
+                    self.main_window.set_controls_enabled(True)
+                    return
 
             # Free space check
             if check_space:
@@ -1110,6 +1332,21 @@ class MainWindowHandlers:
             # Build new profile data preserving other keys
             old_data = mw.profiles.get(original_name, {}) if isinstance(mw.profiles.get(original_name), dict) else {}
             new_data = dict(old_data)
+            
+            # CRITICAL CHECK: Block if path is inside backup folder
+            backup_base = mw.current_settings.get('backup_base_dir', '')
+            if backup_base:
+                backup_base_norm = os.path.normpath(backup_base).lower()
+                path_norm = os.path.normpath(validated_path).lower()
+                if path_norm.startswith(backup_base_norm):
+                    QMessageBox.critical(mw, "Invalid Path",
+                        f"CRITICAL ERROR: Cannot save profile with this path!\n\n"
+                        f"The path is INSIDE the backup folder:\n{validated_path}\n\n"
+                        f"This would cause recursive backups and data loss.\n"
+                        f"Please select the actual game save folder, not the backup location.")
+                    logging.error(f"[Edit Profile] BLOCKED: '{new_name}' path is inside backup folder: {validated_path}")
+                    return
+            
             new_data['path'] = validated_path
             if isinstance(new_data.get('paths'), list) and new_data['paths']:
                 new_paths = list(new_data['paths'])
