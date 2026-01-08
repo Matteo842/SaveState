@@ -255,6 +255,8 @@ class MainWindow(QMainWindow):
                 color: #555555;
             }
         """)
+        # Start hidden - will be shown by profile_list_manager if 3+ profiles
+        self.backup_all_button.setVisible(False)
         
         # New visible Cloud entry
         self.cloud_button = QPushButton("Cloud Sync")

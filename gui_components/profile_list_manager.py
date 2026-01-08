@@ -314,6 +314,13 @@ class ProfileListManager:
 
         # Update button states AFTER populating the table
         self.main_window.update_action_button_states()
+        
+        # Update "Backup All" button visibility (only show if 3+ profiles)
+        if hasattr(self.main_window, 'backup_all_button'):
+            profile_count = len(self.profiles) if self.profiles else 0
+            self.main_window.backup_all_button.setVisible(profile_count >= 3)
+            logging.debug(f"Backup All button visibility: {profile_count >= 3} (profile count: {profile_count})")
+        
         logging.debug("Profile table update finished.")
 
     @Slot(int, int)
