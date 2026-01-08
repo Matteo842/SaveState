@@ -207,11 +207,26 @@ def run_silent_backup(profile_name):
         show_notification(False, f"Critical profile error: {e}")
         return False
 
-    # 3. Check Profile Existence
+    # 3. Check Profile Existence (with fallback to sanitized name)
+    actual_profile_name = profile_name
     if profile_name not in profiles:
-        logging.error(f"Profile '{profile_name}' not found in '{config.PROFILE_FILE}'. Backup cancelled.")
-        show_notification(False, f"Profile not found: {profile_name}")
-        return False
+        # Try sanitized version (removes special chars like colons)
+        try:
+            import shortcut_utils
+            sanitized_name = shortcut_utils.sanitize_profile_name(profile_name)
+            if sanitized_name and sanitized_name in profiles:
+                logging.info(f"Profile '{profile_name}' not found, but found sanitized version: '{sanitized_name}'")
+                actual_profile_name = sanitized_name
+            else:
+                logging.error(f"Profile '{profile_name}' not found in '{core_logic.PROFILES_FILE_PATH}'. Backup cancelled.")
+                show_notification(False, f"Profile not found: {profile_name}")
+                return False
+        except Exception as e_sanitize:
+            logging.error(f"Profile '{profile_name}' not found in '{core_logic.PROFILES_FILE_PATH}'. Backup cancelled.")
+            show_notification(False, f"Profile not found: {profile_name}")
+            return False
+    
+    profile_name = actual_profile_name  # Use the found name for the rest
 
     # 4. Retrieve Necessary Data
     profile_data = profiles.get(profile_name) # Get the profile dictionary
