@@ -723,7 +723,7 @@ class MainWindow(QMainWindow):
         ui_settings_group.setLayout(ui_settings_layout)
         settings_grid.addWidget(ui_settings_group, 3, 1)
         
-        # ROW 4, COL 0-1 (spans 2 columns): System Tray Settings
+        # ROW 4, COL 0: System Tray Settings
         tray_settings_group = QGroupBox("System Tray")
         tray_settings_layout = QVBoxLayout()
         tray_settings_layout.setContentsMargins(8, 8, 8, 8)
@@ -731,7 +731,17 @@ class MainWindow(QMainWindow):
         self.settings_minimize_to_tray_checkbox = QCheckBox("Minimize to tray on close")
         tray_settings_layout.addWidget(self.settings_minimize_to_tray_checkbox)
         tray_settings_group.setLayout(tray_settings_layout)
-        settings_grid.addWidget(tray_settings_group, 4, 0, 1, 2)  # span 2 columns
+        settings_grid.addWidget(tray_settings_group, 4, 0)
+        
+        # ROW 4, COL 1: Profile Appearance
+        profile_ui_group = QGroupBox("Profile Appearance")
+        profile_ui_layout = QVBoxLayout()
+        profile_ui_layout.setContentsMargins(8, 8, 8, 8)
+        profile_ui_layout.setSpacing(6)
+        self.settings_show_icons_checkbox = QCheckBox("Show game icons in profile list")
+        profile_ui_layout.addWidget(self.settings_show_icons_checkbox)
+        profile_ui_group.setLayout(profile_ui_layout)
+        settings_grid.addWidget(profile_ui_group, 4, 1)
         
         settings_main_layout.addLayout(settings_grid)
         # No stretch - let the grid breathe naturally
@@ -2010,6 +2020,7 @@ class MainWindow(QMainWindow):
             # UI settings
             self.settings_global_drag_checkbox.setChecked(self.current_settings.get("enable_global_drag_effect", True))
             self.settings_shorten_paths_checkbox.setChecked(self.current_settings.get("shorten_paths_enabled", True))
+            self.settings_show_icons_checkbox.setChecked(self.current_settings.get("show_profile_icons", True))
             
             # Minimize to tray: check if periodic sync forces this behavior
             try:

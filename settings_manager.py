@@ -316,6 +316,8 @@ def load_settings():
         "enable_global_drag_effect": True, # ADDED: For the pynput global mouse drag detection overlay
         # UI: shorten long save paths in selection dialogs
         "shorten_paths_enabled": True,
+        # UI: show game icons next to profile names
+        "show_profile_icons": True,
         # Portable mode default follows AppData pointer if present
         "portable_config_only": bool(is_portable_mode()),
         "ini_whitelist": [ # Files to check for paths

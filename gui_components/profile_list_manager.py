@@ -289,10 +289,12 @@ class ProfileListManager:
                 name_item.setData(Qt.ItemDataRole.UserRole, profile_name) # Save name for row selection
                 
                 # --- Add Game Icon if available ---
-                game_icon = icon_extractor.get_profile_icon(profile_data, profile_name)
-                if game_icon and not game_icon.isNull():
-                    name_item.setIcon(game_icon)
-                    logging.debug(f"Game icon set for profile '{profile_name}'")
+                show_icons = self.main_window.current_settings.get("show_profile_icons", True)
+                if show_icons:
+                    game_icon = icon_extractor.get_profile_icon(profile_data, profile_name)
+                    if game_icon and not game_icon.isNull():
+                        name_item.setIcon(game_icon)
+                        # logging.debug(f"Game icon set for profile '{profile_name}'")
                 # --- End Game Icon ---
 
                 # --- Create Info Item (Column 2) ---
