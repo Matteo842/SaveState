@@ -601,16 +601,19 @@ class MainWindowHandlers:
             QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
             return
         
-        # Confirmation dialog
+        # Confirmation dialog with bold profile count
         profile_count = len(profiles)
-        reply = QMessageBox.question(
-            self.main_window,
-            "Backup All Profiles",
-            f"This will backup all {profile_count} profile(s).\n\n"
-            f"Do you want to proceed?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes
+        msg_box = QMessageBox(self.main_window)
+        msg_box.setWindowTitle("Backup All Profiles")
+        msg_box.setIcon(QMessageBox.Icon.Question)
+        msg_box.setTextFormat(Qt.TextFormat.RichText)
+        msg_box.setText(
+            f"This will backup all <b>{profile_count}</b> profile(s).<br><br>"
+            f"Do you want to proceed?"
         )
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
+        reply = msg_box.exec()
         
         if reply != QMessageBox.StandardButton.Yes:
             return
@@ -774,9 +777,37 @@ class MainWindowHandlers:
         self.main_window.worker_thread.start()
         logging.info(f"Started Backup All worker thread for {profile_count} profiles.")
 
-    # Starts the backup process for the selected profile in a worker thread.
+    @Slot()
+    def toggle_backup_mode(self):
+        """Toggles the main backup button between Single and All modes."""
+        mw = self.main_window
+        # Toggle mode
+        if mw.backup_mode == "single":
+            mw.backup_mode = "all"
+            # Update UI to "Backup All" state
+            mw.backup_button.setText("Backup All")
+            mw.backup_button.setToolTip("Back up ALL profiles sequentially")
+            mw.backup_mode_toggle.setText("-")
+            mw.backup_mode_toggle.setToolTip("Switch to 'Backup Single' mode")
+        else:
+            mw.backup_mode = "single"
+            # Update UI to "Backup" state
+            mw.backup_button.setText("Backup")
+            mw.backup_button.setToolTip("Back up the selected profile")
+            mw.backup_mode_toggle.setText("+")
+            mw.backup_mode_toggle.setToolTip("Switch to 'Backup All' mode")
+
+        # Refresh button state enablement
+        mw.update_action_button_states()
+
+    # Starts the backup process (Single or All based on mode)
     @Slot()
     def handle_backup(self):
+        # Redirect to Backup All if mode is enabled
+        if getattr(self.main_window, 'backup_mode', 'single') == 'all':
+            self.handle_backup_all()
+            return
+
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
         if not profile_name: return
 

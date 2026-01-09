@@ -807,6 +807,12 @@ class CloudSavePanel(QWidget):
 
     def _on_scan_finished(self, local_backups):
         """Handle completion of local backup scan."""
+        # Don't update UI if panel is not visible
+        if not self.isVisible():
+            logging.debug("Scan finished but panel not visible, caching results only")
+            self.cached_local_backups = local_backups
+            return
+        
         self.cached_local_backups = local_backups
         self._repopulate_table()
 
@@ -2572,6 +2578,12 @@ class CloudSavePanel(QWidget):
         # If disconnected while refreshing, discard results
         if not self.drive_manager.is_connected:
             logging.debug("Refresh finished but disconnected, discarding results.")
+            return
+        
+        # Don't update UI if panel is not visible
+        if not self.isVisible():
+            logging.debug("Refresh finished but panel not visible, caching results only")
+            self.cloud_backups = cloud_backups
             return
 
         self.cloud_backups = cloud_backups

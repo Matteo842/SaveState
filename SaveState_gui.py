@@ -221,42 +221,6 @@ class MainWindow(QMainWindow):
         self.manage_backups_button = QPushButton() # Crea pulsante Gestisci Backup
         self.open_backup_dir_button = QPushButton() # Crea pulsante Apri Cartella
         
-        # Backup All button (small, icon-only, to appear in Profiles header)
-        self.backup_all_button = QPushButton()
-        self.backup_all_button.setObjectName("BackupAllButton")
-        self.backup_all_button.setToolTip("Backup all profiles")
-        backup_all_icon_path = resource_path("icons/backup.png")
-        if os.path.exists(backup_all_icon_path):
-            self.backup_all_button.setIcon(QIcon(backup_all_icon_path))
-        self.backup_all_button.setText("Backup All")
-        self.backup_all_button.setFixedSize(QSize(90, 22))
-        self.backup_all_button.setIconSize(QSize(14, 14))
-        # Backup All Button Style - Label-like integration
-        # No border at all (even on hover) to avoid cutting issues
-        # Text highlights on hover ("illuminare soltanto la scritta")
-        self.backup_all_button.setStyleSheet("""
-            QPushButton#BackupAllButton {
-                background-color: #2D2D2D;
-                border: none;
-                border-radius: 4px;
-                color: #aaaaaa;
-                font-family: 'Segoe UI', Arial, sans-serif;
-                font-size: 9pt;
-                padding: 2px 10px;
-            }
-            QPushButton#BackupAllButton:hover {
-                background-color: #2D2D2D; /* Keep background same to mask line */
-                color: #3498DB; /* Brighter blue text glow */
-            }
-            QPushButton#BackupAllButton:pressed {
-                color: #1a5276;
-            }
-            QPushButton#BackupAllButton:disabled {
-                color: #555555;
-            }
-        """)
-        # Start hidden - will be shown by profile_list_manager if 3+ profiles
-        self.backup_all_button.setVisible(False)
         
         # New visible Cloud entry
         self.cloud_button = QPushButton("Cloud Sync")
@@ -369,6 +333,51 @@ class MainWindow(QMainWindow):
              logging.warning(f"File icona Backup non trovato: {backup_icon_path}")
              backup_icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton) # Icona Salva (Floppy)
              self.backup_button.setIcon(backup_icon)
+        
+        # --- Backup Mode Toggle Integration ---
+        self.backup_mode = "single" # Default mode
+        
+        # Toggle Button (Small +) - Will be parented to actions_group later for independent enable/disable
+        self.backup_mode_toggle = QPushButton("+")
+        self.backup_mode_toggle.setFixedSize(22, 18)
+        self.backup_mode_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.backup_mode_toggle.setToolTip("Switch to 'Backup All' mode - Click to toggle")
+        
+        # Style for the toggle - clearer
+        self.backup_mode_toggle.setStyleSheet("""
+            QPushButton {
+                border: none;
+                background-color: transparent;
+                color: rgba(255, 255, 255, 0.5);
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-weight: bold;
+                font-size: 18px;
+                padding: 0px;
+                margin: 0px;
+                /* Override global QPushButton min-width from theme */
+                min-width: 0px;
+                max-width: 22px;
+                min-height: 0px;
+                max-height: 18px;
+            }
+            QPushButton:hover {
+                color: #3498DB;
+                background-color: rgba(0,0,0,0.2);
+                border-radius: 4px;
+            }
+            QPushButton:disabled {
+                color: rgba(255, 255, 255, 0.2);
+            }
+        """)
+        
+        # Start hidden - visibility will be controlled by update_action_button_states
+        # based on profile count (only show when 3+ profiles exist)
+        self.backup_mode_toggle.setVisible(False)
+        
+        # Install event filter to handle manual positioning
+        self.backup_button.installEventFilter(self)
+
+        # Standard stylesheet (no extra padding needed now that we overlay)
         self.backup_button.setStyleSheet("""
             QPushButton#BackupButton {
                 background-color: #222222;
@@ -380,11 +389,11 @@ class MainWindow(QMainWindow):
                 font-size: 12pt;
             }
             QPushButton#BackupButton:hover {
-                background-color: rgba(255, 255, 255, 0.08);
+                background-color: #3a3a3a;
                 border-color: #8b8b8b;
             }
             QPushButton#BackupButton:pressed {
-                background-color: rgba(255, 255, 255, 0.15);
+                background-color: #454545;
                 border-color: #8b8b8b;
             }
             QPushButton#BackupButton:disabled {
@@ -392,6 +401,8 @@ class MainWindow(QMainWindow):
                 color: #555555;
             }
         """)
+
+
         
         self.restore_button = QPushButton("Restore")
         self.restore_button.setObjectName("RestoreButton")
@@ -415,11 +426,11 @@ class MainWindow(QMainWindow):
                 font-size: 12pt;
             }
             QPushButton#RestoreButton:hover {
-                background-color: rgba(255, 255, 255, 0.08);
+                background-color: #3a3a3a;
                 border-color: #8b8b8b;
             }
             QPushButton#RestoreButton:pressed {
-                background-color: rgba(255, 255, 255, 0.15);
+                background-color: #454545;
                 border-color: #8b8b8b;
             }
             QPushButton#RestoreButton:disabled {
@@ -443,11 +454,11 @@ class MainWindow(QMainWindow):
                 font-size: 11pt;
             }
             QPushButton#ManageButton:hover {
-                background-color: rgba(255, 255, 255, 0.08);
+                background-color: #3a3a3a;
                 border-color: #8b8b8b;
             }
             QPushButton#ManageButton:pressed {
-                background-color: rgba(255, 255, 255, 0.15);
+                background-color: #454545;
                 border-color: #8b8b8b;
             }
             QPushButton#ManageButton:disabled {
@@ -550,11 +561,6 @@ class MainWindow(QMainWindow):
         profile_layout = QVBoxLayout()
         profile_layout.setContentsMargins(6, 6, 6, 6)
         profile_layout.setSpacing(4)
-        
-        # Position Backup All button in the title bar of the group box (top-right)
-        self.backup_all_button.setParent(profile_group)
-        # We'll position it in resizeEvent or after show - for now set initial position
-        # The button will be repositioned in _position_backup_all_button() called after layout
         
         profile_layout.addWidget(self.profile_table_widget)
         profile_group.setLayout(profile_layout)
@@ -787,6 +793,15 @@ class MainWindow(QMainWindow):
         actions_layout.addWidget(self.manage_backups_button)
         
         actions_group.setLayout(actions_layout)
+        
+        # Add the toggle button as a child of actions_group (not backup_button)
+        # This allows it to remain enabled even when backup_button is disabled
+        self.backup_mode_toggle.setParent(actions_group)
+        self.backup_mode_toggle.raise_()  # Ensure it's on top
+        
+        # Install event filter on actions_group to reposition toggle when layout changes
+        actions_group.installEventFilter(self)
+        
         content_layout.addWidget(actions_group)
         general_group = QGroupBox("General")
         self.general_group = general_group
@@ -934,7 +949,9 @@ class MainWindow(QMainWindow):
 
         # Connessioni ai metodi della classe handlers
         self.backup_button.clicked.connect(self.handlers.handle_backup)
-        self.backup_all_button.clicked.connect(self.handlers.handle_backup_all)
+        # Connect toggle for backup mode
+        self.backup_mode_toggle.clicked.connect(self.handlers.toggle_backup_mode)
+        # self.backup_all_button connection removed (button integrated)
         self.restore_button.clicked.connect(self.handlers.handle_restore)
         self.profile_table_widget.itemSelectionChanged.connect(self.update_action_button_states)
         self.new_profile_button.clicked.connect(self.profile_creation_manager.handle_new_profile)
@@ -971,6 +988,9 @@ class MainWindow(QMainWindow):
         self.worker_thread = None
         self.updateUiText()
         self.setWindowIcon(QIcon(resource_path("icon.png"))) # Icona finestra principale
+        
+        # Position backup toggle after UI is set up (use timer to ensure layout is complete)
+        QTimer.singleShot(100, self._position_backup_toggle)
     
     def reset_internal_state(self):
         """Resetta lo stato interno per le operazioni di drag & drop."""
@@ -989,6 +1009,29 @@ class MainWindow(QMainWindow):
         self.processing_cancelled = False
             
         logging.debug("Internal state reset: _detection_threads, active_threads cleared, processing_cancelled reset")
+    
+    def _position_backup_toggle(self):
+        """Position the backup mode toggle button over the backup button."""
+        try:
+            if not hasattr(self, 'backup_mode_toggle') or not hasattr(self, 'backup_button') or not hasattr(self, 'actions_group'):
+                return
+            
+            # Get backup_button's position relative to actions_group
+            btn_pos = self.backup_button.mapTo(self.actions_group, self.backup_button.rect().topLeft())
+            btn_size = self.backup_button.size()
+            toggle_w = self.backup_mode_toggle.width()
+            toggle_h = self.backup_mode_toggle.height()
+            
+            margin_right = 6  # Distance from the right edge of the button
+            
+            # Calculate position: right side of button, vertically centered
+            new_x = btn_pos.x() + btn_size.width() - toggle_w - margin_right
+            new_y = btn_pos.y() + (btn_size.height() - toggle_h) // 2
+            
+            self.backup_mode_toggle.move(new_x, new_y)
+            self.backup_mode_toggle.raise_()  # Ensure it stays on top
+        except Exception as e:
+            pass  # Fail silently for UI polish
     
     # --- UI and Event Handling ---
     # Centers the loading label within the overlay widget.
@@ -1012,12 +1055,14 @@ class MainWindow(QMainWindow):
     # Called when the main window is resized; ensures the overlay and loading label resize correctly.
     def resizeEvent(self, event):
         """Aggiorna la dimensione dell'overlay quando la finestra cambia dimensione."""
+        super().resizeEvent(event)
         # Ridimensiona overlay
         if hasattr(self, 'overlay_widget') and self.overlay_widget:
             self.overlay_widget.resize(self.centralWidget().size())
         # Centra label
         self._center_loading_label() # Chiama il metodo helper
-        event.accept()
+        # Reposition backup toggle button
+        self._position_backup_toggle()
     # Called when a dragged item enters the window; accepts if it contains valid URLs.
     def dragEnterEvent(self, event: QDragEnterEvent):
         logging.debug("MainWindow.dragEnterEvent: Entered.")
@@ -1108,6 +1153,19 @@ class MainWindow(QMainWindow):
                     return True
         except Exception as e:
             logging.debug(f"eventFilter exception: {e}")
+            
+        # Handle manual positioning of the backup toggle button
+        # Toggle is now a child of actions_group, positioned over backup_button
+        try:
+            if hasattr(self, 'actions_group') and watched is self.actions_group:
+                if event.type() == QEvent.Type.Resize or event.type() == QEvent.Type.Show:
+                    self._position_backup_toggle()
+            elif hasattr(self, 'backup_button') and watched is self.backup_button:
+                if event.type() == QEvent.Type.Resize or event.type() == QEvent.Type.Move or event.type() == QEvent.Type.Show:
+                    self._position_backup_toggle()
+        except Exception as e:
+             pass # Fail silently for UI polish
+
         return super().eventFilter(watched, event)
 
     def dropEvent(self, event: QDropEvent):
@@ -1408,7 +1466,22 @@ class MainWindow(QMainWindow):
         """Aggiorna lo stato abilitato/disabilitato dei pulsanti Azioni."""
         has_selection = self.profile_table_manager.has_selection()
         has_profiles = len(self.profiles) > 0
-        self.backup_button.setEnabled(has_selection)
+        
+        # Backup button state depends on mode
+        backup_mode = getattr(self, 'backup_mode', 'single')
+        if backup_mode == 'all':
+            self.backup_button.setEnabled(has_profiles)
+        else:
+            self.backup_button.setEnabled(has_selection)
+        
+        # Toggle button should ALWAYS be enabled (if there are profiles)
+        # But it should only be VISIBLE when there are 3+ profiles
+        if hasattr(self, 'backup_mode_toggle'):
+            profile_count = len(self.profiles) if self.profiles else 0
+            should_show_toggle = profile_count >= 3
+            self.backup_mode_toggle.setVisible(should_show_toggle)
+            self.backup_mode_toggle.setEnabled(has_profiles)
+            
         # Restore button is always enabled now - can restore from ZIP without a profile
         self.restore_button.setEnabled(True)
         self.manage_backups_button.setEnabled(has_selection)
@@ -1504,7 +1577,18 @@ class MainWindow(QMainWindow):
         self.profile_table_widget.setEnabled(enabled)
         has_selection = self.profile_table_manager.has_selection()
         has_profiles = len(self.profiles) > 0
-        self.backup_button.setEnabled(enabled and has_selection)
+        
+        # Backup button state depends on mode
+        backup_mode = getattr(self, 'backup_mode', 'single')
+        if backup_mode == 'all':
+            self.backup_button.setEnabled(enabled and has_profiles)
+        else:
+            self.backup_button.setEnabled(enabled and has_selection)
+        
+        # Toggle button should always be enabled (if there are profiles and controls are enabled)
+        if hasattr(self, 'backup_mode_toggle'):
+            self.backup_mode_toggle.setEnabled(enabled and has_profiles)
+            
         # Restore button is always enabled - can restore from ZIP without a profile
         self.restore_button.setEnabled(enabled)
         self.manage_backups_button.setEnabled(enabled and has_selection)
@@ -2131,39 +2215,6 @@ class MainWindow(QMainWindow):
             self.settings_button.setIcon(self.settings_icon_normal)
             logging.debug("Settings icon restored to normal icon")
 
-    def resizeEvent(self, event):
-        """Handle window resize - reposition floating elements."""
-        super().resizeEvent(event)
-        self._position_backup_all_button()
-    
-    def showEvent(self, event):
-        """Handle window show - position floating elements."""
-        super().showEvent(event)
-        # Use a timer to position after layout is complete
-        QTimer.singleShot(0, self._position_backup_all_button)
-    
-    def _position_backup_all_button(self):
-        """Position the Backup All button in the top-right of the Profiles group header."""
-        if not hasattr(self, 'backup_all_button') or not hasattr(self, 'profile_group'):
-            return
-        
-        try:
-            # Get the profile group dimensions
-            group_width = self.profile_group.width()
-            
-            # Position button at top-right of the group box, in the title area
-            button_width = self.backup_all_button.width()
-            button_height = self.backup_all_button.height()
-            
-            # X: 60px from right - balanced alignment
-            # Y: -1 to align text baseline better with "Profiles"
-            x_pos = group_width - button_width - 60  
-            y_pos = -1
-            
-            self.backup_all_button.move(x_pos, y_pos)
-            
-            self.backup_all_button.move(x_pos, y_pos)
-        except Exception as e:
-            logging.debug(f"Error positioning backup_all_button: {e}")
+
 
 # --- End of MainWindow class definition ---
