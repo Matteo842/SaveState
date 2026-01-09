@@ -167,8 +167,6 @@ class NewProfileDialog(QDialog):
     def _on_minecraft_button_clicked(self):
         """Opens Minecraft world selection dialog and auto-fills the profile."""
         try:
-            # Hide this dialog while showing Minecraft dialog (avoid stacked popups)
-            self.hide()
             # Find Minecraft saves folder
             saves_folder = minecraft_utils.find_minecraft_saves_folder()
             
@@ -176,8 +174,7 @@ class NewProfileDialog(QDialog):
                 QMessageBox.warning(self, "Folder Not Found",
                     "Could not find the standard Minecraft saves folder (.minecraft/saves).\n"
                     "Make sure that Minecraft Java Edition is installed.")
-                self.show()  # Re-show this dialog
-                return
+                return  # Stay in NewProfileDialog
             
             # Get world list
             worlds_data = minecraft_utils.list_minecraft_worlds(saves_folder)
@@ -185,11 +182,13 @@ class NewProfileDialog(QDialog):
             if not worlds_data:
                 QMessageBox.information(self, "No Worlds Found",
                     f"No worlds found in folder:\n{saves_folder}")
-                self.show()  # Re-show this dialog
-                return
+                return  # Stay in NewProfileDialog
             
-            # Show world selection dialog (this dialog is hidden, Minecraft dialog shows)
-            dialog = MinecraftWorldsDialog(worlds_data, self.parent())  # Use main window as parent
+            # Hide this dialog before showing Minecraft dialog
+            self.hide()
+            
+            # Show world selection dialog with main window as parent
+            dialog = MinecraftWorldsDialog(worlds_data, self.parent())
             
             if dialog.exec():
                 selected_world = dialog.get_selected_world_info()
@@ -205,13 +204,13 @@ class NewProfileDialog(QDialog):
                         self.accept()  # Close this dialog with success
                         return
             
-            # User cancelled Minecraft dialog, re-show this dialog
-            self.show()
+            # User cancelled Minecraft dialog - close entire profile creation flow
+            self.reject()
                         
         except Exception as e:
             logging.error(f"Error in Minecraft world selection: {e}", exc_info=True)
             QMessageBox.critical(self, "Error", f"An error occurred: {e}")
-            self.show()  # Re-show this dialog on error
+            self.reject()  # Close dialog on error to avoid UI freeze
     
     def _on_accept(self):
         """Validates and accepts the manual input."""
