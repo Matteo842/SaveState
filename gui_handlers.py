@@ -1689,7 +1689,12 @@ class MainWindowHandlers:
             if validated_path:
                 logging.info(f"Saving profile '{profile_name}' with path '{validated_path}' via handler.")
                 # Update the profile dictionary and save all profiles
-                self.main_window.profiles[profile_name] = {'path': validated_path}
+                profile_data = {'path': validated_path}
+                # Add game_install_dir for Steam game icon extraction
+                if game_install_dir and os.path.isdir(game_install_dir):
+                    profile_data['game_install_dir'] = game_install_dir
+                    logging.debug(f"Adding game_install_dir to profile: {game_install_dir}")
+                self.main_window.profiles[profile_name] = profile_data
                 if core_logic.save_profiles(self.main_window.profiles):
                     self.main_window.status_label.setText("Profile '{0}' configured.".format(profile_name))
                     self.main_window.profile_table_manager.update_profile_table()

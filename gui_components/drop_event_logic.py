@@ -1254,7 +1254,8 @@ class DropEventMixin:
             current_settings=mw.current_settings.copy(),
             installed_steam_games_dict=None, # Non-Steam game
             emulator_name=None, # Explicitly None for generic heuristic search
-            cancellation_manager=cancellation_manager
+            cancellation_manager=cancellation_manager,
+            game_executable=target_path  # Pass the exe path for icon extraction
         )
         self.detection_thread.progress.connect(self.on_detection_progress)
         self.detection_thread.finished.connect(self.on_detection_finished)

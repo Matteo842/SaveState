@@ -46,7 +46,7 @@ class DetectionWorkerThread(QThread):
     progress = Signal(str)
     finished = Signal(bool, dict) # Segnale emesso alla fine: successo(bool), risultati(dict)
 
-    def __init__(self, game_install_dir, profile_name_suggestion, current_settings, installed_steam_games_dict=None, emulator_name=None, steam_app_id=None, cancellation_manager=None):
+    def __init__(self, game_install_dir, profile_name_suggestion, current_settings, installed_steam_games_dict=None, emulator_name=None, steam_app_id=None, cancellation_manager=None, game_executable=None):
         super().__init__()
         self.game_install_dir = game_install_dir
         self.profile_name_suggestion = profile_name_suggestion
@@ -54,6 +54,7 @@ class DetectionWorkerThread(QThread):
         self.installed_steam_games_dict = installed_steam_games_dict if installed_steam_games_dict is not None else {}
         self.emulator_name = emulator_name # Store emulator name
         self.steam_app_id = steam_app_id # Store Steam AppID
+        self.game_executable = game_executable  # Store the original exe/shortcut path for icon extraction
         self.is_running = True
         self.cancellation_requested = False  # Add cancellation flag
         self.cancellation_manager = cancellation_manager
@@ -390,7 +391,8 @@ class DetectionWorkerThread(QThread):
                     'message': error_message,
                     'profile_name_suggestion': profile_name, # Aggiungi il nome del profilo usato
                     'emulator_name': self.emulator_name, # Add emulator name to results
-                    'game_install_dir': self.game_install_dir  # Add game install dir for path shortening
+                    'game_install_dir': self.game_install_dir,  # Add game install dir for path shortening
+                    'game_executable': self.game_executable  # Original exe/shortcut for icon extraction
                 }
                 self.finished.emit(True, results_dict)
 
@@ -402,7 +404,8 @@ class DetectionWorkerThread(QThread):
                      'message': "Search interrupted by user.", # Messaggio più specifico
                      'profile_name_suggestion': profile_name,
                      'emulator_name': self.emulator_name, # Also include emulator name in error case
-                     'game_install_dir': self.game_install_dir  # Add game install dir
+                     'game_install_dir': self.game_install_dir,  # Add game install dir
+                     'game_executable': self.game_executable  # Original exe/shortcut for icon extraction
                  }
                  self.finished.emit(False, results_dict)
 

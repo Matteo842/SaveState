@@ -326,6 +326,14 @@ def load_profiles():
         loaded_profiles = {} # Reset in caso di errore nell'elaborazione
 
     logging.info(f"Loaded and processed {len(loaded_profiles)} profiles from '{PROFILES_FILE_PATH}'.")
+    
+    # Clean up orphaned icons from deleted profiles
+    try:
+        from gui_components.icon_extractor import cleanup_orphaned_icons
+        cleanup_orphaned_icons(loaded_profiles)
+    except Exception as e:
+        logging.debug(f"Could not cleanup orphaned icons: {e}")
+    
     return loaded_profiles # Restituisci i profili processati
 
 # Saves the profiles to the profile file
@@ -375,6 +383,15 @@ def save_profiles(profiles):
 def delete_profile(profiles, profile_name):
     """Deletes a profile from the dictionary. Returns True if deleted, False otherwise."""
     if profile_name in profiles:
+        profile_data = profiles[profile_name]
+        
+        # Delete cached icon for this profile
+        try:
+            from gui_components.icon_extractor import delete_profile_icon
+            delete_profile_icon(profile_data)
+        except Exception as e:
+            logging.debug(f"Could not delete profile icon: {e}")
+        
         del profiles[profile_name]
         logging.info(f"Profile '{profile_name}' removed from memory.")
         return True

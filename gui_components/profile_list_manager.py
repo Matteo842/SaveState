@@ -12,6 +12,7 @@ import config
 # Import the new manager and utils
 from gui_components import favorites_manager # Assuming it's in gui_components
 from gui_components.empty_state_widget import EmptyStateWidget
+from gui_components import icon_extractor  # For game icon extraction
 from utils import resource_path # <--- Import from utils
 
 class ProfileSelectionDelegate(QStyledItemDelegate):
@@ -286,6 +287,13 @@ class ProfileListManager:
                 # --- Create Name Item (Column 1) ---
                 name_item = QTableWidgetItem(profile_name)
                 name_item.setData(Qt.ItemDataRole.UserRole, profile_name) # Save name for row selection
+                
+                # --- Add Game Icon if available ---
+                game_icon = icon_extractor.get_profile_icon(profile_data, profile_name)
+                if game_icon and not game_icon.isNull():
+                    name_item.setIcon(game_icon)
+                    logging.debug(f"Game icon set for profile '{profile_name}'")
+                # --- End Game Icon ---
 
                 # --- Create Info Item (Column 2) ---
                 info_item = QTableWidgetItem(info_str)

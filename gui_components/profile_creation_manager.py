@@ -623,6 +623,10 @@ class ProfileCreationManager:
         # --- NUOVO: Estrai emulator_name --- 
         emulator_name_from_results = results.get('emulator_name') # Potrebbe essere None
         logging.debug(f"PCM.on_detection_finished: Emulator name from results: {emulator_name_from_results}")
+        # --- NUOVO: Estrai game_executable per le icone ---
+        game_executable_from_results = results.get('game_executable')  # Path to exe for icon extraction
+        if game_executable_from_results:
+            logging.debug(f"PCM.on_detection_finished: Game executable from results: {game_executable_from_results}")
         # --- Log per il controllo della condizione PCSX2 --- 
         is_pcsx2_profile_creation = emulator_name_from_results == 'PCSX2'
         logging.debug(f"PCM.on_detection_finished: Is this a PCSX2 profile creation? {is_pcsx2_profile_creation} (Emulator name: '{emulator_name_from_results}')")
@@ -768,6 +772,16 @@ class ProfileCreationManager:
             if validated_path:
                 logging.debug(f"Final path validated: {validated_path}. Preparing to save profile '{profile_name}'")
                 profile_data = {'path': validated_path}
+                
+                # --- NUOVO: Aggiungi game_executable per le icone ---
+                if game_executable_from_results and os.path.exists(game_executable_from_results):
+                    profile_data['game_executable'] = game_executable_from_results
+                    logging.debug(f"Adding game_executable to profile: {game_executable_from_results}")
+                
+                # --- NUOVO: Aggiungi game_install_dir per icone Steam ---
+                if game_install_dir and os.path.isdir(game_install_dir):
+                    profile_data['game_install_dir'] = game_install_dir
+                    logging.debug(f"Adding game_install_dir to profile: {game_install_dir}")
 
                 # --- NUOVO: Logica per PCSX2 save_dir ---
                 if emulator_name_from_results == 'PCSX2':

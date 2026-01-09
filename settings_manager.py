@@ -282,10 +282,19 @@ def is_portable_mode() -> bool:
         return os.path.basename(os.path.normpath(active_dir)) == ".savestate"
     except Exception:
         return False
+# Module-level cache for settings
+_cached_settings = None
+_cached_first_launch = None
 
 
 def load_settings():
-    """Load settings from the active settings file path."""
+    """Load settings from the active settings file path. Results are cached to avoid repeated disk I/O."""
+    global _cached_settings, _cached_first_launch
+    
+    # Return cached settings if available
+    if _cached_settings is not None:
+        return _cached_settings.copy(), _cached_first_launch
+    
     active_config_dir = get_active_config_dir()
     settings_file_path = os.path.join(active_config_dir, SETTINGS_FILENAME)
     
@@ -342,12 +351,13 @@ def load_settings():
         logging.info("Loading settings from file...")
         logging.info(f"Settings file '{settings_file_path}' not found...") 
         # We could save defaults here, but we wait for user confirmation in the dialog
+        _cached_settings = defaults.copy()
+        _cached_first_launch = True
         return defaults.copy(), True # Returns COPY of defaults and True for first launch
 
     try:
         with open(settings_file_path, 'r', encoding='utf-8') as f:
             user_settings = json.load(f)
-        logging.info("Settings loaded successfully")
         logging.info(f"Settings loaded successfully from '{settings_file_path}'.")
         # Merge defaults with user settings to handle missing keys
         # User settings override defaults
@@ -400,6 +410,9 @@ def load_settings():
             except OSError as e:
                 logging.warning(f"Could not create backup directory {backup_dir}: {e}")
         
+        # Cache the loaded settings
+        _cached_settings = settings.copy()
+        _cached_first_launch = False
         return settings, False
     except (json.JSONDecodeError, KeyError, TypeError):
         logging.error(f"Failed to read or validate '{settings_file_path}'...", exc_info=True)
@@ -411,6 +424,12 @@ def load_settings():
 
 def save_settings(settings_dict):
     """Save the settings dictionary. Supports portable mode. Returns bool (success)."""
+    global _cached_settings, _cached_first_launch
+    
+    # Invalidate cache when saving
+    _cached_settings = None
+    _cached_first_launch = None
+    
     try:
         global _RUNTIME_CONFIG_DIR_OVERRIDE
         # Extract and remove ephemeral flags (not persisted)

@@ -425,7 +425,8 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                     installed_steam_games_dict=steam_games_dict,
                     emulator_name=None,
                     steam_app_id=steam_app_id if is_steam_game else None,
-                    cancellation_manager=getattr(self.main_window, 'cancellation_manager', None)  # <-- FIX: passa il cancellation_manager
+                    cancellation_manager=getattr(self.main_window, 'cancellation_manager', None),  # <-- FIX: passa il cancellation_manager
+                    game_executable=target_path if target_path else file_path  # Pass exe path for icon extraction
                 )
             
                 # Salva il riferimento al thread e al nome del profilo
@@ -849,7 +850,8 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                 game_install_dir=self.game_install_dir,
                 current_settings=mw.current_settings,
                 installed_steam_games_dict=steam_games_dict,
-                cancellation_manager=getattr(mw, 'cancellation_manager', None)  # <-- FIX: passa il cancellation_manager
+                cancellation_manager=getattr(mw, 'cancellation_manager', None),  # <-- FIX: passa il cancellation_manager
+                game_executable=None  # Steam URL drops don't have direct exe path
             )
             self.detection_thread.progress.connect(self.on_detection_progress)
             self.detection_thread.finished.connect(self.on_detection_finished)
