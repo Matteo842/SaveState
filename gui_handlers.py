@@ -1497,6 +1497,8 @@ class MainWindowHandlers:
         dialog = SteamDialog(main_window_ref=self.main_window, parent=self.main_window)
         # Connect dialog signal to the handler method in this class
         dialog.game_selected_for_config.connect(self.start_steam_configuration)
+        # Connect batch selection signal for multi-game configuration
+        dialog.games_selected_for_batch_config.connect(self.start_steam_batch_configuration)
         dialog.exec()
 
     # Starts the configuration process after a Steam game is selected.
@@ -1606,6 +1608,273 @@ class MainWindowHandlers:
         
         self.main_window.set_controls_enabled(False)
         thread.start()
+
+    @Slot(list)
+    def start_steam_batch_configuration(self, selected_games):
+        """
+        Start batch configuration for multiple Steam games.
+        
+        Args:
+            selected_games: List of dicts with 'appid', 'name', 'installdir' for each game
+        """
+        logging.info(f"Starting batch configuration for {len(selected_games)} Steam games.")
+        
+        if not selected_games:
+            logging.warning("start_steam_batch_configuration called with empty list")
+            return
+        
+        # Get Steam userdata info for account selection
+        steam_userdata_path = self.main_window.steam_userdata_info.get('path')
+        likely_id3 = self.main_window.steam_userdata_info.get('likely_id')
+        possible_ids = self.main_window.steam_userdata_info.get('possible_ids', [])
+        id_details = self.main_window.steam_userdata_info.get('details', {})
+        steam_id_to_use = likely_id3
+        
+        # Ask for user ID selection ONCE for all games (if multiple found)
+        if len(possible_ids) > 1:
+            id_choices_display = []
+            display_to_id_map = {}
+            index_to_select = 0
+            for i, uid in enumerate(possible_ids):
+                user_details = id_details.get(uid, {})
+                display_name = user_details.get('display_name', uid)
+                last_mod_str = user_details.get('last_mod_str', 'N/D')
+                # Mark the likely (most recent) Steam ID
+                is_likely_marker = "(Recent)" if uid == likely_id3 else ""
+                choice_str = f"{display_name} {is_likely_marker} [{last_mod_str}]".strip().replace("  ", " ")
+                id_choices_display.append(choice_str)
+                display_to_id_map[choice_str] = uid
+                if uid == likely_id3: 
+                    index_to_select = i
+
+            dialog_label_text = (
+                f"You are configuring {len(selected_games)} games.\n"
+                "Multiple Steam profiles found.\n"
+                "Select the Steam account to use for ALL games:"
+            )
+            chosen_display_str, ok = QInputDialog.getItem(
+                self.main_window, "Select Steam Profile", dialog_label_text,
+                id_choices_display, index_to_select, False
+            )
+            if ok and chosen_display_str:
+                selected_id3 = display_to_id_map.get(chosen_display_str)
+                if selected_id3: 
+                    steam_id_to_use = selected_id3
+                else: 
+                    logging.error("Error mapping choice back to Steam ID")
+                    QMessageBox.warning(self.main_window, "Error", "Selected Steam ID is invalid.")
+                    return
+            else:
+                self.main_window.status_label.setText("Batch configuration cancelled (no Steam profile selected).")
+                return
+        elif not steam_id_to_use and len(possible_ids) == 1: 
+            steam_id_to_use = possible_ids[0]
+        elif not possible_ids: 
+            logging.warning("No Steam user IDs found.")
+        
+        # Store the steam ID for use in the batch processing
+        self._batch_steam_id = steam_id_to_use
+        self._batch_steam_userdata_path = steam_userdata_path
+        
+        # Prepare data for MultiProfileDialog in launcher_mode format
+        # This is compatible with the existing multi-profile processing logic
+        files_to_process = []
+        for game in selected_games:
+            files_to_process.append({
+                'name': game.get('name', 'Unknown'),
+                'path': game.get('installdir', ''),  # Install dir used for scanning
+                'appid': game.get('appid', '')
+            })
+        
+        # Open MultiProfileDialog in steam_mode
+        from gui_components.multi_profile_dialog import MultiProfileDialog
+        
+        multi_dialog = MultiProfileDialog(
+            files_to_process=files_to_process,
+            parent=self.main_window,
+            launcher_mode=True,  # Use launcher mode since we have name/path dicts
+            steam_mode=True  # Enable Steam-specific UI text
+        )
+        
+        # Connect signals for handling the multi-profile workflow
+        # The profileAdded signal with {'action': 'start_analysis'} triggers analysis
+        multi_dialog.profileAdded.connect(self._on_steam_batch_profile_added)
+        multi_dialog.finished.connect(self._on_steam_batch_dialog_finished)
+        
+        # Store references for the analysis phase
+        self._steam_batch_dialog = multi_dialog
+        self._steam_batch_games = selected_games
+        self._steam_batch_pending_analyses = []
+        
+        multi_dialog.show()
+        logging.info(f"MultiProfileDialog opened for {len(selected_games)} Steam games")
+    
+    def _on_steam_batch_profile_added(self, profile_info):
+        """Handle signals from the batch multi-profile dialog."""
+        if profile_info.get('action') == 'start_analysis':
+            logging.info("Starting batch Steam analysis...")
+            self._start_steam_batch_analysis()
+    
+    def _start_steam_batch_analysis(self):
+        """Start the analysis phase for all games in the batch."""
+        if not hasattr(self, '_steam_batch_dialog') or not self._steam_batch_dialog:
+            return
+        
+        dialog = self._steam_batch_dialog
+        files_to_analyze = dialog.get_files_to_analyze()
+        
+        if not files_to_analyze:
+            logging.warning("No files to analyze in batch")
+            return
+        
+        self._steam_batch_pending_analyses = list(files_to_analyze)
+        self._steam_batch_current_index = 0
+        self._steam_batch_total = len(files_to_analyze)
+        
+        # Reset cancellation manager
+        if hasattr(self.main_window, 'cancellation_manager') and self.main_window.cancellation_manager:
+            self.main_window.cancellation_manager.reset()
+        
+        # Start processing the first game
+        self._process_next_steam_batch_game()
+    
+    def _process_next_steam_batch_game(self):
+        """Process the next game in the batch analysis."""
+        if not hasattr(self, '_steam_batch_pending_analyses') or not self._steam_batch_pending_analyses:
+            # All games processed
+            logging.info("Steam batch analysis complete")
+            if hasattr(self, '_steam_batch_dialog') and self._steam_batch_dialog:
+                self._steam_batch_dialog.update_progress(
+                    self._steam_batch_total,
+                    "Analysis complete!"
+                )
+            return
+        
+        # Get next game
+        profile_name, install_dir = self._steam_batch_pending_analyses.pop(0)
+        self._steam_batch_current_index += 1
+        
+        # Update dialog progress
+        if hasattr(self, '_steam_batch_dialog') and self._steam_batch_dialog:
+            self._steam_batch_dialog.update_progress(
+                self._steam_batch_current_index,
+                f"Analyzing: {profile_name}"
+            )
+        
+        # Find appid for this game
+        appid = None
+        for game in self._steam_batch_games:
+            if game.get('name') == profile_name:
+                appid = game.get('appid')
+                break
+        
+        if not appid:
+            # Try to find by install dir
+            for aid, gdata in self.main_window.steam_games_data.items():
+                if gdata.get('name') == profile_name:
+                    appid = aid
+                    break
+        
+        logging.info(f"Batch analyzing: {profile_name} (AppID: {appid})")
+        
+        # Start search thread for this game
+        thread = SteamSearchWorkerThread(
+            game_name=profile_name,
+            game_install_dir=install_dir,
+            appid=appid or "",
+            steam_userdata_path=self._batch_steam_userdata_path,
+            steam_id3_to_use=self._batch_steam_id,
+            installed_steam_games_dict=self.main_window.steam_games_data,
+            profile_name_for_results=profile_name,
+            cancellation_manager=self.main_window.cancellation_manager
+        )
+        
+        # Connect to batch result handler
+        thread.finished.connect(self._on_steam_batch_search_result)
+        self.main_window.current_search_thread = thread
+        thread.start()
+    
+    @Slot(bool, dict)
+    def _on_steam_batch_search_result(self, success, results_dict):
+        """Handle search result for a single game in the batch."""
+        profile_name = results_dict.get('profile_name_suggestion', '')
+        guesses = results_dict.get('path_data', [])
+        
+        logging.debug(f"Batch result for '{profile_name}': {len(guesses)} paths found")
+        
+        # Get best path (highest score)
+        best_path = ""
+        best_score = -1000
+        if guesses:
+            for guess in guesses:
+                path = guess[0] if guess else ""
+                score = guess[1] if len(guess) > 1 else 0
+                if score > best_score:
+                    best_score = score
+                    best_path = path
+        
+        # Update the dialog with the result
+        if hasattr(self, '_steam_batch_dialog') and self._steam_batch_dialog:
+            if best_path:
+                self._steam_batch_dialog.update_profile(profile_name, best_path, best_score)
+            else:
+                # No path found, mark as failed
+                self._steam_batch_dialog.update_profile(profile_name, "(No path found)", -100)
+        
+        # Process next game
+        self._process_next_steam_batch_game()
+    
+    def _on_steam_batch_dialog_finished(self, result):
+        """Handle the MultiProfileDialog closing."""
+        logging.info(f"Steam batch dialog finished with result: {result}")
+        
+        # Cancel any running search thread
+        if hasattr(self.main_window, 'cancellation_manager') and self.main_window.cancellation_manager:
+            self.main_window.cancellation_manager.cancel()
+        
+        if result == QDialog.DialogCode.Accepted:
+            # Get accepted profiles and save them
+            dialog = getattr(self, '_steam_batch_dialog', None)
+            if dialog:
+                accepted = dialog.get_accepted_profiles()
+                logging.info(f"Creating {len(accepted)} profiles from Steam batch")
+                
+                for profile_name, data in accepted.items():
+                    path = data.get('path', '')
+                    if path and path != "(No path found)":
+                        # Find game_install_dir for this profile
+                        game_install_dir = None
+                        for game in getattr(self, '_steam_batch_games', []):
+                            if game.get('name') == profile_name:
+                                game_install_dir = game.get('installdir')
+                                break
+                        
+                        profile_data = {'path': path}
+                        if game_install_dir:
+                            profile_data['game_install_dir'] = game_install_dir
+                        
+                        self.main_window.profiles[profile_name] = profile_data
+                        logging.info(f"Added profile: {profile_name} -> {path}")
+                
+                # Save all profiles
+                if accepted:
+                    if core_logic.save_profiles(self.main_window.profiles):
+                        self.main_window.status_label.setText(f"{len(accepted)} profiles created successfully.")
+                        self.main_window.profile_table_manager.update_profile_table()
+                        QMessageBox.information(
+                            self.main_window, 
+                            "Profiles Created", 
+                            f"{len(accepted)} Steam game profiles have been created."
+                        )
+                    else:
+                        QMessageBox.critical(self.main_window, "Save Error", "Unable to save profiles file.")
+        
+        # Cleanup
+        self._steam_batch_dialog = None
+        self._steam_batch_games = None
+        self._steam_batch_pending_analyses = None
+        self._batch_steam_id = None
+        self._batch_steam_userdata_path = None
 
     # Handles the results from the Steam save path search worker thread.
     @Slot(bool, dict) # Receives success, results_dict

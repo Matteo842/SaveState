@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 from PySide6.QtWidgets import (
     QDialog, QTreeWidget, QTreeWidgetItem, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QApplication, QInputDialog, QMessageBox, QLineEdit
+    QApplication, QInputDialog, QMessageBox, QLineEdit, QCheckBox, QWidget, QHeaderView
 )
-from PySide6.QtCore import Signal, Slot, Qt, QTimer, QEvent
+from PySide6.QtCore import Signal, Slot, Qt, QTimer, QEvent, QSize
+from PySide6.QtGui import QColor
 
 # Import necessary logic
 import core_logic
@@ -15,8 +16,11 @@ class SteamDialog(QDialog):
     """
     Dialog for displaying installed Steam games, selecting one to configure its save path.
     """
-    #profile_configured = Signal(str, str) # Signal emitted when a profile is configured (name, path)
+    # Signal emitted when a single game is selected (appid, profile_name)
     game_selected_for_config = Signal(str, str)
+    # Signal emitted when multiple games are selected for batch configuration
+    # Emits list of dicts: [{'appid': str, 'name': str, 'installdir': str}, ...]
+    games_selected_for_batch_config = Signal(list)
 
     def __init__(self, main_window_ref, parent=None):
         super().__init__(parent)
@@ -31,23 +35,28 @@ class SteamDialog(QDialog):
         self.steam_games_data = parent.steam_games_data if parent and hasattr(parent, 'steam_games_data') else {} 
         self.steam_userdata_info = parent.steam_userdata_info if parent and hasattr(parent, 'steam_userdata_info') else {} 
 
+        # Track checked items for multi-selection
+        self.checked_items = set()  # Set of appids that are checked
+        
         # --- Create UI Widgets ---
-        # Replace QListWidget with QTreeWidget for multi-column support
-        from PySide6.QtWidgets import QHeaderView
+        # TreeWidget with 3 columns: Checkbox, Game Name, AppID
         self.game_list_widget = QTreeWidget()
-        self.game_list_widget.setHeaderLabels(["Game Name", "AppID"])
+        self.game_list_widget.setHeaderLabels(["Select", "Game Name", "AppID"])
+        self.game_list_widget.setColumnCount(3)
         
-        # Configure columns: Name stretches to fill available space, AppID is fixed width at right edge
+        # Configure columns
         header = self.game_list_widget.header()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        header.resizeSection(1, 130)  # Fixed width for AppID column
-        header.setStretchLastSection(False)  # Prevent last column from stretching
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)  # Checkbox column
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Game name stretches
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)  # AppID fixed
+        header.resizeSection(0, 36)  # Checkbox column width - compact to save space
+        header.resizeSection(2, 130)  # AppID column width
+        header.setStretchLastSection(False)
         
-        self.game_list_widget.setColumnHidden(1, False) # Show AppID column
-        self.game_list_widget.setHeaderHidden(True) # Hide header to maintain clean look
+        self.game_list_widget.setHeaderHidden(True)  # Hide header for clean look
+        self.game_list_widget.setIndentation(0)  # Remove tree indentation to prevent text clipping
         
-        # Styling: larger font, reduced left padding, horizontal separators between rows
+        # Styling: larger font, increased row height for checkboxes, horizontal separators
         self.game_list_widget.setStyleSheet("""
             QTreeWidget {
                 font-size: 11pt;
@@ -55,7 +64,8 @@ class SteamDialog(QDialog):
             }
             QTreeWidget::item {
                 padding: 4px 8px;
-                padding-left: 4px;
+                padding-left: 8px;
+                min-height: 32px;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.08);
             }
             QTreeWidget::item:selected {
@@ -73,10 +83,13 @@ class SteamDialog(QDialog):
         self.search_bar.setPlaceholderText("Search...")
         self.search_bar.setVisible(False)
 
+        # Single configure button - text changes based on selection (single vs batch)
         self.configure_button = QPushButton("Configure Selected Profile")
+        self.configure_button.setEnabled(False)
+        self._is_batch_mode = False  # Track current mode
+        
         self.refresh_button = QPushButton("Refresh Games List")
         self.close_button = QPushButton("Close")
-        self.configure_button.setEnabled(False)
 
         # --- Layout ---
         layout = QVBoxLayout(self)
@@ -93,15 +106,17 @@ class SteamDialog(QDialog):
         layout.addLayout(h_layout)
 
         # --- Signal/Slot connections ---
-        self.configure_button.clicked.connect(self._emit_selection_and_accept)
+        self.configure_button.clicked.connect(self._on_configure_clicked)
         self.refresh_button.clicked.connect(self.start_steam_scan)
         self.close_button.clicked.connect(self.reject)
         self.search_bar.textChanged.connect(self.filter_game_list)
-        # QTreeWidget emits (current, previous)
-        self.game_list_widget.currentItemChanged.connect(
-            lambda current, previous: self.configure_button.setEnabled(current is not None)
-        )
+        
+        # Handle row selection - update button state
+        self.game_list_widget.currentItemChanged.connect(self._on_selection_changed)
         self.game_list_widget.itemDoubleClicked.connect(self._handle_double_click)
+        
+        # Handle item clicks to toggle checkboxes (click on column 0 or checkbox widget)
+        self.game_list_widget.itemClicked.connect(self._on_item_clicked)
 
         # Install event filter to capture key presses on the list widget
         self.game_list_widget.installEventFilter(self)
@@ -121,58 +136,185 @@ class SteamDialog(QDialog):
 
 
     def populate_game_list(self):
+        """Populate the game list with checkbox widgets for multi-selection."""
         self.game_list_widget.clear()
+        self.checked_items.clear()  # Reset checked items
+        self._is_batch_mode = False
+        
         if not self.steam_games_data:
-             # Add a dummy item if no games found
-             from PySide6.QtWidgets import QTreeWidgetItem
-             item = QTreeWidgetItem(["No games found."])
-             self.game_list_widget.addTopLevelItem(item)
-             self.configure_button.setEnabled(False) 
-             return
+            # Add a dummy item if no games found
+            item = QTreeWidgetItem(["", "No games found.", ""])
+            self.game_list_widget.addTopLevelItem(item)
+            self.configure_button.setEnabled(False)
+            self.configure_button.setText("Configure Selected Profile")
+            return
 
         sorted_games = sorted(self.steam_games_data.items(), key=lambda item: item[1]['name'])
         
-        from PySide6.QtWidgets import QTreeWidgetItem
         for appid, game_data in sorted_games:
             profile_exists_marker = "[EXISTING PROFILE]" if game_data['name'] in self.profiles else ""
             # Display name without AppID
             display_text = f"{game_data['name']} {profile_exists_marker}".strip()
             
-            # Create TreeItem with Name in Col 0 and AppID in Col 1
-            # Add "AppID: " prefix as requested
-            item = QTreeWidgetItem([display_text, f"AppID: {appid}"])
-            item.setData(0, Qt.ItemDataRole.UserRole, appid)
+            # Create TreeItem with empty first column (for checkbox), Name in Col 1, AppID in Col 2
+            item = QTreeWidgetItem(["", display_text, f"AppID: {appid}"])
             
-            # Align the AppID column (column 1) to the left for better readability
-            item.setTextAlignment(1, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            # Store appid in both column 0 (for checkbox handling) and column 1 (for selection handling)
+            item.setData(0, Qt.ItemDataRole.UserRole, appid)
+            item.setData(1, Qt.ItemDataRole.UserRole, appid)
+            
+            # Align the AppID column (column 2) to the left for better readability
+            item.setTextAlignment(2, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             
             self.game_list_widget.addTopLevelItem(item)
+            
+            # Create checkbox widget for column 0 with fixed dimensions
+            checkbox_widget = QWidget()
+            checkbox_widget.setStyleSheet("background-color: transparent;")
+            checkbox_widget.setFixedSize(36, 36)  # Compact size to save space
+            checkbox_layout = QHBoxLayout(checkbox_widget)
+            checkbox_layout.setContentsMargins(0, 0, 0, 0)
+            checkbox_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            
+            checkbox = QCheckBox()
+            checkbox.setFixedSize(28, 28)  # Fixed size for the checkbox itself
+            checkbox.setProperty("appid", appid)  # Store appid for later retrieval
+            # Custom checkbox styling - match cloud panel style
+            checkbox.setStyleSheet("""
+                QCheckBox {
+                    spacing: 0px;
+                }
+                QCheckBox::indicator {
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 4px;
+                    border: 2px solid #555555;
+                    background-color: #2b2b2b;
+                }
+                QCheckBox::indicator:hover {
+                    border: 2px solid #888888;
+                    background-color: #353535;
+                }
+                QCheckBox::indicator:checked {
+                    border: 2px solid #4CAF50;
+                    background-color: #4CAF50;
+                }
+                QCheckBox::indicator:checked:hover {
+                    border: 2px solid #66BB6A;
+                    background-color: #66BB6A;
+                }
+            """)
+            checkbox.stateChanged.connect(lambda state, aid=appid: self._on_checkbox_changed(aid, state))
+            checkbox_layout.addWidget(checkbox)
+            
+            self.game_list_widget.setItemWidget(item, 0, checkbox_widget)
         
         # Clear selection and disable configure button until user explicitly selects a game
         self.game_list_widget.clearSelection()
         self.game_list_widget.setCurrentItem(None)
         self.configure_button.setEnabled(False)
     
-    # --- METHOD to emit signal and close ---
+    def _on_checkbox_changed(self, appid, state):
+        """Handle checkbox state change for multi-selection."""
+        if state == Qt.CheckState.Checked.value:
+            self.checked_items.add(appid)
+        else:
+            self.checked_items.discard(appid)
+        self._update_configure_button()
+    
+    def _on_selection_changed(self, current, previous):
+        """Handle row selection change - update button state."""
+        self._update_configure_button()
+    
+    def _update_configure_button(self):
+        """Update configure button text and state based on checkbox/row selection."""
+        count = len(self.checked_items)
+        
+        if count > 1:
+            # Batch mode: multiple checkboxes selected
+            self._is_batch_mode = True
+            self.configure_button.setText(f"Configure Selected ({count})")
+            self.configure_button.setEnabled(True)
+        elif count == 1:
+            # Single checkbox selected - use batch mode
+            self._is_batch_mode = True
+            self.configure_button.setText("Configure Selected (1)")
+            self.configure_button.setEnabled(True)
+        else:
+            # No checkboxes - use row selection for single mode
+            self._is_batch_mode = False
+            current_item = self.game_list_widget.currentItem()
+            has_valid_selection = (
+                current_item is not None and 
+                current_item.data(1, Qt.ItemDataRole.UserRole) is not None
+            )
+            self.configure_button.setText("Configure Selected Profile")
+            self.configure_button.setEnabled(has_valid_selection)
+    
+    @Slot()
+    def _on_configure_clicked(self):
+        """Handle configure button click - route to single or batch based on mode."""
+        if self._is_batch_mode:
+            self._emit_batch_selection_and_accept()
+        else:
+            self._emit_selection_and_accept()
+    
+    def _on_item_clicked(self, item, column):
+        """Handle click on item - toggle checkbox if clicking outside checkbox area."""
+        # Only handle clicks on non-checkbox columns that should toggle checkbox
+        # Column 0 has the checkbox widget, clicks there are handled by the checkbox itself
+        # For columns 1 and 2, we don't toggle checkbox - user must click the checkbox directly
+        pass  # Let the checkbox handle its own clicks
+    
     @Slot()
     def _emit_selection_and_accept(self):
+        """Emit signal for single game selection and close dialog."""
         current_item = self.game_list_widget.currentItem()
         if not current_item:
             return
 
-        appid = current_item.data(0, Qt.ItemDataRole.UserRole)
+        # AppID is stored in column 0 or 1 UserRole
+        appid = current_item.data(1, Qt.ItemDataRole.UserRole)
+        if not appid:
+            appid = current_item.data(0, Qt.ItemDataRole.UserRole)
         game_data = self.steam_games_data.get(appid)
 
         if not game_data or not appid:
-             # Handle case where "No games found" item is selected or similar
-             if current_item.text(0) == "No games found.":
-                 return
-             QMessageBox.warning(self, "Error", "Unable to get data for the selected game.")
-             return
+            # Handle case where "No games found" item is selected or similar
+            if "No games found" in current_item.text(1):
+                return
+            QMessageBox.warning(self, "Error", "Unable to get data for the selected game.")
+            return
 
         profile_name = game_data['name']
         logging.info(f"[SteamDialog] Game selected: '{profile_name}' (AppID: {appid}). Emitting signal and closing.")
         self.game_selected_for_config.emit(appid, profile_name)
+        self.accept()
+    
+    @Slot()
+    def _emit_batch_selection_and_accept(self):
+        """Emit signal for batch game selection and close dialog."""
+        if not self.checked_items:
+            QMessageBox.warning(self, "No Selection", "Please select at least one game using the checkboxes.")
+            return
+        
+        # Build list of selected games data
+        selected_games = []
+        for appid in self.checked_items:
+            game_data = self.steam_games_data.get(appid)
+            if game_data:
+                selected_games.append({
+                    'appid': appid,
+                    'name': game_data.get('name', 'Unknown'),
+                    'installdir': game_data.get('installdir', '')
+                })
+        
+        if not selected_games:
+            QMessageBox.warning(self, "Error", "Could not retrieve data for selected games.")
+            return
+        
+        logging.info(f"[SteamDialog] Batch selection: {len(selected_games)} games. Emitting signal and closing.")
+        self.games_selected_for_batch_config.emit(selected_games)
         self.accept() 
         
     # --- METHOD to handle double-click on game list ---

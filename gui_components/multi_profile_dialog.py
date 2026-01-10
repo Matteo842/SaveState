@@ -236,16 +236,17 @@ class MultiProfileDialog(QDialog):
     profileAdded = Signal(dict)
     analysis_completed = Signal()
     
-    def __init__(self, files_to_process, parent=None, launcher_mode=False):
+    def __init__(self, files_to_process, parent=None, launcher_mode=False, steam_mode=False):
         """
-        Inizializza il dialogo.
+        Initialize the dialog.
         
         Args:
-            files_to_process: Lista di file da processare. Se launcher_mode è True,
-                             può essere una lista di dizionari con 'name' e 'path'.
-            parent: Widget genitore
-            launcher_mode: Se True, i dati sono da un launcher (es. Playnite) con
-                          game names e install directories già definite.
+            files_to_process: List of files to process. If launcher_mode is True,
+                             it can be a list of dicts with 'name' and 'path'.
+            parent: Parent widget
+            launcher_mode: If True, data is from a launcher (e.g., Playnite) with
+                          game names and install directories already defined.
+            steam_mode: If True, this is for Steam multi-game selection.
         """
         super().__init__(parent)
 
@@ -257,6 +258,7 @@ class MultiProfileDialog(QDialog):
         self.setWindowModality(Qt.NonModal)
         
         self.launcher_mode = launcher_mode
+        self.steam_mode = steam_mode
         self.files_to_process = files_to_process
         self.total_files = len(files_to_process)
         self.processed_files = 0
@@ -326,15 +328,23 @@ class MultiProfileDialog(QDialog):
         layout.setSpacing(8)
         content_container.setLayout(layout)
         
-        # Intestazione
-        self.header_label = QLabel(f"<b>{self.total_files} file rilevati</b>")
+        # Header - different text based on mode
+        if self.steam_mode:
+            header_text = f"<b>{self.total_files} Steam games selected</b>"
+            desc_text = ("Click 'Start Analysis' to scan for save paths. "
+                        "You can remove games you don't want before starting.")
+        else:
+            header_text = f"<b>{self.total_files} files detected</b>"
+            desc_text = ("Click 'Start Analysis' to scan for save paths. "
+                        "You can remove items you don't want before starting.")
+        
+        self.header_label = QLabel(header_text)
         self.header_label.setObjectName("header_label")
         self.header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.header_label)
         
         # Description
-        self.description_label = QLabel("Select the Games you want to analyze to create profiles. "
-                                  "You can remove Games you don't want before starting the analysis.")
+        self.description_label = QLabel(desc_text)
         self.description_label.setWordWrap(True)
         self.description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.description_label)
@@ -551,14 +561,14 @@ class MultiProfileDialog(QDialog):
         
         # Update interface for analysis phase
         self.header_label.setText("<b>Analysis in progress...</b>")
-        self.description_label.setText("I'm analyzing the files to find the save paths. "
-                                      "Results will be shown as they are found.")
+        self.description_label.setText("Scanning for save paths. "
+                                      "Results will appear as they are found.")
         
         # Show progress bar and status label
         self.progress_bar.setRange(0, self.profile_list.count())
         self.progress_bar.setValue(0)
         self.progress_bar.show()
-        self.status_label.setText("Initialization...")
+        self.status_label.setText("Initializing...")
         self.status_label.show()
         
         # Disable the start analysis button
@@ -607,14 +617,14 @@ class MultiProfileDialog(QDialog):
         if current_file >= self.profile_list.count():
             self.analysis_running = False
             self.add_button.setEnabled(True)
-            self.header_label.setText(f"<b>Analysis completed</b>")
-            self.description_label.setText("The following profiles will be created with the found save paths. "
-                                          "You can still remove profiles you don't want to add.")
-            self.status_label.setText("Analysis completed.")
+            self.header_label.setText(f"<b>Analysis complete</b>")
+            self.description_label.setText("Profiles will be created with the detected save paths. "
+                                          "You can still remove any you don't want.")
+            self.status_label.setText("Analysis complete.")
             self._update_add_button_label()
     
     def remove_profile(self, profile_name):
-        """Rimuove un profilo dalla lista."""
+        """Remove a profile from the list."""
         # Trova l'elemento nella lista
         for i in range(self.profile_list.count()):
             item = self.profile_list.item(i)
@@ -639,7 +649,10 @@ class MultiProfileDialog(QDialog):
     def update_header(self):
         """Update the header with the number of profiles."""
         count = self.profile_list.count()
-        self.header_label.setText(f"<b>{count} profiles found</b>")
+        if self.steam_mode:
+            self.header_label.setText(f"<b>{count} Steam games</b>")
+        else:
+            self.header_label.setText(f"<b>{count} items</b>")
     
     def get_accepted_profiles(self):
         """Return the accepted profiles."""
@@ -723,7 +736,7 @@ class MultiProfileDialog(QDialog):
             item.setSizeHint(size)
 
     def reject(self):
-        """Gestisce la chiusura della dialog e cancella tutti i thread di ricerca."""
+        """Handle dialog closure and cancel all running search threads."""
         logging.info("MultiProfileDialog.reject() called: User clicked Cancel or closed dialog")
         
         # Emetti il segnale rejected per notificare la cancellazione
@@ -733,7 +746,7 @@ class MultiProfileDialog(QDialog):
         logging.info("MultiProfileDialog.reject(): super().reject() completed")
 
     def closeEvent(self, event):
-        """Gestisce la chiusura della dialog con la X in alto a destra."""
+        """Handle dialog closure via the X button."""
         logging.info("MultiProfileDialog.closeEvent() called: User closed dialog with X button")
         
         # Emetti manualmente il segnale finished per notificare la cancellazione
