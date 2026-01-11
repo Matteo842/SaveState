@@ -1461,6 +1461,19 @@ class MainWindowHandlers:
         try:
             if hasattr(self.main_window, 'overrides_group'):
                 self.main_window.overrides_group.setEnabled(bool(enabled))
+                # Apply visual style for disabled state
+                if enabled:
+                    self.main_window.overrides_group.setStyleSheet("")  # Reset to default
+                else:
+                    disabled_style = (
+                        "QGroupBox { color: #666666; } "
+                        "QGroupBox::title { color: #666666; } "
+                        "QCheckBox { color: #666666; } "
+                        "QComboBox { color: #666666; background-color: #2a2a2a; } "
+                        "QSpinBox { color: #666666; background-color: #2a2a2a; } "
+                        "QLabel { color: #666666; }"
+                    )
+                    self.main_window.overrides_group.setStyleSheet(disabled_style)
         except Exception as e:
             logging.error(f"Error toggling overrides group: {e}")
 

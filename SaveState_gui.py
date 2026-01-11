@@ -2034,8 +2034,8 @@ class MainWindow(QMainWindow):
                 select_index = next((i for i, (_, v) in enumerate(self.override_size_options) if v == 500), 0)
             self.override_max_size_combo.setCurrentIndex(select_index)
             self.override_check_space_checkbox.setChecked(bool(overrides.get('check_free_space_enabled', global_check_space)))
-            # Enable/disable group according to checkbox
-            self.overrides_group.setEnabled(use_overrides)
+            # Enable/disable group according to checkbox (with visual style)
+            self.handlers.handle_profile_overrides_toggled(use_overrides)
 
             # Toggle UI visibility
             self.profile_group.setVisible(False)
