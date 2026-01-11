@@ -36,6 +36,7 @@ class SettingsDialog(QDialog):
 
         # --- Backup Base Path Group (full width at top) ---
         self.path_group = QGroupBox("Backup Base Path") # Saved reference
+        path_group_layout = QVBoxLayout()
         path_layout = QHBoxLayout()
         self.path_edit = QLineEdit(self.settings.get("backup_base_dir", ""))
         self.browse_button = QPushButton() # Saved reference
@@ -43,7 +44,16 @@ class SettingsDialog(QDialog):
         self.browse_button.setIcon(browse_icon)
         path_layout.addWidget(self.path_edit)
         path_layout.addWidget(self.browse_button)
-        self.path_group.setLayout(path_layout)
+        path_group_layout.addLayout(path_layout)
+        
+        # --- Existing config detection label (only visible during initial setup) ---
+        self.existing_config_label = QLabel()
+        self.existing_config_label.setWordWrap(True)
+        self.existing_config_label.setStyleSheet("QLabel { color: #4CAF50; font-weight: bold; padding: 5px; }")
+        self.existing_config_label.setVisible(False)  # Hidden by default
+        path_group_layout.addWidget(self.existing_config_label)
+        
+        self.path_group.setLayout(path_group_layout)
         layout.addWidget(self.path_group)
 
         # --- Two-column layout for other settings ---
@@ -181,6 +191,8 @@ class SettingsDialog(QDialog):
         self.browse_button.clicked.connect(self.browse_backup_dir)
         # React to portable checkbox toggle
         self.portable_checkbox.toggled.connect(self._handle_portable_toggled)
+        # React to path changes to detect existing configuration
+        self.path_edit.textChanged.connect(self._check_existing_config)
 
         # Call updateUiText at the end to set initial texts
         self.updateUiText()
@@ -189,6 +201,9 @@ class SettingsDialog(QDialog):
             self._handle_portable_toggled(self.portable_checkbox.isChecked())
         except Exception:
             pass
+        # Check for existing config on startup (for initial setup)
+        if self.is_initial_setup:
+            self._check_existing_config()
 
     def get_settings(self):
         """Returns the internal dictionary of modified settings."""
@@ -391,16 +406,59 @@ class SettingsDialog(QDialog):
         except Exception:
             return False
 
+    @Slot()
+    def _check_existing_config(self):
+        """Check if selected path contains existing .savestate configuration."""
+        # Only apply this logic during initial setup
+        if not self.is_initial_setup:
+            return
+        
+        config_found = self._is_portable_ready()
+        
+        # Show/hide the existing config label
+        self.existing_config_label.setVisible(config_found)
+        if config_found:
+            self.existing_config_label.setText(
+                "✓ Existing configuration found! Your profiles and settings will be restored automatically."
+            )
+        
+        # Disable/enable other settings groups with visual feedback
+        all_settings_groups = [
+            self.portable_group, self.max_group, self.max_src_group,
+            self.comp_group, self.space_check_group, self.ui_settings_group
+        ]
+        # Style for disabled appearance (reduced opacity)
+        disabled_style = "QGroupBox { color: #666666; } QGroupBox::title { color: #666666; } QCheckBox { color: #666666; } QComboBox { color: #666666; background-color: #2a2a2a; } QSpinBox { color: #666666; background-color: #2a2a2a; } QLabel { color: #666666; }"
+        enabled_style = ""  # Reset to default
+        
+        for group in all_settings_groups:
+            group.setEnabled(not config_found)
+            group.setStyleSheet(disabled_style if config_found else enabled_style)
+        
+        # Update button text (use && to show literal &)
+        try:
+            btn = self.buttons.button(QDialogButtonBox.StandardButton.Save)
+            if btn:
+                btn.setText("Restore && Continue" if config_found else "Save")
+        except Exception:
+            pass
+
     def _handle_portable_toggled(self, enabled: bool):
         ready = self._is_portable_ready() if enabled else False
         # Only during initial setup we lock the rest of the UI when portable is ready
         if self.is_initial_setup:
+            # Check if existing config is detected (takes priority)
+            if self._is_portable_ready():
+                return  # Let _check_existing_config handle the UI state
             for g in (self.max_src_group, self.max_group, self.comp_group, self.space_check_group, self.ui_settings_group, self.restore_json_group):
                 g.setEnabled(not (enabled and ready))
             self.path_group.setEnabled(not (enabled and ready))
         try:
             btn = self.buttons.button(QDialogButtonBox.StandardButton.Save)
             if btn:
+                # Don't override if existing config is found
+                if self.is_initial_setup and self._is_portable_ready():
+                    return
                 btn.setText("Continue" if (self.is_initial_setup and enabled and ready) else "Save")
         except Exception:
             pass
