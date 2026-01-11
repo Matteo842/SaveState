@@ -230,14 +230,14 @@ class SteamDialog(QDialog):
         """Update configure button text and state based on checkbox/row selection."""
         count = len(self.checked_items)
         
-        if count > 1:
-            # Batch mode: multiple checkboxes selected
+        if count >= 2:
+            # Batch mode: 2+ checkboxes selected - use MultiProfileDialog
             self._is_batch_mode = True
             self.configure_button.setText(f"Configure Selected ({count})")
             self.configure_button.setEnabled(True)
         elif count == 1:
-            # Single checkbox selected - use batch mode
-            self._is_batch_mode = True
+            # Single checkbox selected - use normal single-profile flow
+            self._is_batch_mode = False
             self.configure_button.setText("Configure Selected (1)")
             self.configure_button.setEnabled(True)
         else:
@@ -257,6 +257,18 @@ class SteamDialog(QDialog):
         if self._is_batch_mode:
             self._emit_batch_selection_and_accept()
         else:
+            # Single mode - check if we have a checkbox or row selection
+            if len(self.checked_items) == 1:
+                # Use the checked item
+                appid = list(self.checked_items)[0]
+                game_data = self.steam_games_data.get(appid)
+                if game_data:
+                    profile_name = game_data.get('name', 'Unknown')
+                    logging.info(f"[SteamDialog] Single checkbox selected: '{profile_name}' (AppID: {appid})")
+                    self.game_selected_for_config.emit(appid, profile_name)
+                    self.accept()
+                    return
+            # Fall back to row selection
             self._emit_selection_and_accept()
     
     def _on_item_clicked(self, item, column):
