@@ -3,7 +3,7 @@ import os
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QGroupBox,
     QComboBox, QSpinBox, QDialogButtonBox, QFileDialog, QStyle, QApplication,
-    QCheckBox, QMessageBox, QLabel
+    QCheckBox, QMessageBox, QLabel, QGridLayout
 )
 from PySide6.QtCore import Slot, QEvent
 
@@ -24,7 +24,7 @@ class SettingsDialog(QDialog):
     def __init__(self, current_settings, parent=None, is_initial_setup: bool = False):
         super().__init__(parent)
         self.setWindowTitle("Application Settings")
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(600)  # Wider for two-column layout
         self.settings = current_settings.copy()
         # Flag: true only for the very first configuration dialog shown at app startup
         self.is_initial_setup = bool(is_initial_setup)
@@ -34,7 +34,7 @@ class SettingsDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        # --- Backup Base Path Group ---
+        # --- Backup Base Path Group (full width at top) ---
         self.path_group = QGroupBox("Backup Base Path") # Saved reference
         path_layout = QHBoxLayout()
         self.path_edit = QLineEdit(self.settings.get("backup_base_dir", ""))
@@ -46,6 +46,13 @@ class SettingsDialog(QDialog):
         self.path_group.setLayout(path_layout)
         layout.addWidget(self.path_group)
 
+        # --- Two-column layout for other settings ---
+        columns_layout = QHBoxLayout()
+        left_column = QVBoxLayout()
+        right_column = QVBoxLayout()
+
+        # === LEFT COLUMN ===
+
         # --- Portable Mode Group ---
         self.portable_group = QGroupBox()
         portable_layout = QHBoxLayout()
@@ -55,7 +62,33 @@ class SettingsDialog(QDialog):
         portable_layout.addWidget(self.portable_checkbox)
         portable_layout.addStretch()
         self.portable_group.setLayout(portable_layout)
-        layout.addWidget(self.portable_group)
+        left_column.addWidget(self.portable_group)
+
+        # --- Maximum Number of Backups Group ---
+        self.max_group = QGroupBox() # Saved reference
+        max_layout = QHBoxLayout()
+        self.max_spinbox = QSpinBox()
+        self.max_spinbox.setMinimum(1)
+        self.max_spinbox.setMaximum(99)
+        self.max_spinbox.setValue(self.settings.get("max_backups", 3))
+        max_layout.addWidget(self.max_spinbox)
+        max_layout.addStretch()
+        self.max_group.setLayout(max_layout)
+        left_column.addWidget(self.max_group)
+
+        # --- Free Space Check Group ---
+        self.space_check_group = QGroupBox() # Saved reference
+        space_check_layout = QHBoxLayout()
+        self.space_check_checkbox = QCheckBox() # Saved reference
+        self.space_check_checkbox.setChecked(self.settings.get("check_free_space_enabled", True))
+        space_check_layout.addWidget(self.space_check_checkbox)
+        space_check_layout.addStretch()
+        self.space_check_group.setLayout(space_check_layout)
+        left_column.addWidget(self.space_check_group)
+
+        left_column.addStretch()
+
+        # === RIGHT COLUMN ===
 
         # --- Maximum Source Size Group ---
         self.max_src_group = QGroupBox() # Saved reference
@@ -81,19 +114,7 @@ class SettingsDialog(QDialog):
         max_src_layout.addWidget(self.max_src_combobox)
         max_src_layout.addStretch()
         self.max_src_group.setLayout(max_src_layout)
-        layout.addWidget(self.max_src_group)
-
-        # --- Maximum Number of Backups Group ---
-        self.max_group = QGroupBox() # Saved reference
-        max_layout = QHBoxLayout()
-        self.max_spinbox = QSpinBox()
-        self.max_spinbox.setMinimum(1)
-        self.max_spinbox.setMaximum(99)
-        self.max_spinbox.setValue(self.settings.get("max_backups", 3))
-        max_layout.addWidget(self.max_spinbox)
-        max_layout.addStretch()
-        self.max_group.setLayout(max_layout)
-        layout.addWidget(self.max_group)
+        right_column.addWidget(self.max_src_group)
 
         # --- Compression Group ---
         self.comp_group = QGroupBox() # Saved reference
@@ -105,17 +126,7 @@ class SettingsDialog(QDialog):
         comp_layout.addWidget(self.comp_combobox)
         comp_layout.addStretch()
         self.comp_group.setLayout(comp_layout)
-        layout.addWidget(self.comp_group)
-
-        # --- Free Space Check Group ---
-        self.space_check_group = QGroupBox() # Saved reference
-        space_check_layout = QHBoxLayout()
-        self.space_check_checkbox = QCheckBox() # Saved reference
-        self.space_check_checkbox.setChecked(self.settings.get("check_free_space_enabled", True))
-        space_check_layout.addWidget(self.space_check_checkbox)
-        space_check_layout.addStretch()
-        self.space_check_group.setLayout(space_check_layout)
-        layout.addWidget(self.space_check_group)
+        right_column.addWidget(self.comp_group)
 
         # --- UI Settings Group ---
         self.ui_settings_group = QGroupBox() # Saved reference
@@ -128,9 +139,16 @@ class SettingsDialog(QDialog):
         self.shorten_paths_checkbox.setChecked(self.settings.get("shorten_paths_enabled", True))
         ui_settings_layout.addWidget(self.shorten_paths_checkbox)
         self.ui_settings_group.setLayout(ui_settings_layout)
-        layout.addWidget(self.ui_settings_group)
+        right_column.addWidget(self.ui_settings_group)
 
-        # --- Restore JSON Backups Group ---
+        right_column.addStretch()
+
+        # Add columns to main layout
+        columns_layout.addLayout(left_column)
+        columns_layout.addLayout(right_column)
+        layout.addLayout(columns_layout)
+
+        # --- Restore JSON Backups Group (only show when NOT initial setup) ---
         self.restore_json_group = QGroupBox() # Saved reference
         restore_json_layout = QVBoxLayout()
         
@@ -148,8 +166,10 @@ class SettingsDialog(QDialog):
         
         self.restore_json_group.setLayout(restore_json_layout)
         layout.addWidget(self.restore_json_group)
-
-        layout.addStretch()
+        
+        # Hide restore group during initial setup (not useful at first launch)
+        if self.is_initial_setup:
+            self.restore_json_group.setVisible(False)
 
         # --- Dialog Buttons ---
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel) # Saved reference
