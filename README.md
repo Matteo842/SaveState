@@ -101,6 +101,19 @@ SaveState automatically detects save data locations for a wide range of emulator
 
 ---
 
+## Supported Launchers
+
+SaveState integrates with the following game launchers for automatic game detection:
+
+| Launcher | Description |
+|----------|-------------|
+| **Playnite** | Open-source library manager that unifies all your games |
+| **Heroic Games Launcher** | Open-source launcher for Epic, GOG, and Amazon Games |
+
+Simply drag & drop a game shortcut from your launcher onto SaveState to automatically detect save locations.
+
+---
+
 ## How Save Search Works (Heuristics)
 
 The following diagram illustrates the main steps that SaveState follows when attempting to locate a game's save folder:
