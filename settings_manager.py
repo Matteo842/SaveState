@@ -381,8 +381,10 @@ def load_settings():
         if not isinstance(settings["max_backups"], int) or settings["max_backups"] < 1:
             logging.warning(f"Invalid max_backups value ('{settings['max_backups']}'), using default {defaults['max_backups']}.")
             settings["max_backups"] = defaults["max_backups"]
-        if not isinstance(settings.get("max_source_size_mb"), int) or settings["max_source_size_mb"] < 1:
-            logging.warning(f"Invalid max_source_size_mb value ('{settings.get('max_source_size_mb')}'), using default {defaults['max_source_size_mb']}.")
+        # Valid values: -1 (no limit) or >= 1 (limit in MB). Invalid: 0 or < -1
+        max_size_val = settings.get("max_source_size_mb")
+        if not isinstance(max_size_val, int) or (max_size_val < 1 and max_size_val != -1):
+            logging.warning(f"Invalid max_source_size_mb value ('{max_size_val}'), using default {defaults['max_source_size_mb']}.")
             settings["max_source_size_mb"] = defaults["max_source_size_mb"]
 
         # Simple validation type list (ensure they are lists of strings)
