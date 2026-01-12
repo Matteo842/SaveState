@@ -14,6 +14,7 @@ from gui_components import favorites_manager # Assuming it's in gui_components
 from gui_components.empty_state_widget import EmptyStateWidget
 from gui_components import icon_extractor  # For game icon extraction
 from utils import resource_path # <--- Import from utils
+from gui_utils import open_folder_in_file_manager  # For opening folders cross-platform
 
 class ProfileSelectionDelegate(QStyledItemDelegate):
     """
@@ -417,42 +418,27 @@ class ProfileListManager:
             
         # Open the save folder using the system's file explorer
         logging.info(f"Opening save folder for profile '{profile_name}': {folder_to_open}")
-        try:
-            import subprocess
-            import platform
-            
-            if platform.system() == "Windows":
-                # On Windows, use explorer.exe
-                subprocess.Popen(f'explorer "{folder_to_open}"')
-            elif platform.system() == "Darwin":
-                # On macOS, use open
-                subprocess.Popen(["open", folder_to_open])
-            else:
-                # On Linux, use xdg-open
-                subprocess.Popen(["xdg-open", folder_to_open])
-                
+        
+        success, message = open_folder_in_file_manager(folder_to_open)
+        
+        if success:
             self.main_window.status_label.setText(f"Opened save folder for '{profile_name}'")
-        except Exception as e:
-            logging.error(f"Error opening save folder for profile '{profile_name}': {e}")
-            self.main_window.status_label.setText(f"Error opening save folder: {str(e)}")
+        else:
+            logging.error(f"Error opening save folder for profile '{profile_name}': {message}")
+            self.main_window.status_label.setText(f"Error opening save folder: {message}")
             
             # In case of error, try to open the parent directory if the path is a file
             if os.path.isfile(save_path):
-                try:
-                    parent_dir = os.path.dirname(save_path)
-                    logging.info(f"Retrying with parent directory: {parent_dir}")
-                    
-                    if platform.system() == "Windows":
-                        subprocess.Popen(f'explorer "{parent_dir}"')
-                    elif platform.system() == "Darwin":
-                        subprocess.Popen(["open", parent_dir])
-                    else:
-                        subprocess.Popen(["xdg-open", parent_dir])
-                        
+                parent_dir = os.path.dirname(save_path)
+                logging.info(f"Retrying with parent directory: {parent_dir}")
+                
+                success_parent, message_parent = open_folder_in_file_manager(parent_dir)
+                
+                if success_parent:
                     self.main_window.status_label.setText(f"Opened parent folder for '{profile_name}'")
-                except Exception as e2:
-                    logging.error(f"Error opening parent folder: {e2}")
-                    self.main_window.status_label.setText(f"Error opening parent folder: {str(e2)}")
+                else:
+                    logging.error(f"Error opening parent folder: {message_parent}")
+                    self.main_window.status_label.setText(f"Error opening parent folder: {message_parent}")
 
     def _create_delete_button(self, profile_name: str) -> QWidget:
         """Create a styled delete button widget for the profile row.

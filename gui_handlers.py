@@ -24,7 +24,7 @@ from emulator_utils.pcsx2_manager import backup_pcsx2_save, restore_pcsx2_save
 import settings_manager
 import shortcut_utils
 import config
-from gui_utils import WorkerThread, SteamSearchWorkerThread
+from gui_utils import WorkerThread, SteamSearchWorkerThread, open_folder_in_file_manager
 from utils import sanitize_filename
 
 
@@ -140,14 +140,10 @@ class MainWindowHandlers:
                 return
 
         logging.debug(f"Attempting to open folder: {backup_dir}")
-        url = QUrl.fromLocalFile(backup_dir)
-        logging.debug(f"Attempting to open URL: {url.toString()}")
-        if not QDesktopServices.openUrl(url):
-            logging.warning(f"QDesktopServices.openUrl failed for {url.toString()}, attempting os.startfile...")
-            try:
-                os.startfile(backup_dir)
-            except Exception as e_start:
-                QMessageBox.critical(self.main_window, "Error Opening", "Unable to open folder:\n{0}".format(e_start))
+        success, message = open_folder_in_file_manager(backup_dir)
+        if not success:
+            logging.error(f"Failed to open backup folder: {message}")
+            QMessageBox.critical(self.main_window, "Error Opening", f"Unable to open folder:\n{message}")
 
     # Import configuration (profiles, favorites, settings) from backup mirror
     @Slot()

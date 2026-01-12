@@ -582,6 +582,148 @@ class NotificationPopup(QWidget):
 
 # --- FINE CLASSE NotificationPopup ---
 
+
+# --- Utility per Aprire Cartelle nel File Manager ---
+def open_folder_in_file_manager(folder_path: str) -> tuple[bool, str]:
+    """
+    Opens a folder in the system's default file manager.
+    
+    Uses platform-specific methods with fallbacks for maximum compatibility:
+    - Windows: os.startfile() or explorer.exe
+    - macOS: open command
+    - Linux: xdg-open with fallbacks for various desktop environments
+    
+    Args:
+        folder_path: The absolute path to the folder to open
+        
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    import subprocess
+    import platform
+    import shutil
+    
+    if not folder_path:
+        return False, "No folder path provided"
+    
+    folder_path = os.path.normpath(folder_path)
+    
+    if not os.path.isdir(folder_path):
+        return False, f"Folder does not exist: {folder_path}"
+    
+    system = platform.system()
+    
+    try:
+        if system == "Windows":
+            # Windows: try os.startfile first, then explorer.exe
+            try:
+                os.startfile(folder_path)
+                logging.debug(f"Opened folder with os.startfile: {folder_path}")
+                return True, "Folder opened successfully"
+            except Exception as e:
+                logging.debug(f"os.startfile failed: {e}, trying explorer.exe")
+                subprocess.Popen(f'explorer "{folder_path}"', shell=True)
+                return True, "Folder opened successfully"
+                
+        elif system == "Darwin":
+            # macOS: use open command
+            subprocess.Popen(["open", folder_path])
+            logging.debug(f"Opened folder with 'open' command: {folder_path}")
+            return True, "Folder opened successfully"
+            
+        else:
+            # Linux: try multiple methods for maximum compatibility
+            # This handles various desktop environments including KDE/Wayland
+            
+            methods = []
+            
+            # 1. xdg-open is the standard way (should work on most distros)
+            if shutil.which("xdg-open"):
+                methods.append(("xdg-open", ["xdg-open", folder_path]))
+            
+            # 2. gio open (GNOME, works well on modern systems)
+            if shutil.which("gio"):
+                methods.append(("gio open", ["gio", "open", folder_path]))
+            
+            # 3. Desktop-specific file managers as fallbacks
+            # KDE
+            if shutil.which("dolphin"):
+                methods.append(("dolphin", ["dolphin", folder_path]))
+            if shutil.which("kioclient5"):
+                methods.append(("kioclient5", ["kioclient5", "exec", folder_path]))
+            
+            # GNOME
+            if shutil.which("nautilus"):
+                methods.append(("nautilus", ["nautilus", folder_path]))
+            
+            # XFCE
+            if shutil.which("thunar"):
+                methods.append(("thunar", ["thunar", folder_path]))
+            
+            # LXQt/LXDE
+            if shutil.which("pcmanfm"):
+                methods.append(("pcmanfm", ["pcmanfm", folder_path]))
+            if shutil.which("pcmanfm-qt"):
+                methods.append(("pcmanfm-qt", ["pcmanfm-qt", folder_path]))
+            
+            # Cinnamon
+            if shutil.which("nemo"):
+                methods.append(("nemo", ["nemo", folder_path]))
+            
+            # MATE
+            if shutil.which("caja"):
+                methods.append(("caja", ["caja", folder_path]))
+            
+            if not methods:
+                return False, "No file manager found on this system"
+            
+            # Try xdg-open first (it's the standard)
+            last_error = None
+            for method_name, cmd in methods:
+                try:
+                    logging.debug(f"Attempting to open folder with {method_name}: {folder_path}")
+                    # Use Popen to not block, and don't wait for it
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True  # Detach from parent process
+                    )
+                    # Give it a moment to fail immediately if there's an obvious error
+                    try:
+                        # Wait briefly to catch immediate failures
+                        return_code = process.wait(timeout=0.5)
+                        if return_code != 0:
+                            logging.debug(f"{method_name} returned non-zero exit code: {return_code}")
+                            last_error = f"{method_name} failed with exit code {return_code}"
+                            continue  # Try next method
+                    except subprocess.TimeoutExpired:
+                        # Process is still running, which is good - it means it started successfully
+                        pass
+                    
+                    logging.info(f"Successfully opened folder with {method_name}: {folder_path}")
+                    return True, f"Folder opened with {method_name}"
+                    
+                except FileNotFoundError:
+                    logging.debug(f"{method_name} not found, trying next method")
+                    last_error = f"{method_name} not found"
+                    continue
+                except Exception as e:
+                    logging.debug(f"{method_name} failed: {e}, trying next method")
+                    last_error = str(e)
+                    continue
+            
+            # All methods failed
+            error_msg = f"All file manager methods failed. Last error: {last_error}"
+            logging.error(error_msg)
+            return False, error_msg
+            
+    except Exception as e:
+        error_msg = f"Error opening folder: {e}"
+        logging.error(error_msg, exc_info=True)
+        return False, error_msg
+
+
 class SteamSearchWorkerThread(QThread):
     """
     Thread per eseguire SOLO la ricerca euristica di core_logic.guess_save_path
