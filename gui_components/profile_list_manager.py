@@ -237,6 +237,30 @@ class ProfileListManager:
     def has_selection(self) -> bool:
         """Checks if any row is currently selected in the table."""
         return bool(self.table_widget.selectionModel().selectedRows())
+    
+    def is_selected_profile_group(self) -> bool:
+        """Check if the first selected profile is a group profile."""
+        selected_rows = self.table_widget.selectionModel().selectedRows()
+        if not selected_rows:
+            return False
+        
+        first_row_index = selected_rows[0].row()
+        name_item = self.table_widget.item(first_row_index, 1)
+        if name_item:
+            # Check the stored group flag
+            return name_item.data(Qt.ItemDataRole.UserRole + 1) == "group"
+        return False
+    
+    def get_selected_group_members(self) -> list:
+        """Get the list of member profile names if a group is selected."""
+        profile_name = self.get_selected_profile_name()
+        if not profile_name:
+            return []
+        
+        profile_data = self.profiles.get(profile_name, {})
+        if core_logic.is_group_profile(profile_data):
+            return core_logic.get_group_member_profiles(profile_name, self.profiles)
+        return []
 
     def select_profile_in_table(self, profile_name_to_select):
         """Select the row corresponding to the profile name (searches in column 1)."""
@@ -252,7 +276,11 @@ class ProfileListManager:
 
 
     def update_profile_table(self):
-        """Update QTableWidget with profiles (sorted by favorites) and backup info."""
+        """Update QTableWidget with profiles (sorted by favorites) and backup info.
+        
+        Uses get_visible_profiles() to filter out profiles that are members of groups,
+        showing only standalone profiles and groups themselves.
+        """
         self.profiles = self.main_window.profiles # Reload profiles from main_window
         selected_profile_name = self.get_selected_profile_name() # Save current selection
         logging.debug(f"Updating profile table. Previously selected: {selected_profile_name}")
@@ -263,8 +291,11 @@ class ProfileListManager:
 
         self.table_widget.setRowCount(0) # Clear the table
 
+        # --- Get visible profiles (filters out grouped profiles) ---
+        visible_profiles = core_logic.get_visible_profiles(self.profiles)
+        
         # --- Sorting (Favorites first, then alphabetical) ---
-        profile_names = list(self.profiles.keys())
+        profile_names = list(visible_profiles.keys())
         sorted_profiles = sorted(
             profile_names,
             key=lambda name: (not favorites_status.get(name, False), name.lower())
@@ -288,16 +319,43 @@ class ProfileListManager:
             for row_index, profile_name in enumerate(sorted_profiles):
                 profile_data = self.profiles.get(profile_name, {})
                 is_favorite = favorites_status.get(profile_name, False)
-                save_path = profile_data.get('path', '') # Get path
+                is_group = core_logic.is_group_profile(profile_data)
+                save_path = profile_data.get('path', '') # Get path (empty for groups)
 
-                # Retrieve backup info
+                # Retrieve backup info - different for groups vs regular profiles
                 current_backup_base_dir = self.main_window.current_settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
-                # Pass save_path to get_profile_backup_summary (ensure the function accepts it)
-                # If get_profile_backup_summary doesn't accept save_path, you'll need to use a different logic here
-                count, last_backup_dt = core_logic.get_profile_backup_summary(profile_name, current_backup_base_dir) # Remove save_path if not needed
+                
+                if is_group:
+                    # For groups, show aggregated info from all member profiles
+                    member_profiles = core_logic.get_group_member_profiles(profile_name, self.profiles)
+                    total_count = 0
+                    latest_backup_dt = None
+                    for member_name in member_profiles:
+                        m_count, m_last_dt = core_logic.get_profile_backup_summary(member_name, current_backup_base_dir)
+                        total_count += m_count
+                        if m_last_dt and (latest_backup_dt is None or m_last_dt > latest_backup_dt):
+                            latest_backup_dt = m_last_dt
+                    count = total_count
+                    last_backup_dt = latest_backup_dt
+                else:
+                    count, last_backup_dt = core_logic.get_profile_backup_summary(profile_name, current_backup_base_dir)
 
                 info_str = ""
-                if count > 0:
+                if is_group:
+                    # Show profile count in group + backup info
+                    member_count = len(core_logic.get_group_member_profiles(profile_name, self.profiles))
+                    if count > 0:
+                        date_str = "N/D"
+                        if last_backup_dt:
+                            try:
+                                system_locale = QLocale.system()
+                                date_str = system_locale.toString(last_backup_dt, QLocale.FormatType.ShortFormat)
+                            except Exception:
+                                date_str = "???"
+                        info_str = f"Group ({member_count}) | Last: {date_str}"
+                    else:
+                        info_str = f"Group ({member_count} profiles)"
+                elif count > 0:
                     date_str = "N/D"
                     if last_backup_dt:
                         try:
@@ -338,9 +396,18 @@ class ProfileListManager:
                 name_item = QTableWidgetItem(profile_name)
                 name_item.setData(Qt.ItemDataRole.UserRole, profile_name) # Save name for row selection
                 
-                # --- Add Game Icon if available ---
+                # --- Add Icon (Game icon for profiles, folder icon for groups) ---
                 show_icons = self.main_window.current_settings.get("show_profile_icons", True)
-                if show_icons:
+                if is_group:
+                    # Use folder icon for groups
+                    from PySide6.QtWidgets import QApplication, QStyle
+                    style = QApplication.instance().style()
+                    if style:
+                        folder_icon = style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+                        name_item.setIcon(folder_icon)
+                    # Store group flag for context menu handling
+                    name_item.setData(Qt.ItemDataRole.UserRole + 1, "group")
+                elif show_icons:
                     game_icon = icon_extractor.get_profile_icon(profile_data, profile_name)
                     if game_icon and not game_icon.isNull():
                         name_item.setIcon(game_icon)

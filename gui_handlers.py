@@ -533,6 +533,39 @@ class MainWindowHandlers:
         # Use the profile manager on the main window to get the name
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
         if not profile_name: return
+        
+        profile_data = self.main_window.profiles.get(profile_name, {})
+        is_group = core_logic.is_group_profile(profile_data)
+        
+        # Handle group deletion differently
+        if is_group:
+            member_count = len(core_logic.get_group_member_profiles(profile_name, self.main_window.profiles))
+            msg_box = QMessageBox(self.main_window)
+            msg_box.setWindowTitle("Confirm Group Deletion")
+            msg_box.setIcon(QMessageBox.Icon.Warning)
+            msg_box.setTextFormat(Qt.TextFormat.RichText)
+            msg_box.setText(
+                f"Are you sure you want to delete the group '{profile_name}'?<br><br>"
+                f"<b>This group contains {member_count} profile(s).</b><br><br>"
+                f"The member profiles will NOT be deleted - they will become visible again."
+            )
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+            reply = msg_box.exec()
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                # Use ungroup to properly handle member cleanup
+                success, error = core_logic.ungroup_profile(profile_name, self.main_window.profiles)
+                if success:
+                    if core_logic.save_profiles(self.main_window.profiles):
+                        self.main_window.status_label.setText(f"Group '{profile_name}' deleted ({member_count} profiles now visible).")
+                        self.main_window.profile_table_manager.update_profile_table()
+                    else:
+                        QMessageBox.critical(self.main_window, "Error", "Group deleted from memory but unable to save changes.")
+                        self.main_window.profiles = core_logic.load_profiles()
+                else:
+                    QMessageBox.warning(self.main_window, "Deletion Failed", error)
+            return
 
         msg_box = QMessageBox(self.main_window)
         msg_box.setWindowTitle("Confirm Deletion")
@@ -546,6 +579,14 @@ class MainWindowHandlers:
         msg_box.setDefaultButton(QMessageBox.StandardButton.No)
         reply = msg_box.exec()
         if reply == QMessageBox.StandardButton.Yes:
+            # Check if profile is a member of a group - remove from group first
+            if profile_data.get('member_of_group'):
+                success, group_deleted, error = core_logic.remove_profile_from_group(
+                    profile_name, self.main_window.profiles
+                )
+                if group_deleted:
+                    logging.info(f"Group was deleted because '{profile_name}' was the last member")
+            
             # Access main_window.profiles and call core_logic
             if core_logic.delete_profile(self.main_window.profiles, profile_name):
                 if core_logic.save_profiles(self.main_window.profiles):
@@ -553,13 +594,13 @@ class MainWindowHandlers:
                     try:
                         backup_base_dir = self.main_window.current_settings.get('backup_base_dir', config.BACKUP_BASE_DIR)
                         profile_backup_folder = os.path.join(backup_base_dir, profile_name)
-                        
+
                         if os.path.exists(profile_backup_folder) and os.path.isdir(profile_backup_folder):
                             # Check if folder is empty (no files, only .savestate folder allowed)
                             folder_contents = os.listdir(profile_backup_folder)
                             # Filter out .savestate folder
                             backup_files = [f for f in folder_contents if f != '.savestate']
-                            
+
                             if not backup_files:
                                 # Folder is empty (or only has .savestate), safe to delete
                                 import shutil
@@ -574,7 +615,7 @@ class MainWindowHandlers:
                     except Exception as e:
                         logging.error(f"Error checking/deleting backup folder for '{profile_name}': {e}")
                         self.main_window.status_label.setText("Profile '{0}' deleted (could not check backup folder).".format(profile_name))
-                    
+
                     self.main_window.profile_table_manager.update_profile_table()
                 else:
                     QMessageBox.critical(self.main_window, "Error", "Profile deleted from memory but unable to save changes.")
@@ -976,6 +1017,11 @@ class MainWindowHandlers:
             QMessageBox.critical(self.main_window, "Internal Error", "Corrupted or missing profile data for '{0}'.".format(profile_name))
             logging.error(f"Invalid profile data for '{profile_name}': {profile_data}")
             return
+        
+        # Check if this is a group profile - delegate to group backup handler
+        if core_logic.is_group_profile(profile_data):
+            self._handle_backup_group(profile_name)
+            return
 
         # Check for existing worker thread
         if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
@@ -1173,7 +1219,6 @@ class MainWindowHandlers:
             # else:
             
             # Use generic backup for all profiles (including xemu until specialized handler is ready)
-            import core_logic
             logging.info(f"Using generic backup for '{profile_name}' with source(s): {source_paths}")
             self.main_window.worker_thread = WorkerThread(
                 core_logic.perform_backup,
@@ -1203,6 +1248,11 @@ class MainWindowHandlers:
                 QMessageBox.critical(self.main_window, "Internal Error", "Corrupted or missing profile data for '{0}'.".format(profile_name))
                 logging.error(f"Invalid profile data for '{profile_name}': {profile_data}")
                 return
+            
+            # Check if this is a group profile - show member selection dialog
+            if core_logic.is_group_profile(profile_data):
+                self._handle_restore_group(profile_name)
+                return
 
             # Store profile data for later use in the slot
             self._restore_profile_data = {
@@ -1217,6 +1267,110 @@ class MainWindowHandlers:
         dialog = RestoreDialog(profile_name, self.main_window)
         dialog.finished.connect(lambda result, d=dialog: self.on_restore_dialog_finished(result, d))
         dialog.show()
+    
+    def _handle_restore_group(self, group_name: str):
+        """Handle restore for a group profile - shows member selection dialog."""
+        member_profiles = core_logic.get_group_member_profiles(group_name, self.main_window.profiles)
+        
+        if not member_profiles:
+            QMessageBox.warning(self.main_window, "Empty Group", 
+                              f"Group '{group_name}' has no member profiles to restore.")
+            return
+        
+        logging.info(f"Restore requested for group '{group_name}' with {len(member_profiles)} members")
+        
+        try:
+            from dialogs.group_dialog import GroupMemberSelectionDialog
+            
+            # Show dialog to select which profiles to restore
+            dialog = GroupMemberSelectionDialog(group_name, member_profiles, parent=self.main_window)
+            
+            if dialog.exec() == GroupMemberSelectionDialog.DialogCode.Accepted:
+                selected_profiles = dialog.get_selected_profiles()
+                
+                if not selected_profiles:
+                    return
+                
+                # Show restore dialog for each selected profile sequentially
+                # For simplicity, show a combined restore dialog
+                if len(selected_profiles) == 1:
+                    # Single profile - use normal restore flow
+                    profile_name = selected_profiles[0]
+                    profile_data = self.main_window.profiles.get(profile_name, {})
+                    self._restore_profile_data = {
+                        'name': profile_name,
+                        'data': profile_data
+                    }
+                    restore_dialog = RestoreDialog(profile_name, self.main_window)
+                    restore_dialog.finished.connect(
+                        lambda result, d=restore_dialog: self.on_restore_dialog_finished(result, d)
+                    )
+                    restore_dialog.show()
+                else:
+                    # Multiple profiles - inform user they need to restore one at a time
+                    QMessageBox.information(
+                        self.main_window, 
+                        "Multiple Profiles Selected",
+                        f"You selected {len(selected_profiles)} profiles to restore.\n\n"
+                        f"Restore dialogs will open for each profile one at a time.\n"
+                        f"Click OK to start with '{selected_profiles[0]}'."
+                    )
+                    # Start with first profile, store remaining for sequential restore
+                    self._pending_group_restores = selected_profiles[1:]
+                    profile_name = selected_profiles[0]
+                    profile_data = self.main_window.profiles.get(profile_name, {})
+                    self._restore_profile_data = {
+                        'name': profile_name,
+                        'data': profile_data
+                    }
+                    restore_dialog = RestoreDialog(profile_name, self.main_window)
+                    restore_dialog.finished.connect(
+                        lambda result, d=restore_dialog: self._on_group_restore_dialog_finished(result, d)
+                    )
+                    restore_dialog.show()
+        except Exception as e:
+            logging.error(f"Error handling group restore: {e}", exc_info=True)
+            QMessageBox.critical(self.main_window, "Error", f"Failed to restore group: {e}")
+    
+    def _on_group_restore_dialog_finished(self, result, dialog):
+        """Handle restore dialog result for group sequential restore."""
+        # Process this restore
+        self.on_restore_dialog_finished(result, dialog)
+        
+        # Check if there are more profiles to restore
+        if hasattr(self, '_pending_group_restores') and self._pending_group_restores:
+            remaining = len(self._pending_group_restores)
+            
+            # Ask if user wants to continue with next profile
+            reply = QMessageBox.question(
+                self.main_window,
+                "Continue Group Restore",
+                f"Restore completed.\n\n{remaining} more profile(s) to restore.\n"
+                f"Continue with '{self._pending_group_restores[0]}'?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                # Restore next profile
+                profile_name = self._pending_group_restores.pop(0)
+                profile_data = self.main_window.profiles.get(profile_name, {})
+                self._restore_profile_data = {
+                    'name': profile_name,
+                    'data': profile_data
+                }
+                restore_dialog = RestoreDialog(profile_name, self.main_window)
+                restore_dialog.finished.connect(
+                    lambda result, d=restore_dialog: self._on_group_restore_dialog_finished(result, d)
+                )
+                restore_dialog.show()
+            else:
+                # User cancelled - clear pending
+                self._pending_group_restores = []
+        else:
+            # No more pending restores
+            if hasattr(self, '_pending_group_restores'):
+                del self._pending_group_restores
         
     def on_restore_dialog_finished(self, result, dialog):
         """Handle restore dialog result."""
@@ -1464,6 +1618,157 @@ class MainWindowHandlers:
         else:
             QMessageBox.warning(self.main_window, "Error Creating Shortcut", message)
 
+    # --- Profile Group Handlers ---
+    @Slot()
+    def handle_create_group_from_selection(self):
+        """Create a group from the currently selected profiles."""
+        selected_profiles = self.main_window.profile_table_manager.get_selected_profile_names()
+        if len(selected_profiles) < 1:
+            QMessageBox.warning(self.main_window, "No Selection", 
+                              "Select at least one profile to create a group.")
+            return
+        
+        logging.info(f"Creating group from {len(selected_profiles)} selected profiles")
+        
+        try:
+            from dialogs.group_dialog import GroupDialog
+            dialog = GroupDialog(
+                self.main_window.profiles, 
+                parent=self.main_window,
+                preselected_profiles=selected_profiles
+            )
+            
+            if dialog.exec() == GroupDialog.DialogCode.Accepted:
+                group_name, profile_names = dialog.get_result()
+                if group_name and profile_names:
+                    success, error = core_logic.create_group_profile(
+                        group_name, profile_names, self.main_window.profiles
+                    )
+                    
+                    if success:
+                        core_logic.save_profiles(self.main_window.profiles)
+                        self.main_window.profile_table_manager.update_profile_table()
+                        self.main_window.status_label.setText(f"Created group '{group_name}' with {len(profile_names)} profiles")
+                        logging.info(f"Group '{group_name}' created successfully")
+                    else:
+                        QMessageBox.warning(self.main_window, "Group Creation Failed", error)
+                        logging.error(f"Failed to create group: {error}")
+        except Exception as e:
+            logging.error(f"Error creating group: {e}", exc_info=True)
+            QMessageBox.critical(self.main_window, "Error", f"Failed to create group: {e}")
+    
+    @Slot()
+    def handle_edit_group(self):
+        """Edit an existing group profile."""
+        profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
+        if not profile_name:
+            QMessageBox.warning(self.main_window, "No Selection", "Select a group to edit.")
+            return
+        
+        profile_data = self.main_window.profiles.get(profile_name, {})
+        if not core_logic.is_group_profile(profile_data):
+            QMessageBox.warning(self.main_window, "Not a Group", 
+                              f"'{profile_name}' is not a group profile.")
+            return
+        
+        logging.info(f"Editing group: '{profile_name}'")
+        
+        try:
+            from dialogs.group_dialog import GroupDialog
+            dialog = GroupDialog(
+                self.main_window.profiles,
+                parent=self.main_window,
+                edit_group_name=profile_name
+            )
+            
+            if dialog.exec() == GroupDialog.DialogCode.Accepted:
+                new_name, profile_names = dialog.get_result()
+                if new_name and profile_names:
+                    success, error = core_logic.update_group_profile(
+                        profile_name, profile_names, self.main_window.profiles,
+                        new_group_name=new_name if new_name != profile_name else None
+                    )
+                    
+                    if success:
+                        core_logic.save_profiles(self.main_window.profiles)
+                        self.main_window.profile_table_manager.update_profile_table()
+                        self.main_window.status_label.setText(f"Updated group '{new_name}'")
+                        logging.info(f"Group '{new_name}' updated successfully")
+                    else:
+                        QMessageBox.warning(self.main_window, "Group Update Failed", error)
+                        logging.error(f"Failed to update group: {error}")
+        except Exception as e:
+            logging.error(f"Error editing group: {e}", exc_info=True)
+            QMessageBox.critical(self.main_window, "Error", f"Failed to edit group: {e}")
+    
+    @Slot()
+    def handle_ungroup(self):
+        """Dissolve a group, making member profiles visible again."""
+        profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
+        if not profile_name:
+            QMessageBox.warning(self.main_window, "No Selection", "Select a group to ungroup.")
+            return
+        
+        profile_data = self.main_window.profiles.get(profile_name, {})
+        if not core_logic.is_group_profile(profile_data):
+            QMessageBox.warning(self.main_window, "Not a Group", 
+                              f"'{profile_name}' is not a group profile.")
+            return
+        
+        # Get member count for confirmation
+        member_profiles = core_logic.get_group_member_profiles(profile_name, self.main_window.profiles)
+        member_count = len(member_profiles)
+        
+        # Confirm ungroup
+        reply = QMessageBox.question(
+            self.main_window,
+            "Confirm Ungroup",
+            f"Are you sure you want to ungroup '{profile_name}'?\n\n"
+            f"This will dissolve the group and make its {member_count} member profile(s) visible again.\n"
+            f"The member profiles will NOT be deleted.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        logging.info(f"Ungrouping: '{profile_name}'")
+        
+        success, error = core_logic.ungroup_profile(profile_name, self.main_window.profiles)
+        
+        if success:
+            core_logic.save_profiles(self.main_window.profiles)
+            self.main_window.profile_table_manager.update_profile_table()
+            self.main_window.status_label.setText(f"Ungrouped '{profile_name}' - {member_count} profiles now visible")
+            logging.info(f"Group '{profile_name}' ungrouped successfully")
+        else:
+            QMessageBox.warning(self.main_window, "Ungroup Failed", error)
+            logging.error(f"Failed to ungroup: {error}")
+    
+    def _handle_backup_group(self, group_name: str):
+        """
+        Backup all profiles in a group sequentially.
+        
+        Similar to _handle_backup_selected but uses the group's profile list.
+        Each profile retains its own special emulator logic.
+        """
+        profile_data = self.main_window.profiles.get(group_name, {})
+        if not core_logic.is_group_profile(profile_data):
+            logging.error(f"_handle_backup_group called on non-group: {group_name}")
+            return
+        
+        member_profiles = core_logic.get_group_member_profiles(group_name, self.main_window.profiles)
+        if not member_profiles:
+            QMessageBox.warning(self.main_window, "Empty Group", 
+                              f"Group '{group_name}' has no member profiles.")
+            return
+        
+        logging.info(f"Starting group backup for '{group_name}' with {len(member_profiles)} profiles")
+        
+        # Delegate to the multi-backup handler
+        self._handle_backup_selected(member_profiles)
+
     # --- Inline Profile Editor Handlers ---
     @Slot()
     def handle_show_edit_profile(self):
@@ -1574,10 +1879,21 @@ class MainWindowHandlers:
                         favorites_manager.remove_profile(original_name)
                 except Exception as e_fav:
                     logging.warning(f"Failed to migrate favorites on rename: {e_fav}")
+                
+                # Update group references if this profile is in a group
+                try:
+                    core_logic.handle_profile_rename_in_group(original_name, new_name, mw.profiles)
+                except Exception as e_group:
+                    logging.warning(f"Failed to update group references on rename: {e_group}")
 
                 if original_name in mw.profiles:
                     del mw.profiles[original_name]
                 mw.profiles[new_name] = new_data
+                
+                # Update member_of_group reference in the new data if needed
+                if new_data.get('member_of_group'):
+                    # The reference stays the same, group's profile list is already updated
+                    pass
             else:
                 mw.profiles[original_name] = new_data
 

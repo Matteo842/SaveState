@@ -103,24 +103,30 @@ def sanitize_foldername(name):
     if not isinstance(name, str):
         return "_invalid_profile_name_" # Handle non-string input
 
-    # 1. Remove universally invalid characters in file/folder names
-    #    ( <>:"/\|?* ) Keep letters, numbers, spaces, _, -, .
-    #    We use a regular expression for this.
-    safe_name = re.sub(r'[<>:"/\\|?*]', '', name)
+    # 1. Remove control characters (newlines, tabs, carriage returns, etc.)
+    #    These are not valid in file/folder names on any OS
+    safe_name = re.sub(r'[\x00-\x1f\x7f]', ' ', name)  # Replace with space to preserve word separation
 
-    # 2. Remove initial/final whitespace
+    # 2. Remove universally invalid characters in file/folder names
+    #    ( <>:"/\|?* ) Keep letters, numbers, spaces, _, -, .
+    safe_name = re.sub(r'[<>:"/\\|?*]', '', safe_name)
+
+    # 3. Collapse multiple spaces into single space (after replacing control chars)
+    safe_name = re.sub(r'\s+', ' ', safe_name)
+
+    # 4. Remove initial/final whitespace
     safe_name = safe_name.strip()
 
-    # 3. Remove initial/final DOTS (AFTER removing spaces)
+    # 5. Remove initial/final DOTS (AFTER removing spaces)
     #    This loop removes multiple dots if present (e.g., "..name..")
     if safe_name: # Avoid errors if the string has become empty
         safe_name = safe_name.strip('.')
 
-    # 4. Remove any whitespace that might have been exposed
+    # 6. Remove any whitespace that might have been exposed
     #    after removing dots (e.g., ". name .")
     safe_name = safe_name.strip()
 
-    # 5. Handle case where name becomes empty or just spaces after cleaning
+    # 7. Handle case where name becomes empty or just spaces after cleaning
     if not safe_name or safe_name.isspace():
         safe_name = "_invalid_profile_name_" # Fallback name
 
@@ -215,6 +221,369 @@ def _safe_extractall(zipf: zipfile.ZipFile, target_dir: str) -> tuple:
 
 # --- Profile Management ---
 
+# --- Profile Group Helper Functions ---
+def is_group_profile(profile_data: dict) -> bool:
+    """
+    Check if a profile is a group (Matrioska profile) rather than a regular profile.
+    
+    A group profile has type='group' and contains references to other profiles
+    instead of direct save paths.
+    
+    Args:
+        profile_data: The profile data dictionary
+        
+    Returns:
+        True if this is a group profile, False otherwise
+    """
+    if not isinstance(profile_data, dict):
+        return False
+    return profile_data.get('type') == 'group'
+
+
+def get_group_member_profiles(group_name: str, profiles_dict: dict) -> list:
+    """
+    Get the list of profile names that belong to a group.
+    
+    Args:
+        group_name: Name of the group profile
+        profiles_dict: Dictionary of all profiles
+        
+    Returns:
+        List of profile names contained in the group (in order)
+    """
+    if group_name not in profiles_dict:
+        return []
+    
+    group_data = profiles_dict[group_name]
+    if not is_group_profile(group_data):
+        return []
+    
+    return group_data.get('profiles', [])
+
+
+def create_group_profile(group_name: str, profile_names: list, profiles_dict: dict, 
+                         icon_path: str = None) -> tuple:
+    """
+    Create a new group profile containing multiple existing profiles.
+    
+    The group will appear as a single entry in the profile list, but when
+    backup/restore is triggered, it will process all contained profiles.
+    
+    Args:
+        group_name: Name for the new group
+        profile_names: List of existing profile names to include in the group
+        profiles_dict: Dictionary of all profiles (will be modified in place)
+        icon_path: Optional path to a custom icon for the group
+        
+    Returns:
+        Tuple (success: bool, error_message: str or None)
+    """
+    # Validate group name
+    if not group_name or not isinstance(group_name, str):
+        return False, "Group name cannot be empty"
+    
+    if group_name in profiles_dict:
+        return False, f"A profile with name '{group_name}' already exists"
+    
+    # Validate profile names
+    if not profile_names or not isinstance(profile_names, list):
+        return False, "At least one profile must be selected for the group"
+    
+    valid_profiles = []
+    for name in profile_names:
+        if name not in profiles_dict:
+            logging.warning(f"Profile '{name}' not found, skipping for group")
+            continue
+        
+        profile_data = profiles_dict[name]
+        
+        # Don't allow adding groups to groups (no nested groups)
+        if is_group_profile(profile_data):
+            return False, f"Cannot add group '{name}' to another group (nested groups not supported)"
+        
+        # Check if profile is already in another group
+        if profile_data.get('member_of_group'):
+            existing_group = profile_data.get('member_of_group')
+            return False, f"Profile '{name}' is already a member of group '{existing_group}'"
+        
+        valid_profiles.append(name)
+    
+    if not valid_profiles:
+        return False, "No valid profiles found to add to the group"
+    
+    if len(valid_profiles) < 1:
+        return False, "At least one profile is required to create a group"
+    
+    # Create the group profile
+    group_data = {
+        'type': 'group',
+        'profiles': valid_profiles,
+    }
+    if icon_path:
+        group_data['icon'] = icon_path
+    
+    # Mark member profiles as belonging to this group
+    for profile_name in valid_profiles:
+        profiles_dict[profile_name]['member_of_group'] = group_name
+    
+    # Add the group to profiles
+    profiles_dict[group_name] = group_data
+    
+    logging.info(f"Created group '{group_name}' with {len(valid_profiles)} profile(s): {valid_profiles}")
+    return True, None
+
+
+def update_group_profile(group_name: str, new_profile_names: list, profiles_dict: dict,
+                         new_group_name: str = None, icon_path: str = None) -> tuple:
+    """
+    Update an existing group profile with new settings.
+    
+    Args:
+        group_name: Current name of the group
+        new_profile_names: New list of profile names for the group
+        profiles_dict: Dictionary of all profiles (will be modified in place)
+        new_group_name: Optional new name for the group (for renaming)
+        icon_path: Optional new icon path for the group
+        
+    Returns:
+        Tuple (success: bool, error_message: str or None)
+    """
+    if group_name not in profiles_dict:
+        return False, f"Group '{group_name}' not found"
+    
+    group_data = profiles_dict[group_name]
+    if not is_group_profile(group_data):
+        return False, f"'{group_name}' is not a group profile"
+    
+    # Validate new profile names
+    if not new_profile_names or not isinstance(new_profile_names, list):
+        return False, "At least one profile must be selected for the group"
+    
+    # Get current member list
+    current_members = group_data.get('profiles', [])
+    
+    # Validate new profiles
+    valid_profiles = []
+    for name in new_profile_names:
+        if name not in profiles_dict:
+            logging.warning(f"Profile '{name}' not found, skipping for group update")
+            continue
+        
+        profile_data = profiles_dict[name]
+        
+        # Don't allow adding groups to groups
+        if is_group_profile(profile_data):
+            return False, f"Cannot add group '{name}' to another group"
+        
+        # Check if profile is already in another group (but allow if it's in this group)
+        member_of = profile_data.get('member_of_group')
+        if member_of and member_of != group_name:
+            return False, f"Profile '{name}' is already a member of group '{member_of}'"
+        
+        valid_profiles.append(name)
+    
+    if not valid_profiles:
+        return False, "No valid profiles found for the group"
+    
+    # Handle renaming
+    final_group_name = new_group_name if new_group_name and new_group_name != group_name else group_name
+    
+    if new_group_name and new_group_name != group_name:
+        if new_group_name in profiles_dict:
+            return False, f"A profile with name '{new_group_name}' already exists"
+    
+    # Remove member_of_group from profiles no longer in the group
+    for old_member in current_members:
+        if old_member in profiles_dict and old_member not in valid_profiles:
+            if profiles_dict[old_member].get('member_of_group') == group_name:
+                del profiles_dict[old_member]['member_of_group']
+                logging.debug(f"Removed '{old_member}' from group '{group_name}'")
+    
+    # Update member_of_group for all profiles in the group
+    for profile_name in valid_profiles:
+        profiles_dict[profile_name]['member_of_group'] = final_group_name
+    
+    # Update or rename the group
+    if new_group_name and new_group_name != group_name:
+        # Rename: delete old, create new
+        del profiles_dict[group_name]
+        profiles_dict[final_group_name] = {
+            'type': 'group',
+            'profiles': valid_profiles,
+        }
+        if icon_path:
+            profiles_dict[final_group_name]['icon'] = icon_path
+        logging.info(f"Renamed group '{group_name}' to '{final_group_name}'")
+    else:
+        # Just update
+        group_data['profiles'] = valid_profiles
+        if icon_path is not None:  # Allow clearing icon with empty string
+            if icon_path:
+                group_data['icon'] = icon_path
+            elif 'icon' in group_data:
+                del group_data['icon']
+    
+    logging.info(f"Updated group '{final_group_name}' with {len(valid_profiles)} profile(s)")
+    return True, None
+
+
+def ungroup_profile(group_name: str, profiles_dict: dict) -> tuple:
+    """
+    Dissolve a group profile, making its member profiles visible again.
+    
+    This only removes the group itself; the member profiles remain unchanged
+    except for removing their 'member_of_group' reference.
+    
+    Args:
+        group_name: Name of the group to dissolve
+        profiles_dict: Dictionary of all profiles (will be modified in place)
+        
+    Returns:
+        Tuple (success: bool, error_message: str or None)
+    """
+    if group_name not in profiles_dict:
+        return False, f"Group '{group_name}' not found"
+    
+    group_data = profiles_dict[group_name]
+    if not is_group_profile(group_data):
+        return False, f"'{group_name}' is not a group profile"
+    
+    # Get member profiles
+    member_profiles = group_data.get('profiles', [])
+    
+    # Remove member_of_group from all member profiles
+    for profile_name in member_profiles:
+        if profile_name in profiles_dict:
+            profile_data = profiles_dict[profile_name]
+            if profile_data.get('member_of_group') == group_name:
+                del profile_data['member_of_group']
+                logging.debug(f"Removed group membership from '{profile_name}'")
+    
+    # Delete the group itself
+    del profiles_dict[group_name]
+    
+    logging.info(f"Ungrouped '{group_name}', {len(member_profiles)} profile(s) are now visible")
+    return True, None
+
+
+def get_visible_profiles(profiles_dict: dict) -> dict:
+    """
+    Get profiles that should be visible in the profile list.
+    
+    This filters out profiles that are members of a group (they are hidden
+    because the group represents them). Groups themselves are visible.
+    
+    Args:
+        profiles_dict: Dictionary of all profiles
+        
+    Returns:
+        Dictionary of profiles that should be displayed in the list
+    """
+    visible = {}
+    for name, data in profiles_dict.items():
+        if not isinstance(data, dict):
+            continue
+        
+        # Show groups
+        if is_group_profile(data):
+            visible[name] = data
+            continue
+        
+        # Show profiles that are NOT members of any group
+        if not data.get('member_of_group'):
+            visible[name] = data
+    
+    return visible
+
+
+def remove_profile_from_group(profile_name: str, profiles_dict: dict) -> tuple:
+    """
+    Remove a profile from its group (if any).
+    
+    If the group becomes empty after removal, the group is also deleted.
+    
+    Args:
+        profile_name: Name of the profile to remove from group
+        profiles_dict: Dictionary of all profiles (will be modified in place)
+        
+    Returns:
+        Tuple (success: bool, group_deleted: bool, error_message: str or None)
+    """
+    if profile_name not in profiles_dict:
+        return False, False, f"Profile '{profile_name}' not found"
+    
+    profile_data = profiles_dict[profile_name]
+    group_name = profile_data.get('member_of_group')
+    
+    if not group_name:
+        return True, False, None  # Not in a group, nothing to do
+    
+    if group_name not in profiles_dict:
+        # Group doesn't exist, just clean up the reference
+        del profile_data['member_of_group']
+        return True, False, None
+    
+    group_data = profiles_dict[group_name]
+    if not is_group_profile(group_data):
+        # Corrupted data, clean up
+        del profile_data['member_of_group']
+        return True, False, None
+    
+    # Remove from group's profile list
+    group_profiles = group_data.get('profiles', [])
+    if profile_name in group_profiles:
+        group_profiles.remove(profile_name)
+    
+    # Remove member_of_group from the profile
+    del profile_data['member_of_group']
+    
+    # Check if group is now empty
+    group_deleted = False
+    if not group_profiles:
+        del profiles_dict[group_name]
+        group_deleted = True
+        logging.info(f"Group '{group_name}' was empty after removing '{profile_name}', deleted group")
+    else:
+        logging.debug(f"Removed '{profile_name}' from group '{group_name}'")
+    
+    return True, group_deleted, None
+
+
+def handle_profile_rename_in_group(old_name: str, new_name: str, profiles_dict: dict) -> bool:
+    """
+    Update group references when a profile is renamed.
+    
+    Args:
+        old_name: The old profile name
+        new_name: The new profile name
+        profiles_dict: Dictionary of all profiles
+        
+    Returns:
+        True if update was successful, False otherwise
+    """
+    if old_name not in profiles_dict:
+        return False
+    
+    profile_data = profiles_dict[old_name]
+    group_name = profile_data.get('member_of_group')
+    
+    if not group_name or group_name not in profiles_dict:
+        return True  # Not in a group, nothing to update
+    
+    group_data = profiles_dict[group_name]
+    if not is_group_profile(group_data):
+        return True
+    
+    # Update the profile list in the group
+    group_profiles = group_data.get('profiles', [])
+    if old_name in group_profiles:
+        idx = group_profiles.index(old_name)
+        group_profiles[idx] = new_name
+        logging.debug(f"Updated group '{group_name}': renamed '{old_name}' to '{new_name}'")
+    
+    return True
+
+
 # <<< Function to get profile backup summary >>>
 def get_profile_backup_summary(profile_name, backup_base_dir):
     """
@@ -287,6 +656,16 @@ def load_profiles():
                     else:
                         logging.warning(f"Path '{path_or_data}' for profile '{name}' (old format) is invalid. Skipping.")
                 elif isinstance(path_or_data, dict):
+                    # Check if this is a group profile (Matrioska profile)
+                    if path_or_data.get('type') == 'group':
+                        # Group profiles don't have 'paths' or 'path' - they contain references to other profiles
+                        if 'profiles' in path_or_data and isinstance(path_or_data['profiles'], list):
+                            loaded_profiles[name] = path_or_data.copy()
+                            logging.debug(f"Group profile '{name}' validated with {len(path_or_data['profiles'])} member(s).")
+                        else:
+                            logging.warning(f"Group profile '{name}' is missing 'profiles' list. Skipping.")
+                        continue
+                    
                     # Nuovo formato o già convertito: assicurati che 'path' esista e sia valido
                     paths_key_present = 'paths' in path_or_data and isinstance(path_or_data['paths'], list) and path_or_data['paths']
                     path_key_present = 'path' in path_or_data and isinstance(path_or_data['path'], str) and path_or_data['path']

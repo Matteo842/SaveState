@@ -206,3 +206,4 @@ cloud_utils/client_secret.json
 cloud_utils/token.json
 cloud_utils/credentials.json
 cloud_utils/token.pickle
+/.cursor

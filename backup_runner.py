@@ -179,6 +179,96 @@ def show_notification(success, message):
     logging.debug("<<< Exiting show_notification >>>")
 
 
+# --- Group Backup Helper Function ---
+def _run_group_backup(group_name, profiles, settings):
+    """
+    Backup all profiles in a group sequentially.
+    
+    Args:
+        group_name: Name of the group profile
+        profiles: Dictionary of all profiles
+        settings: Loaded settings dictionary
+        
+    Returns:
+        True if all backups succeeded, False if any failed
+    """
+    member_profiles = core_logic.get_group_member_profiles(group_name, profiles)
+    
+    if not member_profiles:
+        logging.error(f"Group '{group_name}' has no member profiles.")
+        show_notification(False, f"Error: Group '{group_name}' is empty.")
+        return False
+    
+    logging.info(f"Starting group backup for '{group_name}' with {len(member_profiles)} profiles")
+    
+    all_success = True
+    success_count = 0
+    failed_profiles = []
+    
+    for idx, member_name in enumerate(member_profiles, 1):
+        logging.info(f"[Group Backup {idx}/{len(member_profiles)}] Backing up: '{member_name}'")
+        
+        member_data = profiles.get(member_name)
+        if not member_data or not isinstance(member_data, dict):
+            logging.error(f"Invalid profile data for group member '{member_name}'")
+            failed_profiles.append(member_name)
+            all_success = False
+            continue
+        
+        # Get paths for this member
+        paths_to_backup = None
+        if 'paths' in member_data and isinstance(member_data['paths'], list):
+            paths_to_backup = member_data['paths']
+        elif 'path' in member_data and isinstance(member_data['path'], str):
+            paths_to_backup = [member_data['path']]
+        
+        if not paths_to_backup:
+            logging.error(f"No valid path for group member '{member_name}'")
+            failed_profiles.append(member_name)
+            all_success = False
+            continue
+        
+        # Perform backup for this member
+        try:
+            backup_base_dir = settings.get("backup_base_dir")
+            max_bk = settings.get("max_backups")
+            max_src_size = settings.get("max_source_size_mb")
+            compression_mode = settings.get("compression_mode", "zip")
+            
+            success, message = core_logic.perform_backup(
+                member_name,
+                paths_to_backup,
+                backup_base_dir,
+                max_bk,
+                max_src_size,
+                compression_mode,
+                member_data
+            )
+            
+            if success:
+                success_count += 1
+                logging.info(f"[Group Backup] '{member_name}' backup succeeded")
+            else:
+                failed_profiles.append(member_name)
+                all_success = False
+                logging.error(f"[Group Backup] '{member_name}' backup failed: {message}")
+                
+        except Exception as e:
+            failed_profiles.append(member_name)
+            all_success = False
+            logging.error(f"[Group Backup] Error backing up '{member_name}': {e}", exc_info=True)
+    
+    # Show final notification
+    if all_success:
+        message = f"Group backup completed successfully!\n\n{group_name}: {success_count}/{len(member_profiles)} profiles backed up."
+        show_notification(True, message)
+    else:
+        message = f"Group backup completed with errors.\n\n{group_name}: {success_count}/{len(member_profiles)} succeeded.\nFailed: {', '.join(failed_profiles)}"
+        show_notification(False, message)
+    
+    return all_success
+
+
 # --- Main Silent Execution Function ---
 def run_silent_backup(profile_name):
     """
@@ -235,6 +325,10 @@ def run_silent_backup(profile_name):
         logging.error(f"Invalid profile data for '{profile_name}' in backup_runner. Backup cancelled.")
         show_notification(False, f"Error: Invalid profile data for {profile_name}.")
         return False
+    
+    # 4b. Check if this is a group profile - backup all members sequentially
+    if core_logic.is_group_profile(profile_data):
+        return _run_group_backup(profile_name, profiles, settings)
 
     # Handling 'paths' (list) and 'path' (string)
     paths_to_backup = None

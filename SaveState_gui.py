@@ -1908,8 +1908,23 @@ class MainWindow(QMainWindow):
             index = self.profile_table_widget.indexAt(pos)
             if index and index.isValid():
                 row = index.row()
-                self.profile_table_widget.selectRow(row)
+                
+                # Check if the clicked row is already part of the current selection
+                # If so, preserve the multi-selection; otherwise, select only the clicked row
+                selected_rows = self.profile_table_widget.selectionModel().selectedRows()
+                clicked_row_in_selection = any(sel_index.row() == row for sel_index in selected_rows)
+                
+                if not clicked_row_in_selection:
+                    # Clicked on a non-selected row - select only that row
+                    self.profile_table_widget.selectRow(row)
+                # else: keep the current multi-selection
+                
                 self.update_action_button_states()
+                
+                # Check if this is a group profile (only relevant for single selection)
+                selection_count = self.profile_table_manager.get_selection_count()
+                is_group = selection_count == 1 and self.profile_table_manager.is_selected_profile_group()
+                
                 # Build and show a context menu like Linux/Ubuntu
                 menu = QMenu(self)
                 # Enable translucent background to fix rounded corners black box issue
@@ -1946,23 +1961,77 @@ class MainWindow(QMainWindow):
                     }
                 """)
                 
-                # Actions
-                act_edit = QAction("Edit Profile", self)
-                act_shortcut = QAction("Create Backup Shortcut", self)
-                act_shortcut.setToolTip("Creates a desktop shortcut to quickly run a backup for this profile")
-                act_shortcut.setStatusTip("Creates a desktop shortcut to quickly run a backup for this profile")
-                # Optional icons
-                try:
-                    desktop_icon_path = resource_path("icons/desktop.png")
-                    if os.path.exists(desktop_icon_path):
-                        act_shortcut.setIcon(QIcon(desktop_icon_path))
-                except Exception:
-                    pass
-                act_edit.triggered.connect(self.handlers.handle_show_edit_profile)
-                act_shortcut.triggered.connect(self.handlers.handle_create_shortcut)
-                menu.addAction(act_edit)
-                menu.addSeparator()  # Dividing line between options
-                menu.addAction(act_shortcut)
+                if is_group:
+                    # --- Group Profile Context Menu ---
+                    act_edit_group = QAction("Edit Group", self)
+                    act_ungroup = QAction("Ungroup", self)
+                    act_shortcut = QAction("Create Backup Shortcut", self)
+                    
+                    # Set tooltips
+                    act_edit_group.setToolTip("Edit the profiles in this group")
+                    act_ungroup.setToolTip("Dissolve this group, making member profiles visible again")
+                    act_shortcut.setToolTip("Creates a desktop shortcut to quickly backup all profiles in this group")
+                    
+                    # Set folder icon for group actions
+                    try:
+                        from PySide6.QtWidgets import QStyle
+                        folder_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+                        act_edit_group.setIcon(folder_icon)
+                    except Exception:
+                        pass
+                    
+                    try:
+                        desktop_icon_path = resource_path("icons/desktop.png")
+                        if os.path.exists(desktop_icon_path):
+                            act_shortcut.setIcon(QIcon(desktop_icon_path))
+                    except Exception:
+                        pass
+                    
+                    # Connect actions
+                    act_edit_group.triggered.connect(self.handlers.handle_edit_group)
+                    act_ungroup.triggered.connect(self.handlers.handle_ungroup)
+                    act_shortcut.triggered.connect(self.handlers.handle_create_shortcut)
+                    
+                    menu.addAction(act_edit_group)
+                    menu.addAction(act_ungroup)
+                    menu.addSeparator()
+                    menu.addAction(act_shortcut)
+                else:
+                    # --- Regular Profile Context Menu ---
+                    act_edit = QAction("Edit Profile", self)
+                    act_shortcut = QAction("Create Backup Shortcut", self)
+                    act_shortcut.setToolTip("Creates a desktop shortcut to quickly run a backup for this profile")
+                    act_shortcut.setStatusTip("Creates a desktop shortcut to quickly run a backup for this profile")
+                    
+                    # Optional icons
+                    try:
+                        desktop_icon_path = resource_path("icons/desktop.png")
+                        if os.path.exists(desktop_icon_path):
+                            act_shortcut.setIcon(QIcon(desktop_icon_path))
+                    except Exception:
+                        pass
+                    
+                    act_edit.triggered.connect(self.handlers.handle_show_edit_profile)
+                    act_shortcut.triggered.connect(self.handlers.handle_create_shortcut)
+                    menu.addAction(act_edit)
+                    menu.addSeparator()
+                    
+                    # Add "Create Group" option when multiple profiles are selected
+                    if selection_count > 1:
+                        act_create_group = QAction(f"Create Group ({selection_count} profiles)", self)
+                        act_create_group.setToolTip("Create a group containing the selected profiles")
+                        try:
+                            from PySide6.QtWidgets import QStyle
+                            folder_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+                            act_create_group.setIcon(folder_icon)
+                        except Exception:
+                            pass
+                        act_create_group.triggered.connect(self.handlers.handle_create_group_from_selection)
+                        menu.addAction(act_create_group)
+                        menu.addSeparator()
+                    
+                    menu.addAction(act_shortcut)
+                
                 global_pos = self.profile_table_widget.viewport().mapToGlobal(pos)
                 menu.exec(global_pos)
         except Exception as e:
