@@ -764,10 +764,10 @@ def delete_profile(profiles, profile_name):
     if profile_name in profiles:
         profile_data = profiles[profile_name]
         
-        # Delete cached icon for this profile
+        # Delete cached icon for this profile (only if no other profile uses the same icon)
         try:
             from gui_components.icon_extractor import delete_profile_icon
-            delete_profile_icon(profile_data)
+            delete_profile_icon(profile_data, profiles, profile_name)
         except Exception as e:
             logging.debug(f"Could not delete profile icon: {e}")
         

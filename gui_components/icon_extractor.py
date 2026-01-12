@@ -77,7 +77,7 @@ def _resolve_shortcut_target(shortcut_path: str) -> Optional[str]:
 
 
 def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_ICON_SIZE) -> bool:
-    """Extract icon from Windows executable using shell32."""
+    """Extract icon from Windows executable using shell32 and convert with ctypes/PIL."""
     try:
         from PIL import Image
         import ctypes
@@ -109,38 +109,140 @@ def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_I
             logger.debug(f"Failed to extract icon from '{exe_path}'")
             return False
         
-        # Convert icon to pixmap using Qt
+        hicon = large_icon.value
+        user32 = ctypes.windll.user32
+        gdi32 = ctypes.windll.gdi32
+        
         try:
-            from PySide6.QtWidgets import QApplication
-            from PySide6.QtWinExtras import QtWin
+            # Get icon info to determine size
+            class ICONINFO(ctypes.Structure):
+                _fields_ = [
+                    ('fIcon', wintypes.BOOL),
+                    ('xHotspot', wintypes.DWORD),
+                    ('yHotspot', wintypes.DWORD),
+                    ('hbmMask', wintypes.HBITMAP),
+                    ('hbmColor', wintypes.HBITMAP),
+                ]
             
-            # Use QtWin to convert HICON to QPixmap
-            pixmap = QtWin.fromHICON(large_icon.value)
-            if not pixmap.isNull():
-                # Scale to desired size
-                scaled = pixmap.scaled(
-                    QSize(size, size), 
-                    Qt.AspectRatioMode.KeepAspectRatio, 
-                    Qt.TransformationMode.SmoothTransformation
-                )
-                scaled.save(output_path, "PNG")
-                
-                # Clean up icon handles
-                user32 = ctypes.windll.user32
-                user32.DestroyIcon(large_icon)
+            icon_info = ICONINFO()
+            if not user32.GetIconInfo(hicon, ctypes.byref(icon_info)):
+                logger.debug(f"GetIconInfo failed for '{exe_path}'")
+                user32.DestroyIcon(hicon)
                 if small_icon.value:
                     user32.DestroyIcon(small_icon)
-                
-                return True
-        except ImportError:
-            # QtWinExtras not available, try alternative method
-            pass
-        
-        # Clean up icon handles
-        user32 = ctypes.windll.user32
-        user32.DestroyIcon(large_icon)
-        if small_icon.value:
-            user32.DestroyIcon(small_icon)
+                return False
+            
+            # Get bitmap info
+            class BITMAP(ctypes.Structure):
+                _fields_ = [
+                    ('bmType', wintypes.LONG),
+                    ('bmWidth', wintypes.LONG),
+                    ('bmHeight', wintypes.LONG),
+                    ('bmWidthBytes', wintypes.LONG),
+                    ('bmPlanes', wintypes.WORD),
+                    ('bmBitsPixel', wintypes.WORD),
+                    ('bmBits', ctypes.c_void_p),
+                ]
+            
+            bmp = BITMAP()
+            if icon_info.hbmColor:
+                gdi32.GetObjectW(icon_info.hbmColor, ctypes.sizeof(BITMAP), ctypes.byref(bmp))
+                width, height = bmp.bmWidth, bmp.bmHeight
+            else:
+                # Fallback size
+                width, height = 32, 32
+            
+            # Create a device context and bitmap to draw the icon
+            hdc_screen = user32.GetDC(0)
+            hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
+            
+            # Create a 32-bit RGBA bitmap
+            class BITMAPINFOHEADER(ctypes.Structure):
+                _fields_ = [
+                    ('biSize', wintypes.DWORD),
+                    ('biWidth', wintypes.LONG),
+                    ('biHeight', wintypes.LONG),
+                    ('biPlanes', wintypes.WORD),
+                    ('biBitCount', wintypes.WORD),
+                    ('biCompression', wintypes.DWORD),
+                    ('biSizeImage', wintypes.DWORD),
+                    ('biXPelsPerMeter', wintypes.LONG),
+                    ('biYPelsPerMeter', wintypes.LONG),
+                    ('biClrUsed', wintypes.DWORD),
+                    ('biClrImportant', wintypes.DWORD),
+                ]
+            
+            class BITMAPINFO(ctypes.Structure):
+                _fields_ = [
+                    ('bmiHeader', BITMAPINFOHEADER),
+                    ('bmiColors', wintypes.DWORD * 3),
+                ]
+            
+            bmi = BITMAPINFO()
+            bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+            bmi.bmiHeader.biWidth = width
+            bmi.bmiHeader.biHeight = -height  # Top-down
+            bmi.bmiHeader.biPlanes = 1
+            bmi.bmiHeader.biBitCount = 32
+            bmi.bmiHeader.biCompression = 0  # BI_RGB
+            
+            bits = ctypes.c_void_p()
+            hbm = gdi32.CreateDIBSection(hdc_mem, ctypes.byref(bmi), 0, ctypes.byref(bits), None, 0)
+            
+            if not hbm:
+                logger.debug(f"CreateDIBSection failed for '{exe_path}'")
+                gdi32.DeleteDC(hdc_mem)
+                user32.ReleaseDC(0, hdc_screen)
+                if icon_info.hbmMask:
+                    gdi32.DeleteObject(icon_info.hbmMask)
+                if icon_info.hbmColor:
+                    gdi32.DeleteObject(icon_info.hbmColor)
+                user32.DestroyIcon(hicon)
+                if small_icon.value:
+                    user32.DestroyIcon(small_icon)
+                return False
+            
+            old_bm = gdi32.SelectObject(hdc_mem, hbm)
+            
+            # Fill with transparent background
+            gdi32.PatBlt(hdc_mem, 0, 0, width, height, 0x00000042)  # BLACKNESS
+            
+            # Draw the icon
+            user32.DrawIconEx(hdc_mem, 0, 0, hicon, width, height, 0, 0, 0x0003)  # DI_NORMAL
+            
+            # Copy pixels
+            buffer_size = width * height * 4
+            buffer = (ctypes.c_ubyte * buffer_size)()
+            ctypes.memmove(buffer, bits, buffer_size)
+            
+            # Create PIL Image
+            image = Image.frombuffer('RGBA', (width, height), bytes(buffer), 'raw', 'BGRA', 0, 1)
+            
+            # Resize to target size
+            image = image.resize((size, size), Image.Resampling.LANCZOS)
+            image.save(output_path, 'PNG')
+            
+            # Cleanup
+            gdi32.SelectObject(hdc_mem, old_bm)
+            gdi32.DeleteObject(hbm)
+            gdi32.DeleteDC(hdc_mem)
+            user32.ReleaseDC(0, hdc_screen)
+            if icon_info.hbmMask:
+                gdi32.DeleteObject(icon_info.hbmMask)
+            if icon_info.hbmColor:
+                gdi32.DeleteObject(icon_info.hbmColor)
+            user32.DestroyIcon(hicon)
+            if small_icon.value:
+                user32.DestroyIcon(small_icon)
+            
+            return True
+            
+        except Exception as e_convert:
+            logger.debug(f"Icon conversion failed for '{exe_path}': {e_convert}")
+            # Cleanup on error
+            user32.DestroyIcon(hicon)
+            if small_icon.value:
+                user32.DestroyIcon(small_icon)
             
     except Exception as e:
         logger.debug(f"shell32 extraction failed for '{exe_path}': {e}")
@@ -394,7 +496,8 @@ def _find_main_executable_in_dir(install_dir: str) -> Optional[str]:
 def get_profile_icon(profile_data: dict, profile_name: str, size: int = DEFAULT_ICON_SIZE) -> Optional[QIcon]:
     """
     Get the icon for a profile based on its game_executable field.
-    Falls back to searching in game_install_dir for Steam games.
+    Falls back to searching in game_install_dir for Steam games,
+    or emulator_executable for emulator profiles.
     
     Args:
         profile_data: The profile dictionary
@@ -417,6 +520,13 @@ def get_profile_icon(profile_data: dict, profile_name: str, size: int = DEFAULT_
             exe_path = _find_main_executable_in_dir(install_dir)
             if exe_path:
                 logger.debug(f"Found exe in install dir for '{profile_name}': {exe_path}")
+    
+    # If still no executable, check for emulator_executable (for emulator profiles)
+    if not exe_path:
+        emulator_exe = profile_data.get('emulator_executable')
+        if emulator_exe and os.path.exists(emulator_exe):
+            exe_path = emulator_exe
+            logger.debug(f"Using emulator_executable for '{profile_name}': {exe_path}")
     
     if not exe_path:
         # No executable found
@@ -449,13 +559,17 @@ def clear_icon_cache():
         logger.error(f"Error clearing icon cache: {e}")
 
 
-def delete_profile_icon(profile_data: dict) -> bool:
+def delete_profile_icon(profile_data: dict, all_profiles: dict = None, deleting_profile_name: str = None) -> bool:
     """
     Delete the cached icon for a specific profile.
     Call this when a profile is deleted.
     
+    Only deletes the icon if no other profile uses the same executable/icon.
+    
     Args:
-        profile_data: The profile dictionary (needs 'game_executable' or 'game_install_dir')
+        profile_data: The profile dictionary (needs 'game_executable', 'game_install_dir', or 'emulator_executable')
+        all_profiles: Optional dict of all profiles to check if icon is shared
+        deleting_profile_name: Optional name of the profile being deleted (to exclude from check)
         
     Returns:
         True if icon was deleted, False otherwise
@@ -473,6 +587,10 @@ def delete_profile_icon(profile_data: dict) -> bool:
             exe_path = _find_main_executable_in_dir(install_dir)
     
     if not exe_path:
+        # Try emulator_executable for emulator profiles
+        exe_path = profile_data.get('emulator_executable')
+    
+    if not exe_path:
         return False
     
     # Resolve shortcut if needed
@@ -480,6 +598,40 @@ def delete_profile_icon(profile_data: dict) -> bool:
         resolved = _resolve_shortcut_target(exe_path)
         if resolved:
             exe_path = resolved
+    
+    # Check if other profiles use the same icon before deleting
+    if all_profiles:
+        cache_filename = _get_cache_filename(exe_path)
+        
+        for other_name, other_data in all_profiles.items():
+            # Skip the profile we're deleting
+            if other_name == deleting_profile_name:
+                continue
+            
+            if not isinstance(other_data, dict):
+                continue
+            
+            # Check all possible exe sources for the other profile
+            other_exe = other_data.get('game_executable')
+            if not other_exe:
+                other_install_dir = other_data.get('game_install_dir')
+                if other_install_dir:
+                    other_exe = _find_main_executable_in_dir(other_install_dir)
+            if not other_exe:
+                other_exe = other_data.get('emulator_executable')
+            
+            if other_exe:
+                # Resolve shortcut if needed
+                if other_exe.lower().endswith('.lnk'):
+                    resolved = _resolve_shortcut_target(other_exe)
+                    if resolved:
+                        other_exe = resolved
+                
+                # Check if they would use the same cached icon
+                other_cache_filename = _get_cache_filename(other_exe)
+                if other_cache_filename == cache_filename:
+                    logger.debug(f"Icon '{cache_filename}' still used by profile '{other_name}', not deleting")
+                    return False
     
     # Get cache filename and delete
     try:
@@ -526,6 +678,10 @@ def cleanup_orphaned_icons(profiles: dict) -> int:
                 install_dir = profile_data.get('game_install_dir')
                 if install_dir:
                     exe_path = _find_main_executable_in_dir(install_dir)
+            
+            if not exe_path:
+                # Check for emulator_executable
+                exe_path = profile_data.get('emulator_executable')
             
             if exe_path:
                 # Resolve shortcut if needed

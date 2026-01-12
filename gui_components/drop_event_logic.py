@@ -631,6 +631,20 @@ class DropEventMixin:
                                             mw.status_label.setText("Profile creation cancelled.")
                                             event.acceptProposedAction(); return
                                     new_profile = {'name': profile_name, 'paths': save_paths, 'emulator': core_id}
+                                    
+                                    # Add emulator_executable for icon extraction (RetroArch)
+                                    retroarch_exe = file_path
+                                    if platform.system() == "Windows" and file_path.lower().endswith('.lnk'):
+                                        try:
+                                            import winshell
+                                            shortcut = winshell.shortcut(file_path)
+                                            if shortcut.path and os.path.exists(shortcut.path):
+                                                retroarch_exe = shortcut.path
+                                        except Exception:
+                                            pass
+                                    if retroarch_exe and os.path.exists(retroarch_exe):
+                                        new_profile['emulator_executable'] = retroarch_exe
+                                    
                                     for k, v in selected_profile.items():
                                         if k not in ['name', 'paths']:
                                             new_profile[k] = v
@@ -690,6 +704,22 @@ class DropEventMixin:
                                 'paths': save_paths,
                                 'emulator': emulator_key
                             }
+                            
+                            # Add emulator_executable for icon extraction
+                            # Resolve .lnk to get the actual emulator executable path
+                            emulator_exe_path = file_path
+                            if platform.system() == "Windows" and file_path.lower().endswith('.lnk'):
+                                try:
+                                    import winshell
+                                    shortcut = winshell.shortcut(file_path)
+                                    if shortcut.path and os.path.exists(shortcut.path):
+                                        emulator_exe_path = shortcut.path
+                                except Exception as e_lnk:
+                                    logging.debug(f"Could not resolve .lnk for emulator icon: {e_lnk}")
+                            
+                            if emulator_exe_path and os.path.exists(emulator_exe_path):
+                                new_profile['emulator_executable'] = emulator_exe_path
+                                logging.debug(f"Added emulator_executable to profile: {emulator_exe_path}")
                             
                             # Copy additional fields from selected_profile (like 'id', 'type', etc.)
                             for key, value in selected_profile.items():
@@ -1065,6 +1095,12 @@ class DropEventMixin:
                                                     'paths': save_paths,
                                                     'emulator': core_id
                                                 }
+                                                
+                                                # Add emulator_executable for icon extraction (RetroArch fallback)
+                                                if target_path and os.path.exists(target_path):
+                                                    new_profile['emulator_executable'] = target_path
+                                                    logging.debug(f"Added emulator_executable to profile (RetroArch fallback): {target_path}")
+                                                
                                                 for key, value in selected_profile.items():
                                                     if key not in ['name', 'paths']:
                                                         new_profile[key] = value
@@ -1127,6 +1163,12 @@ class DropEventMixin:
                                 'paths': save_paths,
                                 'emulator': emulator_key
                             }
+                            
+                            # Add emulator_executable for icon extraction
+                            # In this fallback section, target_path is already resolved
+                            if target_path and os.path.exists(target_path):
+                                new_profile['emulator_executable'] = target_path
+                                logging.debug(f"Added emulator_executable to profile (fallback): {target_path}")
                             
                             # Copy additional fields from selected_profile (like 'id', 'type', etc.)
                             for key, value in selected_profile.items():
