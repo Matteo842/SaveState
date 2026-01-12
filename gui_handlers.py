@@ -796,12 +796,176 @@ class MainWindowHandlers:
         # Refresh button state enablement
         mw.update_action_button_states()
 
+    def _handle_backup_selected(self, selected_profile_names: list):
+        """Backup multiple selected profiles (triggered by Ctrl+Click or Shift+Click selection)."""
+        if not selected_profile_names:
+            return
+        
+        profile_count = len(selected_profile_names)
+        
+        # Check for existing worker thread
+        if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
+            QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+            return
+        
+        # Confirmation dialog
+        msg_box = QMessageBox(self.main_window)
+        msg_box.setWindowTitle("Backup Selected Profiles")
+        msg_box.setIcon(QMessageBox.Icon.Question)
+        msg_box.setTextFormat(Qt.TextFormat.RichText)
+        msg_box.setText(
+            f"Backup <b>{profile_count}</b> selected profile(s)?<br><br>"
+            f"<small>{', '.join(selected_profile_names[:5])}{' ...' if profile_count > 5 else ''}</small>"
+        )
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
+        reply = msg_box.exec()
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # Get global settings for backup
+        effective = {
+            'backup_base_dir': self.main_window.current_settings.get('backup_base_dir', config.BACKUP_BASE_DIR),
+            'max_backups': self.main_window.current_settings.get('max_backups', config.MAX_BACKUPS),
+            'max_source_size_mb': self.main_window.current_settings.get('max_source_size_mb', 200),
+            'compression_mode': self.main_window.current_settings.get('compression_mode', 'standard'),
+        }
+        
+        profiles = self.main_window.profiles
+        self.main_window.status_label.setText(f"Backing up {profile_count} selected profiles...")
+        self.main_window.set_controls_enabled(False)
+        
+        def backup_selected_task():
+            """Worker function to backup selected profiles."""
+            results = []
+            failed = []
+            skipped = []
+            
+            for idx, profile_name in enumerate(selected_profile_names, 1):
+                logging.info(f"[Backup Selected] Processing {idx}/{profile_count}: '{profile_name}'")
+                
+                profile_data = profiles.get(profile_name)
+                if not profile_data or not isinstance(profile_data, dict):
+                    skipped.append(f"{profile_name} (invalid data)")
+                    logging.warning(f"[Backup Selected] Skipping '{profile_name}': invalid profile data")
+                    continue
+                
+                # Get profile-specific overrides if available
+                profile_effective = effective.copy()
+                try:
+                    if profile_data.get('use_profile_overrides') and isinstance(profile_data.get('overrides'), dict):
+                        ov = profile_data.get('overrides')
+                        if 'max_backups' in ov: profile_effective['max_backups'] = int(ov['max_backups'])
+                        if 'max_source_size_mb' in ov: profile_effective['max_source_size_mb'] = int(ov['max_source_size_mb'])
+                        if 'compression_mode' in ov: profile_effective['compression_mode'] = str(ov['compression_mode'])
+                except Exception as e:
+                    logging.warning(f"[Backup Selected] Error reading overrides for '{profile_name}': {e}")
+                
+                # Get source paths
+                source_paths = []
+                if isinstance(profile_data.get('paths'), list) and profile_data['paths']:
+                    source_paths = [p for p in profile_data['paths'] if isinstance(p, str) and p]
+                elif isinstance(profile_data.get('path'), str) and profile_data['path']:
+                    source_paths = [profile_data['path']]
+                
+                if not source_paths:
+                    skipped.append(f"{profile_name} (no valid path)")
+                    logging.warning(f"[Backup Selected] Skipping '{profile_name}': no valid source path")
+                    continue
+                
+                # Check paths exist
+                valid_paths = [p for p in source_paths if os.path.exists(p)]
+                if not valid_paths:
+                    skipped.append(f"{profile_name} (path not found)")
+                    logging.warning(f"[Backup Selected] Skipping '{profile_name}': paths do not exist")
+                    continue
+                
+                try:
+                    success, message = core_logic.perform_backup(
+                        profile_name,
+                        valid_paths,
+                        profile_effective['backup_base_dir'],
+                        profile_effective['max_backups'],
+                        profile_effective['max_source_size_mb'],
+                        profile_effective['compression_mode'],
+                        profile_data
+                    )
+                    
+                    if success:
+                        results.append(profile_name)
+                        logging.info(f"[Backup Selected] Success: '{profile_name}'")
+                    else:
+                        failed.append(f"{profile_name}: {message}")
+                        logging.error(f"[Backup Selected] Failed: '{profile_name}' - {message}")
+                        
+                except Exception as e:
+                    failed.append(f"{profile_name}: {str(e)}")
+                    logging.error(f"[Backup Selected] Exception for '{profile_name}': {e}", exc_info=True)
+            
+            # Build summary
+            summary = f"Backup completed.\n\n"
+            summary += f"✓ Successful: {len(results)}\n"
+            if failed:
+                summary += f"✗ Failed: {len(failed)}\n"
+            if skipped:
+                summary += f"⊘ Skipped: {len(skipped)}\n"
+            
+            all_success = len(failed) == 0 and len(skipped) == 0
+            
+            backup_selected_results.clear()
+            backup_selected_results.extend([results, failed, skipped])
+            
+            return all_success, summary
+        
+        backup_selected_results = []
+        
+        def on_backup_selected_finished(success, message):
+            """Callback when backup selected is finished."""
+            self.main_window.set_controls_enabled(True)
+            
+            if len(backup_selected_results) >= 3:
+                results, failed, skipped = backup_selected_results
+            else:
+                results, failed, skipped = [], [], []
+            
+            if success and len(failed) == 0:
+                QMessageBox.information(self.main_window, "Backup Completed", message)
+                self.main_window.status_label.setText(f"Backup completed: {len(results)} profile(s) backed up.")
+            else:
+                detail_msg = message + "\n"
+                if failed:
+                    detail_msg += "\n--- Failed ---\n" + "\n".join(failed[:10])
+                    if len(failed) > 10:
+                        detail_msg += f"\n... and {len(failed) - 10} more"
+                if skipped:
+                    detail_msg += "\n\n--- Skipped ---\n" + "\n".join(skipped[:5])
+                    if len(skipped) > 5:
+                        detail_msg += f"\n... and {len(skipped) - 5} more"
+                
+                QMessageBox.warning(self.main_window, "Backup Completed with Issues", detail_msg)
+                self.main_window.status_label.setText(f"Backup: {len(results)} succeeded, {len(failed)} failed, {len(skipped)} skipped.")
+            
+            self.main_window.profile_table_manager.update_profile_table()
+        
+        from gui_utils import WorkerThread
+        self.main_window.worker_thread = WorkerThread(backup_selected_task)
+        self.main_window.worker_thread.finished.connect(on_backup_selected_finished)
+        self.main_window.worker_thread.start()
+        logging.info(f"Started backup worker thread for {profile_count} selected profiles.")
+
     # Starts the backup process (Single or All based on mode)
     @Slot()
     def handle_backup(self):
         # Redirect to Backup All if mode is enabled
         if getattr(self.main_window, 'backup_mode', 'single') == 'all':
             self.handle_backup_all()
+            return
+
+        # Check for multi-selection (Ctrl+Click or Shift+Click)
+        selected_profiles = self.main_window.profile_table_manager.get_selected_profile_names()
+        if len(selected_profiles) > 1:
+            self._handle_backup_selected(selected_profiles)
             return
 
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()

@@ -1473,6 +1473,12 @@ class MainWindow(QMainWindow):
             self.backup_button.setEnabled(has_profiles)
         else:
             self.backup_button.setEnabled(has_selection)
+            # Update button text based on selection count (multi-selection support)
+            selection_count = self.profile_table_manager.get_selection_count()
+            if selection_count > 1:
+                self.backup_button.setText("Backup Selected")
+            else:
+                self.backup_button.setText("Backup")
         
         # Toggle button should ALWAYS be enabled (if there are profiles)
         # But it should only be VISIBLE when there are 3+ profiles

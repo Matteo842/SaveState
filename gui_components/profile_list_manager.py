@@ -19,17 +19,32 @@ from gui_utils import open_folder_in_file_manager  # For opening folders cross-p
 class ProfileSelectionDelegate(QStyledItemDelegate):
     """
     Custom Delegate to draw the selection with theme support:
-    - Dark Theme: Dark grey background (#2A2A2A) with red accent line (#A10808), white text
-    - Light Theme: Light grey background (#D8D8D8) with teal accent line (#007c8e), dark text
+    - Single selection: horizontal accent line at bottom of row
+    - Multi selection: vertical accent bar on the left side (before favorites column)
+    
+    Theme colors:
+    - Dark Theme: Dark grey background (#2A2A2A) with red accent (#A10808), white text
+    - Light Theme: Light teal background (#C8E6E3) with teal accent (#007c8e), dark text
     """
     
-    def __init__(self, parent=None, is_dark_mode=True):
+    def __init__(self, parent=None, is_dark_mode=True, table_widget=None):
         super().__init__(parent)
         self._is_dark_mode = is_dark_mode
+        self._table_widget = table_widget  # Reference to check selection count
     
     def set_dark_mode(self, is_dark: bool):
         """Update the delegate's theme mode. Call parent().viewport().update() after."""
         self._is_dark_mode = is_dark
+    
+    def set_table_widget(self, table_widget):
+        """Set the table widget reference for multi-selection detection."""
+        self._table_widget = table_widget
+    
+    def _get_selection_count(self) -> int:
+        """Returns the number of selected rows."""
+        if self._table_widget and self._table_widget.selectionModel():
+            return len(self._table_widget.selectionModel().selectedRows())
+        return 1
     
     def paint(self, painter, option, index):
         painter.save()
@@ -49,15 +64,30 @@ class ProfileSelectionDelegate(QStyledItemDelegate):
             # 1. Custom Background
             painter.fillRect(option.rect, bg_color)
             
-            # 2. Horizontal accent line at the BOTTOM (height 4px)
-            line_height = 4
-            painter.fillRect(
-                option.rect.x(), 
-                option.rect.y() + option.rect.height() - line_height, 
-                option.rect.width(), 
-                line_height, 
-                accent_color
-            )
+            # 2. Selection indicator based on selection count
+            selection_count = self._get_selection_count()
+            
+            if selection_count > 1:
+                # MULTI-SELECTION: Vertical bar on the LEFT (only for first column)
+                if index.column() == 0:
+                    bar_width = 4
+                    painter.fillRect(
+                        option.rect.x(),  # Left edge
+                        option.rect.y(), 
+                        bar_width, 
+                        option.rect.height(), 
+                        accent_color
+                    )
+            else:
+                # SINGLE SELECTION: Horizontal line at the BOTTOM
+                line_height = 4
+                painter.fillRect(
+                    option.rect.x(), 
+                    option.rect.y() + option.rect.height() - line_height, 
+                    option.rect.width(), 
+                    line_height, 
+                    accent_color
+                )
             
             # 3. Prepare option for base painting (Text/Icon)
             # Remove Selected state so the default delegate doesn't overwrite our bg with standard selection color
@@ -123,7 +153,8 @@ class ProfileListManager:
         self.table_widget.setObjectName("ProfileTable")
         self.table_widget.setColumnCount(4)  # Added column for delete button
         self.table_widget.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table_widget.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        # ExtendedSelection allows: Click=single, Ctrl+Click=toggle, Shift+Click=range
+        self.table_widget.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.table_widget.verticalHeader().setVisible(False)
         self.table_widget.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
@@ -145,11 +176,13 @@ class ProfileListManager:
         # Double-click to open save folder
         self.table_widget.cellDoubleClicked.connect(self.handle_double_click)
         self.table_widget.itemSelectionChanged.connect(self._update_delete_buttons_state)
+        # Repaint when selection changes (to switch between horizontal/vertical selection indicator)
+        self.table_widget.itemSelectionChanged.connect(self._on_selection_changed)
         
-        # Set Custom Delegate with current theme
+        # Set Custom Delegate with current theme and table reference for multi-selection
         current_theme = self.main_window.current_settings.get('theme', 'dark')
         is_dark = (current_theme == 'dark')
-        self.delegate = ProfileSelectionDelegate(self.table_widget, is_dark_mode=is_dark)
+        self.delegate = ProfileSelectionDelegate(self.table_widget, is_dark_mode=is_dark, table_widget=self.table_widget)
         self.table_widget.setItemDelegate(self.delegate)
 
         self.retranslate_headers() # Set initial headers
@@ -163,8 +196,10 @@ class ProfileListManager:
         # Force a repaint of the table to apply the new colors
         self.table_widget.viewport().update()
 
-
-
+    def _on_selection_changed(self):
+        """Force repaint when selection changes to update the selection indicator style."""
+        # This ensures the delegate repaints with correct style (horizontal vs vertical bar)
+        self.table_widget.viewport().update()
 
     def retranslate_headers(self):
         """Update the table header labels."""
@@ -176,7 +211,7 @@ class ProfileListManager:
         ])
 
     def get_selected_profile_name(self):
-        """Returns the name of the selected profile in the table (reads from the NAME column, now index 1)."""
+        """Returns the name of the first selected profile in the table (reads from the NAME column, now index 1)."""
         selected_rows = self.table_widget.selectionModel().selectedRows()
         if selected_rows:
             first_row_index = selected_rows[0].row()
@@ -184,6 +219,20 @@ class ProfileListManager:
             if name_item and name_item.data(Qt.ItemDataRole.UserRole):
                 return name_item.data(Qt.ItemDataRole.UserRole)
         return None
+
+    def get_selected_profile_names(self) -> list:
+        """Returns a list of all selected profile names (for multi-selection backup)."""
+        selected_rows = self.table_widget.selectionModel().selectedRows()
+        profile_names = []
+        for row_index in selected_rows:
+            name_item = self.table_widget.item(row_index.row(), 1)  # Column 1 = name
+            if name_item and name_item.data(Qt.ItemDataRole.UserRole):
+                profile_names.append(name_item.data(Qt.ItemDataRole.UserRole))
+        return profile_names
+    
+    def get_selection_count(self) -> int:
+        """Returns the number of selected profiles."""
+        return len(self.table_widget.selectionModel().selectedRows())
 
     def has_selection(self) -> bool:
         """Checks if any row is currently selected in the table."""
