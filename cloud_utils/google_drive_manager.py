@@ -839,10 +839,22 @@ class GoogleDriveManager:
             logging.error(f"Error creating folder '{folder_name}': {e}")
             return None
     
+    @staticmethod
+    def _escape_query_string(value: str) -> str:
+        """Escape a string value for use in Google Drive API queries.
+        
+        Google Drive API uses single quotes for string values in queries.
+        Single quotes within the value must be escaped by doubling them.
+        Backslashes must also be escaped.
+        """
+        # Escape backslashes first, then single quotes
+        return value.replace('\\', '\\\\').replace("'", "\\'")
+    
     def _find_folder(self, folder_name: str, parent_id: str) -> Optional[str]:
         """Find a folder by name in a parent folder."""
         try:
-            query = f"name='{folder_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+            escaped_name = self._escape_query_string(folder_name)
+            query = f"name='{escaped_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
             results = self._execute_with_retries(
                 lambda: self.service.files().list(
                     q=query,
@@ -862,7 +874,8 @@ class GoogleDriveManager:
     def _find_file_in_folder(self, filename: str, folder_id: str) -> Optional[str]:
         """Find a file by name in a folder."""
         try:
-            query = f"name='{filename}' and '{folder_id}' in parents and trashed=false"
+            escaped_filename = self._escape_query_string(filename)
+            query = f"name='{escaped_filename}' and '{folder_id}' in parents and trashed=false"
             results = self._execute_with_retries(
                 lambda: self.service.files().list(
                     q=query,

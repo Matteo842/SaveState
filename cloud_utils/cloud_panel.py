@@ -19,7 +19,7 @@ from cloud_utils.google_drive_manager import get_drive_manager, StorageCheckWork
 import cloud_settings_manager
 from utils import resource_path
 from gui_components import favorites_manager
-from core_logic import sanitize_foldername
+from core_logic import sanitize_foldername, is_group_profile, get_group_member_profiles
 
 
 class AuthWorker(QObject):
@@ -917,6 +917,57 @@ class CloudSavePanel(QWidget):
                 'has_cloud': backup.get('has_cloud', False),
                 'local_file_count': backup.get('local_file_count', 0),
                 'cloud_file_count': backup.get('cloud_file_count', 0),
+                'is_group': False,
+            })
+        
+        # --- Add group profiles to backup_items ---
+        # Groups are virtual entries that allow batch-selecting all members
+        for group_name, group_data in self.profiles.items():
+            if not is_group_profile(group_data):
+                continue
+            
+            # Get member profiles and calculate aggregated stats
+            member_names = get_group_member_profiles(group_name, self.profiles)
+            if not member_names:
+                continue
+            
+            # Calculate combined local/cloud file counts from members
+            total_local_files = 0
+            total_cloud_files = 0
+            has_any_local = False
+            has_any_cloud = False
+            
+            for member_name in member_names:
+                sanitized_member = sanitize_foldername(member_name)
+                # Check local backups
+                if sanitized_member in all_backups:
+                    member_backup = all_backups[sanitized_member]
+                    total_local_files += member_backup.get('local_file_count', 0)
+                    total_cloud_files += member_backup.get('cloud_file_count', 0)
+                    if member_backup.get('has_local'):
+                        has_any_local = True
+                    if member_backup.get('has_cloud'):
+                        has_any_cloud = True
+            
+            # Create group entry for sorting
+            backup_items.append({
+                'name': group_name,
+                'data': {
+                    'name': group_name,
+                    'path': None,
+                    'local_file_count': total_local_files,
+                    'cloud_file_count': total_cloud_files,
+                    'has_local': has_any_local,
+                    'has_cloud': has_any_cloud,
+                    'is_group': True,
+                    'member_names': member_names,
+                },
+                'is_favorite': favorites.get(group_name, False),
+                'has_local': has_any_local,
+                'has_cloud': has_any_cloud,
+                'local_file_count': total_local_files,
+                'cloud_file_count': total_cloud_files,
+                'is_group': True,
             })
         
         # Apply sorting based on current sort column
@@ -953,6 +1004,22 @@ class CloudSavePanel(QWidget):
         for item in backup_items:
             backup_name = item['name']
             backup = item['data']
+            is_group = item.get('is_group', False)
+            
+            # Handle groups specially
+            if is_group:
+                # Search filter for groups
+                if search_text and search_text not in backup_name.lower():
+                    continue
+                
+                # Add group to list
+                backup['profile'] = backup_name
+                backup['is_known_profile'] = True
+                backup['is_favorite'] = favorites.get(backup_name, False)
+                
+                self.local_backups.append(backup)
+                self._add_backup_row(backup)
+                continue
             
             # Check if this backup folder matches a profile
             # Use the sanitized_to_profile mapping to handle sanitized folder names
@@ -1104,20 +1171,36 @@ class CloudSavePanel(QWidget):
         folder_name = backup_info.get('name', profile_name)  # Actual folder name on disk (sanitized)
         is_known = backup_info.get('is_known_profile', False)
         is_favorite = backup_info.get('is_favorite', False)
+        is_group = backup_info.get('is_group', False)
         
         display_name = profile_name
-        if is_favorite:
+        if is_group:
+            display_name = "📁 " + profile_name  # Folder icon for groups
+        elif is_favorite:
             display_name = "★ " + profile_name
         
         profile_item = QTableWidgetItem(display_name)
         # Store the actual folder name as UserRole data for use in operations
         profile_item.setData(Qt.ItemDataRole.UserRole, folder_name)
+        # Store group flag and member names for checkbox sync
+        profile_item.setData(Qt.ItemDataRole.UserRole + 1, is_group)
+        if is_group:
+            profile_item.setData(Qt.ItemDataRole.UserRole + 2, backup_info.get('member_names', []))
         profile_item.setFlags(profile_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-        if is_known:
+        if is_group:
+            profile_item.setForeground(QColor("#FFA500"))  # Orange for groups
+        elif is_known:
             profile_item.setForeground(QColor("#4CAF50"))  # Green for known profiles
         else:
             profile_item.setForeground(QColor("#AAAAAA"))  # Gray for unknown
         self.backup_table.setItem(row, 2, profile_item)
+        
+        # Connect group checkbox to toggle members
+        if is_group:
+            member_names = backup_info.get('member_names', [])
+            checkbox.stateChanged.connect(
+                lambda state, members=member_names: self._on_group_checkbox_changed(state, members)
+            )
         
         # Column 3: Local Status
         local_count = backup_info.get('local_file_count', 0)
@@ -2345,9 +2428,49 @@ class CloudSavePanel(QWidget):
         # Refresh cloud status
         self._refresh_cloud_status()
     
+    def _on_group_checkbox_changed(self, state, member_names):
+        """Handle group checkbox change - toggle all member profile checkboxes."""
+        is_checked = state == Qt.CheckState.Checked.value
+        
+        # Find and toggle member checkboxes
+        for row in range(self.backup_table.rowCount()):
+            name_item = self.backup_table.item(row, 2)
+            if not name_item:
+                continue
+            
+            # Check if this row is a group (skip groups when toggling)
+            is_row_group = name_item.data(Qt.ItemDataRole.UserRole + 1)
+            if is_row_group:
+                continue
+            
+            # Get the profile name (folder name)
+            folder_name = name_item.data(Qt.ItemDataRole.UserRole)
+            if not folder_name:
+                continue
+            
+            # Check if this profile is a member of the group
+            # Members are stored as original names, folder_name is sanitized
+            for member_name in member_names:
+                sanitized_member = sanitize_foldername(member_name)
+                if folder_name == sanitized_member:
+                    checkbox_widget = self.backup_table.cellWidget(row, 0)
+                    if checkbox_widget:
+                        checkbox = checkbox_widget.findChild(QCheckBox)
+                        if checkbox:
+                            checkbox.setChecked(is_checked)
+                    break
+    
     def _get_selected_backups(self):
-        """Get list of selected backup folder names (sanitized names for file operations)."""
+        """Get list of selected backup folder names (sanitized names for file operations).
+        
+        Note: Groups are expanded to their member profiles - groups themselves don't have
+        backup folders, only their members do.
+        """
         selected = []
+        selected_set = set()  # To avoid duplicates when group members are also selected individually
+        
+        logging.debug(f"_get_selected_backups: scanning {self.backup_table.rowCount()} rows")
+        
         for row in range(self.backup_table.rowCount()):
             checkbox_widget = self.backup_table.cellWidget(row, 0)
             if checkbox_widget:
@@ -2356,6 +2479,23 @@ class CloudSavePanel(QWidget):
                     # Column 2 contains the profile name; UserRole data contains actual folder name
                     name_item = self.backup_table.item(row, 2)
                     if name_item:
+                        # Check if this is a group - expand to member folder names
+                        is_group = name_item.data(Qt.ItemDataRole.UserRole + 1)
+                        logging.debug(f"Row {row}: is_group={is_group}, text={name_item.text()}")
+                        
+                        if is_group:
+                            # Get member names and add their sanitized folder names
+                            member_names = name_item.data(Qt.ItemDataRole.UserRole + 2)
+                            logging.debug(f"Group members: {member_names}")
+                            if member_names:
+                                for member_name in member_names:
+                                    sanitized_member = sanitize_foldername(member_name)
+                                    logging.debug(f"  Adding member: {member_name} -> {sanitized_member}")
+                                    if sanitized_member not in selected_set:
+                                        selected_set.add(sanitized_member)
+                                        selected.append(sanitized_member)
+                            continue
+                        
                         # Get the actual folder name from UserRole data (sanitized name)
                         folder_name = name_item.data(Qt.ItemDataRole.UserRole)
                         if not folder_name:
@@ -2363,7 +2503,12 @@ class CloudSavePanel(QWidget):
                             folder_name = name_item.text()
                             if folder_name.startswith("★ "):
                                 folder_name = folder_name[2:]  # Remove star prefix
-                        selected.append(folder_name)
+                        
+                        if folder_name not in selected_set:
+                            selected_set.add(folder_name)
+                            selected.append(folder_name)
+        
+        logging.debug(f"_get_selected_backups: returning {len(selected)} items: {selected}")
         return selected
     
     def _on_exit_clicked(self):
