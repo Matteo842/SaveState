@@ -656,12 +656,8 @@ class MainWindowHandlers:
             return
         
         # Get global settings for backup
-        effective = {
-            'backup_base_dir': self.main_window.current_settings.get('backup_base_dir', config.BACKUP_BASE_DIR),
-            'max_backups': self.main_window.current_settings.get('max_backups', config.MAX_BACKUPS),
-            'max_source_size_mb': self.main_window.current_settings.get('max_source_size_mb', 200),
-            'compression_mode': self.main_window.current_settings.get('compression_mode', 'standard'),
-        }
+        global_settings = self.main_window.current_settings
+        backup_base_dir = global_settings.get('backup_base_dir', config.BACKUP_BASE_DIR)
         
         self.main_window.status_label.setText(f"Starting backup for all {profile_count} profiles...")
         self.main_window.set_controls_enabled(False)
@@ -680,16 +676,20 @@ class MainWindowHandlers:
                     logging.warning(f"[Backup All] Skipping '{profile_name}': invalid profile data")
                     continue
                 
-                # Get profile-specific overrides if available
-                profile_effective = effective.copy()
+                # Get effective settings using helper (respects group > profile > global priority)
                 try:
-                    if profile_data.get('use_profile_overrides') and isinstance(profile_data.get('overrides'), dict):
-                        ov = profile_data.get('overrides')
-                        if 'max_backups' in ov: profile_effective['max_backups'] = int(ov['max_backups'])
-                        if 'max_source_size_mb' in ov: profile_effective['max_source_size_mb'] = int(ov['max_source_size_mb'])
-                        if 'compression_mode' in ov: profile_effective['compression_mode'] = str(ov['compression_mode'])
+                    profile_effective = core_logic.get_effective_profile_settings(
+                        profile_name, profile_data, profiles, global_settings
+                    )
+                    profile_effective['backup_base_dir'] = backup_base_dir
                 except Exception as e:
-                    logging.warning(f"[Backup All] Error reading overrides for '{profile_name}': {e}")
+                    logging.warning(f"[Backup All] Error getting effective settings for '{profile_name}': {e}")
+                    profile_effective = {
+                        'backup_base_dir': backup_base_dir,
+                        'max_backups': global_settings.get('max_backups', config.MAX_BACKUPS),
+                        'max_source_size_mb': global_settings.get('max_source_size_mb', 200),
+                        'compression_mode': global_settings.get('compression_mode', 'standard'),
+                    }
                 
                 # Get source paths
                 source_paths = []
@@ -865,13 +865,9 @@ class MainWindowHandlers:
         if reply != QMessageBox.StandardButton.Yes:
             return
         
-        # Get global settings for backup
-        effective = {
-            'backup_base_dir': self.main_window.current_settings.get('backup_base_dir', config.BACKUP_BASE_DIR),
-            'max_backups': self.main_window.current_settings.get('max_backups', config.MAX_BACKUPS),
-            'max_source_size_mb': self.main_window.current_settings.get('max_source_size_mb', 200),
-            'compression_mode': self.main_window.current_settings.get('compression_mode', 'standard'),
-        }
+        # Get global settings and profiles for backup
+        global_settings = self.main_window.current_settings
+        backup_base_dir = global_settings.get('backup_base_dir', config.BACKUP_BASE_DIR)
         
         profiles = self.main_window.profiles
         self.main_window.status_label.setText(f"Backing up {profile_count} selected profiles...")
@@ -892,16 +888,20 @@ class MainWindowHandlers:
                     logging.warning(f"[Backup Selected] Skipping '{profile_name}': invalid profile data")
                     continue
                 
-                # Get profile-specific overrides if available
-                profile_effective = effective.copy()
+                # Get effective settings using helper (respects group > profile > global priority)
                 try:
-                    if profile_data.get('use_profile_overrides') and isinstance(profile_data.get('overrides'), dict):
-                        ov = profile_data.get('overrides')
-                        if 'max_backups' in ov: profile_effective['max_backups'] = int(ov['max_backups'])
-                        if 'max_source_size_mb' in ov: profile_effective['max_source_size_mb'] = int(ov['max_source_size_mb'])
-                        if 'compression_mode' in ov: profile_effective['compression_mode'] = str(ov['compression_mode'])
+                    profile_effective = core_logic.get_effective_profile_settings(
+                        profile_name, profile_data, profiles, global_settings
+                    )
+                    profile_effective['backup_base_dir'] = backup_base_dir
                 except Exception as e:
-                    logging.warning(f"[Backup Selected] Error reading overrides for '{profile_name}': {e}")
+                    logging.warning(f"[Backup Selected] Error getting effective settings for '{profile_name}': {e}")
+                    profile_effective = {
+                        'backup_base_dir': backup_base_dir,
+                        'max_backups': global_settings.get('max_backups', config.MAX_BACKUPS),
+                        'max_source_size_mb': global_settings.get('max_source_size_mb', 200),
+                        'compression_mode': global_settings.get('compression_mode', 'standard'),
+                    }
                 
                 # Get source paths
                 source_paths = []
@@ -1031,24 +1031,30 @@ class MainWindowHandlers:
         self.main_window.status_label.setText("Starting backup for '{0}'...".format(profile_name))
         self.main_window.set_controls_enabled(False) # Disable controls
 
-        # Determine effective settings (per-profile overrides or global)
-        effective = {
-            'backup_base_dir': self.main_window.current_settings.get('backup_base_dir', config.BACKUP_BASE_DIR),
-            'max_backups': self.main_window.current_settings.get('max_backups', config.MAX_BACKUPS),
-            'max_source_size_mb': self.main_window.current_settings.get('max_source_size_mb', 200),
-            'compression_mode': self.main_window.current_settings.get('compression_mode', 'standard'),
-            'check_free_space_enabled': self.main_window.current_settings.get('check_free_space_enabled', True),
-        }
+        # Determine effective settings using helper (respects group > profile > global priority)
+        global_settings = self.main_window.current_settings
         try:
-            if isinstance(profile_data, dict) and profile_data.get('use_profile_overrides') and isinstance(profile_data.get('overrides'), dict):
-                ov = profile_data.get('overrides')
-                # Do not override backup_base_dir here; base dir remains global unless later requested
-                if 'max_backups' in ov: effective['max_backups'] = int(ov['max_backups'])
-                if 'max_source_size_mb' in ov: effective['max_source_size_mb'] = int(ov['max_source_size_mb'])
-                if 'compression_mode' in ov: effective['compression_mode'] = str(ov['compression_mode'])
-                if 'check_free_space_enabled' in ov: effective['check_free_space_enabled'] = bool(ov['check_free_space_enabled'])
+            effective = core_logic.get_effective_profile_settings(
+                profile_name, profile_data, self.main_window.profiles, global_settings
+            )
+            # Add settings that aren't handled by the helper
+            effective['backup_base_dir'] = global_settings.get('backup_base_dir', config.BACKUP_BASE_DIR)
+            effective['check_free_space_enabled'] = global_settings.get('check_free_space_enabled', True)
+            
+            # Check for check_free_space_enabled override in profile (not part of group settings)
+            if isinstance(profile_data, dict) and profile_data.get('use_profile_overrides'):
+                ov = profile_data.get('overrides', {})
+                if 'check_free_space_enabled' in ov:
+                    effective['check_free_space_enabled'] = bool(ov['check_free_space_enabled'])
         except Exception as e:
-            logging.warning(f"Error reading profile overrides, falling back to globals: {e}")
+            logging.warning(f"Error getting effective settings, falling back to globals: {e}")
+            effective = {
+                'backup_base_dir': global_settings.get('backup_base_dir', config.BACKUP_BASE_DIR),
+                'max_backups': global_settings.get('max_backups', config.MAX_BACKUPS),
+                'max_source_size_mb': global_settings.get('max_source_size_mb', 200),
+                'compression_mode': global_settings.get('compression_mode', 'standard'),
+                'check_free_space_enabled': global_settings.get('check_free_space_enabled', True),
+            }
 
         # Determine which backup function to use
         is_pcsx2_selective_profile = (profile_data.get('emulator') == 'PCSX2' and
@@ -1239,6 +1245,35 @@ class MainWindowHandlers:
     @Slot()
     def handle_restore(self):
         """Handle restore operation - can work with or without a selected profile."""
+        # Check for multi-selection (Ctrl+Click or Shift+Click)
+        selected_profiles = self.main_window.profile_table_manager.get_selected_profile_names()
+        if len(selected_profiles) > 1:
+            # Filter out groups from multi-selection (they need individual handling)
+            regular_profiles = []
+            group_profiles = []
+            for p_name in selected_profiles:
+                p_data = self.main_window.profiles.get(p_name, {})
+                if core_logic.is_group_profile(p_data):
+                    group_profiles.append(p_name)
+                else:
+                    regular_profiles.append(p_name)
+            
+            if group_profiles:
+                QMessageBox.warning(
+                    self.main_window,
+                    "Groups in Selection",
+                    f"Groups cannot be batch-restored with regular profiles.\n\n"
+                    f"Groups selected: {', '.join(group_profiles)}\n\n"
+                    f"Please restore groups individually."
+                )
+                if not regular_profiles:
+                    return
+            
+            if regular_profiles:
+                # Execute batch restore of latest backups for selected profiles
+                self._execute_batch_restore(regular_profiles)
+                return
+        
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
         
         # If we have a profile selected, validate it
@@ -1269,7 +1304,7 @@ class MainWindowHandlers:
         dialog.show()
     
     def _handle_restore_group(self, group_name: str):
-        """Handle restore for a group profile - shows member selection dialog."""
+        """Handle restore for a group profile - shows member selection dialog, then restores latest backups."""
         member_profiles = core_logic.get_group_member_profiles(group_name, self.main_window.profiles)
         
         if not member_profiles:
@@ -1291,86 +1326,158 @@ class MainWindowHandlers:
                 if not selected_profiles:
                     return
                 
-                # Show restore dialog for each selected profile sequentially
-                # For simplicity, show a combined restore dialog
-                if len(selected_profiles) == 1:
-                    # Single profile - use normal restore flow
-                    profile_name = selected_profiles[0]
-                    profile_data = self.main_window.profiles.get(profile_name, {})
-                    self._restore_profile_data = {
-                        'name': profile_name,
-                        'data': profile_data
-                    }
-                    restore_dialog = RestoreDialog(profile_name, self.main_window)
-                    restore_dialog.finished.connect(
-                        lambda result, d=restore_dialog: self.on_restore_dialog_finished(result, d)
-                    )
-                    restore_dialog.show()
-                else:
-                    # Multiple profiles - inform user they need to restore one at a time
-                    QMessageBox.information(
-                        self.main_window, 
-                        "Multiple Profiles Selected",
-                        f"You selected {len(selected_profiles)} profiles to restore.\n\n"
-                        f"Restore dialogs will open for each profile one at a time.\n"
-                        f"Click OK to start with '{selected_profiles[0]}'."
-                    )
-                    # Start with first profile, store remaining for sequential restore
-                    self._pending_group_restores = selected_profiles[1:]
-                    profile_name = selected_profiles[0]
-                    profile_data = self.main_window.profiles.get(profile_name, {})
-                    self._restore_profile_data = {
-                        'name': profile_name,
-                        'data': profile_data
-                    }
-                    restore_dialog = RestoreDialog(profile_name, self.main_window)
-                    restore_dialog.finished.connect(
-                        lambda result, d=restore_dialog: self._on_group_restore_dialog_finished(result, d)
-                    )
-                    restore_dialog.show()
+                # Execute batch restore of latest backups for selected profiles
+                self._execute_batch_restore(selected_profiles)
+                
         except Exception as e:
             logging.error(f"Error handling group restore: {e}", exc_info=True)
             QMessageBox.critical(self.main_window, "Error", f"Failed to restore group: {e}")
     
-    def _on_group_restore_dialog_finished(self, result, dialog):
-        """Handle restore dialog result for group sequential restore."""
-        # Process this restore
-        self.on_restore_dialog_finished(result, dialog)
+    def _execute_batch_restore(self, selected_profiles: list):
+        """
+        Execute batch restore of latest backups for selected profiles.
         
-        # Check if there are more profiles to restore
-        if hasattr(self, '_pending_group_restores') and self._pending_group_restores:
-            remaining = len(self._pending_group_restores)
+        Args:
+            selected_profiles: List of profile names to restore
+        """
+        backup_base_dir = self.main_window.current_settings.get('backup_base_dir', config.BACKUP_BASE_DIR)
+        
+        # Gather info about each profile's latest backup
+        restore_items = []
+        skipped_profiles = []
+        pcsx2_profiles = []
+        
+        for profile_name in selected_profiles:
+            profile_data = self.main_window.profiles.get(profile_name, {})
             
-            # Ask if user wants to continue with next profile
-            reply = QMessageBox.question(
-                self.main_window,
-                "Continue Group Restore",
-                f"Restore completed.\n\n{remaining} more profile(s) to restore.\n"
-                f"Continue with '{self._pending_group_restores[0]}'?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes
-            )
+            # Check if PCSX2 selective profile (not supported in batch)
+            is_pcsx2_selective = (profile_data.get('emulator') == 'PCSX2' and
+                                  'save_dir' in profile_data and
+                                  'paths' in profile_data)
+            if is_pcsx2_selective:
+                pcsx2_profiles.append(profile_name)
+                continue
             
-            if reply == QMessageBox.StandardButton.Yes:
-                # Restore next profile
-                profile_name = self._pending_group_restores.pop(0)
-                profile_data = self.main_window.profiles.get(profile_name, {})
-                self._restore_profile_data = {
-                    'name': profile_name,
-                    'data': profile_data
-                }
-                restore_dialog = RestoreDialog(profile_name, self.main_window)
-                restore_dialog.finished.connect(
-                    lambda result, d=restore_dialog: self._on_group_restore_dialog_finished(result, d)
-                )
-                restore_dialog.show()
-            else:
-                # User cancelled - clear pending
-                self._pending_group_restores = []
-        else:
-            # No more pending restores
-            if hasattr(self, '_pending_group_restores'):
-                del self._pending_group_restores
+            # Get latest backup
+            backups = core_logic.list_available_backups(profile_name, backup_base_dir)
+            
+            if not backups:
+                skipped_profiles.append(profile_name)
+                logging.info(f"Batch restore: skipping '{profile_name}' - no backups available")
+                continue
+            
+            # First backup is the latest (sorted by date desc)
+            latest_backup_name, latest_backup_path, latest_backup_date = backups[0]
+            
+            # Get destination paths
+            destination_paths = []
+            paths_data = profile_data.get('paths')
+            path_data = profile_data.get('path')
+            
+            if isinstance(paths_data, list) and paths_data:
+                destination_paths = paths_data
+            elif isinstance(path_data, str) and path_data:
+                destination_paths = [path_data]
+            
+            if not destination_paths:
+                skipped_profiles.append(profile_name)
+                logging.warning(f"Batch restore: skipping '{profile_name}' - no valid destination paths")
+                continue
+            
+            restore_items.append({
+                'profile_name': profile_name,
+                'profile_data': profile_data,
+                'backup_path': latest_backup_path,
+                'backup_name': latest_backup_name,
+                'backup_date': latest_backup_date,
+                'destination_paths': destination_paths
+            })
+        
+        # Check if anything to restore
+        if not restore_items:
+            msg = "No profiles can be restored.\n\n"
+            if skipped_profiles:
+                msg += f"Skipped (no backups): {', '.join(skipped_profiles)}\n"
+            if pcsx2_profiles:
+                msg += f"PCSX2 profiles (use individual restore): {', '.join(pcsx2_profiles)}"
+            QMessageBox.warning(self.main_window, "Nothing to Restore", msg)
+            return
+        
+        # Build confirmation message
+        msg = f"The following {len(restore_items)} profile(s) will be restored from their latest backup:\n\n"
+        for item in restore_items:
+            date_str = item['backup_date'].strftime("%Y-%m-%d %H:%M") if item['backup_date'] else "Unknown"
+            msg += f"• {item['profile_name']} ({date_str})\n"
+        
+        if skipped_profiles:
+            msg += f"\nSkipped (no backups): {', '.join(skipped_profiles)}"
+        if pcsx2_profiles:
+            msg += f"\nPCSX2 profiles (use individual restore): {', '.join(pcsx2_profiles)}"
+        
+        msg += "\n\nWARNING: This will overwrite existing save files!\nProceed?"
+        
+        reply = QMessageBox.warning(
+            self.main_window,
+            "Confirm Batch Restore",
+            msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            self.main_window.status_label.setText("Batch restore cancelled.")
+            return
+        
+        # Check if another operation is running
+        if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
+            QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+            return
+        
+        # Start batch restore in background
+        self.main_window.set_controls_enabled(False)
+        self.main_window.status_label.setText(f"Restoring {len(restore_items)} profiles...")
+        
+        def batch_restore_worker(items):
+            """Worker function for batch restore."""
+            results = []
+            for i, item in enumerate(items, 1):
+                logging.info(f"Batch restore [{i}/{len(items)}]: restoring '{item['profile_name']}'")
+                try:
+                    success, message = core_logic.perform_restore(
+                        item['profile_name'],
+                        item['destination_paths'],
+                        item['backup_path'],
+                        item['profile_data']
+                    )
+                    results.append({
+                        'profile': item['profile_name'],
+                        'success': success,
+                        'message': message
+                    })
+                except Exception as e:
+                    logging.error(f"Batch restore error for '{item['profile_name']}': {e}", exc_info=True)
+                    results.append({
+                        'profile': item['profile_name'],
+                        'success': False,
+                        'message': str(e)
+                    })
+            
+            # Build summary
+            successful = [r for r in results if r['success']]
+            failed = [r for r in results if not r['success']]
+            
+            summary = f"Restored {len(successful)}/{len(results)} profiles."
+            if failed:
+                summary += f"\n\nFailed profiles:\n"
+                for r in failed:
+                    summary += f"• {r['profile']}: {r['message']}\n"
+            
+            return len(failed) == 0, summary
+        
+        self.main_window.worker_thread = WorkerThread(batch_restore_worker, restore_items)
+        self.main_window.worker_thread.finished.connect(self.on_operation_finished)
+        self.main_window.worker_thread.start()
+        logging.info(f"Started batch restore for {len(restore_items)} profiles")
         
     def on_restore_dialog_finished(self, result, dialog):
         """Handle restore dialog result."""
@@ -1635,21 +1742,24 @@ class MainWindowHandlers:
             dialog = GroupDialog(
                 self.main_window.profiles, 
                 parent=self.main_window,
-                preselected_profiles=selected_profiles
+                preselected_profiles=selected_profiles,
+                global_settings=self.main_window.current_settings
             )
             
             if dialog.exec() == GroupDialog.DialogCode.Accepted:
-                group_name, profile_names = dialog.get_result()
+                group_name, profile_names, group_settings = dialog.get_result()
                 if group_name and profile_names:
                     success, error = core_logic.create_group_profile(
-                        group_name, profile_names, self.main_window.profiles
+                        group_name, profile_names, self.main_window.profiles,
+                        settings=group_settings if group_settings else None
                     )
                     
                     if success:
                         core_logic.save_profiles(self.main_window.profiles)
                         self.main_window.profile_table_manager.update_profile_table()
-                        self.main_window.status_label.setText(f"Created group '{group_name}' with {len(profile_names)} profiles")
-                        logging.info(f"Group '{group_name}' created successfully")
+                        settings_info = " (with custom settings)" if group_settings and group_settings.get('enabled') else ""
+                        self.main_window.status_label.setText(f"Created group '{group_name}' with {len(profile_names)} profiles{settings_info}")
+                        logging.info(f"Group '{group_name}' created successfully with settings: {group_settings}")
                     else:
                         QMessageBox.warning(self.main_window, "Group Creation Failed", error)
                         logging.error(f"Failed to create group: {error}")
@@ -1678,22 +1788,25 @@ class MainWindowHandlers:
             dialog = GroupDialog(
                 self.main_window.profiles,
                 parent=self.main_window,
-                edit_group_name=profile_name
+                edit_group_name=profile_name,
+                global_settings=self.main_window.current_settings
             )
             
             if dialog.exec() == GroupDialog.DialogCode.Accepted:
-                new_name, profile_names = dialog.get_result()
+                new_name, profile_names, group_settings = dialog.get_result()
                 if new_name and profile_names:
                     success, error = core_logic.update_group_profile(
                         profile_name, profile_names, self.main_window.profiles,
-                        new_group_name=new_name if new_name != profile_name else None
+                        new_group_name=new_name if new_name != profile_name else None,
+                        new_settings=group_settings
                     )
                     
                     if success:
                         core_logic.save_profiles(self.main_window.profiles)
                         self.main_window.profile_table_manager.update_profile_table()
-                        self.main_window.status_label.setText(f"Updated group '{new_name}'")
-                        logging.info(f"Group '{new_name}' updated successfully")
+                        settings_info = " (settings updated)" if group_settings and group_settings.get('enabled') else ""
+                        self.main_window.status_label.setText(f"Updated group '{new_name}'{settings_info}")
+                        logging.info(f"Group '{new_name}' updated successfully with settings: {group_settings}")
                     else:
                         QMessageBox.warning(self.main_window, "Group Update Failed", error)
                         logging.error(f"Failed to update group: {error}")

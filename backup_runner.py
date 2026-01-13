@@ -184,6 +184,9 @@ def _run_group_backup(group_name, profiles, settings):
     """
     Backup all profiles in a group sequentially.
     
+    Uses group settings override if enabled, otherwise falls back to global settings.
+    Priority: Group override > Profile override > Global settings
+    
     Args:
         group_name: Name of the group profile
         profiles: Dictionary of all profiles
@@ -199,11 +202,17 @@ def _run_group_backup(group_name, profiles, settings):
         show_notification(False, f"Error: Group '{group_name}' is empty.")
         return False
     
+    # Get group settings for logging purposes
+    group_settings = core_logic.get_group_settings(group_name, profiles)
+    if group_settings.get('enabled'):
+        logging.info(f"Group '{group_name}' has settings override enabled: {group_settings}")
+    
     logging.info(f"Starting group backup for '{group_name}' with {len(member_profiles)} profiles")
     
     all_success = True
     success_count = 0
     failed_profiles = []
+    backup_base_dir = settings.get("backup_base_dir")
     
     for idx, member_name in enumerate(member_profiles, 1):
         logging.info(f"[Group Backup {idx}/{len(member_profiles)}] Backing up: '{member_name}'")
@@ -228,13 +237,22 @@ def _run_group_backup(group_name, profiles, settings):
             all_success = False
             continue
         
-        # Perform backup for this member
+        # Get effective settings using helper (respects group > profile > global priority)
         try:
-            backup_base_dir = settings.get("backup_base_dir")
+            effective = core_logic.get_effective_profile_settings(
+                member_name, member_data, profiles, settings
+            )
+            max_bk = effective.get('max_backups')
+            max_src_size = effective.get('max_source_size_mb')
+            compression_mode = effective.get('compression_mode', 'standard')
+        except Exception as e:
+            logging.warning(f"Error getting effective settings for '{member_name}': {e}")
             max_bk = settings.get("max_backups")
             max_src_size = settings.get("max_source_size_mb")
-            compression_mode = settings.get("compression_mode", "zip")
-            
+            compression_mode = settings.get("compression_mode", "standard")
+        
+        # Perform backup for this member
+        try:
             success, message = core_logic.perform_backup(
                 member_name,
                 paths_to_backup,
@@ -377,11 +395,30 @@ def run_silent_backup(profile_name):
     #         return False
 
     backup_base_dir = settings.get("backup_base_dir")
-    max_bk = settings.get("max_backups")
-    max_src_size = settings.get("max_source_size_mb")
-    compression_mode = settings.get("compression_mode", "zip")
     check_space = settings.get("check_free_space_enabled", True)
     min_gb_required = config.MIN_FREE_SPACE_GB
+    
+    # Get effective settings using helper (respects group > profile > global priority)
+    # This is important for profiles that are members of a group
+    try:
+        effective = core_logic.get_effective_profile_settings(
+            profile_name, profile_data, profiles, settings
+        )
+        max_bk = effective.get('max_backups')
+        max_src_size = effective.get('max_source_size_mb')
+        compression_mode = effective.get('compression_mode', 'standard')
+        
+        # Log if using group settings
+        if profile_data.get('member_of_group'):
+            group_name = profile_data.get('member_of_group')
+            group_settings = core_logic.get_group_settings(group_name, profiles)
+            if group_settings.get('enabled'):
+                logging.info(f"Profile '{profile_name}' is using group '{group_name}' settings override")
+    except Exception as e:
+        logging.warning(f"Error getting effective settings for '{profile_name}': {e}")
+        max_bk = settings.get("max_backups")
+        max_src_size = settings.get("max_source_size_mb")
+        compression_mode = settings.get("compression_mode", "standard")
 
     # Validate other settings (backup_base_dir is checked above)
     if not backup_base_dir or max_bk is None or max_src_size is None:

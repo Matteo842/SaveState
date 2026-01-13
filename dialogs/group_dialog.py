@@ -6,19 +6,47 @@ Dialog for creating and editing Profile Groups (Matrioska profiles).
 A Profile Group is a virtual profile that contains references to multiple
 real profiles. When backup/restore is triggered on a group, it processes
 all contained profiles sequentially.
+
+Groups can also have their own settings that override individual profile
+settings (and global settings) for all member profiles.
 """
 
 import logging
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QDialogButtonBox, QAbstractItemView, QListWidgetItem, QMessageBox,
-    QFrame, QSizePolicy
+    QFrame, QSizePolicy, QGroupBox, QCheckBox, QSpinBox, QComboBox,
+    QPushButton, QFormLayout
 )
 from PySide6.QtCore import Qt, Slot
 
 import core_logic
 
 log = logging.getLogger(__name__)
+
+# Default values for group settings (matching global defaults from settings_manager)
+DEFAULT_MAX_BACKUPS = 5
+DEFAULT_COMPRESSION_MODE = "standard"
+DEFAULT_MAX_SOURCE_SIZE_MB = 500
+
+# Size options for max source size combobox (matching settings_dialog.py)
+SIZE_OPTIONS = [
+    ("50 MB", 50),
+    ("100 MB", 100),
+    ("250 MB", 250),
+    ("500 MB", 500),
+    ("1 GB (1024 MB)", 1024),
+    ("2 GB (2048 MB)", 2048),
+    ("5 GB (5120 MB)", 5120),
+    ("No Limit", -1)
+]
+
+# Compression options
+COMPRESSION_OPTIONS = {
+    "standard": "Standard (Recommended)",
+    "maximum": "Maximum (Slower)",
+    "stored": "None (Faster)"
+}
 
 
 class GroupDialog(QDialog):
@@ -27,10 +55,14 @@ class GroupDialog(QDialog):
     
     In create mode: allows selecting multiple profiles to group together.
     In edit mode: shows existing group members with ability to add/remove.
+    
+    Groups can have their own settings that override individual profile
+    settings for all member profiles when backup is performed.
     """
     
     def __init__(self, profiles_dict: dict, parent=None, 
-                 edit_group_name: str = None, preselected_profiles: list = None):
+                 edit_group_name: str = None, preselected_profiles: list = None,
+                 global_settings: dict = None):
         """
         Initialize the group dialog.
         
@@ -39,6 +71,7 @@ class GroupDialog(QDialog):
             parent: Parent widget
             edit_group_name: If provided, dialog is in edit mode for this group
             preselected_profiles: List of profile names to pre-select (for create mode)
+            global_settings: Global application settings (for default values)
         """
         super().__init__(parent)
         
@@ -47,6 +80,10 @@ class GroupDialog(QDialog):
         self.original_group_name = edit_group_name
         self.result_group_name = None
         self.result_profile_names = None
+        self.result_settings = None  # Group settings result
+        
+        # Store global settings for defaults
+        self.global_settings = global_settings or {}
         
         # Setup window
         if self.edit_mode:
@@ -54,8 +91,8 @@ class GroupDialog(QDialog):
         else:
             self.setWindowTitle("Create Profile Group")
         
-        self.setMinimumWidth(450)
-        self.setMinimumHeight(400)
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(550)
         
         # Build UI
         self._setup_ui(preselected_profiles)
@@ -92,6 +129,9 @@ class GroupDialog(QDialog):
         self.profile_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.profile_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
+        # Store preselected for sorting
+        self._preselected_profiles = preselected_profiles or []
+        
         # Populate with available profiles (excluding groups and already-grouped profiles)
         available_profiles = self._get_available_profiles()
         
@@ -100,7 +140,12 @@ class GroupDialog(QDialog):
             item.setFlags(Qt.ItemFlag.NoItemFlags)
             self.profile_list.addItem(item)
         else:
-            for profile_name in sorted(available_profiles):
+            # Sort profiles: selected first, then alphabetically
+            selected_profiles = [p for p in sorted(available_profiles) if p in self._preselected_profiles]
+            unselected_profiles = [p for p in sorted(available_profiles) if p not in self._preselected_profiles]
+            sorted_profiles = selected_profiles + unselected_profiles
+            
+            for profile_name in sorted_profiles:
                 item = QListWidgetItem(profile_name)
                 item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
                 
@@ -113,13 +158,17 @@ class GroupDialog(QDialog):
                 item.setData(Qt.ItemDataRole.UserRole, profile_name)
                 self.profile_list.addItem(item)
         
-        self.profile_list.itemChanged.connect(self._update_button_state)
+        self.profile_list.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self.profile_list)
         
         # --- Selection Info ---
         self.selection_info_label = QLabel()
         self.selection_info_label.setStyleSheet("color: gray; font-style: italic;")
         layout.addWidget(self.selection_info_label)
+        
+        # --- Group Settings Section (only in edit mode) ---
+        if self.edit_mode:
+            self._setup_settings_section(layout)
         
         # --- Buttons ---
         self.button_box = QDialogButtonBox(
@@ -133,6 +182,129 @@ class GroupDialog(QDialog):
         
         # Initial button state
         self._update_button_state()
+    
+    def _setup_settings_section(self, parent_layout: QVBoxLayout):
+        """Setup the group settings override section."""
+        # --- Settings Group Box ---
+        self.settings_group = QGroupBox("Group Settings (Override)")
+        settings_layout = QVBoxLayout()
+        settings_layout.setSpacing(8)
+        
+        # Enable settings checkbox
+        self.enable_settings_checkbox = QCheckBox("Enable group-level settings override")
+        self.enable_settings_checkbox.setToolTip(
+            "When enabled, these settings will override individual profile settings\n"
+            "and global settings for all profiles in this group."
+        )
+        self.enable_settings_checkbox.toggled.connect(self._on_settings_enabled_toggled)
+        settings_layout.addWidget(self.enable_settings_checkbox)
+        
+        # Settings form (initially disabled)
+        self.settings_form_widget = QFrame()
+        form_layout = QFormLayout(self.settings_form_widget)
+        form_layout.setContentsMargins(20, 8, 8, 8)
+        form_layout.setSpacing(8)
+        
+        # Max backups spinbox
+        self.max_backups_spin = QSpinBox()
+        self.max_backups_spin.setRange(1, 99)
+        self.max_backups_spin.setValue(
+            self.global_settings.get('max_backups', DEFAULT_MAX_BACKUPS)
+        )
+        self.max_backups_spin.setToolTip("Maximum number of backups to keep per profile")
+        form_layout.addRow("Max backups:", self.max_backups_spin)
+        
+        # Compression mode combobox
+        self.compression_combo = QComboBox()
+        for key, display_text in COMPRESSION_OPTIONS.items():
+            self.compression_combo.addItem(display_text, key)
+        # Set default from global settings
+        default_compression = self.global_settings.get('compression_mode', DEFAULT_COMPRESSION_MODE)
+        idx = self.compression_combo.findData(default_compression)
+        if idx >= 0:
+            self.compression_combo.setCurrentIndex(idx)
+        self.compression_combo.setToolTip("Compression mode for backup archives")
+        form_layout.addRow("Compression:", self.compression_combo)
+        
+        # Max source size combobox
+        self.max_source_size_combo = QComboBox()
+        for display_text, value in SIZE_OPTIONS:
+            self.max_source_size_combo.addItem(display_text, value)
+        # Set default from global settings
+        default_size = self.global_settings.get('max_source_size_mb', DEFAULT_MAX_SOURCE_SIZE_MB)
+        size_idx = next(
+            (i for i, (_, v) in enumerate(SIZE_OPTIONS) if v == default_size),
+            3  # Default to 500 MB (index 3)
+        )
+        self.max_source_size_combo.setCurrentIndex(size_idx)
+        self.max_source_size_combo.setToolTip("Maximum source size allowed for backup")
+        form_layout.addRow("Max source size:", self.max_source_size_combo)
+        
+        settings_layout.addWidget(self.settings_form_widget)
+        
+        # Reset button
+        reset_layout = QHBoxLayout()
+        reset_layout.addStretch()
+        self.reset_settings_btn = QPushButton("Reset to Defaults")
+        self.reset_settings_btn.setToolTip("Reset settings to global defaults")
+        self.reset_settings_btn.clicked.connect(self._reset_settings_to_defaults)
+        reset_layout.addWidget(self.reset_settings_btn)
+        settings_layout.addLayout(reset_layout)
+        
+        self.settings_group.setLayout(settings_layout)
+        parent_layout.addWidget(self.settings_group)
+        
+        # Initially disable settings form
+        self._on_settings_enabled_toggled(False)
+    
+    @Slot(bool)
+    def _on_settings_enabled_toggled(self, enabled: bool):
+        """Handle settings enable checkbox toggle."""
+        self.settings_form_widget.setEnabled(enabled)
+        self.reset_settings_btn.setEnabled(enabled)
+        
+        # Visual feedback for disabled state
+        if enabled:
+            self.settings_form_widget.setStyleSheet("")
+        else:
+            self.settings_form_widget.setStyleSheet("QFrame { color: gray; }")
+    
+    @Slot()
+    def _reset_settings_to_defaults(self):
+        """Reset settings to global defaults."""
+        self.max_backups_spin.setValue(
+            self.global_settings.get('max_backups', DEFAULT_MAX_BACKUPS)
+        )
+        
+        default_compression = self.global_settings.get('compression_mode', DEFAULT_COMPRESSION_MODE)
+        idx = self.compression_combo.findData(default_compression)
+        if idx >= 0:
+            self.compression_combo.setCurrentIndex(idx)
+        
+        default_size = self.global_settings.get('max_source_size_mb', DEFAULT_MAX_SOURCE_SIZE_MB)
+        size_idx = next(
+            (i for i, (_, v) in enumerate(SIZE_OPTIONS) if v == default_size),
+            3
+        )
+        self.max_source_size_combo.setCurrentIndex(size_idx)
+        
+        log.debug("Group settings reset to defaults")
+    
+    def _get_current_settings(self) -> dict:
+        """Get the current settings from the UI controls."""
+        # Settings section only exists in edit mode
+        if not self.edit_mode:
+            return {}
+        
+        if not self.enable_settings_checkbox.isChecked():
+            return {}
+        
+        return {
+            'enabled': True,
+            'max_backups': self.max_backups_spin.value(),
+            'compression_mode': self.compression_combo.currentData(),
+            'max_source_size_mb': self.max_source_size_combo.currentData(),
+        }
     
     def _get_available_profiles(self) -> list:
         """
@@ -183,6 +355,44 @@ class GroupDialog(QDialog):
             profile_name = item.data(Qt.ItemDataRole.UserRole)
             if profile_name in current_members:
                 item.setCheckState(Qt.CheckState.Checked)
+        
+        # Load existing group settings
+        self._populate_settings_from_group(group_data)
+    
+    def _populate_settings_from_group(self, group_data: dict):
+        """Populate settings controls from existing group data."""
+        settings = group_data.get('settings', {})
+        
+        if not settings:
+            # No settings, keep defaults and disabled
+            self.enable_settings_checkbox.setChecked(False)
+            return
+        
+        # Enable settings if they were enabled
+        settings_enabled = settings.get('enabled', False)
+        self.enable_settings_checkbox.setChecked(settings_enabled)
+        
+        # Populate max_backups
+        if 'max_backups' in settings and settings['max_backups'] is not None:
+            self.max_backups_spin.setValue(int(settings['max_backups']))
+        
+        # Populate compression_mode
+        if 'compression_mode' in settings and settings['compression_mode'] is not None:
+            idx = self.compression_combo.findData(settings['compression_mode'])
+            if idx >= 0:
+                self.compression_combo.setCurrentIndex(idx)
+        
+        # Populate max_source_size_mb
+        if 'max_source_size_mb' in settings and settings['max_source_size_mb'] is not None:
+            size_value = settings['max_source_size_mb']
+            size_idx = next(
+                (i for i, (_, v) in enumerate(SIZE_OPTIONS) if v == size_value),
+                -1
+            )
+            if size_idx >= 0:
+                self.max_source_size_combo.setCurrentIndex(size_idx)
+        
+        log.debug(f"Loaded group settings: {settings}")
     
     def _get_checked_profiles(self) -> list:
         """Get list of checked profile names."""
@@ -194,6 +404,48 @@ class GroupDialog(QDialog):
                 if profile_name:
                     checked.append(profile_name)
         return checked
+    
+    @Slot(QListWidgetItem)
+    def _on_item_changed(self, item: QListWidgetItem):
+        """Handle item check state change - re-sort list and update button state."""
+        # Update button state
+        self._update_button_state()
+        
+        # Re-sort list to keep checked items at top
+        self._sort_profile_list()
+    
+    def _sort_profile_list(self):
+        """Sort the profile list: checked items at top, then alphabetically."""
+        # Temporarily disconnect to avoid recursion
+        try:
+            self.profile_list.itemChanged.disconnect(self._on_item_changed)
+        except Exception:
+            pass
+        
+        # Collect all items with their data
+        items_data = []
+        for i in range(self.profile_list.count()):
+            item = self.profile_list.item(i)
+            if item:
+                profile_name = item.data(Qt.ItemDataRole.UserRole)
+                if profile_name:  # Skip placeholder items
+                    is_checked = item.checkState() == Qt.CheckState.Checked
+                    items_data.append((profile_name, is_checked))
+        
+        # Sort: checked first, then alphabetically
+        items_data.sort(key=lambda x: (not x[1], x[0].lower()))
+        
+        # Clear and repopulate
+        self.profile_list.clear()
+        for profile_name, is_checked in items_data:
+            item = QListWidgetItem(profile_name)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked if is_checked else Qt.CheckState.Unchecked)
+            item.setData(Qt.ItemDataRole.UserRole, profile_name)
+            self.profile_list.addItem(item)
+        
+        # Reconnect signal
+        self.profile_list.itemChanged.connect(self._on_item_changed)
     
     @Slot()
     def _update_button_state(self):
@@ -262,8 +514,9 @@ class GroupDialog(QDialog):
         # Store results
         self.result_group_name = name
         self.result_profile_names = checked_profiles
+        self.result_settings = self._get_current_settings()
         
-        log.info(f"Group dialog accepted: name='{name}', profiles={checked_profiles}")
+        log.info(f"Group dialog accepted: name='{name}', profiles={checked_profiles}, settings={self.result_settings}")
         super().accept()
     
     def get_result(self) -> tuple:
@@ -271,9 +524,10 @@ class GroupDialog(QDialog):
         Get the dialog result after acceptance.
         
         Returns:
-            Tuple (group_name: str, profile_names: list) or (None, None) if cancelled
+            Tuple (group_name: str, profile_names: list, settings: dict)
+            or (None, None, None) if cancelled
         """
-        return self.result_group_name, self.result_profile_names
+        return self.result_group_name, self.result_profile_names, self.result_settings
 
 
 class GroupMemberSelectionDialog(QDialog):

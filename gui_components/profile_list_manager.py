@@ -491,7 +491,10 @@ class ProfileListManager:
                 
     @Slot(int, int)
     def handle_double_click(self, row, column):
-        """Handles double-click on a profile row to open the save folder."""
+        """Handles double-click on a profile row to open the save folder.
+        
+        For group profiles, opens the Edit Group dialog instead.
+        """
         # Skip if clicking on the favorite column (column 0)
         if column == 0:
             return
@@ -508,6 +511,18 @@ class ProfileListManager:
             
         # Get the profile data
         profile_data = self.profiles.get(profile_name, {})
+        
+        # Check if this is a group profile - open Edit Group dialog instead
+        import core_logic
+        if core_logic.is_group_profile(profile_data):
+            logging.info(f"Double-click on group '{profile_name}': opening Edit Group dialog")
+            # Trigger the edit group handler if available
+            if hasattr(self.main_window, 'handlers') and hasattr(self.main_window.handlers, 'handle_edit_group'):
+                self.main_window.handlers.handle_edit_group()
+            else:
+                logging.warning(f"Cannot open Edit Group dialog: handler not available")
+                self.main_window.status_label.setText(f"Right-click on '{profile_name}' to edit group settings")
+            return
         
         # Check if profile has a path or paths
         save_path = None

@@ -262,7 +262,7 @@ def get_group_member_profiles(group_name: str, profiles_dict: dict) -> list:
 
 
 def create_group_profile(group_name: str, profile_names: list, profiles_dict: dict, 
-                         icon_path: str = None) -> tuple:
+                         icon_path: str = None, settings: dict = None) -> tuple:
     """
     Create a new group profile containing multiple existing profiles.
     
@@ -274,6 +274,11 @@ def create_group_profile(group_name: str, profile_names: list, profiles_dict: di
         profile_names: List of existing profile names to include in the group
         profiles_dict: Dictionary of all profiles (will be modified in place)
         icon_path: Optional path to a custom icon for the group
+        settings: Optional group settings dict with keys:
+            - enabled: bool - Master toggle for group settings override
+            - max_backups: int or None - Override max backups for all members
+            - compression_mode: str or None - Override compression mode
+            - max_source_size_mb: int or None - Override max source size
         
     Returns:
         Tuple (success: bool, error_message: str or None)
@@ -322,6 +327,11 @@ def create_group_profile(group_name: str, profile_names: list, profiles_dict: di
     if icon_path:
         group_data['icon'] = icon_path
     
+    # Add group settings if provided
+    if settings and isinstance(settings, dict):
+        group_data['settings'] = settings.copy()
+        logging.debug(f"Group '{group_name}' created with settings: {settings}")
+    
     # Mark member profiles as belonging to this group
     for profile_name in valid_profiles:
         profiles_dict[profile_name]['member_of_group'] = group_name
@@ -334,7 +344,8 @@ def create_group_profile(group_name: str, profile_names: list, profiles_dict: di
 
 
 def update_group_profile(group_name: str, new_profile_names: list, profiles_dict: dict,
-                         new_group_name: str = None, icon_path: str = None) -> tuple:
+                         new_group_name: str = None, icon_path: str = None,
+                         new_settings: dict = None) -> tuple:
     """
     Update an existing group profile with new settings.
     
@@ -344,6 +355,12 @@ def update_group_profile(group_name: str, new_profile_names: list, profiles_dict
         profiles_dict: Dictionary of all profiles (will be modified in place)
         new_group_name: Optional new name for the group (for renaming)
         icon_path: Optional new icon path for the group
+        new_settings: Optional group settings dict to update/replace:
+            - enabled: bool - Master toggle for group settings override
+            - max_backups: int or None - Override max backups for all members
+            - compression_mode: str or None - Override compression mode
+            - max_source_size_mb: int or None - Override max source size
+            Pass None to keep existing settings, pass empty dict {} to clear settings
         
     Returns:
         Tuple (success: bool, error_message: str or None)
@@ -361,6 +378,9 @@ def update_group_profile(group_name: str, new_profile_names: list, profiles_dict
     
     # Get current member list
     current_members = group_data.get('profiles', [])
+    
+    # Preserve existing settings if not being updated
+    existing_settings = group_data.get('settings', {})
     
     # Validate new profiles
     valid_profiles = []
@@ -403,6 +423,15 @@ def update_group_profile(group_name: str, new_profile_names: list, profiles_dict
     for profile_name in valid_profiles:
         profiles_dict[profile_name]['member_of_group'] = final_group_name
     
+    # Determine final settings
+    final_settings = existing_settings
+    if new_settings is not None:
+        if isinstance(new_settings, dict):
+            if new_settings:  # Non-empty dict: update settings
+                final_settings = new_settings.copy()
+            else:  # Empty dict: clear settings
+                final_settings = {}
+    
     # Update or rename the group
     if new_group_name and new_group_name != group_name:
         # Rename: delete old, create new
@@ -413,6 +442,8 @@ def update_group_profile(group_name: str, new_profile_names: list, profiles_dict
         }
         if icon_path:
             profiles_dict[final_group_name]['icon'] = icon_path
+        if final_settings:
+            profiles_dict[final_group_name]['settings'] = final_settings
         logging.info(f"Renamed group '{group_name}' to '{final_group_name}'")
     else:
         # Just update
@@ -422,8 +453,15 @@ def update_group_profile(group_name: str, new_profile_names: list, profiles_dict
                 group_data['icon'] = icon_path
             elif 'icon' in group_data:
                 del group_data['icon']
+        # Update settings
+        if final_settings:
+            group_data['settings'] = final_settings
+        elif 'settings' in group_data and not final_settings:
+            del group_data['settings']  # Clear settings if empty
     
     logging.info(f"Updated group '{final_group_name}' with {len(valid_profiles)} profile(s)")
+    if final_settings:
+        logging.debug(f"Group '{final_group_name}' settings: {final_settings}")
     return True, None
 
 
@@ -494,6 +532,80 @@ def get_visible_profiles(profiles_dict: dict) -> dict:
             visible[name] = data
     
     return visible
+
+
+def get_effective_profile_settings(profile_name: str, profile_data: dict, 
+                                    profiles_dict: dict, global_settings: dict) -> dict:
+    """
+    Get effective backup settings for a profile considering group membership.
+    
+    Priority: Group override > Profile override > Global settings
+    
+    This function resolves which settings should be used when backing up a profile.
+    If the profile is in a group that has settings override enabled, those settings
+    take precedence over both the profile's own overrides and global settings.
+    
+    Args:
+        profile_name: Name of the profile
+        profile_data: The profile data dictionary
+        profiles_dict: Dictionary of all profiles (to look up group data)
+        global_settings: The global application settings dictionary
+        
+    Returns:
+        Dictionary with effective settings:
+        - max_backups: int
+        - max_source_size_mb: int
+        - compression_mode: str
+    """
+    # Start with global settings as defaults
+    effective = {
+        'max_backups': global_settings.get('max_backups', 5),
+        'max_source_size_mb': global_settings.get('max_source_size_mb', 500),
+        'compression_mode': global_settings.get('compression_mode', 'standard'),
+    }
+    
+    # Apply profile-level overrides (if any)
+    profile_overrides = profile_data.get('overrides', {})
+    if profile_overrides:
+        for key in effective:
+            if key in profile_overrides and profile_overrides[key] is not None:
+                effective[key] = profile_overrides[key]
+                logging.debug(f"Profile '{profile_name}' override: {key}={profile_overrides[key]}")
+    
+    # Apply group-level overrides (highest priority)
+    group_name = profile_data.get('member_of_group')
+    if group_name and group_name in profiles_dict:
+        group_data = profiles_dict[group_name]
+        if is_group_profile(group_data):
+            group_settings = group_data.get('settings', {})
+            if group_settings.get('enabled'):
+                for key in effective:
+                    if key in group_settings and group_settings[key] is not None:
+                        effective[key] = group_settings[key]
+                        logging.debug(f"Profile '{profile_name}' using group '{group_name}' override: {key}={group_settings[key]}")
+    
+    return effective
+
+
+def get_group_settings(group_name: str, profiles_dict: dict) -> dict:
+    """
+    Get the settings for a group profile.
+    
+    Args:
+        group_name: Name of the group
+        profiles_dict: Dictionary of all profiles
+        
+    Returns:
+        Dictionary with group settings, or empty dict if no settings
+    """
+    if group_name not in profiles_dict:
+        return {}
+    
+    group_data = profiles_dict[group_name]
+    if not is_group_profile(group_data):
+        return {}
+    
+    return group_data.get('settings', {}).copy()
 
 
 def remove_profile_from_group(profile_name: str, profiles_dict: dict) -> tuple:
