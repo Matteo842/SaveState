@@ -181,13 +181,17 @@ jobs:
         chmod +x appimagetool
         ln -s usr/bin/SaveState AppDir/AppRun
         
-        # Creiamo l'AppImage con nome pulito
+        # Creiamo l'AppImage con nome che include versione
         ARCH=x86_64 ./appimagetool AppDir SaveState.AppImage
+        
+        # Copia per release standalone (con versione nel nome)
+        cp SaveState.AppImage "SaveState_v${{ env.RELEASE_VERSION }}.AppImage"
 
-    # --- IMPACCHETTAMENTO LINUX (Tar.gz) ---
+    # --- IMPACCHETTAMENTO LINUX (Tar.gz con compressione massima) ---
     - name: 🗄️ Create Release Tarball Package
       run: |
         DIR_NAME="SaveState" 
+        TARBALL_NAME="SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.gz"
         mkdir -p "$DIR_NAME"
         
         # Spostiamo l'AppImage dentro la cartella
@@ -197,14 +201,23 @@ jobs:
         cp LICENSE "$DIR_NAME/"
         cp README.md "$DIR_NAME/"
         
-        # Comprimiamo in .tar.gz (standard Linux)
-        tar -czvf "SaveState.tar.gz" "$DIR_NAME"
+        # Comprimiamo in .tar.gz con massima compressione gzip (-9)
+        tar -cvf - "$DIR_NAME" | gzip -9 > "$TARBALL_NAME"
+        
+        echo "📦 Dimensione pacchetto finale:"
+        ls -lh "$TARBALL_NAME"
 
-    - name: ⬆️ Upload Linux Package
+    - name: ⬆️ Upload Linux Tarball Package
       uses: actions/upload-artifact@v4
       with:
         name: SaveState-Linux-Package
-        path: "SaveState.tar.gz"
+        path: "SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.gz"
+
+    - name: ⬆️ Upload Standalone AppImage
+      uses: actions/upload-artifact@v4
+      with:
+        name: SaveState-AppImage-Standalone
+        path: "SaveState_v${{ env.RELEASE_VERSION }}.AppImage"
 
   # =========================================================
   # 3. RELEASE CREATION (Draft)
@@ -228,9 +241,11 @@ jobs:
           echo "Creating Release v${{ env.RELEASE_VERSION }}..."
           
           # Prende il contenuto zippato/tarballato dalle cartelle scaricate
+          # Include: Windows ZIP, Linux tar.gz, e AppImage standalone
           gh release create v${{ env.RELEASE_VERSION }} \
             SaveState-Windows-Package/* \
             SaveState-Linux-Package/* \
+            SaveState-AppImage-Standalone/* \
             --title "SaveState v${{ env.RELEASE_VERSION }}" \
             --draft \
             --generate-notes
