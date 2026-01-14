@@ -40,6 +40,7 @@ class ScoreWeight(Enum):
     CONTAINS_SAVES = 600
     CONTAINS_SAVES_DEEP = 800  # Bonus per salvataggi trovati in sottocartelle (ricerca profonda)
     COMMON_SAVE_SUBDIR = 400
+    SPECIFIC_SAVE_FOLDER = 700  # Bonus per cartelle con nomi molto specifici (Saves, SaveGame, SaveData)
     DIRECT_MATCH = 100
     PARENT_MATCH = 100
     EXACT_NAME_MATCH = 400  # Match fuzzy/parziale
@@ -168,6 +169,7 @@ class Threshold:
     FUZZY_TOKEN_SET_THRESHOLD = 92
     OTHER_GAME_MATCH_THRESHOLD = 95
     MAX_INSTALL_DIR_DEPTH = 3
+    MAX_PARENT_DIR_LEVELS = 4  # Quanto salire nella gerarchia delle cartelle dal install dir
     MIN_EXE_SIZE_BYTES = 100 * 1024
     MAX_USERDATA_SCORE = 1100
     SHORT_NAME_MAX_LENGTH = 3
@@ -339,6 +341,15 @@ class PathScore:
             
         if basename_lower in self.game_context.common_save_subdirs_lower:
             score += ScoreWeight.COMMON_SAVE_SUBDIR.value
+            
+        # Bonus extra per cartelle con nomi molto specifici per i salvataggi
+        # Queste sono più specifiche di "UserData", "Data", "Profile"
+        specific_save_folders = {
+            'saves', 'save', 'savegame', 'savegames', 'savedata', 'save_data',
+            'saved', 'gamesave', 'gamesaves', 'saved games'
+        }
+        if basename_lower in specific_save_folders:
+            score += ScoreWeight.SPECIFIC_SAVE_FOLDER.value
             
         if (basename_lower in self.game_context.game_abbreviations_lower or
             self._matches_initial_sequence(basename) or
@@ -760,6 +771,7 @@ class SavePathFinder:
             (lambda: self._perform_direct_path_checks(common_locations), "direct path checks"),
             (lambda: self._perform_exploratory_search(common_locations), "exploratory search"),
             (self._search_install_directory, "install directory search"),
+            (self._search_parent_directories, "parent directories search"),
         ]
         
         for step_func, step_name in search_steps:
@@ -1278,12 +1290,184 @@ class SavePathFinder:
                     
                     # Controlla se è rilevante
                     if dir_lower in self.context.common_save_subdirs_lower:
-                        self._add_guess(dir_path, f"InstallDirWalk/SaveSubdir/{relative_path}")
+                        source_desc = f"InstallDirWalk/SaveSubdir/{relative_path}"
+                        self._add_guess(dir_path, source_desc)
+                        # Cerca anche sotto-cartelle di salvataggio (es. UserData/saves)
+                        self._check_nested_save_subdirs(dir_path, source_desc)
                     elif self._is_game_match(dir_name):
-                        self._add_guess(dir_path, f"InstallDirWalk/GameMatch/{relative_path}")
+                        source_desc = f"InstallDirWalk/GameMatch/{relative_path}"
+                        self._add_guess(dir_path, source_desc)
+                        # Cerca anche sotto-cartelle di salvataggio
+                        self._check_nested_save_subdirs(dir_path, source_desc)
                     
         except Exception as e:
             logging.error(f"Error walking install directory: {e}")
+    
+    def _search_parent_directories(self):
+        r"""Cerca nelle directory genitore della directory di installazione.
+        
+        Alcuni giochi (es. Hytale) memorizzano i salvataggi nella root del gioco,
+        che può essere diversi livelli sopra la cartella dell'eseguibile.
+        Es: E:\Hytale\package\game\latest\Client\HytaleClient.exe
+            -> saves in E:\Hytale\userdata\saves
+        
+        NOTA: Questa ricerca viene saltata se game_install_dir è in cartelle utente
+        comuni (Desktop, Documents, Downloads) perché in quel caso probabilmente
+        stiamo processando un collegamento, non una vera installazione.
+        """
+        if not self.context.game_install_dir or not os.path.isdir(self.context.game_install_dir):
+            return
+        
+        # Verifica se siamo in una cartella utente comune (non una vera installazione di gioco)
+        # In quel caso, saltiamo la ricerca parent per evitare di trovare salvataggi di altri giochi
+        if self._is_in_user_shortcuts_folder(self.context.game_install_dir):
+            logging.debug(f"Skipping parent directory search: install dir appears to be a user folder (shortcuts), not a game installation")
+            return
+            
+        logging.info(f"Searching parent directories of: {self.context.game_install_dir}")
+        
+        current_dir = os.path.normpath(self.context.game_install_dir)
+        levels_searched = 0
+        
+        while levels_searched < Threshold.MAX_PARENT_DIR_LEVELS:
+            if self._is_cancelled():
+                return
+                
+            # Sali di un livello
+            parent_dir = os.path.dirname(current_dir)
+            
+            # Stop se siamo alla root del disco
+            if not parent_dir or parent_dir == current_dir:
+                logging.debug("Reached drive root, stopping parent search")
+                break
+                
+            # Verifica che non siamo in cartelle di sistema
+            parent_basename = os.path.basename(parent_dir).lower()
+            if parent_basename in self.context.banned_folder_names_lower:
+                logging.debug(f"Skipping banned parent folder: {parent_basename}")
+                break
+                
+            # Stop se siamo in cartelle troppo generiche (Program Files, Steam library, etc.)
+            generic_roots = {'program files', 'program files (x86)', 'steamapps', 'common', 
+                           'games', 'steam library', 'game library'}
+            if parent_basename in generic_roots:
+                logging.debug(f"Reached generic root folder: {parent_basename}, stopping")
+                break
+            
+            # Cerca cartelle di salvataggio nel parent
+            try:
+                for entry in os.listdir(parent_dir):
+                    if self._is_cancelled():
+                        return
+                        
+                    entry_lower = entry.lower()
+                    entry_path = os.path.join(parent_dir, entry)
+                    
+                    if not os.path.isdir(entry_path):
+                        continue
+                        
+                    # Skip la cartella da cui siamo venuti
+                    if os.path.normpath(entry_path).lower() == current_dir.lower():
+                        continue
+                        
+                    # Skip cartelle bannate
+                    if entry_lower in self.context.banned_folder_names_lower:
+                        continue
+                    
+                    # Cerca cartelle di salvataggio comuni (userdata, saves, savedata, etc.)
+                    if entry_lower in self.context.common_save_subdirs_lower:
+                        source_desc = f"ParentDir/{os.path.basename(parent_dir)}/{entry}"
+                        self._add_guess(entry_path, source_desc)
+                        
+                        # Cerca anche sotto-cartelle di salvataggio (es. userdata/saves)
+                        self._check_nested_save_subdirs(entry_path, source_desc)
+                    
+                    # Cerca anche corrispondenze col nome del gioco
+                    elif self._is_game_match(entry):
+                        source_desc = f"ParentDir/{os.path.basename(parent_dir)}/GameMatch/{entry}"
+                        self._add_guess(entry_path, source_desc)
+                        self._check_nested_save_subdirs(entry_path, source_desc)
+                        
+            except OSError as e:
+                logging.warning(f"Error listing parent directory '{parent_dir}': {e}")
+                
+            current_dir = parent_dir
+            levels_searched += 1
+            
+        logging.debug(f"Parent directory search completed, checked {levels_searched} levels")
+    
+    def _check_nested_save_subdirs(self, parent_path: str, parent_source: str, max_depth: int = 2):
+        """Cerca sottocartelle di salvataggio annidate.
+        
+        Quando troviamo cartelle come 'UserData' o 'data', esplora al loro interno
+        per trovare sottocartelle come 'saves', 'savedata', etc.
+        
+        Args:
+            parent_path: Percorso della cartella da esplorare
+            parent_source: Descrizione sorgente per logging
+            max_depth: Profondità massima di ricerca (default: 2)
+        """
+        try:
+            parent_depth = parent_path.rstrip(os.sep).count(os.sep)
+            
+            for root, dirs, _ in os.walk(parent_path, topdown=True):
+                if self._is_cancelled():
+                    return
+                    
+                # Calcola profondità relativa
+                current_depth = root.rstrip(os.sep).count(os.sep)
+                relative_depth = current_depth - parent_depth
+                
+                if relative_depth >= max_depth:
+                    dirs[:] = []
+                    continue
+                    
+                # Filtra cartelle bannate
+                dirs[:] = [d for d in dirs if d.lower() not in self.context.banned_folder_names_lower]
+                
+                # Cerca sottocartelle di salvataggio
+                for dir_name in list(dirs):
+                    dir_lower = dir_name.lower()
+                    dir_path = os.path.join(root, dir_name)
+                    
+                    if dir_lower in self.context.common_save_subdirs_lower:
+                        relative_path = os.path.relpath(dir_path, parent_path)
+                        self._add_guess(dir_path, f"{parent_source}/Nested/{relative_path}")
+                        
+        except OSError as e:
+            logging.warning(f"Error checking nested save subdirs in '{parent_path}': {e}")
+    
+    def _is_in_user_shortcuts_folder(self, path: str) -> bool:
+        """Verifica se il percorso è in una cartella utente comune (non una vera installazione).
+        
+        Cartelle come Desktop, Documents, Downloads contengono tipicamente collegamenti,
+        non installazioni reali di giochi. La ricerca parent non ha senso in questi casi.
+        """
+        try:
+            path_lower = os.path.normpath(path).lower()
+            user_profile = os.path.expanduser('~')
+            
+            # Cartelle utente comuni che contengono collegamenti, non giochi
+            user_shortcut_folders = [
+                os.path.join(user_profile, 'Desktop'),
+                os.path.join(user_profile, 'Documents'),
+                os.path.join(user_profile, 'Downloads'),
+                os.path.join(user_profile, 'OneDrive', 'Desktop'),
+                os.path.join(user_profile, 'OneDrive', 'Documents'),
+            ]
+            
+            for folder in user_shortcut_folders:
+                try:
+                    folder_lower = os.path.normpath(folder).lower()
+                    if path_lower.startswith(folder_lower + os.sep) or path_lower == folder_lower:
+                        return True
+                except (OSError, TypeError):
+                    continue
+                    
+            return False
+        except Exception as e:
+            logging.warning(f"Error checking if path is in user folder: {e}")
+            return False
     
     def _is_steam_userdata_path(self, path: str) -> bool:
         """Verifica se il percorso è nella cartella userdata di Steam."""

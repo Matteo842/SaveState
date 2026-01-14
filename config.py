@@ -152,6 +152,7 @@ COMMON_SAVE_SUBDIRS = [
     # Usati da alcuni giochi specifici / engine
     'data', # A volte contiene salvataggi, ma può essere ambiguo
     'UserData', # Comune in alcuni contesti Steam/Source engine?
+    'userdata', # Variante lowercase (es. Hytale)
     'PlayerProfiles',
     'remote', # Specifico per Steam Userdata, ma a volte replicato altrove
     'GameData', # Simile a SaveData
