@@ -126,13 +126,33 @@ class SteamDialog(QDialog):
     
     @Slot()
     def start_steam_scan(self):
-         # Update the data in the parent (MainWindow) if you refresh here!
-         parent_window = self.parent()
-         if parent_window:
-             parent_window.steam_games_data = self.steam_games_data
-             parent_window.steam_userdata_info = self.steam_userdata_info
-         self.populate_game_list() 
-         self.status_label.setText(f"List updated. {len(self.steam_games_data)} games found.")
+        """Refresh the Steam games list by re-scanning installed games."""
+        self.status_label.setText("Scanning Steam games...")
+        QApplication.processEvents()  # Update UI to show scanning message
+        
+        try:
+            # Actually re-scan for installed Steam games
+            logging.info("[SteamDialog] Starting Steam games refresh scan...")
+            self.steam_games_data = core_logic.find_installed_steam_games()
+            
+            # Also refresh userdata info
+            udp, l_id, p_ids, d_ids = core_logic.find_steam_userdata_info()
+            self.steam_userdata_info = {'path': udp, 'likely_id': l_id, 'possible_ids': p_ids, 'details': d_ids}
+            
+            # Update the parent (MainWindow) with the new data
+            parent_window = self.parent()
+            if parent_window:
+                parent_window.steam_games_data = self.steam_games_data
+                parent_window.steam_userdata_info = self.steam_userdata_info
+            
+            logging.info(f"[SteamDialog] Steam refresh complete. Found {len(self.steam_games_data)} games.")
+        except Exception as e:
+            logging.error(f"[SteamDialog] Error during Steam refresh: {e}", exc_info=True)
+            self.status_label.setText(f"Error refreshing: {e}")
+            return
+        
+        self.populate_game_list()
+        self.status_label.setText(f"List updated. {len(self.steam_games_data)} games found.")
 
 
     def populate_game_list(self):
