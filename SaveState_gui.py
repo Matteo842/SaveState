@@ -1651,8 +1651,12 @@ class MainWindow(QMainWindow):
     
     def _bringWindowToFront(self):
         """Helper method to bring the window to front and activate it.
-        Handles both minimized windows and windows hidden in system tray."""
+        Handles both minimized windows and windows hidden in system tray.
+        Includes platform-specific handling for Linux/Wayland."""
         try:
+            import platform as plat
+            is_linux = plat.system() == "Linux"
+            
             # If the window is hidden (e.g., in system tray), show it first
             if self.isHidden():
                 self.showNormal()
@@ -1662,22 +1666,68 @@ class MainWindow(QMainWindow):
                 self.showNormal()
                 logging.debug("Window was minimized, restored to normal state.")
             
-            # Bring window to front and activate it
-            self.raise_()  # Bring window to front
-            self.activateWindow()  # Give focus to the window
-            self.show()  # Ensure window is visible
-            
-            # On some systems, we need to force the window to be on top temporarily
-            # This is especially important on Linux and some Windows configurations
+            # Remove minimized state first
             current_state = self.windowState()
-            # Remove minimized state and ensure window is active
             new_state = current_state & ~Qt.WindowState.WindowMinimized
             self.setWindowState(new_state)
+            
+            # Ensure window is visible
+            self.show()
+            
+            # Standard activation methods (work well on Windows and X11)
+            self.raise_()
+            self.activateWindow()
+            
+            # On Linux (especially Wayland), use additional methods
+            if is_linux:
+                # Use QWindow.requestActivate() which is the proper Wayland way
+                window_handle = self.windowHandle()
+                if window_handle:
+                    window_handle.requestActivate()
+                    logging.debug("Used QWindow.requestActivate() for Linux/Wayland.")
+                
+                # Try to use platform-specific activation via D-Bus for KDE/GNOME
+                self._try_dbus_activation()
             
             logging.info("Existing instance window activated and brought to front.")
             
         except Exception as e:
             logging.error(f"Error activating existing instance window: {e}", exc_info=True)
+    
+    def _try_dbus_activation(self):
+        """Try to activate window using D-Bus on Linux desktop environments.
+        This is a best-effort attempt for Wayland compositors that support it."""
+        try:
+            import subprocess
+            import os
+            
+            # Get the window ID for X11 or try activation token for Wayland
+            window_handle = self.windowHandle()
+            if not window_handle:
+                return
+            
+            # For KDE Plasma, try using kactivities or kwin scripts
+            desktop = os.environ.get('XDG_CURRENT_DESKTOP', '').lower()
+            session_type = os.environ.get('XDG_SESSION_TYPE', '').lower()
+            
+            if 'kde' in desktop or 'plasma' in desktop:
+                # Try KWin D-Bus activation
+                try:
+                    win_id = int(window_handle.winId())
+                    subprocess.run([
+                        'dbus-send', '--type=method_call', '--dest=org.kde.KWin',
+                        '/KWin', 'org.kde.KWin.activateWindow', f'int32:{win_id}'
+                    ], timeout=1, capture_output=True)
+                    logging.debug("Attempted KWin D-Bus activation.")
+                except Exception:
+                    pass
+            
+            elif 'gnome' in desktop:
+                # GNOME doesn't easily allow activation, but we tried
+                logging.debug("GNOME detected - window activation may be limited by compositor.")
+                
+        except Exception as e:
+            logging.debug(f"D-Bus activation attempt failed (non-critical): {e}")
 
     # --- Global Mouse Drag Detection Callbacks (pynput) ---
     def update_global_drag_listener_state(self):
@@ -1895,12 +1945,11 @@ class MainWindow(QMainWindow):
             pass
 
     def _restore_from_tray(self):
+        """Restore window from system tray with platform-specific handling."""
         try:
-            self.showNormal()
-            self.raise_()
-            self.activateWindow()
-        except Exception:
-            pass
+            self._bringWindowToFront()
+        except Exception as e:
+            logging.debug(f"Error restoring from tray: {e}")
 
     # Context menu event handler: show side menu and select row
     def _on_profile_table_context_menu(self, pos):

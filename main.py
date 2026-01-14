@@ -26,8 +26,8 @@ except ImportError:
 
 # --- Helper Function for Cleanup ---
 def cleanup_instance_lock(local_server, shared_memory):
-    """Closes the local server and releases the shared memory."""
-    logging.debug("Executing instance cleanup (detach shared memory, close server)...")
+    """Closes the local server, releases the shared memory, and cleans up lock file on Linux."""
+    logging.debug("Executing instance cleanup (detach shared memory, close server, remove lock file)...")
     
     
     try:
@@ -53,6 +53,22 @@ def cleanup_instance_lock(local_server, shared_memory):
 
     except Exception as e_mem:
         logging.error(f"Error detaching shared memory: {e_mem}")
+    
+    # Clean up file lock on Linux
+    try:
+        if platform.system() == "Linux":
+            lock_path = get_lock_file_path()
+            if os.path.exists(lock_path):
+                try:
+                    with open(lock_path, 'r') as f:
+                        stored_pid = int(f.read().strip())
+                    if stored_pid == os.getpid():
+                        os.unlink(lock_path)
+                        logging.debug(f"Removed lock file: {lock_path}")
+                except Exception:
+                    pass
+    except Exception as e_lock:
+        logging.debug(f"Error cleaning up lock file: {e_lock}")
 
 
 def cleanup_stale_qt_ipc_artifacts(local_server_name: str, shared_memory_key: str) -> None:
@@ -126,6 +142,126 @@ def cleanup_stale_qt_ipc_artifacts(local_server_name: str, shared_memory_key: st
             logging.debug("No matching stale Qt IPC temp files found to remove.")
     except Exception as e:
         logging.debug(f"Temp files cleanup skipped/failed: {e}")
+    
+    # Also check and clean stale file-based lock if the process is not running
+    try:
+        runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+        if not runtime_dir:
+            try:
+                uid = os.getuid()  # type: ignore[attr-defined]
+                runtime_dir = f"/run/user/{uid}"
+            except Exception:
+                runtime_dir = "/tmp"
+        lock_path = os.path.join(runtime_dir, "savestate.lock")
+        if os.path.exists(lock_path):
+            try:
+                with open(lock_path, 'r') as f:
+                    content = f.read().strip()
+                    if content:
+                        old_pid = int(content)
+                        # Check if process is running
+                        try:
+                            os.kill(old_pid, 0)
+                            logging.debug(f"Lock file PID {old_pid} is still running.")
+                        except OSError:
+                            # Process not running - stale lock
+                            os.unlink(lock_path)
+                            logging.warning(f"Removed stale lock file with dead PID {old_pid}: {lock_path}")
+            except (ValueError, IOError) as e:
+                logging.debug(f"Could not read lock file during cleanup: {e}")
+    except Exception as e:
+        logging.debug(f"File lock cleanup skipped/failed: {e}")
+
+
+# --- File-based Lock for Linux (fallback for more reliable single-instance detection) ---
+def get_lock_file_path() -> str:
+    """Get the path for the lock file on Linux."""
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+    if not runtime_dir:
+        try:
+            uid = os.getuid()  # type: ignore[attr-defined]
+            runtime_dir = f"/run/user/{uid}"
+        except Exception:
+            runtime_dir = "/tmp"
+    return os.path.join(runtime_dir, "savestate.lock")
+
+
+def is_process_running(pid: int) -> bool:
+    """Check if a process with the given PID is still running."""
+    if platform.system() != "Linux":
+        return False
+    try:
+        # On Linux, sending signal 0 checks if process exists without killing it
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+    except Exception:
+        return False
+
+
+def check_and_create_lock_file() -> tuple:
+    """Check if another instance is running via lock file. Returns (is_first_instance, lock_file_path).
+    
+    On Linux, this provides an additional layer of single-instance detection
+    that survives crashes better than QSharedMemory alone.
+    """
+    if platform.system() != "Linux":
+        return (True, None)  # On non-Linux, skip file lock
+    
+    lock_path = get_lock_file_path()
+    current_pid = os.getpid()
+    
+    try:
+        # Check if lock file exists and contains a valid PID
+        if os.path.exists(lock_path):
+            try:
+                with open(lock_path, 'r') as f:
+                    content = f.read().strip()
+                    if content:
+                        old_pid = int(content)
+                        if is_process_running(old_pid):
+                            logging.warning(f"Lock file exists with running PID {old_pid}")
+                            return (False, lock_path)
+                        else:
+                            logging.info(f"Lock file exists but PID {old_pid} is not running. Cleaning up stale lock.")
+                            os.unlink(lock_path)
+            except (ValueError, IOError) as e:
+                logging.debug(f"Could not read lock file, removing: {e}")
+                try:
+                    os.unlink(lock_path)
+                except Exception:
+                    pass
+        
+        # Create new lock file with our PID
+        with open(lock_path, 'w') as f:
+            f.write(str(current_pid))
+        logging.debug(f"Created lock file at {lock_path} with PID {current_pid}")
+        return (True, lock_path)
+        
+    except Exception as e:
+        logging.error(f"Error handling lock file: {e}")
+        return (True, None)  # On error, allow the instance to run
+
+
+def cleanup_lock_file():
+    """Remove the lock file on exit."""
+    if platform.system() != "Linux":
+        return
+    try:
+        lock_path = get_lock_file_path()
+        if os.path.exists(lock_path):
+            # Only remove if it's our PID
+            try:
+                with open(lock_path, 'r') as f:
+                    stored_pid = int(f.read().strip())
+                if stored_pid == os.getpid():
+                    os.unlink(lock_path)
+                    logging.debug(f"Removed lock file: {lock_path}")
+            except Exception:
+                pass
+    except Exception as e:
+        logging.debug(f"Error cleaning up lock file: {e}")
 
 # --- Main Execution Block ---
 if __name__ == "__main__":
@@ -191,29 +327,57 @@ if __name__ == "__main__":
         shared_memory = None # Initialize to None
         local_socket = None
         local_server = None
+        lock_file_path = None  # For Linux file lock
         app_should_run = True # Flag to decide whether to start the GUI
+        
+        # Determine timeouts based on platform (Linux/Wayland may need longer)
+        is_linux = platform.system() == "Linux"
+        socket_connect_timeout = 1500 if is_linux else 500  # ms
+        socket_write_timeout = 1000 if is_linux else 500  # ms
 
         try:
             # Proactive cleanup of stale IPC artifacts on Linux to avoid "plugin xcb" and invalid socket issues
             cleanup_stale_qt_ipc_artifacts(LOCAL_SERVER_NAME, SHARED_MEM_KEY)
+            
+            # On Linux, also check file-based lock (more reliable after crashes)
+            if is_linux:
+                is_first_by_file, lock_file_path = check_and_create_lock_file()
+                if not is_first_by_file:
+                    logging.warning("File lock indicates another instance is running. Attempting to activate it via socket...")
+                    # Try to contact the existing instance
+                    local_socket = QLocalSocket()
+                    local_socket.connectToServer(LOCAL_SERVER_NAME)
+                    if local_socket.waitForConnected(socket_connect_timeout):
+                        logging.info("Connected to existing instance via socket. Sending 'show' signal.")
+                        local_socket.write(b'show\n')
+                        local_socket.waitForBytesWritten(socket_write_timeout)
+                        local_socket.disconnectFromServer()
+                        local_socket.close()
+                        logging.info("Signal sent. Exiting this instance.")
+                        # Clean up our lock file since we're not the primary instance
+                        cleanup_lock_file()
+                        sys.exit(0)
+                    else:
+                        logging.warning("Could not connect to existing instance despite file lock. Lock may be stale.")
+                        # Don't exit yet - let the QSharedMemory check decide
 
             shared_memory = QSharedMemory(SHARED_MEM_KEY)
 
             # Tries to create shared memory. If it fails because it already exists...
             if not shared_memory.create(1, QSharedMemory.AccessMode.ReadOnly):
                 if shared_memory.error() == QSharedMemory.SharedMemoryError.AlreadyExists:
-                    logging.warning("Another instance of SaveState is already running. Attempting to activate it.")
+                    logging.warning("Another instance of SaveState is already running (shared memory). Attempting to activate it.")
                     app_should_run = False # Assume another instance until proven stale
 
                     # Try to contact the other instance
                     local_socket = QLocalSocket()
                     local_socket.connectToServer(LOCAL_SERVER_NAME)
-                    if local_socket.waitForConnected(500):
+                    if local_socket.waitForConnected(socket_connect_timeout):
                         logging.info("Connected to existing instance. Sending 'show' signal.")
                         bytes_written = local_socket.write(b'show\n')
                         if bytes_written == -1:
                             logging.error(f"Failed to write to local socket: {local_socket.errorString()}")
-                        elif not local_socket.waitForBytesWritten(500):
+                        elif not local_socket.waitForBytesWritten(socket_write_timeout):
                             logging.warning("Timeout waiting for bytes written to local socket.")
                         else:
                             logging.debug("Signal 'show' sent successfully.")
@@ -222,6 +386,9 @@ if __name__ == "__main__":
                         logging.info("Signal sent. Exiting this instance.")
                         if shared_memory.isAttached():
                             shared_memory.detach()
+                        # Clean up file lock on Linux
+                        if is_linux:
+                            cleanup_lock_file()
                         sys.exit(0)
                     else:
                         # Likely stale shared memory/socket; attempt automatic cleanup & retry
@@ -244,12 +411,16 @@ if __name__ == "__main__":
                                 retry_mem.detach()
                             # As a last resort, remove server name and exit to avoid duplicate instances
                             QLocalServer.removeServer(LOCAL_SERVER_NAME)
+                            if is_linux:
+                                cleanup_lock_file()
                             sys.exit(1)
                 else:
                     # Other recoverable shared memory error
                     logging.error(f"QSharedMemory fatal error (create): {shared_memory.errorString()}")
                     app_should_run = False # Do not start the GUI
                     if shared_memory.isAttached(): shared_memory.detach() # Try to clean up
+                    if is_linux:
+                        cleanup_lock_file()
                     sys.exit(1) # Exit with error
 
             # If we get here, the memory was created successfully (we are the first instance)
@@ -259,6 +430,8 @@ if __name__ == "__main__":
             logging.critical(f"Unexpected error during SharedMemory initialization: {e_shmem_init}", exc_info=True)
             app_should_run = False
             if shared_memory and shared_memory.isAttached(): shared_memory.detach() # Try to clean up
+            if is_linux:
+                cleanup_lock_file()
             sys.exit(1)
 
 
