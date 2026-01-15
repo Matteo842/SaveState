@@ -527,13 +527,22 @@ class MainWindowHandlers:
                                f"An error occurred while saving settings:\n\n{str(e)}")
 
     # --- Profile Actions (Delete, Backup, Restore, Manage, Shortcut) ---
-    # Handles the deletion of the selected profile after confirmation.
+    # Handles the deletion of the selected profile(s) after confirmation.
     @Slot()
     def handle_delete_profile(self):
-        # Use the profile manager on the main window to get the name
-        profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
-        if not profile_name: return
+        # Check if multiple profiles are selected
+        selected_profile_names = self.main_window.profile_table_manager.get_selected_profile_names()
         
+        if not selected_profile_names:
+            return
+        
+        # If multiple profiles selected, use batch deletion
+        if len(selected_profile_names) > 1:
+            self._handle_delete_multiple_profiles(selected_profile_names)
+            return
+        
+        # Single profile deletion (original logic)
+        profile_name = selected_profile_names[0]
         profile_data = self.main_window.profiles.get(profile_name, {})
         is_group = core_logic.is_group_profile(profile_data)
         
@@ -579,50 +588,158 @@ class MainWindowHandlers:
         msg_box.setDefaultButton(QMessageBox.StandardButton.No)
         reply = msg_box.exec()
         if reply == QMessageBox.StandardButton.Yes:
-            # Check if profile is a member of a group - remove from group first
-            if profile_data.get('member_of_group'):
-                success, group_deleted, error = core_logic.remove_profile_from_group(
-                    profile_name, self.main_window.profiles
-                )
-                if group_deleted:
-                    logging.info(f"Group was deleted because '{profile_name}' was the last member")
-            
-            # Access main_window.profiles and call core_logic
-            if core_logic.delete_profile(self.main_window.profiles, profile_name):
-                if core_logic.save_profiles(self.main_window.profiles):
-                    # Try to delete the backup folder if it's empty
-                    try:
-                        backup_base_dir = self.main_window.current_settings.get('backup_base_dir', config.BACKUP_BASE_DIR)
-                        profile_backup_folder = os.path.join(backup_base_dir, profile_name)
-
-                        if os.path.exists(profile_backup_folder) and os.path.isdir(profile_backup_folder):
-                            # Check if folder is empty (no files, only .savestate folder allowed)
-                            folder_contents = os.listdir(profile_backup_folder)
-                            # Filter out .savestate folder
-                            backup_files = [f for f in folder_contents if f != '.savestate']
-
-                            if not backup_files:
-                                # Folder is empty (or only has .savestate), safe to delete
-                                import shutil
-                                shutil.rmtree(profile_backup_folder)
-                                logging.info(f"Deleted empty backup folder: {profile_backup_folder}")
-                                self.main_window.status_label.setText("Profile '{0}' deleted (empty backup folder removed).".format(profile_name))
-                            else:
-                                logging.info(f"Backup folder not empty, keeping it: {profile_backup_folder} ({len(backup_files)} files)")
-                                self.main_window.status_label.setText("Profile '{0}' deleted (backup files preserved).".format(profile_name))
-                        else:
-                            self.main_window.status_label.setText("Profile '{0}' deleted.".format(profile_name))
-                    except Exception as e:
-                        logging.error(f"Error checking/deleting backup folder for '{profile_name}': {e}")
-                        self.main_window.status_label.setText("Profile '{0}' deleted (could not check backup folder).".format(profile_name))
-
-                    self.main_window.profile_table_manager.update_profile_table()
+            success, result_code = self._delete_single_profile(profile_name, profile_data)
+            if success:
+                # Show appropriate status message based on result
+                if result_code == "empty_folder_removed":
+                    self.main_window.status_label.setText(f"Profile '{profile_name}' deleted (empty backup folder removed).")
+                elif result_code == "backup_preserved":
+                    self.main_window.status_label.setText(f"Profile '{profile_name}' deleted (backup files preserved).")
+                elif result_code == "folder_check_error":
+                    self.main_window.status_label.setText(f"Profile '{profile_name}' deleted (could not check backup folder).")
                 else:
+                    self.main_window.status_label.setText(f"Profile '{profile_name}' deleted.")
+                self.main_window.profile_table_manager.update_profile_table()
+            else:
+                if result_code == "save_failed":
                     QMessageBox.critical(self.main_window, "Error", "Profile deleted from memory but unable to save changes.")
-                    # Reload profiles in main_window
                     self.main_window.profiles = core_logic.load_profiles()
                     self.main_window.profile_table_manager.update_profile_table()
-            # else: delete_profile failed (already handled by core_logic likely)
+
+    def _delete_single_profile(self, profile_name: str, profile_data: dict = None, save_to_disk: bool = True):
+        """Delete a single profile (internal helper).
+        
+        Args:
+            profile_name: Name of the profile to delete
+            profile_data: Optional profile data dict (will be loaded if not provided)
+            save_to_disk: If True, save profiles to disk after deletion. Set to False for batch operations.
+            
+        Returns:
+            Tuple (success: bool, result_code: str)
+        """
+        if profile_data is None:
+            profile_data = self.main_window.profiles.get(profile_name, {})
+        
+        # Check if profile is a member of a group - remove from group first
+        if profile_data.get('member_of_group'):
+            success, group_deleted, error = core_logic.remove_profile_from_group(
+                profile_name, self.main_window.profiles
+            )
+            if group_deleted:
+                logging.info(f"Group was deleted because '{profile_name}' was the last member")
+        
+        # Access main_window.profiles and call core_logic
+        if core_logic.delete_profile(self.main_window.profiles, profile_name):
+            # Only save if requested (single deletion saves immediately, batch saves at the end)
+            if save_to_disk:
+                if not core_logic.save_profiles(self.main_window.profiles):
+                    return False, "save_failed"
+            
+            # Try to delete the backup folder if it's empty
+            try:
+                backup_base_dir = self.main_window.current_settings.get('backup_base_dir', config.BACKUP_BASE_DIR)
+                profile_backup_folder = os.path.join(backup_base_dir, profile_name)
+
+                if os.path.exists(profile_backup_folder) and os.path.isdir(profile_backup_folder):
+                    # Check if folder is empty (no files, only .savestate folder allowed)
+                    folder_contents = os.listdir(profile_backup_folder)
+                    # Filter out .savestate folder
+                    backup_files = [f for f in folder_contents if f != '.savestate']
+
+                    if not backup_files:
+                        # Folder is empty (or only has .savestate), safe to delete
+                        import shutil
+                        shutil.rmtree(profile_backup_folder)
+                        logging.info(f"Deleted empty backup folder: {profile_backup_folder}")
+                        return True, "empty_folder_removed"
+                    else:
+                        logging.info(f"Backup folder not empty, keeping it: {profile_backup_folder} ({len(backup_files)} files)")
+                        return True, "backup_preserved"
+                else:
+                    return True, "deleted"
+            except Exception as e:
+                logging.error(f"Error checking/deleting backup folder for '{profile_name}': {e}")
+                return True, "folder_check_error"
+        return False, "delete_failed"
+    
+    def _handle_delete_multiple_profiles(self, profile_names: list):
+        """Handle deletion of multiple selected profiles."""
+        profile_count = len(profile_names)
+        
+        # Check for groups in the selection
+        groups_in_selection = []
+        profiles_in_selection = []
+        for name in profile_names:
+            profile_data = self.main_window.profiles.get(name, {})
+            if core_logic.is_group_profile(profile_data):
+                groups_in_selection.append(name)
+            else:
+                profiles_in_selection.append(name)
+        
+        # Build confirmation message
+        msg_box = QMessageBox(self.main_window)
+        msg_box.setWindowTitle("Confirm Multiple Deletion")
+        msg_box.setIcon(QMessageBox.Icon.Warning)
+        msg_box.setTextFormat(Qt.TextFormat.RichText)
+        
+        # Build profile list (limit to 5 for display)
+        display_names = profile_names[:5]
+        names_list = "<br>".join([f"• {name}" for name in display_names])
+        if profile_count > 5:
+            names_list += f"<br>• ... and {profile_count - 5} more"
+        
+        group_warning = ""
+        if groups_in_selection:
+            group_warning = f"<br><br><b>Note:</b> {len(groups_in_selection)} group(s) will be ungrouped (members become visible)."
+        
+        msg_box.setText(
+            f"Are you sure you want to delete <b>{profile_count}</b> profiles?<br><br>"
+            f"{names_list}"
+            f"{group_warning}<br><br>"
+            f"<b>This does not delete already created backup files.</b>"
+        )
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+        reply = msg_box.exec()
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # Delete profiles
+        deleted_count = 0
+        failed_count = 0
+        
+        for profile_name in profile_names:
+            profile_data = self.main_window.profiles.get(profile_name, {})
+            
+            if core_logic.is_group_profile(profile_data):
+                # Handle group deletion
+                success, error = core_logic.ungroup_profile(profile_name, self.main_window.profiles)
+                if success:
+                    deleted_count += 1
+                else:
+                    failed_count += 1
+                    logging.error(f"Failed to delete group '{profile_name}': {error}")
+            else:
+                # Handle regular profile deletion (don't save to disk yet - will save once at the end)
+                success, _ = self._delete_single_profile(profile_name, profile_data, save_to_disk=False)
+                if success:
+                    deleted_count += 1
+                else:
+                    failed_count += 1
+        
+        # Save all changes at once
+        if core_logic.save_profiles(self.main_window.profiles):
+            if failed_count == 0:
+                self.main_window.status_label.setText(f"Deleted {deleted_count} profile(s).")
+            else:
+                self.main_window.status_label.setText(f"Deleted {deleted_count} profile(s), {failed_count} failed.")
+            self.main_window.profile_table_manager.update_profile_table()
+        else:
+            QMessageBox.critical(self.main_window, "Error", 
+                               f"Deleted {deleted_count} profile(s) from memory but unable to save changes.")
+            self.main_window.profiles = core_logic.load_profiles()
+            self.main_window.profile_table_manager.update_profile_table()
 
     # Starts backup process for ALL profiles sequentially.
     @Slot()

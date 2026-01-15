@@ -651,30 +651,37 @@ class ProfileListManager:
         return button_widget
     
     def _update_delete_buttons_state(self):
-        """Show delete button only for the currently selected row, hide for others."""
+        """Show delete button for all selected rows, hide for others."""
         selected_rows = self.table_widget.selectionModel().selectedRows()
-        selected_row = selected_rows[0].row() if selected_rows else -1
+        selected_row_indices = {row.row() for row in selected_rows}  # Use set for O(1) lookup
         
         for row in range(self.table_widget.rowCount()):
             button_widget = self.table_widget.cellWidget(row, 3)  # Column 3 is the delete button
             if button_widget:
                 button = button_widget.findChild(QPushButton)
                 if button:
-                    # Show button only on selected row, hide on others
-                    is_selected = (row == selected_row)
+                    # Show button on ALL selected rows, hide on others
+                    is_selected = (row in selected_row_indices)
                     button.setVisible(is_selected)
                     button.setEnabled(is_selected)
     
     def _on_delete_button_clicked(self, profile_name: str):
-        """Handle delete button click by delegating to the main window's delete handler."""
+        """Handle delete button click by delegating to the main window's delete handler.
+        
+        Preserves multi-selection: if multiple profiles are selected, all will be processed.
+        Only selects the clicked profile if no row is currently selected.
+        """
         if not profile_name or profile_name not in self.profiles:
             logging.warning(f"Delete button clicked for invalid profile: '{profile_name}'")
             return
         
         logging.debug(f"Delete button clicked for profile: '{profile_name}'")
         
-        # Ensure the profile is selected in the table before calling the handler
-        self.select_profile_in_table(profile_name)
+        # Only select the profile if there's no current selection
+        # This preserves multi-selection when user clicks delete on one of the selected profiles
+        selected_rows = self.table_widget.selectionModel().selectedRows()
+        if not selected_rows:
+            self.select_profile_in_table(profile_name)
         
         if hasattr(self.main_window, 'handlers') and self.main_window.handlers:
             self.main_window.handlers.handle_delete_profile()
