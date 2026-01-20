@@ -1,4 +1,4 @@
-name: 🚀 Build, Package, and Release (PowerShell)
+name: 🚀 Build, Package, and Release (Nuitka & SignPath)
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   # =========================================================
-  # 1. WINDOWS BUILD (Firmata e Zippata)
+  # 1. WINDOWS BUILD (Nuitka + Firma)
   # =========================================================
   build-windows:
     runs-on: windows-latest
@@ -30,11 +30,12 @@ jobs:
       with:
         python-version: '3.13'
 
+    # MODIFICA 1: Installiamo Nuitka e Zstandard
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller
+        pip install nuitka zstandard ordered-set
 
     - name: Restore Secret JSON
       shell: bash
@@ -43,10 +44,22 @@ jobs:
       run: |
         python -c "import os; open('cloud_utils/client_secret.json', 'w', encoding='utf-8').write(os.environ['SECRET_CONTENT'])"
 
-    - name: Run PyInstaller
-      run: pyinstaller --clean SaveState-OneFile.spec
+    # MODIFICA 2: Compilazione con Nuitka invece di PyInstaller
+    # Nota: Assumiamo che lo script principale sia SaveState.py (o main.py)
+    - name: Run Nuitka Build
+      run: |
+        python -m nuitka --onefile --standalone `
+          --enable-plugin=pyside6 `
+          --windows-console-mode=disable `
+          --company-name="Matteo" `
+          --product-name="SaveState" `
+          --file-version="${{ env.RELEASE_VERSION }}" `
+          --output-dir=dist `
+          --output-filename=SaveState.exe `
+          --assume-yes-for-downloads `
+          SaveState.py
 
-    # --- SIGNPATH (Firma Reale con Approvazione) ---
+    # --- SIGNPATH (Nessuna modifica necessaria qui) ---
     - name: Upload Unsigned EXE
       id: upload_step
       uses: actions/upload-artifact@v4
@@ -103,7 +116,7 @@ jobs:
         path: SaveState_v${{ env.RELEASE_VERSION }}_Win.zip
 
   # =========================================================
-  # 2. LINUX BUILD (AppImage Max Compatibility + Tar.gz)
+  # 2. LINUX BUILD (Lasciato invariato o puoi usare Nuitka anche qui)
   # =========================================================
   build-linux:
     runs-on: ubuntu-latest
@@ -137,33 +150,21 @@ jobs:
     # --- CREAZIONE APPIMAGE (Logica Icone Avanzata) ---
     - name: 🖼️ Prepare AppDir Structure
       run: |
-        # Pulizia e creazione cartelle (Standard + Legacy Pixmaps)
         rm -rf AppDir
         mkdir -p AppDir/usr/bin
         mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps/
         mkdir -p AppDir/usr/share/pixmaps/
 
-        # Copia eseguibile
         cp dist/SaveState AppDir/usr/bin/
-        
-        # 1. Copia Icona ROOT (Base)
         cp icon.png AppDir/SaveState.png
-        
-        # 2. Copia Icona Legacy (Pixmaps) - Per vecchie distro
         cp icon.png AppDir/usr/share/pixmaps/SaveState.png
-        
-        # 3. Symlink Standard (Freedesktop)
-        # Percorso relativo per arrivare da /usr/share/... fino alla root
         ln -s ../../../../../../SaveState.png AppDir/usr/share/icons/hicolor/256x256/apps/SaveState.png
-        
-        # 4. Symlink .DirIcon (Per il file manager)
         cd AppDir
         ln -s SaveState.png .DirIcon
         cd ..
 
     - name: 📝 Create .desktop file
       run: |
-        # StartupWMClass è fondamentale per raggruppare l'icona nella Dock
         cat > AppDir/SaveState.desktop <<EOF
         [Desktop Entry]
         Type=Application
@@ -180,30 +181,18 @@ jobs:
         wget -O appimagetool "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
         chmod +x appimagetool
         ln -s usr/bin/SaveState AppDir/AppRun
-        
-        # Creiamo l'AppImage con nome che include versione
         ARCH=x86_64 ./appimagetool AppDir SaveState.AppImage
-        
-        # Copia per release standalone (con versione nel nome)
         cp SaveState.AppImage "SaveState_v${{ env.RELEASE_VERSION }}.AppImage"
 
-    # --- IMPACCHETTAMENTO LINUX (Tar.gz con compressione massima) ---
     - name: 🗄️ Create Release Tarball Package
       run: |
         DIR_NAME="SaveState" 
         TARBALL_NAME="SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.gz"
         mkdir -p "$DIR_NAME"
-        
-        # Spostiamo l'AppImage dentro la cartella
         mv "SaveState.AppImage" "$DIR_NAME/"
-        
-        # Aggiungiamo documentazione
         cp LICENSE "$DIR_NAME/"
         cp README.md "$DIR_NAME/"
-        
-        # Comprimiamo in .tar.gz con massima compressione gzip (-9)
         tar -cvf - "$DIR_NAME" | gzip -9 > "$TARBALL_NAME"
-        
         echo "📦 Dimensione pacchetto finale:"
         ls -lh "$TARBALL_NAME"
 
@@ -220,7 +209,7 @@ jobs:
         path: "SaveState_v${{ env.RELEASE_VERSION }}.AppImage"
 
   # =========================================================
-  # 3. RELEASE CREATION (Draft)
+  # 3. RELEASE CREATION
   # =========================================================
   create-release:
     needs: [build-windows, build-linux]
@@ -239,9 +228,6 @@ jobs:
           GH_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
         run: |
           echo "Creating Release v${{ env.RELEASE_VERSION }}..."
-          
-          # Prende il contenuto zippato/tarballato dalle cartelle scaricate
-          # Include: Windows ZIP, Linux tar.gz, e AppImage standalone
           gh release create v${{ env.RELEASE_VERSION }} \
             SaveState-Windows-Package/* \
             SaveState-Linux-Package/* \
