@@ -44,18 +44,42 @@ jobs:
       run: |
         python -c "import os; open('cloud_utils/client_secret.json', 'w', encoding='utf-8').write(os.environ['SECRET_CONTENT'])"
 
-    # MODIFICA 2: Compilazione con Nuitka invece di PyInstaller
+    # MODIFICA: Nuitka con TUTTI gli asset (Icone, DB Giochi e SECRET DI GOOGLE)
     - name: Run Nuitka Build
+      shell: powershell
       run: |
+        # 1. Pulizia della versione
+        $rawVersion = "${{ env.RELEASE_VERSION }}"
+        if ($rawVersion -match '(\d+(\.\d+)+)') {
+            $cleanVersion = $matches[0]
+        } else {
+            $cleanVersion = "1.0.0"
+        }
+        Write-Host "Versione pulita per Nuitka: $cleanVersion"
+
+        # 2. Comando Nuitka che include il file SECRET generato dallo step precedente
         python -m nuitka --onefile --standalone `
           --enable-plugin=pyside6 `
           --windows-console-mode=disable `
           --company-name="Matteo" `
           --product-name="SaveState" `
-          --file-version="${{ env.RELEASE_VERSION }}" `
+          --file-version="$cleanVersion" `
+          --product-version="$cleanVersion" `
+          --windows-icon-from-ico=icon.ico `
           --output-dir=dist `
           --output-filename=SaveState.exe `
           --assume-yes-for-downloads `
+          --nofollow-import-to=pyparsing.testing `
+          --nofollow-import-to=unittest `
+          --include-data-dir=icons=icons `
+          --include-data-file=splash.png=splash.png `
+          --include-data-file=icon.png=icon.png `
+          --include-data-file=backup_runner.py=backup_runner.py `
+          --include-data-file=emulator_utils/citra_titles_map.pkl=emulator_utils/citra_titles_map.pkl `
+          --include-data-file=emulator_utils/switch_game_map.pkl=emulator_utils/switch_game_map.pkl `
+          --include-data-file=emulator_utils/ps4_game_map.pkl=emulator_utils/ps4_game_map.pkl `
+          --include-data-file=emulator_utils/xenia_title_map.pkl=emulator_utils/xenia_title_map.pkl `
+          --include-data-file=cloud_utils/client_secret.json=cloud_utils/client_secret.json `
           main.py
 
     # --- SIGNPATH (Nessuna modifica necessaria qui) ---
