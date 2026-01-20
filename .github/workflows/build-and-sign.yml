@@ -45,7 +45,6 @@ jobs:
         python -c "import os; open('cloud_utils/client_secret.json', 'w', encoding='utf-8').write(os.environ['SECRET_CONTENT'])"
 
     # MODIFICA 2: Compilazione con Nuitka invece di PyInstaller
-    # Nota: Assumiamo che lo script principale sia SaveState.py (o main.py)
     - name: Run Nuitka Build
       run: |
         python -m nuitka --onefile --standalone `
@@ -57,7 +56,7 @@ jobs:
           --output-dir=dist `
           --output-filename=SaveState.exe `
           --assume-yes-for-downloads `
-          SaveState.py
+          main.py
 
     # --- SIGNPATH (Nessuna modifica necessaria qui) ---
     - name: Upload Unsigned EXE
