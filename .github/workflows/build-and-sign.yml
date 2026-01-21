@@ -70,10 +70,25 @@ jobs:
         }
         Write-Host "Versione pulita per Nuitka: $cleanVersion"
 
-        # 2. Comando Nuitka con DEBUG CONSOLE e MODULI MANCANTI
+        # MODIFICA FINALE: Console DISABILITATA + Rimossi blocchi bloat
+    - name: Run Nuitka Build
+      shell: powershell
+      run: |
+        # 1. Pulizia della versione
+        $rawVersion = "${{ env.RELEASE_VERSION }}"
+        if ($rawVersion -match '(\d+(\.\d+)+)') {
+            $cleanVersion = $matches[0]
+        } else {
+            $cleanVersion = "1.0.0"
+        }
+        Write-Host "Versione pulita per Nuitka: $cleanVersion"
+
+        # 2. Comando Nuitka Finale
+        # Rimosso: --nofollow-import-to
+        
         python -m nuitka --onefile --standalone `
           --enable-plugin=pyside6 `
-          --windows-console-mode=force `
+          --windows-console-mode=disable `
           --company-name="Matteo" `
           --product-name="SaveState" `
           --file-version="$cleanVersion" `
@@ -82,8 +97,6 @@ jobs:
           --output-dir=dist `
           --output-filename=SaveState.exe `
           --assume-yes-for-downloads `
-          --nofollow-import-to=pyparsing.testing `
-          --nofollow-import-to=unittest `
           --include-module=winshell `
           --include-module=win32com `
           --include-module=vdf `
