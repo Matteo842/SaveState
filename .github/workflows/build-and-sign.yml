@@ -57,10 +57,23 @@ jobs:
         }
         Write-Host "Versione pulita per Nuitka: $cleanVersion"
 
-        # 2. Comando Nuitka che include il file SECRET generato dallo step precedente
+        # MODIFICA DEBUG: Console ATTIVA + Import Manuali
+    - name: Run Nuitka Build
+      shell: powershell
+      run: |
+        # 1. Pulizia della versione
+        $rawVersion = "${{ env.RELEASE_VERSION }}"
+        if ($rawVersion -match '(\d+(\.\d+)+)') {
+            $cleanVersion = $matches[0]
+        } else {
+            $cleanVersion = "1.0.0"
+        }
+        Write-Host "Versione pulita per Nuitka: $cleanVersion"
+
+        # 2. Comando Nuitka con DEBUG CONSOLE e MODULI MANCANTI
         python -m nuitka --onefile --standalone `
           --enable-plugin=pyside6 `
-          --windows-console-mode=disable `
+          --windows-console-mode=force `
           --company-name="Matteo" `
           --product-name="SaveState" `
           --file-version="$cleanVersion" `
@@ -71,6 +84,14 @@ jobs:
           --assume-yes-for-downloads `
           --nofollow-import-to=pyparsing.testing `
           --nofollow-import-to=unittest `
+          --include-module=winshell `
+          --include-module=win32com `
+          --include-module=vdf `
+          --include-module=nbtlib `
+          --include-module=thefuzz `
+          --include-module=psutil `
+          --include-module=xml.etree.ElementTree `
+          --include-module=configparser `
           --include-data-dir=icons=icons `
           --include-data-file=splash.png=splash.png `
           --include-data-file=icon.png=icon.png `
