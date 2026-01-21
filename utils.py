@@ -7,17 +7,38 @@ import re
 APP_NAME = "SaveState" # Same as in config.py, used for some utility functions if needed.
 
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
+    """
+    Get absolute path to resource, works for dev, PyInstaller, and Nuitka.
+    
+    Detection order:
+    1. PyInstaller: Uses sys._MEIPASS for temporary extraction folder
+    2. Nuitka: Uses directory containing the executable (sys.executable)
+    3. Development: Uses the script's directory (__file__)
+    4. Fallback: Uses current working directory
+    """
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    except AttributeError:
-        # Not running in a PyInstaller bundle
+        # 1. PyInstaller creates a temp folder and stores path in _MEIPASS
+        if hasattr(sys, '_MEIPASS'):
+            base_path = sys._MEIPASS
+            logging.debug(f"resource_path: Using PyInstaller _MEIPASS: {base_path}")
+        # 2. Nuitka: Check if we're running as a compiled executable
+        #    Nuitka sets __compiled__ at module level, or we can check sys.frozen
+        elif getattr(sys, 'frozen', False) or '__compiled__' in dir():
+            # For Nuitka onefile/standalone, resources are next to the executable
+            base_path = os.path.dirname(sys.executable)
+            logging.debug(f"resource_path: Using Nuitka/frozen executable dir: {base_path}")
+        else:
+            # 3. Development mode: Use the directory containing this script
+            # This is more reliable than os.path.abspath(".") which uses CWD
+            base_path = os.path.dirname(os.path.abspath(__file__))
+            logging.debug(f"resource_path: Using development __file__ dir: {base_path}")
+    except Exception as e:
+        # 4. Fallback to current working directory
+        logging.error(f"resource_path: Error determining base path: {e}. Falling back to CWD.")
         base_path = os.path.abspath(".")
-    except Exception as e: # Catch any other exception during _MEIPASS access
-        logging.error(f"Error accessing sys._MEIPASS: {e}. Falling back to os.path.abspath('.')")
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
+    
+    full_path = os.path.join(base_path, relative_path)
+    return full_path
 
 def sanitize_filename(filename):
     """

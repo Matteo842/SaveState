@@ -215,14 +215,21 @@ def get_app_data_dir() -> Path:
 def resource_path(relative_path: Union[str, Path]) -> Path:
     """
     Ottieni il percorso assoluto della risorsa (es. icone).
-    Gestisce il caso in cui lo script sia "congelato" da PyInstaller.
+    Gestisce PyInstaller, Nuitka e modalità sviluppo.
     Le risorse devono essere relative alla directory dello SCRIPT.
     """
     try:
-        # PyInstaller crea una cartella temp e mette il path in _MEIPASS
-        base_path = Path(sys._MEIPASS) # type: ignore
-    except AttributeError:
-        # Altrimenti, la base è la directory dove si trova questo script
+        # 1. PyInstaller crea una cartella temp e mette il path in _MEIPASS
+        if hasattr(sys, '_MEIPASS'):
+            base_path = Path(sys._MEIPASS)  # type: ignore
+        # 2. Nuitka: Check if we're running as a compiled executable
+        elif getattr(sys, 'frozen', False):
+            base_path = Path(sys.executable).parent
+        else:
+            # 3. Development mode: Use SCRIPT_DIR
+            base_path = SCRIPT_DIR
+    except Exception:
+        # 4. Fallback
         base_path = SCRIPT_DIR
 
     return (base_path / relative_path).resolve()

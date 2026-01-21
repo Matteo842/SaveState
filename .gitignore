@@ -207,3 +207,4 @@ cloud_utils/token.json
 cloud_utils/credentials.json
 cloud_utils/token.pickle
 /.cursor
+/dist_local

@@ -89,7 +89,7 @@ jobs:
         python -m nuitka --onefile --standalone `
           --enable-plugin=pyside6 `
           --windows-console-mode=disable `
-          --company-name="Matteo" `
+          --company-name="SaveState[OSS]" `
           --product-name="SaveState" `
           --file-version="$cleanVersion" `
           --product-version="$cleanVersion" `

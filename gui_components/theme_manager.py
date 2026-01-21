@@ -9,10 +9,15 @@ from PySide6.QtCore import QSize
 try:
     from utils import resource_path
 except ImportError:
-    logging.error("ThemeManager: Failed to import resource_path from utils. Fallback might be needed.")
-
+    logging.error("ThemeManager: Failed to import resource_path from utils. Using fallback.")
+    import sys
     def resource_path(relative_path):
-        return os.path.join(os.path.abspath("."), relative_path)
+        # Fallback: use executable dir for frozen apps, script dir for dev
+        if getattr(sys, 'frozen', False) or hasattr(sys, '_MEIPASS'):
+            base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else sys._MEIPASS
+        else:
+            base = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(base, relative_path)
 
 import config # To access LIGHT_THEME_QSS and DARK_THEME_QSS
 import settings_manager # To save theme settings

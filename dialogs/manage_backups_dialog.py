@@ -106,7 +106,7 @@ class ManageBackupsDialog(QDialog):
         # --- Load lock icon path for stylesheet ---
         self.lock_icon_path = None
         try:
-            icon_path = resource_path("icons/lock.png")
+            icon_path = resource_path("icons/Lock.png")
             if os.path.exists(icon_path):
                 # Convert to forward slashes for CSS url()
                 self.lock_icon_path = icon_path.replace("\\", "/")
