@@ -244,12 +244,13 @@ jobs:
     - name: 🗄️ Create Release Tarball Package
       run: |
         DIR_NAME="SaveState" 
-        TARBALL_NAME="SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.gz"
+        TARBALL_NAME="SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.xz"
         mkdir -p "$DIR_NAME"
         mv "SaveState.AppImage" "$DIR_NAME/"
         cp LICENSE "$DIR_NAME/"
         cp README.md "$DIR_NAME/"
-        tar -cvf - "$DIR_NAME" | gzip -9 > "$TARBALL_NAME"
+        # Use XZ with maximum compression (-9e) for better compression on already-compressed AppImage
+        tar -cvf - "$DIR_NAME" | xz -9e --threads=0 > "$TARBALL_NAME"
         echo "📦 Dimensione pacchetto finale:"
         ls -lh "$TARBALL_NAME"
 
@@ -257,7 +258,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: SaveState-Linux-Package
-        path: "SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.gz"
+        path: "SaveState_v${{ env.RELEASE_VERSION }}_Linux.tar.xz"
 
     - name: ⬆️ Upload Standalone AppImage
       uses: actions/upload-artifact@v4
