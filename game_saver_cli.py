@@ -180,21 +180,49 @@ if __name__ == "__main__":
             """Handles profile creation from Minecraft worlds."""
             clear_screen()
             print_title("Create Profile from Minecraft World")
-            print_info("Searching for Minecraft saves folder...")
-            saves_folder = minecraft_utils.find_minecraft_saves_folder()
+            print_info("Searching for Minecraft saves sources...")
+            
+            sources = minecraft_utils.get_all_minecraft_saves_sources()
 
-            if not saves_folder:
-                print_error("Could not find the standard Minecraft saves folder (.minecraft/saves).")
-                print_error("Ensure Minecraft Java Edition is installed.")
+            if not sources:
+                print_error("Could not find any Minecraft saves folder.")
+                print_error("Ensure Minecraft Java Edition or Prism Launcher is installed.")
                 pause()
                 return profiles_dict
 
-            print_info(f"Found saves folder: {saves_folder}")
-            print_info("Listing available worlds...")
-            worlds = minecraft_utils.list_minecraft_worlds(saves_folder)
+            # If multiple sources, let user choose
+            selected_source = None
+            if len(sources) == 1:
+                selected_source = sources[0]
+                print_info(f"Found saves source: {selected_source['source_name']}")
+            else:
+                print_info("Available Minecraft Sources:")
+                for i, src in enumerate(sources):
+                    print_option(i + 1, src['source_name'])
+                
+                while True:
+                    try:
+                        choice_str = get_input(f"Select source (1-{len(sources)}) or 0 to cancel: ")
+                        choice = int(choice_str)
+                        if choice == 0:
+                            print_info("Cancelled.")
+                            pause()
+                            return profiles_dict
+                        if 1 <= choice <= len(sources):
+                            selected_source = sources[choice - 1]
+                            break
+                        else:
+                            print_error("Invalid choice.")
+                    except ValueError:
+                        print_error("Please enter a number.")
+                    except Exception as e:
+                        print_error(f"Unexpected error: {e}")
+
+            print_info(f"\nListing worlds from: {selected_source['source_name']}")
+            worlds = minecraft_utils.list_minecraft_worlds(selected_source['saves_path'])
 
             if not worlds:
-                print_info("No Minecraft worlds found in the saves folder.")
+                print_info("No Minecraft worlds found in this source.")
                 pause()
                 return profiles_dict
 

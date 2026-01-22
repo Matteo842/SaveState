@@ -1403,6 +1403,30 @@ def get_profile_icon(profile_data: dict, profile_name: str, size: int = DEFAULT_
     if not isinstance(profile_data, dict):
         return None
     
+    # --- Check for Minecraft profiles ---
+    # Minecraft profiles have paths containing .minecraft/saves or minecraft/saves (Prism Launcher)
+    profile_path = profile_data.get('path', '')
+    if profile_path:
+        path_lower = profile_path.lower().replace('\\', '/')
+        is_minecraft = (
+            '.minecraft/saves' in path_lower or 
+            'minecraft/saves' in path_lower or
+            '/saves/' in path_lower and 'prism' in path_lower.lower()
+        )
+        
+        if is_minecraft:
+            # Use the bundled minecraft.png icon from the icons folder
+            try:
+                from utils import resource_path
+                minecraft_icon_path = resource_path("icons/minecraft.png")
+                if os.path.exists(minecraft_icon_path):
+                    icon = QIcon(minecraft_icon_path)
+                    if not icon.isNull():
+                        logger.debug(f"Using Minecraft icon for profile '{profile_name}'")
+                        return icon
+            except Exception as e:
+                logger.debug(f"Error loading Minecraft icon: {e}")
+    
     is_linux = platform.system() != "Windows"
     
     # Check for game_executable in profile

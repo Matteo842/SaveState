@@ -16,6 +16,114 @@ except ImportError:
     NBT_AVAILABLE = False
     logging.warning("Library 'nbtlib' not found or invalid. Unable to read world names from level.dat. Folder names will be used instead.")
 
+
+# --- Function to find Prism Launcher folder ---
+def find_prism_launcher_folder():
+    """
+    Trova il percorso della cartella di Prism Launcher.
+
+    Restituisce:
+        str | None: Il percorso assoluto della cartella PrismLauncher se trovata, altrimenti None.
+    """
+    system = platform.system()
+    prism_folder = None
+
+    try:
+        if system == "Windows":
+            appdata_path = os.getenv('APPDATA')
+            if appdata_path:
+                prism_folder = os.path.join(appdata_path, 'PrismLauncher')
+        elif system == "Darwin":  # macOS
+            home = os.path.expanduser('~')
+            prism_folder = os.path.join(home, 'Library', 'Application Support', 'PrismLauncher')
+        elif system == "Linux":
+            home = os.path.expanduser('~')
+            # Prism Launcher su Linux può essere in diverse posizioni
+            possible_paths = [
+                os.path.join(home, '.local', 'share', 'PrismLauncher'),
+                os.path.join(home, '.var', 'app', 'org.prismlauncher.PrismLauncher', 'data', 'PrismLauncher'),  # Flatpak
+            ]
+            for path in possible_paths:
+                if os.path.isdir(path):
+                    prism_folder = path
+                    break
+
+        if prism_folder and os.path.isdir(prism_folder):
+            logging.info(f"Prism Launcher folder found: '{prism_folder}'")
+            return prism_folder
+        else:
+            logging.debug(f"Prism Launcher folder not found.")
+            return None
+
+    except Exception as e:
+        logging.error(f"Error while searching for Prism Launcher folder: {e}", exc_info=True)
+        return None
+
+
+# --- Function to list Prism Launcher instances ---
+def list_prism_launcher_instances():
+    """
+    Elenca le istanze di Prism Launcher disponibili.
+
+    Restituisce:
+        list: Una lista di dizionari, ognuno rappresentante un'istanza.
+              Es: [{'instance_name': '1.21.11', 'saves_path': '...', 'instance_path': '...'}, ...]
+              Restituisce una lista vuota se Prism Launcher non è installato o non ci sono istanze.
+    """
+    instances = []
+    prism_folder = find_prism_launcher_folder()
+    
+    if not prism_folder:
+        return instances
+    
+    instances_folder = os.path.join(prism_folder, 'instances')
+    if not os.path.isdir(instances_folder):
+        logging.debug(f"Prism Launcher instances folder not found: '{instances_folder}'")
+        return instances
+    
+    logging.info(f"Scanning Prism Launcher instances in: {instances_folder}")
+    
+    try:
+        for item_name in os.listdir(instances_folder):
+            item_path = os.path.join(instances_folder, item_name)
+            
+            # Salta i file (come instgroups.json)
+            if not os.path.isdir(item_path):
+                continue
+            
+            # Cerca la cartella saves nell'istanza
+            # Prism Launcher usa "minecraft/saves" o ".minecraft/saves"
+            possible_saves_paths = [
+                os.path.join(item_path, 'minecraft', 'saves'),
+                os.path.join(item_path, '.minecraft', 'saves'),
+            ]
+            
+            saves_path = None
+            for path in possible_saves_paths:
+                if os.path.isdir(path):
+                    saves_path = path
+                    break
+            
+            if saves_path:
+                instances.append({
+                    'instance_name': item_name,
+                    'saves_path': saves_path,
+                    'instance_path': item_path,
+                    'launcher': 'PrismLauncher'
+                })
+                logging.debug(f"  Found Prism instance: '{item_name}' -> saves: '{saves_path}'")
+            else:
+                logging.debug(f"  Prism instance '{item_name}' has no saves folder yet.")
+    
+    except OSError as e:
+        logging.error(f"Error while reading Prism Launcher instances: {e}")
+    except Exception as e:
+        logging.error(f"Unexpected error while listing Prism Launcher instances: {e}", exc_info=True)
+    
+    logging.info(f"Found {len(instances)} Prism Launcher instances with saves.")
+    return instances
+
+
 # --- Function to find Minecraft saves folder ---
 def find_minecraft_saves_folder():
     """
@@ -62,6 +170,45 @@ def find_minecraft_saves_folder():
         saves_path = None
 
     return saves_path
+
+
+# --- Function to get all Minecraft saves sources ---
+def get_all_minecraft_saves_sources():
+    """
+    Ottiene tutte le sorgenti di save di Minecraft disponibili (vanilla + launchers alternativi).
+
+    Restituisce:
+        list: Una lista di dizionari con le informazioni su ogni sorgente.
+              Es: [
+                  {'source_name': 'Minecraft', 'saves_path': '...', 'launcher': 'vanilla'},
+                  {'source_name': 'Prism: 1.21.11', 'saves_path': '...', 'launcher': 'PrismLauncher'},
+                  ...
+              ]
+    """
+    sources = []
+    
+    # Aggiungi Minecraft vanilla
+    vanilla_saves = find_minecraft_saves_folder()
+    if vanilla_saves:
+        sources.append({
+            'source_name': 'Minecraft',
+            'saves_path': vanilla_saves,
+            'launcher': 'vanilla',
+            'instance_name': None
+        })
+    
+    # Aggiungi istanze Prism Launcher
+    prism_instances = list_prism_launcher_instances()
+    for instance in prism_instances:
+        sources.append({
+            'source_name': f"Prism: {instance['instance_name']}",
+            'saves_path': instance['saves_path'],
+            'launcher': 'PrismLauncher',
+            'instance_name': instance['instance_name']
+        })
+    
+    logging.info(f"Total Minecraft saves sources found: {len(sources)}")
+    return sources
 
 # --- Function to list Minecraft worlds ---
 def list_minecraft_worlds(saves_folder_path):

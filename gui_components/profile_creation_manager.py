@@ -167,28 +167,20 @@ class NewProfileDialog(QDialog):
     def _on_minecraft_button_clicked(self):
         """Opens Minecraft world selection dialog and auto-fills the profile."""
         try:
-            # Find Minecraft saves folder
-            saves_folder = minecraft_utils.find_minecraft_saves_folder()
+            # Get all Minecraft saves sources (vanilla + Prism Launcher)
+            sources = minecraft_utils.get_all_minecraft_saves_sources()
             
-            if not saves_folder:
+            if not sources:
                 QMessageBox.warning(self, "Folder Not Found",
-                    "Could not find the standard Minecraft saves folder (.minecraft/saves).\n"
-                    "Make sure that Minecraft Java Edition is installed.")
-                return  # Stay in NewProfileDialog
-            
-            # Get world list
-            worlds_data = minecraft_utils.list_minecraft_worlds(saves_folder)
-            
-            if not worlds_data:
-                QMessageBox.information(self, "No Worlds Found",
-                    f"No worlds found in folder:\n{saves_folder}")
+                    "Could not find any Minecraft saves folder.\n"
+                    "Make sure that Minecraft Java Edition or Prism Launcher is installed.")
                 return  # Stay in NewProfileDialog
             
             # Hide this dialog before showing Minecraft dialog
             self.hide()
             
             # Show world selection dialog with main window as parent
-            dialog = MinecraftWorldsDialog(worlds_data, self.parent())
+            dialog = MinecraftWorldsDialog(sources=sources, parent=self.parent())
             
             if dialog.exec():
                 selected_world = dialog.get_selected_world_info()
@@ -462,46 +454,34 @@ class ProfileCreationManager:
         """
         Finds Minecraft worlds, shows a selection dialog,
         and creates a new profile for the selected world.
+        Supports vanilla Minecraft and Prism Launcher instances.
         """
         mw = self.main_window
         logging.info("Starting Minecraft world search...")
-        mw.status_label.setText("Searching for Minecraft saves folder...")
+        mw.status_label.setText("Searching for Minecraft saves sources...")
         QApplication.processEvents()
 
         try:
-            saves_folder = minecraft_utils.find_minecraft_saves_folder()
+            sources = minecraft_utils.get_all_minecraft_saves_sources()
         except Exception as e_find:
-            logging.error(f"Unexpected error during find_minecraft_saves_folder: {e_find}", exc_info=True)
-            QMessageBox.critical(mw, "Minecraft Error", "Unexpected error while searching for the Minecraft folder.")
+            logging.error(f"Unexpected error during get_all_minecraft_saves_sources: {e_find}", exc_info=True)
+            QMessageBox.critical(mw, "Minecraft Error", "Unexpected error while searching for Minecraft sources.")
             mw.status_label.setText("Error searching for Minecraft.")
             return
 
-        if not saves_folder:
-            logging.warning("Minecraft saves folder not found.")
+        if not sources:
+            logging.warning("No Minecraft saves sources found.")
             QMessageBox.warning(mw, "Folder Not Found",
-                                "Could not find the standard Minecraft saves folder (.minecraft/saves).\nMake sure that Minecraft Java Edition is installed.")
+                                "Could not find any Minecraft saves folder.\n"
+                                "Make sure that Minecraft Java Edition or Prism Launcher is installed.")
             mw.status_label.setText("Minecraft folder not found.")
             return
 
-        mw.status_label.setText("Reading Minecraft worlds...")
+        mw.status_label.setText("Loading Minecraft worlds...")
         QApplication.processEvents()
+        
         try:
-            worlds_data = minecraft_utils.list_minecraft_worlds(saves_folder)
-        except Exception as e_list:
-            logging.error(f"Unexpected error during list_minecraft_worlds: {e_list}", exc_info=True)
-            QMessageBox.critical(mw, "Minecraft Error", "Unexpected error while reading Minecraft worlds.")
-            mw.status_label.setText("Error reading Minecraft worlds.")
-            return
-
-        if not worlds_data:
-            logging.warning("No worlds found in: %s", saves_folder)
-            QMessageBox.information(mw, "No Worlds Found",
-                                    f"No worlds found in folder:\n{saves_folder}")
-            mw.status_label.setText("No Minecraft worlds found.")
-            return
-
-        try:
-            dialog = MinecraftWorldsDialog(worlds_data, mw) # Usa mw come parent
+            dialog = MinecraftWorldsDialog(sources=sources, parent=mw)
         except Exception as e_dialog_create:
             logging.error(f"Creation error MinecraftWorldsDialog: {e_dialog_create}", exc_info=True)
             QMessageBox.critical(mw, "Interface Error", "Unable to create the world selection window.")
