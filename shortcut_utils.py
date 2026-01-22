@@ -83,22 +83,38 @@ def sanitize_shortcut_filename(name):
     return safe_name
 
 def is_packaged():
-    """ Controlla se stiamo girando da un eseguibile PyInstaller. """
-    # Questi attributi vengono impostati da PyInstaller
-    return hasattr(sys, 'frozen') or hasattr(sys, '_MEIPASS')
+    """
+    Controlla se stiamo girando da un eseguibile pacchettizzato (PyInstaller o Nuitka).
+    
+    Both PyInstaller and Nuitka set sys.frozen = True when running as a packaged executable.
+    PyInstaller additionally sets sys._MEIPASS to the temp extraction folder.
+    Nuitka does NOT have _MEIPASS.
+    """
+    return getattr(sys, 'frozen', False)
+
+def is_pyinstaller():
+    """Check if running from a PyInstaller bundle."""
+    return hasattr(sys, '_MEIPASS')
+
+def is_nuitka():
+    """Check if running from a Nuitka compiled executable."""
+    # Nuitka sets sys.frozen but does NOT have _MEIPASS
+    return getattr(sys, 'frozen', False) and not hasattr(sys, '_MEIPASS')
 
 def ensure_persistent_icon():
     """
     Ensures the shortcut icon is available at a persistent path.
     
-    In script mode: returns the original resource path.
-    In packaged mode: copies the icon from the temporary _MEIPASS folder
-    to a persistent location inside <backup_base_dir>/.savestate/icons/
-    and returns that persistent path.
+    - Script mode: returns the original resource path.
+    - Nuitka mode: returns the icon path next to executable (already persistent).
+    - PyInstaller OneFile mode: copies the icon from the temporary _MEIPASS folder
+      to a persistent location inside <backup_base_dir>/.savestate/icons/
+      and returns that persistent path.
     
     This is necessary because PyInstaller OneFile extracts files to a
     temporary folder that gets deleted when the exe exits, causing
-    shortcuts to lose their icons.
+    shortcuts to lose their icons. Nuitka standalone/onefile keeps
+    resources next to the executable.
     
     Returns:
         str: Path to the icon file, or None if not found/failed.
@@ -106,14 +122,16 @@ def ensure_persistent_icon():
     icon_relative_path = os.path.join("icons", "SaveStateIconBK.ico")
     icon_source = resource_path(icon_relative_path)
     
-    # In script mode, use the original path directly
-    if not is_packaged():
+    # In script mode OR Nuitka mode, resource_path already returns a persistent path
+    # (script dir or exe dir respectively)
+    if not is_packaged() or is_nuitka():
         if os.path.exists(icon_source):
+            logging.debug(f"Using icon at: {icon_source} (script/nuitka mode)")
             return icon_source
         logging.warning(f"Shortcut icon not found at: {icon_source}")
         return None
     
-    # In packaged mode, we need to copy the icon to a persistent location
+    # PyInstaller OneFile mode: we need to copy the icon to a persistent location
     # Use the backup directory's .savestate folder (works with portable mode too)
     try:
         import settings_manager
@@ -213,44 +231,50 @@ def create_backup_shortcut(profile_name):
         
         logging.info(f"Creating shortcut in: '{link_filepath}'")
 
-        # --- 2. Trova lo script runner (serve sempre) ---
-        logging.debug("Phase 2: Searching for runner script...")
-        runner_script_path = "" # Inizializza
-        try:
-            runner_script_path = resource_path("backup_runner.py")
-            if not os.path.exists(runner_script_path):
-                 raise FileNotFoundError(f"backup_runner.py not found at {runner_script_path}")
-            logging.info(f"Runner script path found: {runner_script_path}")
-        except Exception as e_path:
-            logging.error(f"Error in determining runner script path 'backup_runner.py': {e_path}", exc_info=True)
-            msg = f"Unable to determine/find the script ('backup_runner.py') needed for the shortcut.\nVerify that it is included in the build.\n({e_path})"
-            return False, msg
-
-        # --- 3. Determina Target, Argomenti e Working Dir in base alla modalità ---
-        logging.debug("Phase 3: Determining Target/Arguments/WorkingDir...")
+        # --- 2. Determina Target, Argomenti e Working Dir in base alla modalità ---
+        logging.debug("Phase 2: Determining Target/Arguments/WorkingDir...")
         target_exe = ""
         arguments = ""
-        working_dir = os.path.dirname(runner_script_path) # Directory comune sicura
+        working_dir = ""
 
         if is_packaged():
-            # Modalità Pacchettizzata (.exe)
-            logging.info("Packaged mode (exe) detected.")
-            target_exe = sys.executable # L'eseguibile SaveState.exe stesso
-            arguments = f'--backup "{profile_name}"' # Passa solo l'argomento che capisce __main__
-            # working_dir può rimanere quella del runner o essere quella dell'exe
+            # Modalità Pacchettizzata (PyInstaller o Nuitka)
+            # L'eseguibile gestisce direttamente --backup, non serve backup_runner.py
+            if is_nuitka():
+                logging.info("Nuitka packaged mode detected.")
+            else:
+                logging.info("PyInstaller packaged mode detected.")
+            
+            target_exe = sys.executable  # L'eseguibile SaveState.exe stesso
+            arguments = f'--backup "{profile_name}"'  # Passa l'argomento che capisce __main__
             working_dir = os.path.dirname(target_exe)
         else:
-            # Modalità Script (.py)
+            # Modalità Script (.py) - serve backup_runner.py
             logging.info("Script mode (py) detected.")
+            
+            # Cerca lo script runner (serve solo in modalità script)
+            logging.debug("Searching for runner script (script mode only)...")
+            runner_script_path = ""
+            try:
+                runner_script_path = resource_path("backup_runner.py")
+                if not os.path.exists(runner_script_path):
+                    raise FileNotFoundError(f"backup_runner.py not found at {runner_script_path}")
+                logging.info(f"Runner script path found: {runner_script_path}")
+            except Exception as e_path:
+                logging.error(f"Error in determining runner script path 'backup_runner.py': {e_path}", exc_info=True)
+                msg = f"Unable to determine/find the script ('backup_runner.py') needed for the shortcut.\nVerify that it exists in the project directory.\n({e_path})"
+                return False, msg
+            
             # Trova l'interprete pythonw.exe o python.exe
             python_exe = sys.executable
             pythonw_exe = os.path.join(os.path.dirname(python_exe), 'pythonw.exe')
             interpreter_exe = pythonw_exe if os.path.exists(pythonw_exe) else python_exe
             if interpreter_exe == python_exe:
                 logging.warning("pythonw.exe not found, I use python.exe (a console might appear).")
-            target_exe = interpreter_exe # L'interprete Python
+            target_exe = interpreter_exe  # L'interprete Python
             # L'interprete Python ha bisogno dello script runner come primo argomento
             arguments = f'"{runner_script_path}" --backup "{profile_name}"'
+            working_dir = os.path.dirname(runner_script_path)
 
         logging.debug(f"  Target EXE: {target_exe}")
         logging.debug(f"  Argomenti: {arguments}")
