@@ -10,7 +10,8 @@ import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox,
-    QCheckBox, QLineEdit, QProgressBar, QMessageBox, QStackedWidget
+    QCheckBox, QLineEdit, QProgressBar, QMessageBox, QStackedWidget,
+    QComboBox
 )
 from PySide6.QtCore import Qt, Signal, Slot, QEvent, QThread, QObject, QTimer
 from PySide6.QtGui import QIcon, QColor, QPixmap
@@ -457,6 +458,10 @@ class CloudSavePanel(QWidget):
         # Google Drive manager
         self.drive_manager = get_drive_manager()
         
+        # Register all storage providers
+        from cloud_utils.provider_factory import register_all_providers
+        register_all_providers()
+        
         # Cloud backups cache
         self.cloud_backups = {}
         
@@ -530,8 +535,40 @@ class CloudSavePanel(QWidget):
 
             # Setup periodic sync even if not connected (will auto-connect when needed)
             self._setup_periodic_sync()
+            
+            # Select the saved active provider in the dropdown (after UI is created)
+            QTimer.singleShot(100, self._restore_active_provider)
+            
         except Exception as e:
             logging.error(f"Error loading cloud settings from disk: {e}")
+    
+    def _restore_active_provider(self):
+        """Restore the active provider from saved settings."""
+        try:
+            active_provider = self.cloud_settings.get('active_provider', 'google_drive')
+            
+            # Find the index of the provider in the combo box
+            for i in range(self.provider_combo.count()):
+                if self.provider_combo.itemData(i) == active_provider:
+                    # Block signals to avoid triggering _on_provider_changed
+                    self.provider_combo.blockSignals(True)
+                    self.provider_combo.setCurrentIndex(i)
+                    self.provider_combo.blockSignals(False)
+                    
+                    # Update UI for the selected provider
+                    self._update_connect_button_for_provider(active_provider)
+                    self._update_connection_status_for_provider(active_provider)
+                    break
+            
+            # Auto-connect SMB if enabled
+            if active_provider == 'smb' and self.cloud_settings.get('smb_auto_connect', False):
+                smb_path = self.cloud_settings.get('smb_path', '')
+                if smb_path:
+                    logging.info("Auto-connecting to SMB...")
+                    QTimer.singleShot(500, self._connect_to_smb)
+                    
+        except Exception as e:
+            logging.error(f"Error restoring active provider: {e}")
     
     def _init_ui(self):
         """Initialize the UI components for the main panel."""
@@ -558,22 +595,42 @@ class CloudSavePanel(QWidget):
         
         # --- Description ---
         description = QLabel(
-            "Sync your save backups with Google Drive. "
-            "Select backups to upload or download from the cloud."
+            "Sync your save backups to cloud storage or network folders. "
+            "Select backups to upload or download."
         )
         description.setWordWrap(True)
         description.setStyleSheet("color: #AAAAAA; font-size: 10pt;")
         main_layout.addWidget(description)
-        
         # --- Connection and Filters Row (side by side) ---
         connection_filters_row = QHBoxLayout()
         connection_filters_row.setSpacing(12)
         
-        # Google Drive Connection Section (left side)
-        connection_group = QGroupBox("Google Drive Connection")
+        # Storage Provider Section (left side)
+        connection_group = QGroupBox("Storage Provider")
         connection_layout = QVBoxLayout()
         connection_layout.setContentsMargins(8, 8, 8, 8)
         connection_layout.setSpacing(6)
+        
+        # Provider selection row
+        provider_row = QHBoxLayout()
+        
+        self.provider_combo = QComboBox()
+        self.provider_combo.addItem("Google Drive", "google_drive")
+        self.provider_combo.addItem("Network Folder", "smb")
+        # Future providers will be added here:
+        # self.provider_combo.addItem("FTP Server", "ftp")
+        # self.provider_combo.addItem("WebDAV", "webdav")
+        self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
+        self.provider_combo.setMinimumWidth(150)
+        provider_row.addWidget(self.provider_combo)
+        
+        self.configure_provider_button = QPushButton("Configure...")
+        self.configure_provider_button.setToolTip("Configure the selected storage provider")
+        self.configure_provider_button.clicked.connect(self._on_configure_provider_clicked)
+        provider_row.addWidget(self.configure_provider_button)
+        
+        provider_row.addStretch(1)
+        connection_layout.addLayout(provider_row)
         
         # Connection buttons row
         connection_buttons_layout = QHBoxLayout()
@@ -582,13 +639,11 @@ class CloudSavePanel(QWidget):
         self.connect_button.setObjectName("PrimaryButton")
         self.connect_button.clicked.connect(self._on_connect_or_logout_clicked)
         
-        # Calculate fixed width for both "Connect to Google Drive" and "Logout" texts
+        # Calculate fixed width for various connect texts
         from PySide6.QtGui import QFontMetrics
         font_metrics = self.connect_button.fontMetrics()
-        connect_width = font_metrics.horizontalAdvance("Connect to Google Drive")
-        logout_width = font_metrics.horizontalAdvance("Logout")
-        # Use the wider text + padding
-        max_width = max(connect_width, logout_width) + 40
+        connect_texts = ["Connect to Google Drive", "Connect to Network Folder", "Logout"]
+        max_width = max(font_metrics.horizontalAdvance(t) for t in connect_texts) + 40
         self._connect_button_fixed_width = max_width
         self.connect_button.setFixedWidth(self._connect_button_fixed_width)
         
@@ -1411,13 +1466,247 @@ class CloudSavePanel(QWidget):
         QTimer.singleShot(2000, update_countdown)
         QTimer.singleShot(3000, update_countdown)
     
+    def _on_provider_changed(self, index):
+        """Handle provider selection change in the dropdown."""
+        provider_type = self.provider_combo.itemData(index)
+        
+        logging.info(f"Provider changed to: {provider_type}")
+        
+        # Update connect button text based on provider
+        self._update_connect_button_for_provider(provider_type)
+        
+        # Update connection status
+        self._update_connection_status_for_provider(provider_type)
+        
+        # Save the selected provider to settings
+        self.cloud_settings['active_provider'] = provider_type
+        cloud_settings_manager.save_cloud_settings(self.cloud_settings)
+        
+        # Disconnect from current provider if connected
+        if self.drive_manager and self.drive_manager.is_connected:
+            # Keep Google Drive connected for now, but in the future
+            # we might want to ask user before disconnecting
+            pass
+        
+        # Refresh the table to reflect the new provider status
+        self._repopulate_table()
+    
+    def _update_connect_button_for_provider(self, provider_type):
+        """Update the connect button text based on selected provider."""
+        if provider_type == "google_drive":
+            if self.drive_manager and self.drive_manager.is_connected:
+                self.connect_button.setText("Logout")
+            else:
+                self.connect_button.setText("Connect to Google Drive")
+        elif provider_type == "smb":
+            # Check if SMB is configured and connected
+            from cloud_utils.smb_provider import SMBProvider
+            from cloud_utils.provider_factory import ProviderFactory, ProviderType
+            
+            smb_provider = ProviderFactory.get_provider(ProviderType.SMB)
+            if smb_provider and smb_provider.is_connected:
+                self.connect_button.setText("Disconnect")
+            else:
+                self.connect_button.setText("Connect to Network Folder")
+        elif provider_type == "ftp":
+            self.connect_button.setText("Connect to FTP Server")
+        elif provider_type == "webdav":
+            self.connect_button.setText("Connect to WebDAV")
+        else:
+            self.connect_button.setText("Connect")
+    
+    def _update_connection_status_for_provider(self, provider_type):
+        """Update the connection status label for the selected provider."""
+        if provider_type == "google_drive":
+            if self.drive_manager and self.drive_manager.is_connected:
+                self.connection_status_label.setText("● Connected")
+                self.connection_status_label.setStyleSheet("color: #55FF55;")
+                self.disconnect_button.setEnabled(True)
+            else:
+                self.connection_status_label.setText("● Not Connected")
+                self.connection_status_label.setStyleSheet("color: #FF5555;")
+                self.disconnect_button.setEnabled(False)
+        elif provider_type == "smb":
+            try:
+                from cloud_utils.smb_provider import SMBProvider
+                from cloud_utils.provider_factory import ProviderFactory, ProviderType
+                
+                smb_provider = ProviderFactory.get_provider(ProviderType.SMB)
+                if smb_provider and smb_provider.is_connected:
+                    self.connection_status_label.setText("● Connected")
+                    self.connection_status_label.setStyleSheet("color: #55FF55;")
+                    self.disconnect_button.setEnabled(True)
+                else:
+                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setStyleSheet("color: #FF5555;")
+                    self.disconnect_button.setEnabled(False)
+            except ImportError:
+                self.connection_status_label.setText("● Not Available")
+                self.connection_status_label.setStyleSheet("color: #AAAAAA;")
+                self.disconnect_button.setEnabled(False)
+        else:
+            self.connection_status_label.setText("● Not Connected")
+            self.connection_status_label.setStyleSheet("color: #FF5555;")
+            self.disconnect_button.setEnabled(False)
+    
+    def _on_configure_provider_clicked(self):
+        """Open configuration dialog for the selected provider."""
+        provider_type = self.provider_combo.currentData()
+        
+        logging.info(f"Opening configuration for provider: {provider_type}")
+        
+        if provider_type == "google_drive":
+            # Google Drive doesn't have a separate config dialog
+            # Just show a message
+            QMessageBox.information(
+                self,
+                "Google Drive Configuration",
+                "Google Drive is configured through the OAuth flow.\n\n"
+                "Click 'Connect to Google Drive' to authenticate."
+            )
+        elif provider_type == "smb":
+            self._show_smb_config_dialog()
+        elif provider_type == "ftp":
+            QMessageBox.information(
+                self,
+                "FTP Configuration",
+                "FTP support is coming soon!"
+            )
+        elif provider_type == "webdav":
+            QMessageBox.information(
+                self,
+                "WebDAV Configuration",
+                "WebDAV support is coming soon!"
+            )
+    
+    def _show_smb_config_dialog(self):
+        """Show the SMB configuration dialog."""
+        try:
+            from cloud_utils.smb_config_dialog import SMBConfigDialog
+            
+            # Pass current settings
+            current_config = {
+                'smb_path': self.cloud_settings.get('smb_path', ''),
+                'smb_use_credentials': self.cloud_settings.get('smb_use_credentials', False),
+                'smb_username': self.cloud_settings.get('smb_username', ''),
+                'smb_auto_connect': self.cloud_settings.get('smb_auto_connect', False)
+            }
+            
+            dialog = SMBConfigDialog(self, current_config)
+            dialog.config_saved.connect(self._on_smb_config_saved)
+            dialog.exec()
+            
+        except Exception as e:
+            logging.error(f"Error showing SMB config dialog: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Could not open configuration dialog:\n{str(e)}"
+            )
+    
+    def _on_smb_config_saved(self, config):
+        """Handle SMB configuration saved."""
+        logging.info(f"SMB configuration saved: {config}")
+        
+        # Update cloud settings
+        self.cloud_settings.update(config)
+        cloud_settings_manager.save_cloud_settings(self.cloud_settings)
+        
+        # If auto-connect is enabled and we have a path, try to connect
+        if config.get('smb_auto_connect') and config.get('smb_path'):
+            self._connect_to_smb()
+    
+    def _connect_to_smb(self):
+        """Connect to the configured SMB network folder."""
+        try:
+            from cloud_utils.smb_provider import SMBProvider
+            from cloud_utils.provider_factory import ProviderFactory, ProviderType
+            
+            smb_path = self.cloud_settings.get('smb_path', '')
+            if not smb_path:
+                QMessageBox.warning(
+                    self,
+                    "No Path Configured",
+                    "Please configure a network path first.\n\n"
+                    "Click 'Configure...' to set up the network folder."
+                )
+                return
+            
+            # Get or create SMB provider
+            smb_provider = ProviderFactory.get_provider(ProviderType.SMB)
+            if not smb_provider:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    "SMB provider is not available."
+                )
+                return
+            
+            # Connect
+            success = smb_provider.connect(
+                path=smb_path,
+                use_credentials=self.cloud_settings.get('smb_use_credentials', False),
+                username=self.cloud_settings.get('smb_username', '')
+            )
+            
+            if success:
+                self.connection_status_label.setText("● Connected")
+                self.connection_status_label.setStyleSheet("color: #55FF55;")
+                self.connect_button.setText("Disconnect")
+                self.disconnect_button.setEnabled(True)
+                
+                # Refresh the backup list
+                self._repopulate_table()
+                
+                logging.info(f"Connected to SMB: {smb_path}")
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Connection Failed",
+                    f"Could not connect to:\n{smb_path}\n\n"
+                    "Please check that the path is accessible."
+                )
+                
+        except Exception as e:
+            logging.error(f"Error connecting to SMB: {e}")
+            QMessageBox.critical(
+                self,
+                "Connection Error",
+                f"Error connecting to network folder:\n{str(e)}"
+            )
+    
     def _on_connect_or_logout_clicked(self):
         """Handle Connect button click - acts as Connect or Logout depending on state."""
-        # Check if we're in logout mode (connected)
-        if self.drive_manager.is_connected:
-            self._on_logout_clicked()
+        provider_type = self.provider_combo.currentData()
+        
+        if provider_type == "google_drive":
+            # Original Google Drive logic
+            if self.drive_manager.is_connected:
+                self._on_logout_clicked()
+            else:
+                self._on_connect_clicked()
+        elif provider_type == "smb":
+            # SMB connection logic
+            from cloud_utils.provider_factory import ProviderFactory, ProviderType
+            smb_provider = ProviderFactory.get_provider(ProviderType.SMB)
+            
+            if smb_provider and smb_provider.is_connected:
+                # Disconnect
+                smb_provider.disconnect()
+                self.connection_status_label.setText("● Not Connected")
+                self.connection_status_label.setStyleSheet("color: #FF5555;")
+                self.connect_button.setText("Connect to Network Folder")
+                self.disconnect_button.setEnabled(False)
+                self._repopulate_table()
+            else:
+                # Connect
+                self._connect_to_smb()
         else:
-            self._on_connect_clicked()
+            QMessageBox.information(
+                self,
+                "Not Implemented",
+                f"Connection for {provider_type} is not yet implemented."
+            )
     
     def _on_connect_clicked(self):
         """Handle Google Drive connection."""

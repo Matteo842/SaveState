@@ -35,7 +35,34 @@ def load_cloud_settings() -> dict:
         'max_cloud_backups_enabled': False,
         'max_cloud_backups_count': 5,
         'max_cloud_storage_enabled': False,
-        'max_cloud_storage_gb': 5
+        'max_cloud_storage_gb': 5,
+        
+        # Provider selection (google_drive, smb, ftp, webdav)
+        'active_provider': 'google_drive',
+        
+        # SMB/Network Folder settings
+        'smb_enabled': False,
+        'smb_path': '',
+        'smb_use_credentials': False,
+        'smb_username': '',
+        'smb_auto_connect': False,
+        
+        # FTP settings (for future use)
+        'ftp_enabled': False,
+        'ftp_server': '',
+        'ftp_port': 21,
+        'ftp_username': '',
+        'ftp_remote_path': '/SaveState',
+        'ftp_use_tls': False,
+        'ftp_passive_mode': True,
+        'ftp_auto_connect': False,
+        
+        # WebDAV settings (for future use)
+        'webdav_enabled': False,
+        'webdav_url': '',
+        'webdav_username': '',
+        'webdav_remote_path': '/SaveState',
+        'webdav_auto_connect': False
     }
     
     try:

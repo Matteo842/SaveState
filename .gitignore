@@ -208,3 +208,5 @@ cloud_utils/credentials.json
 cloud_utils/token.pickle
 /.cursor
 /dist_local
+/tests
+icons/network_folder.png
