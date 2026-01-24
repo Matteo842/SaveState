@@ -1046,6 +1046,21 @@ QPushButton#ExitButton:pressed {
     background-color: #404040;
 }
 
+QPushButton#ConfigureButton {
+    min-width: 24px;
+    max-width: 24px;
+    min-height: 24px;
+    max-height: 24px;
+    padding: 2px;
+}
+QPushButton#ConfigureButton:hover {
+    background-color: #5A5A5A;
+    border: 1px solid #888888;
+}
+QPushButton#ConfigureButton:pressed {
+    background-color: #404040;
+}
+
 /* ===== EMPTY STATE WIDGET STYLING (DARK THEME) ===== */
 QWidget#EmptyStateWidget {
     background-color: transparent;
@@ -1340,6 +1355,21 @@ QPushButton#ExitButton:hover {
     border: 1px solid #888888;
 }
 QPushButton#ExitButton:pressed {
+    background-color: #C8C8C8;
+}
+
+QPushButton#ConfigureButton {
+    min-width: 24px;
+    max-width: 24px;
+    min-height: 24px;
+    max-height: 24px;
+    padding: 2px;
+}
+QPushButton#ConfigureButton:hover {
+    background-color: #DCDCDC;
+    border: 1px solid #888888;
+}
+QPushButton#ConfigureButton:pressed {
     background-color: #C8C8C8;
 }
 

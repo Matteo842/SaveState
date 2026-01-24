@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QLineEdit, QProgressBar, QMessageBox, QStackedWidget,
     QComboBox
 )
-from PySide6.QtCore import Qt, Signal, Slot, QEvent, QThread, QObject, QTimer
+from PySide6.QtCore import Qt, Signal, Slot, QEvent, QThread, QObject, QTimer, QSize
 from PySide6.QtGui import QIcon, QColor, QPixmap
 from cloud_utils.cloud_settings_panel import CloudSettingsPanel
 from cloud_utils.google_drive_manager import get_drive_manager, StorageCheckWorker
@@ -558,6 +558,7 @@ class CloudSavePanel(QWidget):
                     # Update UI for the selected provider
                     self._update_connect_button_for_provider(active_provider)
                     self._update_connection_status_for_provider(active_provider)
+                    self._update_configure_button_state(active_provider)
                     break
             
             # Auto-connect SMB if enabled
@@ -601,19 +602,13 @@ class CloudSavePanel(QWidget):
         description.setWordWrap(True)
         description.setStyleSheet("color: #AAAAAA; font-size: 10pt;")
         main_layout.addWidget(description)
-        # --- Connection and Filters Row (side by side) ---
-        connection_filters_row = QHBoxLayout()
-        connection_filters_row.setSpacing(12)
         
-        # Storage Provider Section (left side)
-        connection_group = QGroupBox("Storage Provider")
-        connection_layout = QVBoxLayout()
-        connection_layout.setContentsMargins(8, 8, 8, 8)
-        connection_layout.setSpacing(6)
+        # --- Toolbar Row (all controls in one compact horizontal line) ---
+        toolbar_row = QHBoxLayout()
+        toolbar_row.setContentsMargins(0, 4, 0, 4)  # Reduced vertical margins
+        toolbar_row.setSpacing(8)
         
-        # Provider selection row
-        provider_row = QHBoxLayout()
-        
+        # Provider dropdown
         self.provider_combo = QComboBox()
         self.provider_combo.addItem("Google Drive", "google_drive")
         self.provider_combo.addItem("Network Folder", "smb")
@@ -621,62 +616,75 @@ class CloudSavePanel(QWidget):
         # self.provider_combo.addItem("FTP Server", "ftp")
         # self.provider_combo.addItem("WebDAV", "webdav")
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
-        self.provider_combo.setMinimumWidth(150)
-        provider_row.addWidget(self.provider_combo)
+        self.provider_combo.setMinimumWidth(140)
+        toolbar_row.addWidget(self.provider_combo)
         
-        self.configure_provider_button = QPushButton("Configure...")
+        # Configure button (square, icon only - like ExitButton)
+        self.configure_provider_button = QPushButton()
+        self.configure_provider_button.setObjectName("ConfigureButton")  # For CSS styling
         self.configure_provider_button.setToolTip("Configure the selected storage provider")
         self.configure_provider_button.clicked.connect(self._on_configure_provider_clicked)
-        provider_row.addWidget(self.configure_provider_button)
+        # Load configure icon
+        try:
+            configure_icon_path = resource_path("icons/configure.png")
+            if os.path.exists(configure_icon_path):
+                configure_icon = QIcon(configure_icon_path)
+                # Verify icon is valid (not null/empty)
+                if not configure_icon.isNull():
+                    self.configure_provider_button.setIcon(configure_icon)
+                    self.configure_provider_button.setIconSize(QSize(16, 16))
+                    # Explicitly clear any text to prevent dual display
+                    self.configure_provider_button.setText("")
+                else:
+                    # Icon file exists but couldn't be loaded properly
+                    self.configure_provider_button.setText("⚙")
+                    logging.warning(f"Configure icon loaded but is null: {configure_icon_path}")
+            else:
+                # Fallback to text if icon not found
+                self.configure_provider_button.setText("⚙")
+                logging.warning(f"Configure icon not found: {configure_icon_path}")
+        except Exception as e:
+            logging.warning(f"Could not set configure button icon: {e}")
+            self.configure_provider_button.setText("⚙")
+        # Initially disabled since Google Drive (default) uses OAuth
+        self.configure_provider_button.setEnabled(False)
+        toolbar_row.addWidget(self.configure_provider_button)
         
-        provider_row.addStretch(1)
-        connection_layout.addLayout(provider_row)
-        
-        # Connection buttons row
-        connection_buttons_layout = QHBoxLayout()
-        
+        # Connect button
         self.connect_button = QPushButton("Connect to Google Drive")
         self.connect_button.setObjectName("PrimaryButton")
         self.connect_button.clicked.connect(self._on_connect_or_logout_clicked)
         
-        # Calculate fixed width for various connect texts
+        # Calculate fixed width for various connect texts (increased padding for better fit)
         from PySide6.QtGui import QFontMetrics
         font_metrics = self.connect_button.fontMetrics()
         connect_texts = ["Connect to Google Drive", "Connect to Network Folder", "Logout"]
-        max_width = max(font_metrics.horizontalAdvance(t) for t in connect_texts) + 40
+        max_width = max(font_metrics.horizontalAdvance(t) for t in connect_texts) + 60  # Increased padding
         self._connect_button_fixed_width = max_width
         self.connect_button.setFixedWidth(self._connect_button_fixed_width)
+        toolbar_row.addWidget(self.connect_button)
         
-        connection_buttons_layout.addWidget(self.connect_button)
-        
+        # Disconnect button (also fixed width to prevent layout shifts)
         self.disconnect_button = QPushButton("Disconnect")
         self.disconnect_button.setEnabled(False)
         self.disconnect_button.clicked.connect(self._on_disconnect_clicked)
-        connection_buttons_layout.addWidget(self.disconnect_button)
+        # Fix width to prevent layout shifts when enabled/disabled
+        disconnect_width = font_metrics.horizontalAdvance("Disconnect") + 40
+        self.disconnect_button.setFixedWidth(disconnect_width)
+        toolbar_row.addWidget(self.disconnect_button)
         
-        connection_buttons_layout.addStretch(1)
+        # Spacer to push filter checkbox to the right
+        toolbar_row.addStretch(1)
         
-        connection_layout.addLayout(connection_buttons_layout)
-        connection_group.setLayout(connection_layout)
-        connection_filters_row.addWidget(connection_group, stretch=1)
-        
-        # Filter Options (right side)
-        filter_group = QGroupBox("Display Filters")
-        filter_layout = QVBoxLayout()
-        filter_layout.setContentsMargins(8, 8, 8, 8)
-        filter_layout.setSpacing(6)
-        
-        self.show_all_backups_checkbox = QCheckBox("Show all backups (including non-profile backups)")
+        # Filter checkbox (right side)
+        self.show_all_backups_checkbox = QCheckBox("Show all backups")
         self.show_all_backups_checkbox.setToolTip(
             "When enabled, shows all backup folders even if they don't match any profile"
         )
         self.show_all_backups_checkbox.toggled.connect(self._on_filter_changed)
-        filter_layout.addWidget(self.show_all_backups_checkbox)
+        toolbar_row.addWidget(self.show_all_backups_checkbox)
         
-        filter_group.setLayout(filter_layout)
-        connection_filters_row.addWidget(filter_group, stretch=1)
-        
-        main_layout.addLayout(connection_filters_row)
+        main_layout.addLayout(toolbar_row)
         
         # --- Backup List Table ---
         list_group = QGroupBox("Available Backups")
@@ -820,7 +828,6 @@ class CloudSavePanel(QWidget):
                 style = QApplication.instance().style()
                 exit_icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton)
                 self.exit_button.setIcon(exit_icon)
-            from PySide6.QtCore import QSize
             self.exit_button.setIconSize(QSize(32, 32))
         except Exception as e:
             logging.warning(f"Could not set exit button icon: {e}")
@@ -1478,6 +1485,9 @@ class CloudSavePanel(QWidget):
         # Update connection status
         self._update_connection_status_for_provider(provider_type)
         
+        # Update configure button state (enabled/disabled based on provider)
+        self._update_configure_button_state(provider_type)
+        
         # Save the selected provider to settings
         self.cloud_settings['active_provider'] = provider_type
         cloud_settings_manager.save_cloud_settings(self.cloud_settings)
@@ -1548,6 +1558,21 @@ class CloudSavePanel(QWidget):
             self.connection_status_label.setText("● Not Connected")
             self.connection_status_label.setStyleSheet("color: #FF5555;")
             self.disconnect_button.setEnabled(False)
+    
+    def _update_configure_button_state(self, provider_type):
+        """Enable/disable the Configure button based on the selected provider.
+        
+        Google Drive uses OAuth flow, so no configuration dialog is needed.
+        Other providers (SMB, FTP, WebDAV) require manual configuration.
+        """
+        if provider_type == "google_drive":
+            # Google Drive uses OAuth, disable configure button
+            self.configure_provider_button.setEnabled(False)
+            self.configure_provider_button.setToolTip("Google Drive uses OAuth authentication")
+        else:
+            # Other providers need configuration
+            self.configure_provider_button.setEnabled(True)
+            self.configure_provider_button.setToolTip("Configure the selected storage provider")
     
     def _on_configure_provider_clicked(self):
         """Open configuration dialog for the selected provider."""
@@ -1624,12 +1649,9 @@ class CloudSavePanel(QWidget):
             
             smb_path = self.cloud_settings.get('smb_path', '')
             if not smb_path:
-                QMessageBox.warning(
-                    self,
-                    "No Path Configured",
-                    "Please configure a network path first.\n\n"
-                    "Click 'Configure...' to set up the network folder."
-                )
+                # SMB is not configured, open config dialog automatically
+                logging.info("SMB not configured, opening config dialog")
+                self._show_smb_config_dialog()
                 return
             
             # Get or create SMB provider
