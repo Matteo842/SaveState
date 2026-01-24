@@ -21,12 +21,22 @@ SaveState features automatic detection of Steam games, support for all major lau
 
 ## ✨ Key Features
 
-### ☁️ Cloud Save (Google Drive Integration)
+### ☁️ Cloud Save (Multi-Provider Support)
 
-Sync your saves across devices with seamless Google Drive integration:
+Sync your saves across devices with multiple cloud storage options:
+
+| Provider | Description |
+|----------|-------------|
+| **Google Drive** | Full OAuth2 integration with your Google account |
+| **WebDAV** | Connect to any WebDAV server (Nextcloud, ownCloud, etc.) |
+| **FTP/FTPS** | Traditional FTP with optional TLS/SSL encryption |
+| **SMB/Network Folder** | Windows network shares and NAS devices |
+
+**Features:**
 - **Upload, download, and sync** your backups to the cloud
 - **Smart Sync Status** shows which files are synced, local-only, or need attention
 - **Configurable auto-sync** with bandwidth limits and storage quotas
+- **Easy configuration** with dedicated setup dialogs for each provider
 
 ![Cloud Settings](images/cloud_settings.png)
 
