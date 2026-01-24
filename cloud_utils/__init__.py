@@ -7,7 +7,7 @@ Supported providers:
 - Google Drive (via Google Drive API)
 - SMB/Network Folder (native filesystem)
 - FTP/FTPS (via ftplib)
-- WebDAV (planned)
+- WebDAV (via requests)
 """
 
 from cloud_utils.storage_provider import StorageProvider, ProviderType

@@ -613,8 +613,7 @@ class CloudSavePanel(QWidget):
         self.provider_combo.addItem("Google Drive", "google_drive")
         self.provider_combo.addItem("Network Folder", "smb")
         self.provider_combo.addItem("FTP Server", "ftp")
-        # Future providers will be added here:
-        # self.provider_combo.addItem("WebDAV", "webdav")
+        self.provider_combo.addItem("WebDAV", "webdav")
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
         self.provider_combo.setMinimumWidth(140)
         toolbar_row.addWidget(self.provider_combo)
@@ -1532,7 +1531,18 @@ class CloudSavePanel(QWidget):
             except ImportError:
                 self.connect_button.setText("Connect to FTP Server")
         elif provider_type == "webdav":
-            self.connect_button.setText("Connect to WebDAV")
+            # Check if WebDAV is configured and connected
+            try:
+                from cloud_utils.webdav_provider import WebDAVProvider
+                from cloud_utils.provider_factory import ProviderFactory, ProviderType
+                
+                webdav_provider = ProviderFactory.get_provider(ProviderType.WEBDAV)
+                if webdav_provider and webdav_provider.is_connected:
+                    self.connect_button.setText("Disconnect")
+                else:
+                    self.connect_button.setText("Connect to WebDAV")
+            except ImportError:
+                self.connect_button.setText("Connect to WebDAV")
         else:
             self.connect_button.setText("Connect")
     
@@ -1572,6 +1582,24 @@ class CloudSavePanel(QWidget):
                 
                 ftp_provider = ProviderFactory.get_provider(ProviderType.FTP)
                 if ftp_provider and ftp_provider.is_connected:
+                    self.connection_status_label.setText("● Connected")
+                    self.connection_status_label.setStyleSheet("color: #55FF55;")
+                    self.disconnect_button.setEnabled(True)
+                else:
+                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setStyleSheet("color: #FF5555;")
+                    self.disconnect_button.setEnabled(False)
+            except ImportError:
+                self.connection_status_label.setText("● Not Available")
+                self.connection_status_label.setStyleSheet("color: #AAAAAA;")
+                self.disconnect_button.setEnabled(False)
+        elif provider_type == "webdav":
+            try:
+                from cloud_utils.webdav_provider import WebDAVProvider
+                from cloud_utils.provider_factory import ProviderFactory, ProviderType
+                
+                webdav_provider = ProviderFactory.get_provider(ProviderType.WEBDAV)
+                if webdav_provider and webdav_provider.is_connected:
                     self.connection_status_label.setText("● Connected")
                     self.connection_status_label.setStyleSheet("color: #55FF55;")
                     self.disconnect_button.setEnabled(True)
@@ -1623,11 +1651,7 @@ class CloudSavePanel(QWidget):
         elif provider_type == "ftp":
             self._show_ftp_config_dialog()
         elif provider_type == "webdav":
-            QMessageBox.information(
-                self,
-                "WebDAV Configuration",
-                "WebDAV support is coming soon!"
-            )
+            self._show_webdav_config_dialog()
     
     def _show_smb_config_dialog(self):
         """Show the SMB configuration dialog."""
@@ -1822,6 +1846,102 @@ class CloudSavePanel(QWidget):
                 f"Error connecting to FTP server:\n{str(e)}"
             )
     
+    def _show_webdav_config_dialog(self):
+        """Show the WebDAV configuration dialog."""
+        try:
+            from cloud_utils.webdav_config_dialog import WebDAVConfigDialog
+            
+            # Pass current settings
+            current_config = {
+                'webdav_url': self.cloud_settings.get('webdav_url', ''),
+                'webdav_username': self.cloud_settings.get('webdav_username', ''),
+                'webdav_verify_ssl': self.cloud_settings.get('webdav_verify_ssl', True),
+                'webdav_use_digest': self.cloud_settings.get('webdav_use_digest', False),
+                'webdav_auto_connect': self.cloud_settings.get('webdav_auto_connect', False)
+            }
+            
+            dialog = WebDAVConfigDialog(self, current_config)
+            dialog.config_saved.connect(self._on_webdav_config_saved)
+            dialog.exec()
+            
+        except Exception as e:
+            logging.error(f"Error showing WebDAV config dialog: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Could not open configuration dialog:\n{str(e)}"
+            )
+    
+    def _on_webdav_config_saved(self, config):
+        """Handle WebDAV configuration saved."""
+        logging.info(f"WebDAV configuration saved: {config}")
+        
+        # Update cloud settings
+        self.cloud_settings.update(config)
+        cloud_settings_manager.save_cloud_settings(self.cloud_settings)
+        
+        # If auto-connect is enabled and we have a URL, try to connect
+        if config.get('webdav_auto_connect') and config.get('webdav_url'):
+            self._connect_to_webdav()
+    
+    def _connect_to_webdav(self):
+        """Connect to the configured WebDAV server."""
+        try:
+            from cloud_utils.webdav_provider import WebDAVProvider
+            from cloud_utils.provider_factory import ProviderFactory, ProviderType
+            
+            webdav_url = self.cloud_settings.get('webdav_url', '')
+            if not webdav_url:
+                # WebDAV is not configured, open config dialog automatically
+                logging.info("WebDAV not configured, opening config dialog")
+                self._show_webdav_config_dialog()
+                return
+            
+            # Get or create WebDAV provider
+            webdav_provider = ProviderFactory.get_provider(ProviderType.WEBDAV)
+            if not webdav_provider:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    "WebDAV provider is not available."
+                )
+                return
+            
+            # Connect
+            success = webdav_provider.connect(
+                url=webdav_url,
+                username=self.cloud_settings.get('webdav_username', ''),
+                password=self.cloud_settings.get('webdav_password', ''),
+                use_digest_auth=self.cloud_settings.get('webdav_use_digest', False),
+                verify_ssl=self.cloud_settings.get('webdav_verify_ssl', True)
+            )
+            
+            if success:
+                self.connection_status_label.setText("● Connected")
+                self.connection_status_label.setStyleSheet("color: #55FF55;")
+                self.connect_button.setText("Disconnect")
+                self.disconnect_button.setEnabled(True)
+                
+                # Refresh the backup list
+                self._repopulate_table()
+                
+                logging.info(f"Connected to WebDAV: {webdav_url}")
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Connection Failed",
+                    f"Could not connect to:\n{webdav_url}\n\n"
+                    "Please check your settings and try again."
+                )
+                
+        except Exception as e:
+            logging.error(f"Error connecting to WebDAV: {e}")
+            QMessageBox.critical(
+                self,
+                "Connection Error",
+                f"Error connecting to WebDAV server:\n{str(e)}"
+            )
+    
     def _on_connect_or_logout_clicked(self):
         """Handle Connect button click - acts as Connect or Logout depending on state."""
         provider_type = self.provider_combo.currentData()
@@ -1864,6 +1984,22 @@ class CloudSavePanel(QWidget):
             else:
                 # Connect
                 self._connect_to_ftp()
+        elif provider_type == "webdav":
+            # WebDAV connection logic
+            from cloud_utils.provider_factory import ProviderFactory, ProviderType
+            webdav_provider = ProviderFactory.get_provider(ProviderType.WEBDAV)
+            
+            if webdav_provider and webdav_provider.is_connected:
+                # Disconnect
+                webdav_provider.disconnect()
+                self.connection_status_label.setText("● Not Connected")
+                self.connection_status_label.setStyleSheet("color: #FF5555;")
+                self.connect_button.setText("Connect to WebDAV")
+                self.disconnect_button.setEnabled(False)
+                self._repopulate_table()
+            else:
+                # Connect
+                self._connect_to_webdav()
         else:
             QMessageBox.information(
                 self,

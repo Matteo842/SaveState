@@ -57,11 +57,12 @@ def load_cloud_settings() -> dict:
         'ftp_passive_mode': True,
         'ftp_auto_connect': False,
         
-        # WebDAV settings (for future use)
+        # WebDAV settings
         'webdav_enabled': False,
         'webdav_url': '',
         'webdav_username': '',
-        'webdav_remote_path': '/SaveState',
+        'webdav_verify_ssl': True,
+        'webdav_use_digest': False,
         'webdav_auto_connect': False
     }
     
