@@ -612,8 +612,8 @@ class CloudSavePanel(QWidget):
         self.provider_combo = QComboBox()
         self.provider_combo.addItem("Google Drive", "google_drive")
         self.provider_combo.addItem("Network Folder", "smb")
+        self.provider_combo.addItem("FTP Server", "ftp")
         # Future providers will be added here:
-        # self.provider_combo.addItem("FTP Server", "ftp")
         # self.provider_combo.addItem("WebDAV", "webdav")
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
         self.provider_combo.setMinimumWidth(140)
@@ -1519,7 +1519,18 @@ class CloudSavePanel(QWidget):
             else:
                 self.connect_button.setText("Connect to Network Folder")
         elif provider_type == "ftp":
-            self.connect_button.setText("Connect to FTP Server")
+            # Check if FTP is configured and connected
+            try:
+                from cloud_utils.ftp_provider import FTPProvider
+                from cloud_utils.provider_factory import ProviderFactory, ProviderType
+                
+                ftp_provider = ProviderFactory.get_provider(ProviderType.FTP)
+                if ftp_provider and ftp_provider.is_connected:
+                    self.connect_button.setText("Disconnect")
+                else:
+                    self.connect_button.setText("Connect to FTP Server")
+            except ImportError:
+                self.connect_button.setText("Connect to FTP Server")
         elif provider_type == "webdav":
             self.connect_button.setText("Connect to WebDAV")
         else:
@@ -1543,6 +1554,24 @@ class CloudSavePanel(QWidget):
                 
                 smb_provider = ProviderFactory.get_provider(ProviderType.SMB)
                 if smb_provider and smb_provider.is_connected:
+                    self.connection_status_label.setText("● Connected")
+                    self.connection_status_label.setStyleSheet("color: #55FF55;")
+                    self.disconnect_button.setEnabled(True)
+                else:
+                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setStyleSheet("color: #FF5555;")
+                    self.disconnect_button.setEnabled(False)
+            except ImportError:
+                self.connection_status_label.setText("● Not Available")
+                self.connection_status_label.setStyleSheet("color: #AAAAAA;")
+                self.disconnect_button.setEnabled(False)
+        elif provider_type == "ftp":
+            try:
+                from cloud_utils.ftp_provider import FTPProvider
+                from cloud_utils.provider_factory import ProviderFactory, ProviderType
+                
+                ftp_provider = ProviderFactory.get_provider(ProviderType.FTP)
+                if ftp_provider and ftp_provider.is_connected:
                     self.connection_status_label.setText("● Connected")
                     self.connection_status_label.setStyleSheet("color: #55FF55;")
                     self.disconnect_button.setEnabled(True)
@@ -1592,11 +1621,7 @@ class CloudSavePanel(QWidget):
         elif provider_type == "smb":
             self._show_smb_config_dialog()
         elif provider_type == "ftp":
-            QMessageBox.information(
-                self,
-                "FTP Configuration",
-                "FTP support is coming soon!"
-            )
+            self._show_ftp_config_dialog()
         elif provider_type == "webdav":
             QMessageBox.information(
                 self,
@@ -1697,6 +1722,106 @@ class CloudSavePanel(QWidget):
                 f"Error connecting to network folder:\n{str(e)}"
             )
     
+    def _show_ftp_config_dialog(self):
+        """Show the FTP configuration dialog."""
+        try:
+            from cloud_utils.ftp_config_dialog import FTPConfigDialog
+            
+            # Pass current settings
+            current_config = {
+                'ftp_host': self.cloud_settings.get('ftp_host', ''),
+                'ftp_port': self.cloud_settings.get('ftp_port', 21),
+                'ftp_base_path': self.cloud_settings.get('ftp_base_path', '/'),
+                'ftp_username': self.cloud_settings.get('ftp_username', 'anonymous'),
+                'ftp_use_tls': self.cloud_settings.get('ftp_use_tls', False),
+                'ftp_passive_mode': self.cloud_settings.get('ftp_passive_mode', True),
+                'ftp_auto_connect': self.cloud_settings.get('ftp_auto_connect', False)
+            }
+            
+            dialog = FTPConfigDialog(self, current_config)
+            dialog.config_saved.connect(self._on_ftp_config_saved)
+            dialog.exec()
+            
+        except Exception as e:
+            logging.error(f"Error showing FTP config dialog: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Could not open configuration dialog:\n{str(e)}"
+            )
+    
+    def _on_ftp_config_saved(self, config):
+        """Handle FTP configuration saved."""
+        logging.info(f"FTP configuration saved: {config}")
+        
+        # Update cloud settings
+        self.cloud_settings.update(config)
+        cloud_settings_manager.save_cloud_settings(self.cloud_settings)
+        
+        # If auto-connect is enabled and we have a host, try to connect
+        if config.get('ftp_auto_connect') and config.get('ftp_host'):
+            self._connect_to_ftp()
+    
+    def _connect_to_ftp(self):
+        """Connect to the configured FTP server."""
+        try:
+            from cloud_utils.ftp_provider import FTPProvider
+            from cloud_utils.provider_factory import ProviderFactory, ProviderType
+            
+            ftp_host = self.cloud_settings.get('ftp_host', '')
+            if not ftp_host:
+                # FTP is not configured, open config dialog automatically
+                logging.info("FTP not configured, opening config dialog")
+                self._show_ftp_config_dialog()
+                return
+            
+            # Get or create FTP provider
+            ftp_provider = ProviderFactory.get_provider(ProviderType.FTP)
+            if not ftp_provider:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    "FTP provider is not available."
+                )
+                return
+            
+            # Connect
+            success = ftp_provider.connect(
+                host=ftp_host,
+                port=self.cloud_settings.get('ftp_port', 21),
+                username=self.cloud_settings.get('ftp_username', 'anonymous'),
+                password=self.cloud_settings.get('ftp_password', ''),
+                use_tls=self.cloud_settings.get('ftp_use_tls', False),
+                passive_mode=self.cloud_settings.get('ftp_passive_mode', True),
+                base_path=self.cloud_settings.get('ftp_base_path', '/')
+            )
+            
+            if success:
+                self.connection_status_label.setText("● Connected")
+                self.connection_status_label.setStyleSheet("color: #55FF55;")
+                self.connect_button.setText("Disconnect")
+                self.disconnect_button.setEnabled(True)
+                
+                # Refresh the backup list
+                self._repopulate_table()
+                
+                logging.info(f"Connected to FTP: {ftp_host}")
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Connection Failed",
+                    f"Could not connect to:\n{ftp_host}\n\n"
+                    "Please check your settings and try again."
+                )
+                
+        except Exception as e:
+            logging.error(f"Error connecting to FTP: {e}")
+            QMessageBox.critical(
+                self,
+                "Connection Error",
+                f"Error connecting to FTP server:\n{str(e)}"
+            )
+    
     def _on_connect_or_logout_clicked(self):
         """Handle Connect button click - acts as Connect or Logout depending on state."""
         provider_type = self.provider_combo.currentData()
@@ -1723,6 +1848,22 @@ class CloudSavePanel(QWidget):
             else:
                 # Connect
                 self._connect_to_smb()
+        elif provider_type == "ftp":
+            # FTP connection logic
+            from cloud_utils.provider_factory import ProviderFactory, ProviderType
+            ftp_provider = ProviderFactory.get_provider(ProviderType.FTP)
+            
+            if ftp_provider and ftp_provider.is_connected:
+                # Disconnect
+                ftp_provider.disconnect()
+                self.connection_status_label.setText("● Not Connected")
+                self.connection_status_label.setStyleSheet("color: #FF5555;")
+                self.connect_button.setText("Connect to FTP Server")
+                self.disconnect_button.setEnabled(False)
+                self._repopulate_table()
+            else:
+                # Connect
+                self._connect_to_ftp()
         else:
             QMessageBox.information(
                 self,

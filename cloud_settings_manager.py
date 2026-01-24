@@ -47,12 +47,12 @@ def load_cloud_settings() -> dict:
         'smb_username': '',
         'smb_auto_connect': False,
         
-        # FTP settings (for future use)
+        # FTP settings
         'ftp_enabled': False,
-        'ftp_server': '',
+        'ftp_host': '',
         'ftp_port': 21,
-        'ftp_username': '',
-        'ftp_remote_path': '/SaveState',
+        'ftp_username': 'anonymous',
+        'ftp_base_path': '/',
         'ftp_use_tls': False,
         'ftp_passive_mode': True,
         'ftp_auto_connect': False,

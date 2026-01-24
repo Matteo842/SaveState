@@ -210,3 +210,5 @@ cloud_utils/token.pickle
 /dist_local
 /tests
 icons/network_folder.png
+icons/ftp.png
+walkthrough-cloude.md

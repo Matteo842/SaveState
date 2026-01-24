@@ -6,7 +6,7 @@ Contains modules for cloud/network storage integration and backup management.
 Supported providers:
 - Google Drive (via Google Drive API)
 - SMB/Network Folder (native filesystem)
-- FTP/FTPS (planned)
+- FTP/FTPS (via ftplib)
 - WebDAV (planned)
 """
 
