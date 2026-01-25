@@ -7,6 +7,10 @@
 
 A user-friendly GUI application for **Windows** and **Linux** to easily back up and restore video game save files. Perfect for games without cloud saves, managing multiple save locations, or syncing your progress across devices.
 
+> **Zero Configuration Required** — Download, run, and start backing up. No config files to edit, no setup wizard, no account needed. If you're looking for settings to tweak before first use, there are none — you're already done.
+>
+> ⚠️ **No Admin Rights Needed** — This app does NOT require administrator privileges. If Windows asks you to run it as admin, **don't** — something is wrong.
+
 ![Main GUI](images/gui.png)
 
 ## About this Project
@@ -16,6 +20,17 @@ A user-friendly GUI application for **Windows** and **Linux** to easily back up 
 This tool offers a modern graphical interface for creating compressed backups of your game save files, managing multiple game profiles, syncing to the cloud, and restoring them whenever needed.
 
 SaveState features automatic detection of Steam games, support for all major launchers via drag & drop, deep emulator integration, and now **cloud synchronization with Google Drive**.
+
+### What This App Does (and Doesn't Do)
+
+| ✅ Does | ❌ Does NOT |
+|---------|-------------|
+| Backs up game saves to `.zip` files | Modify your game files in any way |
+| Auto-detects save locations | Require an external database |
+| Syncs to cloud (optional) | Need mandatory account registration |
+| Works out of the box | Require editing config files |
+| Stores settings in a local JSON file | Phone home or collect telemetry |
+| Runs with standard user permissions | Need or request administrator privileges |
 
 ---
 
@@ -137,6 +152,8 @@ The following diagram illustrates the main steps that SaveState follows when att
 
 Get SaveState up and running on your system.
 
+> **No installation wizard, no dependencies to install, no initial setup.** Just download the release, extract, and run. The app creates its config file automatically on first launch.
+
 ### Prerequisites
 
 * **Operating System:** Windows (tested on Windows 10/11). Relies on Windows-specific libraries for shortcut handling.
@@ -191,8 +208,10 @@ Get SaveState up and running on your system.
 
 ## Usage
 
+> **First launch?** The app works immediately with sensible defaults. You can optionally customize settings, but it's not required.
+
 1.  **Launch** `SaveState.exe` or run `python main.py`.
-2.  **Configure Settings (Recommended on first launch):** Click the Settings button. Set your desired Base Backup Path where all backups will be stored in subfolders named after your profiles. Adjust other settings like max backups, Maximum source size, etc.
+2.  **Configure Settings (Optional):** Click the Settings button to customize the Base Backup Path (defaults to a `SaveState_Backups` folder). You can also adjust max backups, compression, etc. — but the defaults work fine for most users.
 3.  **Add Profiles:**
     * **Manually:** Click New Manual Profile, enter a name, and provide the full path to the game's save folder.
     * **Steam:** Click Manage Steam Games. Select a detected game and click Configure Selected Profile. The app will try to guess the save path; confirm or provide it manually.
