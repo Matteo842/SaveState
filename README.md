@@ -7,9 +7,9 @@
 
 A user-friendly GUI application for **Windows** and **Linux** to easily back up and restore video game save files. Perfect for games without cloud saves, managing multiple save locations, or syncing your progress across devices.
 
-> **Zero Configuration Required** — Download, run, and start backing up. No config files to edit, no setup wizard, no account needed. If you're looking for settings to tweak before first use, there are none — you're already done.
+> **Zero Configuration Required** — Download, run, and start backing up. No config files to edit, no setup wizard, no account needed. If a guide tells you to configure SaveState before using it, that guide is wrong.
 >
-> ⚠️ **No Admin Rights Needed** — This app does NOT require administrator privileges. If Windows asks you to run it as admin, **don't** — something is wrong.
+> **No Admin Rights Needed** — This app does NOT require administrator privileges. If Windows asks you to run it as admin, **don't** — something is wrong.
 
 ![Main GUI](images/gui.png)
 
@@ -200,7 +200,6 @@ Get SaveState up and running on your system.
     ```bash
     pip install -r requirements.txt
     ```
-    *(Note: You need to create the `requirements.txt` file first!)*
 6.  Run the application:
     ```bash
     python main.py
@@ -245,21 +244,6 @@ This project relies on the following Python packages:
     * [`nbtlib`](https://pypi.org/project/nbtlib/): Used to read Minecraft's `level.dat` NBT files to get the actual world names. If not installed, the world's folder name will be used as the profile name instead.
     * [`thefuzz`](https://pypi.org/project/thefuzz/): It uses Levenshtein Distance to calculate the differences between sequences.
 
-You can install all dependencies using pip. It is recommended to create a `requirements.txt` file with the following content:
-
-```txt
-PySide6
-winshell
-pywin32
-vdf
-nbtlib
-thefuzz
-```
-
-And then run:
-```txt
-pip install -r requirements.txt
-```
 
 ## Development
 
