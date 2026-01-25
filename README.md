@@ -212,18 +212,18 @@ Get SaveState up and running on your system.
 1.  **Launch** `SaveState.exe` or run `python main.py`.
 2.  **Configure Settings (Optional):** Click the Settings button to customize the Base Backup Path (defaults to a `SaveState_Backups` folder). You can also adjust max backups, compression, etc. — but the defaults work fine for most users.
 3.  **Add Profiles:**
-    * **Manually:** Click New Manual Profile, enter a name, and provide the full path to the game's save folder.
-    * **Steam:** Click Manage Steam Games. Select a detected game and click Configure Selected Profile. The app will try to guess the save path; confirm or provide it manually.
-    * **Minecraft:** Click the Minecraft button. Select a world from the list and click OK. A profile will be created using the world name and its folder path.
-    * **Drag & Drop:** Drag a game's `.lnk` shortcut file from your Desktop or elsewhere onto the main application window. The app will suggest a profile name and start searching for the save path; you'll be prompted to confirm or enter it manually.
-    * **Multi Profile:** drop a `folder` containing multiple games on the main window. You can visualize all the profile of the folder and delete the profile you don't need. Then you can add all the profile to the list.
+    * **Drag & Drop (Recommended):** Drag any game shortcut (`.lnk`, `.url`, `.desktop`) from your Desktop or launcher onto the main window. SaveState will detect the game and automatically search for its save location.
+    * **Multi Profile:** Drop a folder containing multiple games onto the main window. You can review, filter, and add all detected profiles at once.
+    * **Steam:** Click **Manage Steam** to see your installed Steam games. Select a game and click Configure — SaveState will automatically detect the save path for most titles.
+    * **Minecraft:** Click **New Profile...** and select **"Select from Minecraft World..."** to choose a world directly. A profile will be created using the world name and folder path.
+    * **Manual Entry (Fallback):** If automatic detection fails, click **New Profile...**, enter a name, and provide the full path to the game's save folder manually.
 4.  **Manage Profiles:**
     * Select a profile in the list.
-    * Click **Run Backup** to back it up.
-    * Click **Restore from Backup** to restore from a previous backup.
-    * Click **Manage Backup** to view and delete specific backup archives for that profile.
-    * Click the **Shortcut Icon button** to create a shortcut on your Desktop for quick backups of that profile.
-    * Click **Delete Profile** to remove the profile entry (this does not delete existing backup files).
+    * Click **Backup** to back it up.
+    * Click **Restore** to restore from a previous backup.
+    * Click **Manage Backups** to view and delete specific backup archives for that profile.
+    * **Right-click** on a profile to access the context menu: edit profile settings or create a desktop shortcut for quick backups.
+    * To delete a profile, select it and click the **trash icon** that appears on the right (this does not delete existing backup files).
 5.  **Other Actions:**
     * Use **Open Backup Folder** to quickly open the base backup location in Explorer.
     * Double Click on a profile to **open** the **save path** in Explorer.
