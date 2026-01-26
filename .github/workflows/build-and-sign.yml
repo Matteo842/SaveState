@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version Number (e.g., 2.1.0)'
+        description: 'Version Number (e.g., 2.1.0 or 2.4B)'
         required: true
         default: '2.0.0'
 
@@ -48,40 +48,23 @@ jobs:
     - name: Run Nuitka Build
       shell: powershell
       run: |
-        # 1. Pulizia della versione
+        # 1. Pulizia della versione (supporta lettere opzionali come 2.4B)
         $rawVersion = "${{ env.RELEASE_VERSION }}"
-        if ($rawVersion -match '(\d+(\.\d+)+)') {
-            $cleanVersion = $matches[0]
+        # Extract version: digits and dots, optionally followed by a letter (A-Z)
+        if ($rawVersion -match '(\d+(\.\d+)+[A-Za-z]?)') {
+            $fullVersion = $matches[0]
+            # For Nuitka's file-version (expects numeric only), strip the letter
+            if ($fullVersion -match '(\d+(\.\d+)+)') {
+                $cleanVersion = $matches[0]
+            } else {
+                $cleanVersion = "1.0.0"
+            }
         } else {
+            $fullVersion = "1.0.0"
             $cleanVersion = "1.0.0"
         }
-        Write-Host "Versione pulita per Nuitka: $cleanVersion"
-
-        # MODIFICA DEBUG: Console ATTIVA + Import Manuali
-    - name: Run Nuitka Build
-      shell: powershell
-      run: |
-        # 1. Pulizia della versione
-        $rawVersion = "${{ env.RELEASE_VERSION }}"
-        if ($rawVersion -match '(\d+(\.\d+)+)') {
-            $cleanVersion = $matches[0]
-        } else {
-            $cleanVersion = "1.0.0"
-        }
-        Write-Host "Versione pulita per Nuitka: $cleanVersion"
-
-        # MODIFICA FINALE: Console DISABILITATA + Rimossi blocchi bloat
-    - name: Run Nuitka Build
-      shell: powershell
-      run: |
-        # 1. Pulizia della versione
-        $rawVersion = "${{ env.RELEASE_VERSION }}"
-        if ($rawVersion -match '(\d+(\.\d+)+)') {
-            $cleanVersion = $matches[0]
-        } else {
-            $cleanVersion = "1.0.0"
-        }
-        Write-Host "Versione pulita per Nuitka: $cleanVersion"
+        Write-Host "Versione completa: $fullVersion"
+        Write-Host "Versione numerica per Nuitka: $cleanVersion"
 
         # 2. Comando Nuitka Finale
         # Rimosso: --nofollow-import-to
