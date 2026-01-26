@@ -316,10 +316,15 @@ class ProfileCreationManager:
 
         # Controllo Percorso Radice
         try:
-            # Get available drive letters (only Windows for now)
-            available_drives = ['%s:' % d for d in string.ascii_uppercase if os.path.exists('%s:' % d)]
-            # Create list of normalized root paths (e.g. C:\, D:\)
-            known_roots = [os.path.normpath(d + os.sep) for d in available_drives]
+            import platform
+            if platform.system() == "Windows":
+                # Get available drive letters (Windows only)
+                available_drives = ['%s:' % d for d in string.ascii_uppercase if os.path.exists('%s:' % d)]
+                # Create list of normalized root paths (e.g. C:\, D:\)
+                known_roots = [os.path.normpath(d + os.sep) for d in available_drives]
+            else:
+                # On Linux/macOS, just check for filesystem root
+                known_roots = ["/"]
             logging.debug(f"Path validation: Path='{norm_path}', KnownRoots='{known_roots}', IsRoot={norm_path in known_roots}")
 
             if norm_path in known_roots:

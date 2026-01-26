@@ -65,11 +65,24 @@ class ThemeManager:
              logging.error(f"ThemeManager: Error loading theme icons: {e}", exc_info=True)
 
     # Applies the current theme (read from main_window.current_settings) and updates the button icon/tooltip.
-    def update_theme(self):
+    def update_theme(self, force=False):
         """Applies the current theme (read from main_window.current_settings)
-           and updates the theme button icon/tooltip."""
+           and updates the theme button icon/tooltip.
+           
+           Args:
+               force: If True, reapply the theme even if it's already active.
+        """
         try:
             theme_name = self.main_window.current_settings.get('theme', 'dark') # Read setting from MainWindow
+            
+            # Skip expensive setStyleSheet if theme hasn't changed (unless forced)
+            current_applied = getattr(self, '_current_applied_theme', None)
+            if not force and current_applied == theme_name:
+                logging.debug(f"ThemeManager: Theme '{theme_name}' already applied, skipping setStyleSheet.")
+                # Still update button icon in case it got out of sync
+                self._update_theme_button(theme_name)
+                return
+            
             logging.debug(f"ThemeManager: Applying theme '{theme_name}'")
             qss_to_apply = config.LIGHT_THEME_QSS if theme_name == 'light' else config.DARK_THEME_QSS
 
@@ -77,6 +90,7 @@ class ThemeManager:
             app_instance = QApplication.instance()
             if app_instance:
                 app_instance.setStyleSheet(qss_to_apply)
+                self._current_applied_theme = theme_name  # Track what we applied
                 logging.info(f"ThemeManager: Theme '{theme_name}' applied via QSS.")
             else:
                 # This shouldn't happen if the app is running, but for safety
@@ -84,6 +98,14 @@ class ThemeManager:
                 return
 
             # Update the theme button icon and tooltip
+            self._update_theme_button(theme_name)
+
+        except Exception as e:
+            logging.error(f"ThemeManager: Error applying theme: {e}", exc_info=True)
+
+    def _update_theme_button(self, theme_name):
+        """Update the theme button icon and tooltip based on current theme."""
+        try:
             icon_size = QSize(16, 16) # Keep consistency with other icons
             if theme_name == 'light':
                 tooltip_text = "Switch to dark theme"
@@ -110,9 +132,8 @@ class ThemeManager:
                 self.theme_button.setToolTip(tooltip_text)
                 self.theme_button.update()
             logging.debug(f"ThemeManager: Button icon/tooltip updated for '{theme_name}' theme.")
-
         except Exception as e:
-            logging.error(f"ThemeManager: Error applying theme '{theme_name}': {e}", exc_info=True)
+            logging.error(f"ThemeManager: Error updating theme button: {e}", exc_info=True)
 
     # Inverts the theme in settings, saves it, and applies the new theme.
     def handle_theme_toggle(self):

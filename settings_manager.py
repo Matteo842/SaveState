@@ -498,6 +498,10 @@ def save_settings(settings_dict):
                     dst = os.path.join(target_config_dir, name)
                     try:
                         if os.path.isfile(src):
+                            # Skip if destination exists and is identical
+                            if os.path.isfile(dst) and _json_like_equal(src, dst):
+                                logging.debug(f"Skipping migration of '{name}' - files are identical.")
+                                continue
                             shutil.copy2(src, dst)
                             logging.info(f"Migrated '{name}' from AppData to portable directory.")
                     except Exception as e_copy:
@@ -598,6 +602,10 @@ def save_settings(settings_dict):
                         dst = os.path.join(target_config_dir, name)
                         try:
                             if os.path.isfile(src):
+                                # Skip if destination exists and is identical
+                                if os.path.isfile(dst) and _json_like_equal(src, dst):
+                                    logging.debug(f"Skipping migration of '{name}' - files are identical.")
+                                    continue
                                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                                 shutil.copy2(src, dst)
                                 logging.info(f"Migrated '{name}' from portable directory to AppData.")

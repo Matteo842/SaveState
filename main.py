@@ -440,7 +440,7 @@ if __name__ == "__main__":
             logging.info("First GUI instance. Now importing heavy modules...")
 
             # --- NOW import heavy modules (only for first instance) ---
-            from PySide6.QtWidgets import QApplication, QMessageBox, QDialog
+            from PySide6.QtWidgets import QApplication, QMessageBox, QDialog, QWidget
             from PySide6.QtGui import QIcon
             import settings_manager
             from gui_utils import QtLogHandler
@@ -538,6 +538,48 @@ if __name__ == "__main__":
                     except Exception:
                         pass
                     # --- Fine Caricamento Impostazioni ---
+
+                    # --- Validate Backup Directory (before creating MainWindow) ---
+                    # This catches the case where the backup folder was moved/deleted
+                    if not is_first_launch:  # Skip for first launch (will be configured in settings dialog)
+                        backup_dir = current_settings.get("backup_base_dir", "")
+                        if backup_dir and not os.path.isdir(backup_dir):
+                            logging.warning(f"Backup directory not found: {backup_dir}")
+                            try:
+                                from backup_dir_validator import check_and_fix_backup_directory
+                                
+                                # Create a temporary parent widget for the dialog
+                                temp_parent = QWidget()
+                                temp_parent.setWindowTitle("SaveState")
+                                
+                                success, current_settings = check_and_fix_backup_directory(current_settings, temp_parent)
+                                
+                                if not success:
+                                    logging.error("User cancelled backup directory selection. Exiting.")
+                                    QMessageBox.warning(
+                                        None,
+                                        "SaveState - Startup Cancelled",
+                                        "The application cannot start without a valid backup folder.\n\n"
+                                        "Please restart SaveState and select a valid backup location."
+                                    )
+                                    cleanup_instance_lock(local_server, shared_memory)
+                                    sys.exit(0)
+                                
+                                # Save the updated settings if the path was changed
+                                if current_settings.get("backup_base_dir") != backup_dir:
+                                    logging.info(f"Saving updated backup directory: {current_settings.get('backup_base_dir')}")
+                                    settings_manager.save_settings(current_settings)
+                                    
+                            except ImportError as e_import:
+                                logging.error(f"Could not import backup_dir_validator: {e_import}")
+                                # Try to create the directory anyway
+                                try:
+                                    os.makedirs(backup_dir, exist_ok=True)
+                                except Exception:
+                                    pass
+                            except Exception as e_validate:
+                                logging.error(f"Error validating backup directory: {e_validate}", exc_info=True)
+                    # --- End Validate Backup Directory ---
 
                     # --- Creazione Finestra Principale e gestione primo avvio ---
                     # if splash: # Aggiorna messaggio
