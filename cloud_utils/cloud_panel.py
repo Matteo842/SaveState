@@ -2418,12 +2418,72 @@ class CloudSavePanel(QWidget):
         else:
             # For FTP/SMB/WebDAV, the disconnect button acts as connect/disconnect toggle
             active_provider = self._get_active_provider()
-            if active_provider and active_provider.is_connected:
+            
+            # Check if provider thinks it's connected
+            provider_thinks_connected = active_provider and active_provider.is_connected
+            
+            # Check if UI thinks we're connected (button shows "Disconnect")
+            ui_shows_connected = self.disconnect_button.text() == "Disconnect"
+            
+            # If UI shows connected but provider is not, sync the UI
+            if ui_shows_connected and not provider_thinks_connected:
+                logging.warning(f"UI out of sync with provider state, updating UI to disconnected")
+                self.cloud_backups.clear()
+                
+                # Force update the button text and status
+                if provider_type == "smb":
+                    self.disconnect_button.setText("Connect to Network Folder")
+                elif provider_type == "ftp":
+                    self.disconnect_button.setText("Connect to FTP Server")
+                elif provider_type == "webdav":
+                    self.disconnect_button.setText("Connect to WebDAV")
+                
+                self.disconnect_button.setEnabled(True)
+                self.connection_status_label.setText("● Not Connected")
+                self.connection_status_label.setStyleSheet("color: #FF5555;")
+                self._repopulate_table()
+                
+                # Show message that connection was lost
+                QMessageBox.warning(
+                    self,
+                    "Connection Lost",
+                    f"The connection to {provider_type} was lost or is no longer accessible.\n\n"
+                    f"You can try connecting again."
+                )
+                return
+            
+            if provider_thinks_connected:
                 # Disconnect
                 logging.info(f"Disconnecting from {provider_type}...")
-                active_provider.disconnect()
+                try:
+                    active_provider.disconnect()
+                    logging.info(f"Successfully disconnected from {provider_type}")
+                except Exception as e:
+                    logging.error(f"Error during disconnect: {e}")
+                    # Force disconnect even if it failed
+                    if active_provider:
+                        active_provider._connected = False
+                
+                # Always update UI after disconnect attempt (even if it failed)
                 self.cloud_backups.clear()
-                self._update_connection_status_for_provider(provider_type)
+                
+                # Force update the button text and status
+                if provider_type == "smb":
+                    self.disconnect_button.setText("Connect to Network Folder")
+                    self.disconnect_button.setEnabled(True)
+                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setStyleSheet("color: #FF5555;")
+                elif provider_type == "ftp":
+                    self.disconnect_button.setText("Connect to FTP Server")
+                    self.disconnect_button.setEnabled(True)
+                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setStyleSheet("color: #FF5555;")
+                elif provider_type == "webdav":
+                    self.disconnect_button.setText("Connect to WebDAV")
+                    self.disconnect_button.setEnabled(True)
+                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setStyleSheet("color: #FF5555;")
+                
                 self._repopulate_table()
             else:
                 # Connect
