@@ -112,7 +112,11 @@ class FTPConfigDialog(QDialog):
         
         # Host
         self.host_edit = QLineEdit()
-        self.host_edit.setPlaceholderText("ftp.example.com or 192.168.1.100")
+        self.host_edit.setPlaceholderText("192.168.1.100 or myserver.com")
+        self.host_edit.setToolTip(
+            "Enter only the server address (IP or hostname).\n"
+            "Do NOT include ftp:// or any protocol prefix."
+        )
         server_layout.addRow("Server Address:", self.host_edit)
         
         # Port

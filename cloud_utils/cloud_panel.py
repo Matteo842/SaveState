@@ -77,9 +77,9 @@ class UploadWorker(QObject):
     summary_ready = Signal(dict)  # aggregated stats for UI messaging
     cancelled = Signal()  # Emitted when operation is cancelled
     
-    def __init__(self, drive_manager, backup_list, backup_base_dir, max_backups=None):
+    def __init__(self, provider, backup_list, backup_base_dir, max_backups=None):
         super().__init__()
-        self.drive_manager = drive_manager
+        self.provider = provider  # Can be any StorageProvider (Google Drive, FTP, SMB, WebDAV)
         self.backup_list = backup_list
         self.backup_base_dir = backup_base_dir
         self.max_backups = max_backups
@@ -97,16 +97,18 @@ class UploadWorker(QObject):
     def cancel(self):
         """Request cancellation of the upload operation."""
         self._cancelled = True
-        # Also request cancellation from drive manager to interrupt chunk operations
-        if self.drive_manager:
-            self.drive_manager.request_cancellation()
+        # Also request cancellation from provider if it supports it
+        if self.provider and hasattr(self.provider, 'request_cancellation'):
+            self.provider.request_cancellation()
         logging.info("Upload cancellation requested")
     
     def run(self):
         """Execute upload in background."""
-        # Set callbacks
-        self.drive_manager.set_progress_callback(self._on_file_progress)
-        self.drive_manager.set_chunk_callback(self._on_chunk_progress)
+        # Set callbacks if the provider supports them (Google Drive specific)
+        if hasattr(self.provider, 'set_progress_callback'):
+            self.provider.set_progress_callback(self._on_file_progress)
+        if hasattr(self.provider, 'set_chunk_callback'):
+            self.provider.set_chunk_callback(self._on_chunk_progress)
         
         try:
             success_count = 0
@@ -127,7 +129,7 @@ class UploadWorker(QObject):
                 backup_path = os.path.join(self.backup_base_dir, backup_name)
                 
                 try:
-                    res = self.drive_manager.upload_backup(backup_path, backup_name, max_backups=self.max_backups)
+                    res = self.provider.upload_backup(backup_path, backup_name, max_backups=self.max_backups)
                     ok = False
                     uploaded_cnt = 0
                     skipped_cnt = 0
@@ -188,22 +190,23 @@ class UploadWorker(QObject):
             self.finished.emit(success_count, total)
             
         finally:
-            # Clear callbacks
-            self.drive_manager.set_progress_callback(None)
-            self.drive_manager.set_chunk_callback(None)
+            # Clear callbacks if the provider supports them
+            if hasattr(self.provider, 'set_progress_callback'):
+                self.provider.set_progress_callback(None)
+            if hasattr(self.provider, 'set_chunk_callback'):
+                self.provider.set_chunk_callback(None)
 
 
 class DownloadWorker(QObject):
     """Worker thread for downloading backups to avoid blocking UI."""
     progress = Signal(int, int, str)  # current, total, message
     progress_detailed = Signal(int, int, str)  # bytes_current, bytes_total, message
-    finished = Signal(int, int, dict)  # success_count, total_count, summary_stats
-    profile_created = Signal(str, str)  # profile_name, backup_path (emitted when a new profile is created)
+    finished = Signal(int, int, dict)  # success_count, total_count, summary_stats (includes 'profiles_to_create')
     cancelled = Signal()  # Emitted when operation is cancelled
     
-    def __init__(self, drive_manager, backup_list, backup_base_dir, existing_profiles):
+    def __init__(self, provider, backup_list, backup_base_dir, existing_profiles):
         super().__init__()
-        self.drive_manager = drive_manager
+        self.provider = provider  # Can be any StorageProvider
         self.backup_list = backup_list
         self.backup_base_dir = backup_base_dir
         self.existing_profiles = existing_profiles  # Dict of existing profiles
@@ -221,16 +224,18 @@ class DownloadWorker(QObject):
     def cancel(self):
         """Request cancellation of the download operation."""
         self._cancelled = True
-        # Also request cancellation from drive manager to interrupt chunk operations
-        if self.drive_manager:
-            self.drive_manager.request_cancellation()
+        # Also request cancellation from provider if it supports it
+        if self.provider and hasattr(self.provider, 'request_cancellation'):
+            self.provider.request_cancellation()
         logging.info("Download cancellation requested")
     
     def run(self):
         """Execute download in background."""
-        # Set callbacks
-        self.drive_manager.set_progress_callback(self._on_file_progress)
-        self.drive_manager.set_chunk_callback(self._on_chunk_progress)
+        # Set callbacks if the provider supports them
+        if hasattr(self.provider, 'set_progress_callback'):
+            self.provider.set_progress_callback(self._on_file_progress)
+        if hasattr(self.provider, 'set_chunk_callback'):
+            self.provider.set_chunk_callback(self._on_chunk_progress)
         
         try:
             success_count = 0
@@ -241,7 +246,8 @@ class DownloadWorker(QObject):
                 'downloaded': 0,
                 'skipped': 0,
                 'failed': 0,
-                'files_total': 0
+                'files_total': 0,
+                'profiles_to_create': []  # List of (profile_name, backup_path) tuples
             }
             
             for idx, backup_name in enumerate(self.backup_list, 1):
@@ -258,7 +264,7 @@ class DownloadWorker(QObject):
                 
                 try:
                     # download_backup now returns a dict with stats
-                    download_result = self.drive_manager.download_backup(backup_name, backup_path)
+                    download_result = self.provider.download_backup(backup_name, backup_path)
                     
                     # Check for cancellation immediately after download attempt
                     if self._cancelled:
@@ -284,10 +290,10 @@ class DownloadWorker(QObject):
                         success_count += 1
                         logging.info(f"Successfully downloaded: {backup_name}")
                         
-                        # Check if profile exists, if not, emit signal to create it
+                        # Check if profile exists, if not, add to list of profiles to create
                         if backup_name not in self.existing_profiles:
-                            logging.info(f"Profile '{backup_name}' does not exist, will create it automatically")
-                            self.profile_created.emit(backup_name, backup_path)
+                            logging.info(f"Profile '{backup_name}' does not exist, will create it after download completes")
+                            stats['profiles_to_create'].append((backup_name, backup_path))
                     else:
                         logging.error(f"Failed to download: {backup_name}")
                 except Exception as e:
@@ -301,9 +307,11 @@ class DownloadWorker(QObject):
             self.finished.emit(success_count, total, stats)
             
         finally:
-            # Clear callbacks
-            self.drive_manager.set_progress_callback(None)
-            self.drive_manager.set_chunk_callback(None)
+            # Clear callbacks if the provider supports them
+            if hasattr(self.provider, 'set_progress_callback'):
+                self.provider.set_progress_callback(None)
+            if hasattr(self.provider, 'set_chunk_callback'):
+                self.provider.set_chunk_callback(None)
 
 
 class DeleteWorker(QObject):
@@ -312,9 +320,9 @@ class DeleteWorker(QObject):
     finished = Signal(int, int)  # success_count, total_count
     cancelled = Signal()  # Emitted when operation is cancelled
     
-    def __init__(self, drive_manager, backup_list):
+    def __init__(self, provider, backup_list):
         super().__init__()
-        self.drive_manager = drive_manager
+        self.provider = provider  # Can be any StorageProvider
         self.backup_list = backup_list
         self._cancelled = False
     
@@ -339,7 +347,7 @@ class DeleteWorker(QObject):
             self.progress.emit(idx, total, f"Deleting {backup_name}...")
             
             try:
-                if self.drive_manager.delete_cloud_backup(backup_name):
+                if self.provider.delete_cloud_backup(backup_name):
                     success_count += 1
                     logging.info(f"Successfully deleted from cloud: {backup_name}")
                 else:
@@ -355,15 +363,15 @@ class RefreshCloudStatusWorker(QObject):
     finished = Signal(dict)  # cloud_backups dict
     error = Signal(str)  # error message
     
-    def __init__(self, drive_manager):
+    def __init__(self, provider):
         super().__init__()
-        self.drive_manager = drive_manager
+        self.provider = provider  # Can be any StorageProvider
     
     def run(self):
         """Execute cloud status refresh in background."""
         try:
             logging.info("Refreshing cloud backup status in background...")
-            cloud_backups_list = self.drive_manager.list_cloud_backups()
+            cloud_backups_list = self.provider.list_cloud_backups()
             
             # Convert to dict for easy lookup
             cloud_backups = {
@@ -567,9 +575,54 @@ class CloudSavePanel(QWidget):
                 if smb_path:
                     logging.info("Auto-connecting to SMB...")
                     QTimer.singleShot(500, self._connect_to_smb)
+            
+            # Auto-connect FTP if enabled
+            if active_provider == 'ftp' and self.cloud_settings.get('ftp_auto_connect', False):
+                ftp_host = self.cloud_settings.get('ftp_host', '')
+                if ftp_host:
+                    logging.info("Auto-connecting to FTP...")
+                    QTimer.singleShot(500, self._connect_to_ftp)
                     
         except Exception as e:
             logging.error(f"Error restoring active provider: {e}")
+    
+    def _get_active_provider(self):
+        """
+        Get the currently active storage provider based on the dropdown selection.
+        
+        Returns:
+            StorageProvider instance or None if no provider is connected
+        """
+        try:
+            provider_type_str = self.provider_combo.currentData()
+            
+            if provider_type_str == 'google_drive':
+                return self.drive_manager
+            
+            from cloud_utils.provider_factory import ProviderFactory
+            return ProviderFactory.get_provider_by_string(provider_type_str)
+        except Exception as e:
+            logging.error(f"Error getting active provider: {e}")
+            return None
+    
+    def _is_any_provider_connected(self):
+        """
+        Check if any storage provider is currently connected.
+        
+        Returns:
+            True if any provider is connected, False otherwise
+        """
+        try:
+            provider_type_str = self.provider_combo.currentData()
+            
+            if provider_type_str == 'google_drive':
+                return self.drive_manager.is_connected
+            
+            provider = self._get_active_provider()
+            return provider is not None and provider.is_connected
+        except Exception as e:
+            logging.debug(f"Error checking provider connection: {e}")
+            return False
     
     def _init_ui(self):
         """Initialize the UI components for the main panel."""
@@ -930,7 +983,7 @@ class CloudSavePanel(QWidget):
         all_backups = self.cached_local_backups.copy()
         
         # --- Merge cloud backups ---
-        if self.drive_manager.is_connected and self.cloud_backups:
+        if self._is_any_provider_connected() and self.cloud_backups:
             for cloud_name, cloud_info in self.cloud_backups.items():
                 if cloud_name in all_backups:
                     # Update existing entry with cloud info
@@ -1115,6 +1168,9 @@ class CloudSavePanel(QWidget):
             
             self.local_backups.append(backup)
             self._add_backup_row(backup)
+        
+        # Update action button states after repopulating the table
+        self._update_action_buttons_state()
     
     def _add_backup_row(self, backup_info):
         """Add a row to the backup table."""
@@ -1173,6 +1229,9 @@ class CloudSavePanel(QWidget):
         
         checkbox_layout.addWidget(checkbox)
         self.backup_table.setCellWidget(row, 0, checkbox_widget)
+        
+        # Connect checkbox state change to update button states
+        checkbox.stateChanged.connect(self._update_action_buttons_state)
         
         # Column 1: State (Local/Cloud/Both) - with icon
         state_widget = QWidget()
@@ -1291,6 +1350,51 @@ class CloudSavePanel(QWidget):
         cloud_item.setForeground(cloud_color)
         self.backup_table.setItem(row, 4, cloud_item)
     
+    def _update_action_buttons_state(self):
+        """Update the state of action buttons based on current selection."""
+        if not self._is_any_provider_connected():
+            # If not connected, disable all buttons
+            self.upload_button.setEnabled(False)
+            self.download_button.setEnabled(False)
+            self.delete_button.setEnabled(False)
+            return
+        
+        # Get selected backups
+        selected_backups = []
+        for row in range(self.backup_table.rowCount()):
+            checkbox_widget = self.backup_table.cellWidget(row, 0)
+            if checkbox_widget:
+                checkbox = checkbox_widget.findChild(QCheckBox)
+                if checkbox and checkbox.isChecked():
+                    # Get backup info from the row
+                    profile_item = self.backup_table.item(row, 2)
+                    if profile_item:
+                        folder_name = profile_item.data(Qt.ItemDataRole.UserRole)
+                        # Find backup info in local_backups
+                        backup_info = None
+                        for backup in self.local_backups:
+                            if backup.get('name') == folder_name:
+                                backup_info = backup
+                                break
+                        if backup_info:
+                            selected_backups.append(backup_info)
+        
+        # Update button states based on selection
+        if not selected_backups:
+            # No selection - disable all buttons
+            self.upload_button.setEnabled(False)
+            self.download_button.setEnabled(False)
+            self.delete_button.setEnabled(False)
+        else:
+            # Check if any selected backup has local files (for upload)
+            has_local = any(backup.get('has_local', False) for backup in selected_backups)
+            self.upload_button.setEnabled(has_local)
+            
+            # Check if any selected backup has cloud files (for download/delete)
+            has_cloud = any(backup.get('has_cloud', False) for backup in selected_backups)
+            self.download_button.setEnabled(has_cloud)
+            self.delete_button.setEnabled(has_cloud)
+    
     def _set_delete_button_to_cancel_mode(self):
         """Transform delete button into cancel button during operations."""
         self.delete_button.setText("Cancel Operation")
@@ -1311,26 +1415,11 @@ class CloudSavePanel(QWidget):
             self.delete_button.setIcon(self._delete_icon)
         # Restore object name
         self.delete_button.setObjectName("DangerButton")
-        # Enable only if connected and apply appropriate styling
-        if self.drive_manager.is_connected:
-            self.delete_button.setEnabled(True)
-            self.delete_button.setStyleSheet("")  # Use default DangerButton styling
-        else:
-            self.delete_button.setEnabled(False)
-            # Apply disabled styling
-            self.delete_button.setStyleSheet("""
-                QPushButton {
-                    background-color: #555555;
-                    color: #888888;
-                    border: 1px solid #444444;
-                }
-                QPushButton:hover {
-                    background-color: #555555;
-                    color: #888888;
-                }
-            """)
         # Reapply fixed width to maintain button size
         self.delete_button.setFixedWidth(self._delete_button_fixed_width)
+        
+        # Update all button states based on current selection
+        self._update_action_buttons_state()
     
     def _on_delete_or_cancel_clicked(self):
         """Handle delete button click - acts as delete or cancel depending on mode."""
@@ -1447,7 +1536,7 @@ class CloudSavePanel(QWidget):
         self.refresh_local_backups()
         
         # Also refresh cloud status if connected
-        if self.drive_manager.is_connected:
+        if self._is_any_provider_connected():
             self._refresh_cloud_status()
         
         # Create countdown timer
@@ -1726,8 +1815,9 @@ class CloudSavePanel(QWidget):
                 self.connect_button.setText("Disconnect")
                 self.disconnect_button.setEnabled(True)
                 
-                # Refresh the backup list
-                self._repopulate_table()
+                # Refresh the backup list to show cloud backups
+                self.refresh_local_backups()
+                self._refresh_cloud_status()
                 
                 logging.info(f"Connected to SMB: {smb_path}")
             else:
@@ -1826,8 +1916,9 @@ class CloudSavePanel(QWidget):
                 self.connect_button.setText("Disconnect")
                 self.disconnect_button.setEnabled(True)
                 
-                # Refresh the backup list
-                self._repopulate_table()
+                # Refresh the backup list to show cloud backups
+                self.refresh_local_backups()
+                self._refresh_cloud_status()
                 
                 logging.info(f"Connected to FTP: {ftp_host}")
             else:
@@ -1922,8 +2013,9 @@ class CloudSavePanel(QWidget):
                 self.connect_button.setText("Disconnect")
                 self.disconnect_button.setEnabled(True)
                 
-                # Refresh the backup list
-                self._repopulate_table()
+                # Refresh the backup list to show cloud backups
+                self.refresh_local_backups()
+                self._refresh_cloud_status()
                 
                 logging.info(f"Connected to WebDAV: {webdav_url}")
             else:
@@ -1964,6 +2056,23 @@ class CloudSavePanel(QWidget):
                 self.connection_status_label.setStyleSheet("color: #FF5555;")
                 self.connect_button.setText("Connect to Network Folder")
                 self.disconnect_button.setEnabled(False)
+                
+                # Disable action buttons
+                self.upload_button.setEnabled(False)
+                self.download_button.setEnabled(False)
+                self.delete_button.setEnabled(False)
+                self.delete_button.setStyleSheet("""
+                    QPushButton {
+                        background-color: #555555;
+                        color: #888888;
+                        border: 1px solid #444444;
+                    }
+                    QPushButton:hover {
+                        background-color: #555555;
+                        color: #888888;
+                    }
+                """)
+                
                 self._repopulate_table()
             else:
                 # Connect
@@ -1980,6 +2089,23 @@ class CloudSavePanel(QWidget):
                 self.connection_status_label.setStyleSheet("color: #FF5555;")
                 self.connect_button.setText("Connect to FTP Server")
                 self.disconnect_button.setEnabled(False)
+                
+                # Disable action buttons
+                self.upload_button.setEnabled(False)
+                self.download_button.setEnabled(False)
+                self.delete_button.setEnabled(False)
+                self.delete_button.setStyleSheet("""
+                    QPushButton {
+                        background-color: #555555;
+                        color: #888888;
+                        border: 1px solid #444444;
+                    }
+                    QPushButton:hover {
+                        background-color: #555555;
+                        color: #888888;
+                    }
+                """)
+                
                 self._repopulate_table()
             else:
                 # Connect
@@ -1996,6 +2122,23 @@ class CloudSavePanel(QWidget):
                 self.connection_status_label.setStyleSheet("color: #FF5555;")
                 self.connect_button.setText("Connect to WebDAV")
                 self.disconnect_button.setEnabled(False)
+                
+                # Disable action buttons
+                self.upload_button.setEnabled(False)
+                self.download_button.setEnabled(False)
+                self.delete_button.setEnabled(False)
+                self.delete_button.setStyleSheet("""
+                    QPushButton {
+                        background-color: #555555;
+                        color: #888888;
+                        border: 1px solid #444444;
+                    }
+                    QPushButton:hover {
+                        background-color: #555555;
+                        color: #888888;
+                    }
+                """)
+                
                 self._repopulate_table()
             else:
                 # Connect
@@ -2370,11 +2513,9 @@ class CloudSavePanel(QWidget):
             self.connection_status_label.setText("● Connected")
             self.connection_status_label.setStyleSheet("color: #4CAF50;")
             self.disconnect_button.setEnabled(True)
-            self.upload_button.setEnabled(True)
-            self.download_button.setEnabled(True)
-            self.delete_button.setEnabled(True)
-            # Clear any disabled styling on delete button
-            self.delete_button.setStyleSheet("")
+            
+            # Update button states based on selection
+            self._update_action_buttons_state()
         else:
             # Restore connect button
             self.connect_button.setText("Connect to Google Drive")
@@ -2384,6 +2525,8 @@ class CloudSavePanel(QWidget):
             self.connection_status_label.setText("● Not Connected")
             self.connection_status_label.setStyleSheet("color: #FF5555;")
             self.disconnect_button.setEnabled(False)
+            
+            # Disable all action buttons when disconnected
             self.upload_button.setEnabled(False)
             self.download_button.setEnabled(False)
             self.delete_button.setEnabled(False)
@@ -2413,9 +2556,9 @@ class CloudSavePanel(QWidget):
     
     def _enable_buttons_after_operation(self):
         """Re-enable buttons after cloud operations complete."""
-        if self.drive_manager.is_connected:
-            self.upload_button.setEnabled(True)
-            self.download_button.setEnabled(True)
+        # Update button states based on current selection
+        self._update_action_buttons_state()
+        
         # Always re-enable refresh button (if visible)
         if self.refresh_search_stack.currentIndex() == 0:
             self.refresh_button.setEnabled(True)
@@ -2436,6 +2579,16 @@ class CloudSavePanel(QWidget):
             QMessageBox.warning(self, "No Selection", "Please select backups to upload.")
             return
         
+        # Get active provider
+        active_provider = self._get_active_provider()
+        if not active_provider:
+            QMessageBox.warning(self, "No Provider", "No storage provider is selected.")
+            return
+            
+        if not active_provider.is_connected:
+            QMessageBox.warning(self, "Not Connected", "Please connect to the storage provider first.")
+            return
+
         # Disable buttons immediately and show cancel button
         self._disable_buttons_during_operation()
         self._set_delete_button_to_cancel_mode()
@@ -2451,6 +2604,7 @@ class CloudSavePanel(QWidget):
         QApplication.processEvents()
         
         # Check storage limit asynchronously if enabled (avoid blocking the UI thread)
+        # Only if provider supports it or worker handles it gracefully (which it now does)
         if self.cloud_settings.get('max_cloud_storage_enabled', False):
             max_storage_gb = self.cloud_settings.get('max_cloud_storage_gb', 5)
             
@@ -2463,7 +2617,7 @@ class CloudSavePanel(QWidget):
                 self._storage_check_cancelled = False # Reset cancel flag
                 
                 self._storage_check_thread = QThread()
-                self._storage_check_worker = StorageCheckWorker(self.drive_manager, max_storage_gb)
+                self._storage_check_worker = StorageCheckWorker(active_provider, max_storage_gb)
                 self._storage_check_worker.moveToThread(self._storage_check_thread)
                 self._storage_check_thread.started.connect(self._storage_check_worker.run)
                 self._storage_check_worker.finished.connect(self._on_storage_check_finished)
@@ -2571,8 +2725,31 @@ class CloudSavePanel(QWidget):
         """Start the upload process for the given selected backup names."""
         logging.info(f"Uploading {len(selected)} backups to cloud...")
         
-        # Reset cancellation flag in drive manager before starting
-        self.drive_manager.reset_cancellation()
+        # Get the active provider
+        active_provider = self._get_active_provider()
+        if not active_provider:
+            QMessageBox.warning(
+                self,
+                "No Provider",
+                "No storage provider is selected. Please select a provider first."
+            )
+            self._enable_buttons_after_operation()
+            self._set_delete_button_to_delete_mode()
+            return
+        
+        if not active_provider.is_connected:
+            QMessageBox.warning(
+                self,
+                "Not Connected",
+                "Please connect to the storage provider first."
+            )
+            self._enable_buttons_after_operation()
+            self._set_delete_button_to_delete_mode()
+            return
+        
+        # Reset cancellation flag if the provider supports it
+        if hasattr(active_provider, 'reset_cancellation'):
+            active_provider.reset_cancellation()
         
         # Show progress - UI updates IMMEDIATELY
         self.progress_bar.setVisible(True)
@@ -2586,18 +2763,28 @@ class CloudSavePanel(QWidget):
         
         # Use QTimer to allow UI to update before starting the thread
         # This ensures buttons are disabled and cancel button is shown instantly
-        QTimer.singleShot(50, lambda: self._finalize_upload_start(selected))
+        QTimer.singleShot(50, lambda: self._finalize_upload_start(selected, active_provider))
         
-    def _finalize_upload_start(self, selected: list[str]):
+    def _finalize_upload_start(self, selected: list[str], provider=None):
         """Finalize upload start after UI update."""
         # Get max backups setting
         max_backups = None
         if self.cloud_settings.get('max_cloud_backups_enabled', False):
             max_backups = self.cloud_settings.get('max_cloud_backups_count', 5)
         
+        # Use provided provider or get active one
+        if provider is None:
+            provider = self._get_active_provider()
+            if not provider or not provider.is_connected:
+                logging.error("No active provider available for upload")
+                self.progress_bar.setVisible(False)
+                self._enable_buttons_after_operation()
+                self._set_delete_button_to_delete_mode()
+                return
+        
         # Create worker and thread
         self.upload_thread = QThread()
-        self.upload_worker = UploadWorker(self.drive_manager, selected, self.backup_base_dir, max_backups)
+        self.upload_worker = UploadWorker(provider, selected, self.backup_base_dir, max_backups)
         self.upload_worker.moveToThread(self.upload_thread)
         self._last_upload_summary = None
         
@@ -2731,8 +2918,19 @@ class CloudSavePanel(QWidget):
         
         logging.info(f"Downloading {len(selected)} backups from cloud...")
         
-        # Reset cancellation flag in drive manager before starting
-        self.drive_manager.reset_cancellation()
+        # Get active provider
+        active_provider = self._get_active_provider()
+        if not active_provider:
+            QMessageBox.warning(self, "No Provider", "No storage provider is selected.")
+            return
+            
+        if not active_provider.is_connected:
+            QMessageBox.warning(self, "Not Connected", "Please connect to the storage provider first.")
+            return
+
+        # Reset cancellation flag if supported
+        if hasattr(active_provider, 'reset_cancellation'):
+            active_provider.reset_cancellation()
         
         # Show progress - UI updates IMMEDIATELY
         self.progress_bar.setVisible(True)
@@ -2746,14 +2944,24 @@ class CloudSavePanel(QWidget):
         
         # Use QTimer to allow UI to update before starting the thread
         # This ensures buttons are disabled and cancel button is shown instantly
-        QTimer.singleShot(50, lambda: self._finalize_download_start(selected))
+        QTimer.singleShot(50, lambda: self._finalize_download_start(selected, active_provider))
 
-    def _finalize_download_start(self, selected: list[str]):
+    def _finalize_download_start(self, selected: list[str], provider=None):
         """Finalize download start after UI update."""
+        # Use provided provider or get active one
+        if provider is None:
+            provider = self._get_active_provider()
+            if not provider or not provider.is_connected:
+                logging.error("No active provider available for download")
+                self.progress_bar.setVisible(False)
+                self._enable_buttons_after_operation()
+                self._set_delete_button_to_delete_mode()
+                return
+
         # Create worker and thread
         self.download_thread = QThread()
         self.download_worker = DownloadWorker(
-            self.drive_manager, 
+            provider, 
             selected, 
             self.backup_base_dir,
             self.profiles  # Pass existing profiles
@@ -2768,7 +2976,6 @@ class CloudSavePanel(QWidget):
         self.download_thread.started.connect(self.download_worker.run)
         self.download_worker.progress.connect(self._on_download_progress)
         self.download_worker.progress_detailed.connect(self._on_detailed_progress)
-        self.download_worker.profile_created.connect(self._on_profile_auto_created)
         self.download_worker.cancelled.connect(self._on_download_cancelled)
         self.download_worker.finished.connect(self._on_download_finished)
         self.download_worker.finished.connect(self.download_thread.quit)
@@ -2840,9 +3047,8 @@ class CloudSavePanel(QWidget):
                     # Update local profiles reference
                     self.profiles = self.main_window.profiles
                     
-                    # Update profile table in main window
-                    if hasattr(self.main_window, 'profile_table_manager'):
-                        self.main_window.profile_table_manager.update_profile_table()
+                    # DON'T update GUI here - it will be updated in _on_download_finished
+                    # The profile table will be refreshed after all downloads complete
                 else:
                     logging.error(f"Failed to save profile '{profile_name}'")
             else:
@@ -2863,6 +3069,36 @@ class CloudSavePanel(QWidget):
         # Restore delete button
         self._set_delete_button_to_delete_mode()
         
+        # Create profiles for downloaded backups that don't have profiles yet
+        profiles_created = []
+        if stats and isinstance(stats, dict):
+            profiles_to_create = stats.get('profiles_to_create', [])
+            if profiles_to_create:
+                try:
+                    import core_logic
+                    for profile_name, backup_path in profiles_to_create:
+                        logging.info(f"Creating profile '{profile_name}' with path '{backup_path}'")
+                        if self.main_window and hasattr(self.main_window, 'profiles'):
+                            self.main_window.profiles[profile_name] = {'path': backup_path}
+                            profiles_created.append(profile_name)
+                    
+                    # Save all profiles at once
+                    if profiles_created and core_logic.save_profiles(self.main_window.profiles):
+                        logging.info(f"Created {len(profiles_created)} new profiles: {', '.join(profiles_created)}")
+                        # Update local profiles reference
+                        self.profiles = self.main_window.profiles
+                except Exception as e:
+                    logging.error(f"Error creating profiles: {e}", exc_info=True)
+        
+        # Update profile table in main window (in case new profiles were created)
+        if profiles_created:
+            try:
+                if self.main_window and hasattr(self.main_window, 'profile_table_manager'):
+                    self.main_window.profile_table_manager.update_profile_table()
+                    logging.info("Profile table updated after download")
+            except Exception as e:
+                logging.error(f"Error updating profile table: {e}")
+        
         # Determine message based on stats
         title = "Download Complete"
         msg = f"Successfully processed {success_count} of {total_count} backups."
@@ -2882,6 +3118,10 @@ class CloudSavePanel(QWidget):
             
             if failed > 0:
                 msg += f"\n\nWarning: {failed} file(s) failed to download or verify."
+            
+            # Add info about created profiles
+            if profiles_created:
+                msg += f"\n\nCreated {len(profiles_created)} new profile(s)."
 
         # Show notification
         self._show_notification(title, msg)
@@ -2907,11 +3147,26 @@ class CloudSavePanel(QWidget):
             QMessageBox.warning(self, "No Selection", "Please select backups to delete from cloud.")
             return
         
+        # Get active provider
+        active_provider = self._get_active_provider()
+        if not active_provider:
+            QMessageBox.warning(self, "No Provider", "No storage provider is selected.")
+            return
+            
+        if not active_provider.is_connected:
+            QMessageBox.warning(self, "Not Connected", "Please connect to the storage provider first.")
+            return
+
+        # Determine provider name for dialog
+        provider_name = "Cloud Storage"
+        if hasattr(active_provider, 'name'):
+            provider_name = active_provider.name
+        
         # Ask for confirmation
         reply = QMessageBox.question(
             self,
             "Confirm Deletion",
-            f"Are you sure you want to delete {len(selected)} backup(s) from Google Drive?\n\n"
+            f"Are you sure you want to delete {len(selected)} backup(s) from {provider_name}?\n\n"
             "This action cannot be undone!",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
@@ -2922,8 +3177,9 @@ class CloudSavePanel(QWidget):
         
         logging.info(f"Deleting {len(selected)} backups from cloud...")
         
-        # Reset cancellation flag in drive manager before starting (though delete doesn't use chunks)
-        self.drive_manager.reset_cancellation()
+        # Reset cancellation flag if supported
+        if hasattr(active_provider, 'reset_cancellation'):
+            active_provider.reset_cancellation()
         
         # Show progress - UI updates IMMEDIATELY
         self.progress_bar.setVisible(True)
@@ -2941,7 +3197,7 @@ class CloudSavePanel(QWidget):
         
         # Create worker and thread
         self.delete_thread = QThread()
-        self.delete_worker = DeleteWorker(self.drive_manager, selected)
+        self.delete_worker = DeleteWorker(active_provider, selected)
         self.delete_worker.moveToThread(self.delete_thread)
         
         # Track current operation for cancellation
@@ -3167,22 +3423,43 @@ class CloudSavePanel(QWidget):
         """Perform startup actions (auto-connect and/or auto-sync) if enabled in settings."""
         auto_connect = self.cloud_settings.get('auto_connect_on_startup', False)
         auto_sync_on_startup = self.cloud_settings.get('auto_sync_on_startup', False)
+        active_provider = self.cloud_settings.get('active_provider', 'google_drive')
 
         if auto_connect:
-            logging.info("Auto-connect on startup enabled, connecting to Google Drive...")
-            # Disable Cloud button in main window while connecting
-            self._set_main_cloud_button_connecting(True)
-            self._perform_auto_connect()
+            # Check which provider should auto-connect based on the active_provider setting
+            if active_provider == 'google_drive':
+                logging.info("Auto-connect on startup enabled, connecting to Google Drive...")
+                # Disable Cloud button in main window while connecting
+                self._set_main_cloud_button_connecting(True)
+                self._perform_auto_connect_google_drive()
+            elif active_provider == 'ftp' and self.cloud_settings.get('ftp_auto_connect', False):
+                ftp_host = self.cloud_settings.get('ftp_host', '')
+                if ftp_host:
+                    logging.info(f"Auto-connect on startup enabled, connecting to FTP ({ftp_host})...")
+                    self._connect_to_ftp()
+            elif active_provider == 'smb' and self.cloud_settings.get('smb_auto_connect', False):
+                smb_path = self.cloud_settings.get('smb_path', '')
+                if smb_path:
+                    logging.info(f"Auto-connect on startup enabled, connecting to SMB ({smb_path})...")
+                    self._connect_to_smb()
+            elif active_provider == 'webdav' and self.cloud_settings.get('webdav_auto_connect', False):
+                webdav_url = self.cloud_settings.get('webdav_url', '')
+                if webdav_url:
+                    logging.info(f"Auto-connect on startup enabled, connecting to WebDAV ({webdav_url})...")
+                    self._connect_to_webdav()
+            else:
+                logging.debug(f"Auto-connect enabled but no valid configuration for provider: {active_provider}")
             return
 
         # If auto-connect is off but auto-sync-on-startup is enabled, do a one-off connect->sync->disconnect
-        if auto_sync_on_startup:
+        # Note: auto-sync currently only works with Google Drive
+        if auto_sync_on_startup and active_provider == 'google_drive':
             logging.info("Auto-sync on startup enabled (one-off). Connecting for startup sync...")
             self._ensure_connected_then(self._perform_startup_sync, disconnect_after=True)
         else:
-            logging.debug("Startup auto connect/sync disabled")
+            logging.debug("Startup auto connect/sync disabled or not applicable for current provider")
     
-    def _perform_auto_connect(self):
+    def _perform_auto_connect_google_drive(self):
         """Perform automatic connection to Google Drive in background."""
         if self.drive_manager.is_connected:
             logging.info("Already connected to Google Drive")
@@ -3273,7 +3550,9 @@ class CloudSavePanel(QWidget):
     
     def _refresh_cloud_status(self):
         """Refresh cloud backup status for all backups in background."""
-        if not self.drive_manager.is_connected:
+        # Get active provider - don't show warnings here as this happens automatically
+        active_provider = self._get_active_provider()
+        if not active_provider or not active_provider.is_connected:
             return
         
         # Prevent multiple simultaneous refreshes which could cause QThread crash
@@ -3290,7 +3569,7 @@ class CloudSavePanel(QWidget):
         
         # Create worker and thread for background refresh
         self.refresh_thread = QThread()
-        self.refresh_worker = RefreshCloudStatusWorker(self.drive_manager)
+        self.refresh_worker = RefreshCloudStatusWorker(active_provider)
         self.refresh_worker.moveToThread(self.refresh_thread)
         
         # Connect signals
@@ -3309,7 +3588,7 @@ class CloudSavePanel(QWidget):
     def _on_refresh_cloud_status_finished(self, cloud_backups):
         """Handle cloud status refresh completion."""
         # If disconnected while refreshing, discard results
-        if not self.drive_manager.is_connected:
+        if not self._is_any_provider_connected():
             logging.debug("Refresh finished but disconnected, discarding results.")
             return
         
@@ -3439,10 +3718,18 @@ class CloudSavePanel(QWidget):
         if self._sync_in_progress:
             logging.debug("Auto sync request ignored: another sync is running")
             return
+            
+        # Get active provider
+        active_provider = self._get_active_provider()
+        if not active_provider or not active_provider.is_connected:
+            logging.debug("Auto sync skipped: no active provider connected")
+            return
+            
         self._sync_in_progress = True
         
-        # Reset cancellation flag in drive manager before starting
-        self.drive_manager.reset_cancellation()
+        # Reset cancellation flag in provider before starting
+        if hasattr(active_provider, 'reset_cancellation'):
+            active_provider.reset_cancellation()
         
         # Get max backups setting
         max_backups = None
@@ -3452,7 +3739,7 @@ class CloudSavePanel(QWidget):
         # Create worker for background sync
         self.auto_sync_thread = QThread()
         self.auto_sync_worker = UploadWorker(
-            self.drive_manager, 
+            active_provider, 
             profile_names, 
             self.backup_base_dir, 
             max_backups
@@ -3492,7 +3779,9 @@ class CloudSavePanel(QWidget):
         # Disconnect if this was a temporary connection
         try:
             if self._disconnect_after_current_sync:
-                self.drive_manager.disconnect()
+                active_provider = self._get_active_provider()
+                if active_provider and active_provider.is_connected:
+                    active_provider.disconnect()
                 self._set_connected(False)
             self._disconnect_after_current_sync = False
         except Exception:
@@ -3505,9 +3794,14 @@ class CloudSavePanel(QWidget):
         logging.info(f"Periodic sync completed: {success_count}/{total_count} profiles synced")
         
         # Show notification
+        provider_name = "Cloud"
+        active_provider = self._get_active_provider()
+        if active_provider and hasattr(active_provider, 'name'):
+            provider_name = active_provider.name
+            
         self._show_notification(
             "Periodic Sync Complete",
-            f"Synced {success_count} of {total_count} profiles to Google Drive."
+            f"Synced {success_count} of {total_count} profiles to {provider_name}."
         )
         
         # Refresh cloud status
@@ -3516,7 +3810,8 @@ class CloudSavePanel(QWidget):
         # Disconnect if this was a temporary connection
         try:
             if self._disconnect_after_current_sync:
-                self.drive_manager.disconnect()
+                if active_provider and active_provider.is_connected:
+                    active_provider.disconnect()
                 self._set_connected(False)
             self._disconnect_after_current_sync = False
         except Exception:

@@ -16,7 +16,7 @@ import pickle
 import time
 import datetime
 import random
-from typing import Optional, List, Dict, Callable
+from typing import Optional, List, Dict, Callable, Any
 from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 
@@ -1435,14 +1435,22 @@ class StorageCheckWorker(QObject):
     finished = Signal(bool, float, int)
     error = Signal(str)
 
-    def __init__(self, drive_manager: "GoogleDriveManager", max_gb: int):
+    def __init__(self, provider: Any, max_gb: int):
         super().__init__()
-        self.drive_manager = drive_manager
+        self.provider = provider
         self.max_gb = int(max_gb)
 
     def run(self):
         try:
-            within_limit, current_gb, max_gb = self.drive_manager.check_storage_limit(self.max_gb)
+            # Check if provider supports storage limit check
+            if hasattr(self.provider, 'check_storage_limit'):
+                within_limit, current_gb, max_gb = self.provider.check_storage_limit(self.max_gb)
+            else:
+                # Provider doesn't support storage check, assume unlimited/ok
+                within_limit = True
+                current_gb = 0.0
+                max_gb = self.max_gb
+                
             # Ensure types for signal
             try:
                 current_val = float(current_gb)
