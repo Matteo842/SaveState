@@ -568,20 +568,6 @@ class CloudSavePanel(QWidget):
                     self._update_connection_status_for_provider(active_provider)
                     self._update_configure_button_state(active_provider)
                     break
-            
-            # Auto-connect SMB if enabled
-            if active_provider == 'smb' and self.cloud_settings.get('smb_auto_connect', False):
-                smb_path = self.cloud_settings.get('smb_path', '')
-                if smb_path:
-                    logging.info("Auto-connecting to SMB...")
-                    QTimer.singleShot(500, self._connect_to_smb)
-            
-            # Auto-connect FTP if enabled
-            if active_provider == 'ftp' and self.cloud_settings.get('ftp_auto_connect', False):
-                ftp_host = self.cloud_settings.get('ftp_host', '')
-                if ftp_host:
-                    logging.info("Auto-connecting to FTP...")
-                    QTimer.singleShot(500, self._connect_to_ftp)
                     
         except Exception as e:
             logging.error(f"Error restoring active provider: {e}")
@@ -720,9 +706,15 @@ class CloudSavePanel(QWidget):
         self.disconnect_button = QPushButton("Disconnect")
         self.disconnect_button.setEnabled(False)
         self.disconnect_button.clicked.connect(self._on_disconnect_clicked)
-        # Fix width to prevent layout shifts when enabled/disabled
-        disconnect_width = font_metrics.horizontalAdvance("Disconnect") + 40
-        self.disconnect_button.setFixedWidth(disconnect_width)
+        # Calculate fixed width for various disconnect/connect texts
+        disconnect_texts = [
+            "Disconnect", 
+            "Connect to FTP Server", 
+            "Connect to Network Folder",
+            "Connect to WebDAV"
+        ]
+        max_disconnect_width = max(font_metrics.horizontalAdvance(t) for t in disconnect_texts) + 50
+        self.disconnect_button.setFixedWidth(max_disconnect_width)
         toolbar_row.addWidget(self.disconnect_button)
         
         # Spacer to push filter checkbox to the right
@@ -1590,62 +1582,31 @@ class CloudSavePanel(QWidget):
         self._repopulate_table()
     
     def _update_connect_button_for_provider(self, provider_type):
-        """Update the connect button text based on selected provider."""
+        """Update the connect button text and visibility based on selected provider."""
         if provider_type == "google_drive":
+            # Google Drive uses the connect button for Login/Logout
+            self.connect_button.setVisible(True)
             if self.drive_manager and self.drive_manager.is_connected:
                 self.connect_button.setText("Logout")
             else:
                 self.connect_button.setText("Connect to Google Drive")
-        elif provider_type == "smb":
-            # Check if SMB is configured and connected
-            from cloud_utils.smb_provider import SMBProvider
-            from cloud_utils.provider_factory import ProviderFactory, ProviderType
-            
-            smb_provider = ProviderFactory.get_provider(ProviderType.SMB)
-            if smb_provider and smb_provider.is_connected:
-                self.connect_button.setText("Disconnect")
-            else:
-                self.connect_button.setText("Connect to Network Folder")
-        elif provider_type == "ftp":
-            # Check if FTP is configured and connected
-            try:
-                from cloud_utils.ftp_provider import FTPProvider
-                from cloud_utils.provider_factory import ProviderFactory, ProviderType
-                
-                ftp_provider = ProviderFactory.get_provider(ProviderType.FTP)
-                if ftp_provider and ftp_provider.is_connected:
-                    self.connect_button.setText("Disconnect")
-                else:
-                    self.connect_button.setText("Connect to FTP Server")
-            except ImportError:
-                self.connect_button.setText("Connect to FTP Server")
-        elif provider_type == "webdav":
-            # Check if WebDAV is configured and connected
-            try:
-                from cloud_utils.webdav_provider import WebDAVProvider
-                from cloud_utils.provider_factory import ProviderFactory, ProviderType
-                
-                webdav_provider = ProviderFactory.get_provider(ProviderType.WEBDAV)
-                if webdav_provider and webdav_provider.is_connected:
-                    self.connect_button.setText("Disconnect")
-                else:
-                    self.connect_button.setText("Connect to WebDAV")
-            except ImportError:
-                self.connect_button.setText("Connect to WebDAV")
         else:
-            self.connect_button.setText("Connect")
+            # For FTP/SMB/WebDAV, hide the connect button (they only use disconnect button)
+            self.connect_button.setVisible(False)
     
     def _update_connection_status_for_provider(self, provider_type):
-        """Update the connection status label for the selected provider."""
+        """Update the connection status label and disconnect button for the selected provider."""
         if provider_type == "google_drive":
             if self.drive_manager and self.drive_manager.is_connected:
                 self.connection_status_label.setText("● Connected")
                 self.connection_status_label.setStyleSheet("color: #55FF55;")
                 self.disconnect_button.setEnabled(True)
+                self.disconnect_button.setText("Disconnect")
             else:
                 self.connection_status_label.setText("● Not Connected")
                 self.connection_status_label.setStyleSheet("color: #FF5555;")
                 self.disconnect_button.setEnabled(False)
+                self.disconnect_button.setText("Disconnect")
         elif provider_type == "smb":
             try:
                 from cloud_utils.smb_provider import SMBProvider
@@ -1656,10 +1617,12 @@ class CloudSavePanel(QWidget):
                     self.connection_status_label.setText("● Connected")
                     self.connection_status_label.setStyleSheet("color: #55FF55;")
                     self.disconnect_button.setEnabled(True)
+                    self.disconnect_button.setText("Disconnect")
                 else:
                     self.connection_status_label.setText("● Not Connected")
                     self.connection_status_label.setStyleSheet("color: #FF5555;")
-                    self.disconnect_button.setEnabled(False)
+                    self.disconnect_button.setEnabled(True)
+                    self.disconnect_button.setText("Connect to Network Folder")
             except ImportError:
                 self.connection_status_label.setText("● Not Available")
                 self.connection_status_label.setStyleSheet("color: #AAAAAA;")
@@ -1674,14 +1637,17 @@ class CloudSavePanel(QWidget):
                     self.connection_status_label.setText("● Connected")
                     self.connection_status_label.setStyleSheet("color: #55FF55;")
                     self.disconnect_button.setEnabled(True)
+                    self.disconnect_button.setText("Disconnect")
                 else:
                     self.connection_status_label.setText("● Not Connected")
                     self.connection_status_label.setStyleSheet("color: #FF5555;")
-                    self.disconnect_button.setEnabled(False)
+                    self.disconnect_button.setEnabled(True)
+                    self.disconnect_button.setText("Connect to FTP Server")
             except ImportError:
                 self.connection_status_label.setText("● Not Available")
                 self.connection_status_label.setStyleSheet("color: #AAAAAA;")
                 self.disconnect_button.setEnabled(False)
+                self.disconnect_button.setText("Disconnect")
         elif provider_type == "webdav":
             try:
                 from cloud_utils.webdav_provider import WebDAVProvider
@@ -1692,18 +1658,22 @@ class CloudSavePanel(QWidget):
                     self.connection_status_label.setText("● Connected")
                     self.connection_status_label.setStyleSheet("color: #55FF55;")
                     self.disconnect_button.setEnabled(True)
+                    self.disconnect_button.setText("Disconnect")
                 else:
                     self.connection_status_label.setText("● Not Connected")
                     self.connection_status_label.setStyleSheet("color: #FF5555;")
-                    self.disconnect_button.setEnabled(False)
+                    self.disconnect_button.setEnabled(True)
+                    self.disconnect_button.setText("Connect to WebDAV")
             except ImportError:
                 self.connection_status_label.setText("● Not Available")
                 self.connection_status_label.setStyleSheet("color: #AAAAAA;")
                 self.disconnect_button.setEnabled(False)
+                self.disconnect_button.setText("Disconnect")
         else:
             self.connection_status_label.setText("● Not Connected")
             self.connection_status_label.setStyleSheet("color: #FF5555;")
             self.disconnect_button.setEnabled(False)
+            self.disconnect_button.setText("Disconnect")
     
     def _update_configure_button_state(self, provider_type):
         """Enable/disable the Configure button based on the selected provider.
@@ -1812,7 +1782,7 @@ class CloudSavePanel(QWidget):
             if success:
                 self.connection_status_label.setText("● Connected")
                 self.connection_status_label.setStyleSheet("color: #55FF55;")
-                self.connect_button.setText("Disconnect")
+                self.disconnect_button.setText("Disconnect")
                 self.disconnect_button.setEnabled(True)
                 
                 # Refresh the backup list to show cloud backups
@@ -1913,7 +1883,7 @@ class CloudSavePanel(QWidget):
             if success:
                 self.connection_status_label.setText("● Connected")
                 self.connection_status_label.setStyleSheet("color: #55FF55;")
-                self.connect_button.setText("Disconnect")
+                self.disconnect_button.setText("Disconnect")
                 self.disconnect_button.setEnabled(True)
                 
                 # Refresh the backup list to show cloud backups
@@ -2010,7 +1980,7 @@ class CloudSavePanel(QWidget):
             if success:
                 self.connection_status_label.setText("● Connected")
                 self.connection_status_label.setStyleSheet("color: #55FF55;")
-                self.connect_button.setText("Disconnect")
+                self.disconnect_button.setText("Disconnect")
                 self.disconnect_button.setEnabled(True)
                 
                 # Refresh the backup list to show cloud backups
@@ -2429,18 +2399,40 @@ class CloudSavePanel(QWidget):
             logging.error(f"Error restoring UI after timeout: {e}")
     
     def _on_disconnect_clicked(self):
-        """Handle Google Drive disconnection."""
-        logging.info("Disconnecting from Google Drive...")
-        self.drive_manager.disconnect()
-        self._set_connected(False)
-        self.cloud_backups.clear()
-        self._repopulate_table()  # Refresh to clear cloud status
-        # If settings panel is open, update usage bars to "Not connected"
-        try:
-            if self.stacked_widget.currentIndex() == 1 and hasattr(self, 'settings_panel') and self.settings_panel:
-                self.settings_panel.refresh_storage_status()
-        except Exception:
-            pass
+        """Handle disconnect/connect button click based on current provider and state."""
+        provider_type = self.provider_combo.currentData()
+        
+        if provider_type == "google_drive":
+            # Google Drive disconnection
+            logging.info("Disconnecting from Google Drive...")
+            self.drive_manager.disconnect()
+            self._set_connected(False)
+            self.cloud_backups.clear()
+            self._repopulate_table()  # Refresh to clear cloud status
+            # If settings panel is open, update usage bars to "Not connected"
+            try:
+                if self.stacked_widget.currentIndex() == 1 and hasattr(self, 'settings_panel') and self.settings_panel:
+                    self.settings_panel.refresh_storage_status()
+            except Exception:
+                pass
+        else:
+            # For FTP/SMB/WebDAV, the disconnect button acts as connect/disconnect toggle
+            active_provider = self._get_active_provider()
+            if active_provider and active_provider.is_connected:
+                # Disconnect
+                logging.info(f"Disconnecting from {provider_type}...")
+                active_provider.disconnect()
+                self.cloud_backups.clear()
+                self._update_connection_status_for_provider(provider_type)
+                self._repopulate_table()
+            else:
+                # Connect
+                if provider_type == "ftp":
+                    self._connect_to_ftp()
+                elif provider_type == "smb":
+                    self._connect_to_smb()
+                elif provider_type == "webdav":
+                    self._connect_to_webdav()
     
     def _on_logout_clicked(self):
         """Handle logout - delete token file and disconnect."""
@@ -3432,23 +3424,29 @@ class CloudSavePanel(QWidget):
                 # Disable Cloud button in main window while connecting
                 self._set_main_cloud_button_connecting(True)
                 self._perform_auto_connect_google_drive()
-            elif active_provider == 'ftp' and self.cloud_settings.get('ftp_auto_connect', False):
+            elif active_provider == 'ftp':
                 ftp_host = self.cloud_settings.get('ftp_host', '')
                 if ftp_host:
                     logging.info(f"Auto-connect on startup enabled, connecting to FTP ({ftp_host})...")
                     self._connect_to_ftp()
-            elif active_provider == 'smb' and self.cloud_settings.get('smb_auto_connect', False):
+                else:
+                    logging.warning("Auto-connect enabled but FTP host not configured")
+            elif active_provider == 'smb':
                 smb_path = self.cloud_settings.get('smb_path', '')
                 if smb_path:
                     logging.info(f"Auto-connect on startup enabled, connecting to SMB ({smb_path})...")
                     self._connect_to_smb()
-            elif active_provider == 'webdav' and self.cloud_settings.get('webdav_auto_connect', False):
+                else:
+                    logging.warning("Auto-connect enabled but SMB path not configured")
+            elif active_provider == 'webdav':
                 webdav_url = self.cloud_settings.get('webdav_url', '')
                 if webdav_url:
                     logging.info(f"Auto-connect on startup enabled, connecting to WebDAV ({webdav_url})...")
                     self._connect_to_webdav()
+                else:
+                    logging.warning("Auto-connect enabled but WebDAV URL not configured")
             else:
-                logging.debug(f"Auto-connect enabled but no valid configuration for provider: {active_provider}")
+                logging.debug(f"Auto-connect enabled but unknown provider: {active_provider}")
             return
 
         # If auto-connect is off but auto-sync-on-startup is enabled, do a one-off connect->sync->disconnect
