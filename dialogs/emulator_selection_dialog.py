@@ -51,7 +51,25 @@ class EmulatorGameSelectionDialog(QDialog):
              item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable) # Make it unselectable
              self.profile_list_widget.addItem(item)
         else:
+            current_label = None
             for profile_data in self.profile_data_list:
+                item_label = profile_data.get('label')
+                
+                # Check for label change to insert separator/header
+                if item_label and item_label != current_label:
+                    separator_text = f"--- {item_label} ---"
+                    sep_item = QListWidgetItem(separator_text)
+                    sep_item.setFlags(sep_item.flags() & ~Qt.ItemFlag.ItemIsSelectable) # Make it unselectable
+                    sep_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    
+                    # Make it bold
+                    font = sep_item.font()
+                    font.setBold(True)
+                    sep_item.setFont(font)
+                    
+                    self.profile_list_widget.addItem(sep_item)
+                    current_label = item_label
+
                 profile_id = profile_data.get('id', 'Unknown ID') # Get the ID to display
                 display_name = profile_data.get('name', profile_id) # Use name, fallback to ID
                 item = QListWidgetItem(display_name) # Display the name (or ID)

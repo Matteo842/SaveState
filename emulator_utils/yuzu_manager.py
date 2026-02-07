@@ -301,7 +301,11 @@ def scan_yuzu_save_directory(save_root_dir: str, game_title_map: dict, folder_la
                                 log.warning(f"      Could not determine game name for {title_id_upper} from map or NACP. Using fallback.")
 
                             # Add folder label to distinguish between Eden and Yuzu folders
-                            display_name = f"{game_name} ({folder_label})" if folder_label else game_name
+                            # User request: Only show label for Yuzu folders. Eden folder (default) should have no label.
+                            if folder_label == "Eden Folder":
+                                display_name = game_name
+                            else:
+                                display_name = f"{game_name} ({folder_label})" if folder_label else game_name
                             
                             # Use a unique ID that includes the folder label to avoid deduplication
                             unique_id = f"{title_id_upper}_{folder_label.replace(' ', '_')}" if folder_label else title_id_upper
@@ -310,7 +314,8 @@ def scan_yuzu_save_directory(save_root_dir: str, game_title_map: dict, folder_la
                                 'id': unique_id,
                                 'paths': [title_id_path],
                                 'name': display_name,
-                                'title_id': title_id_upper  # Keep original title ID for reference
+                                'title_id': title_id_upper,  # Keep original title ID for reference
+                                'label': folder_label
                             }
                             profiles.append(profile)
                             found_count += 1
