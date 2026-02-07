@@ -77,7 +77,7 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     },
     'eden': {
         'name': 'Eden',
-        'profile_finder': lambda path: find_yuzu_profiles(path)  # Eden usa lo stesso codice di Yuzu
+        'profile_finder': lambda path: find_yuzu_profiles(path, is_eden=True)  # Eden checks Eden folder first, then falls back to Yuzu
     },
     'citron': {
         'name': 'Citron',
