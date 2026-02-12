@@ -69,14 +69,19 @@ jobs:
 
         # 2. Comando Nuitka Finale
         # Rimosso: --nofollow-import-to
+        # Metadata e --onefile-no-compression aggiunti per ridurre falsi positivi AV
         
         python -m nuitka --onefile --standalone `
           --enable-plugin=pyside6 `
           --windows-console-mode=disable `
+          --onefile-no-compression `
           --company-name="SaveState[OSS]" `
           --product-name="SaveState" `
+          --file-description="SaveState - Game Save Backup Manager. Open source tool for backing up and restoring video game saves." `
           --file-version="$cleanVersion" `
           --product-version="$cleanVersion" `
+          --copyright="Copyright (C) 2024-2026 Matteo842 - Licensed under GPL-3.0 - https://github.com/Matteo842/SaveState" `
+          --trademark="SaveState is free and open source software distributed under the GNU General Public License v3.0" `
           --windows-icon-from-ico=icon.ico `
           --output-dir=dist `
           --output-filename=SaveState.exe `
