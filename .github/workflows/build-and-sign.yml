@@ -71,7 +71,7 @@ jobs:
         # Rimosso: --nofollow-import-to
         # Metadata e --onefile-no-compression aggiunti per ridurre falsi positivi AV (non più)
         
-        python -m nuitka ----standalone --standalone `
+        python -m nuitka --standalone `
           --enable-plugin=pyside6 `
           --windows-console-mode=disable `
           --company-name="SaveState[OSS]" `
