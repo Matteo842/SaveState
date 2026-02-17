@@ -129,7 +129,7 @@ class NotePopupWidget(QWidget):
         if self._is_dark_mode:
             self.setStyleSheet("""
                 NotePopupWidget {
-                    background-color: rgba(25, 25, 25, 153);
+                    background-color: rgba(25, 25, 25, 170);
                     border: 1px solid rgba(120, 120, 120, 120);
                     border-radius: 8px;
                 }
@@ -137,14 +137,14 @@ class NotePopupWidget(QWidget):
             self.text_edit.setStyleSheet("""
                 QTextEdit {
                     background-color: transparent;
-                    color: rgba(220, 220, 220, 200);
+                    color: rgba(255, 255, 255, 255);
                     border: none;
                     font-size: 10pt;
                 }
                 QTextEdit QScrollBar { width: 0px; height: 0px; }
             """)
             self.header_label.setStyleSheet(
-                "color: rgba(180, 180, 180, 200); font-weight: bold; font-size: 9pt;")
+                "color: rgba(255, 255, 255, 255); font-weight: bold; font-size: 9pt;")
         else:
             self.setStyleSheet("""
                 NotePopupWidget {
@@ -156,14 +156,14 @@ class NotePopupWidget(QWidget):
             self.text_edit.setStyleSheet("""
                 QTextEdit {
                     background-color: transparent;
-                    color: rgba(40, 40, 40, 200);
+                    color: rgba(0, 0, 0, 255);
                     border: none;
                     font-size: 10pt;
                 }
                 QTextEdit QScrollBar { width: 0px; height: 0px; }
             """)
             self.header_label.setStyleSheet(
-                "color: rgba(80, 80, 80, 200); font-weight: bold; font-size: 9pt;")
+                "color: rgba(0, 0, 0, 255); font-weight: bold; font-size: 9pt;")
 
     def _apply_edit_style(self):
         """Solid, editable mode with Save/Cancel buttons."""
@@ -579,6 +579,8 @@ class ProfileListManager:
         # Scroll: reposition note overlays and hide popup
         self.table_widget.verticalScrollBar().valueChanged.connect(self._reposition_note_overlays)
         self.table_widget.verticalScrollBar().valueChanged.connect(lambda: self._dismiss_note_popup_if_preview())
+        # Resize: reposition buttons when columns are resized
+        self.table_widget.horizontalHeader().sectionResized.connect(self._reposition_note_overlays)
 
         # Set Custom Delegate with current theme and table reference for multi-selection
         is_dark = (current_theme == 'dark')
@@ -1184,8 +1186,10 @@ class ProfileListManager:
         self._reposition_note_overlays()
 
     def _reposition_note_overlays(self):
-        """Reposition all note overlay buttons based on current scroll and column positions."""
+        """Reposition all note overlay buttons at the far right of the name column."""
         viewport = self.table_widget.viewport()
+        if not viewport:
+            return
         viewport_rect = viewport.rect()
 
         for btn in self._note_overlay_buttons:
@@ -1207,9 +1211,10 @@ class ProfileListManager:
                 btn.hide()
                 continue
 
-            # Position: right side of column 1, vertically centered
+            # Position: always at the far right edge of the column 1
             btn_x = item_rect.right() - btn.width() - 4
             btn_y = item_rect.top() + (item_rect.height() - btn.height()) // 2
+            
             btn.move(btn_x, btn_y)
             btn.show()
             btn.raise_()
