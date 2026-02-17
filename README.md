@@ -46,6 +46,7 @@ Sync your saves across devices with multiple cloud storage options:
 | **WebDAV** | Connect to any WebDAV server (Nextcloud, ownCloud, etc.) |
 | **FTP/FTPS** | Traditional FTP with optional TLS/SSL encryption |
 | **SMB/Network Folder** | Windows network shares and NAS devices |
+| **Git** | Local Git repository with optional push/pull to GitHub, GitLab, etc. |
 
 **Features:**
 - **Upload, download, and sync** your backups to the cloud

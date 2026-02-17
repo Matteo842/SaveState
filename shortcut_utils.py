@@ -242,27 +242,37 @@ def create_backup_shortcut(profile_name):
             # L'eseguibile gestisce direttamente --backup, non serve backup_runner.py
             if is_nuitka():
                 logging.info("Nuitka packaged mode detected.")
+                # IMPORTANT: In Nuitka onefile mode, sys.executable points to the
+                # temporary extraction folder (e.g. AppData\Local\Temp\ONEFIL~1\...)
+                # which is deleted when the app exits. sys.argv[0] gives the path
+                # to the actual .exe file on disk.
+                original_exe = os.path.abspath(sys.argv[0])
+                target_exe = original_exe
+                working_dir = os.path.dirname(original_exe)
+                logging.info(f"  Nuitka original exe path (from sys.argv[0]): {target_exe}")
+                logging.debug(f"  (sys.executable was: {sys.executable})")
             else:
                 logging.info("PyInstaller packaged mode detected.")
+                target_exe = sys.executable  # PyInstaller: sys.executable is the actual .exe
+                working_dir = os.path.dirname(target_exe)
             
-            target_exe = sys.executable  # L'eseguibile SaveState.exe stesso
             arguments = f'--backup "{profile_name}"'  # Passa l'argomento che capisce __main__
-            working_dir = os.path.dirname(target_exe)
         else:
-            # Modalità Script (.py) - serve backup_runner.py
+            # Modalità Script (.py) - usa main.py come entry point
+            # main.py gestisce --backup e chiama backup_runner.run_silent_backup()
             logging.info("Script mode (py) detected.")
             
-            # Cerca lo script runner (serve solo in modalità script)
-            logging.debug("Searching for runner script (script mode only)...")
-            runner_script_path = ""
+            # Cerca main.py (il vero entry point dell'applicazione)
+            logging.debug("Searching for main.py script (script mode)...")
+            main_script_path = ""
             try:
-                runner_script_path = resource_path("backup_runner.py")
-                if not os.path.exists(runner_script_path):
-                    raise FileNotFoundError(f"backup_runner.py not found at {runner_script_path}")
-                logging.info(f"Runner script path found: {runner_script_path}")
+                main_script_path = resource_path("main.py")
+                if not os.path.exists(main_script_path):
+                    raise FileNotFoundError(f"main.py not found at {main_script_path}")
+                logging.info(f"Main script path found: {main_script_path}")
             except Exception as e_path:
-                logging.error(f"Error in determining runner script path 'backup_runner.py': {e_path}", exc_info=True)
-                msg = f"Unable to determine/find the script ('backup_runner.py') needed for the shortcut.\nVerify that it exists in the project directory.\n({e_path})"
+                logging.error(f"Error in determining main script path 'main.py': {e_path}", exc_info=True)
+                msg = f"Unable to determine/find the script ('main.py') needed for the shortcut.\nVerify that it exists in the project directory.\n({e_path})"
                 return False, msg
             
             # Trova l'interprete pythonw.exe o python.exe
@@ -272,9 +282,9 @@ def create_backup_shortcut(profile_name):
             if interpreter_exe == python_exe:
                 logging.warning("pythonw.exe not found, I use python.exe (a console might appear).")
             target_exe = interpreter_exe  # L'interprete Python
-            # L'interprete Python ha bisogno dello script runner come primo argomento
-            arguments = f'"{runner_script_path}" --backup "{profile_name}"'
-            working_dir = os.path.dirname(runner_script_path)
+            # main.py gestisce --backup direttamente
+            arguments = f'"{main_script_path}" --backup "{profile_name}"'
+            working_dir = os.path.dirname(main_script_path)
 
         logging.debug(f"  Target EXE: {target_exe}")
         logging.debug(f"  Argomenti: {arguments}")

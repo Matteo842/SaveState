@@ -12,9 +12,10 @@ import glob
 from config import SHARED_MEM_KEY, LOCAL_SERVER_NAME
 
 # --- Minimal PySide6 Imports for Single Instance Check ---
-# These are imported early for fast single-instance detection
-from PySide6.QtCore import QSharedMemory
-from PySide6.QtNetwork import QLocalSocket, QLocalServer
+# These are deferred to GUI mode only (not needed for --backup silent mode)
+# Importing at module level was causing silent failures with pythonw.exe shortcuts
+# from PySide6.QtCore import QSharedMemory
+# from PySide6.QtNetwork import QLocalSocket, QLocalServer
 
 try:
     import pyi_splash  # type: ignore # This module only exists when the app is packaged with PyInstaller
@@ -80,6 +81,14 @@ def cleanup_stale_qt_ipc_artifacts(local_server_name: str, shared_memory_key: st
     persist after crashes.
     """
     if platform.system() != "Linux":
+        return
+
+    # Import PySide6 here since this function is only called from GUI mode
+    try:
+        from PySide6.QtCore import QSharedMemory
+        from PySide6.QtNetwork import QLocalServer
+    except ImportError:
+        logging.debug("PySide6 not available for IPC cleanup, skipping.")
         return
 
     try:
@@ -322,6 +331,10 @@ if __name__ == "__main__":
         # IMPORTANT: Do single-instance check BEFORE importing heavy modules!
         # This makes launching a second instance much faster.
         logging.debug("GUI mode. Performing fast single-instance check...")
+
+        # --- Import PySide6 for single-instance check (only in GUI mode) ---
+        from PySide6.QtCore import QSharedMemory
+        from PySide6.QtNetwork import QLocalSocket, QLocalServer
 
         # --- Single Instance Logic ---
         shared_memory = None # Initialize to None
