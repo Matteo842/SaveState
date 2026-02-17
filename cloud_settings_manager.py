@@ -63,7 +63,16 @@ def load_cloud_settings() -> dict:
         'webdav_username': '',
         'webdav_verify_ssl': True,
         'webdav_use_digest': False,
-        'webdav_auto_connect': False
+        'webdav_auto_connect': False,
+        
+        # Git settings
+        'git_enabled': False,
+        'git_repo_path': '',
+        'git_remote_url': '',
+        'git_branch': 'main',
+        'git_auto_push': True,
+        'git_auto_pull': True,
+        'git_auto_connect': False
     }
     
     try:

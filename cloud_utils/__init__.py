@@ -8,6 +8,7 @@ Supported providers:
 - SMB/Network Folder (native filesystem)
 - FTP/FTPS (via ftplib)
 - WebDAV (via requests)
+- Git (local repo + optional remote push/pull)
 """
 
 from cloud_utils.storage_provider import StorageProvider, ProviderType

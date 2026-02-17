@@ -653,6 +653,7 @@ class CloudSavePanel(QWidget):
         self.provider_combo.addItem("Network Folder", "smb")
         self.provider_combo.addItem("FTP Server", "ftp")
         self.provider_combo.addItem("WebDAV", "webdav")
+        self.provider_combo.addItem("Git Repository", "git")
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
         self.provider_combo.setMinimumWidth(140)
         toolbar_row.addWidget(self.provider_combo)
@@ -711,7 +712,8 @@ class CloudSavePanel(QWidget):
             "Disconnect", 
             "Connect to FTP Server", 
             "Connect to Network Folder",
-            "Connect to WebDAV"
+            "Connect to WebDAV",
+            "Connect to Git"
         ]
         max_disconnect_width = max(font_metrics.horizontalAdvance(t) for t in disconnect_texts) + 50
         self.disconnect_button.setFixedWidth(max_disconnect_width)
@@ -1591,7 +1593,7 @@ class CloudSavePanel(QWidget):
             else:
                 self.connect_button.setText("Connect to Google Drive")
         else:
-            # For FTP/SMB/WebDAV, hide the connect button (they only use disconnect button)
+            # For FTP/SMB/WebDAV/Git, hide the connect button (they only use disconnect button)
             self.connect_button.setVisible(False)
     
     def _update_connection_status_for_provider(self, provider_type):
@@ -1669,6 +1671,27 @@ class CloudSavePanel(QWidget):
                 self.connection_status_label.setStyleSheet("color: #AAAAAA;")
                 self.disconnect_button.setEnabled(False)
                 self.disconnect_button.setText("Disconnect")
+        elif provider_type == "git":
+            try:
+                from cloud_utils.git_provider import GitProvider
+                from cloud_utils.provider_factory import ProviderFactory, ProviderType
+                
+                git_provider = ProviderFactory.get_provider(ProviderType.GIT)
+                if git_provider and git_provider.is_connected:
+                    self.connection_status_label.setText("● Connected")
+                    self.connection_status_label.setStyleSheet("color: #55FF55;")
+                    self.disconnect_button.setEnabled(True)
+                    self.disconnect_button.setText("Disconnect")
+                else:
+                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setStyleSheet("color: #FF5555;")
+                    self.disconnect_button.setEnabled(True)
+                    self.disconnect_button.setText("Connect to Git")
+            except ImportError:
+                self.connection_status_label.setText("● Not Available")
+                self.connection_status_label.setStyleSheet("color: #AAAAAA;")
+                self.disconnect_button.setEnabled(False)
+                self.disconnect_button.setText("Disconnect")
         else:
             self.connection_status_label.setText("● Not Connected")
             self.connection_status_label.setStyleSheet("color: #FF5555;")
@@ -1711,6 +1734,8 @@ class CloudSavePanel(QWidget):
             self._show_ftp_config_dialog()
         elif provider_type == "webdav":
             self._show_webdav_config_dialog()
+        elif provider_type == "git":
+            self._show_git_config_dialog()
     
     def _show_smb_config_dialog(self):
         """Show the SMB configuration dialog."""
@@ -2004,6 +2029,93 @@ class CloudSavePanel(QWidget):
                 f"Error connecting to WebDAV server:\n{str(e)}"
             )
     
+    def _show_git_config_dialog(self):
+        """Show the Git configuration dialog."""
+        try:
+            from cloud_utils.git_config_dialog import GitConfigDialog
+            
+            current_config = {
+                'git_repo_path': self.cloud_settings.get('git_repo_path', ''),
+                'git_branch': self.cloud_settings.get('git_branch', 'main'),
+                'git_remote_url': self.cloud_settings.get('git_remote_url', ''),
+                'git_auto_push': self.cloud_settings.get('git_auto_push', True),
+                'git_auto_pull': self.cloud_settings.get('git_auto_pull', True),
+                'git_auto_connect': self.cloud_settings.get('git_auto_connect', False)
+            }
+            
+            dialog = GitConfigDialog(self, current_config)
+            dialog.config_saved.connect(self._on_git_config_saved)
+            dialog.exec()
+            
+        except Exception as e:
+            logging.error(f"Error showing Git config dialog: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Could not open configuration dialog:\n{str(e)}"
+            )
+    
+    def _on_git_config_saved(self, config):
+        """Handle Git configuration saved."""
+        logging.info(f"Git configuration saved: {config}")
+        self.cloud_settings.update(config)
+        cloud_settings_manager.save_cloud_settings(self.cloud_settings)
+        if config.get('git_auto_connect') and config.get('git_repo_path'):
+            self._connect_to_git()
+    
+    def _connect_to_git(self):
+        """Connect to the configured Git repository."""
+        try:
+            from cloud_utils.git_provider import GitProvider
+            from cloud_utils.provider_factory import ProviderFactory, ProviderType
+            
+            repo_path = self.cloud_settings.get('git_repo_path', '')
+            if not repo_path:
+                logging.info("Git not configured, opening config dialog")
+                self._show_git_config_dialog()
+                return
+            
+            git_provider = ProviderFactory.get_provider(ProviderType.GIT)
+            if not git_provider:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    "Git provider is not available. Ensure Git is installed."
+                )
+                return
+            
+            success = git_provider.connect(
+                repo_path=repo_path,
+                remote_url=self.cloud_settings.get('git_remote_url', '') or None,
+                branch=self.cloud_settings.get('git_branch', 'main'),
+                auto_push=self.cloud_settings.get('git_auto_push', True),
+                auto_pull=self.cloud_settings.get('git_auto_pull', True)
+            )
+            
+            if success:
+                self.connection_status_label.setText("● Connected")
+                self.connection_status_label.setStyleSheet("color: #55FF55;")
+                self.disconnect_button.setText("Disconnect")
+                self.disconnect_button.setEnabled(True)
+                self.refresh_local_backups()
+                self._refresh_cloud_status()
+                logging.info(f"Connected to Git: {repo_path}")
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Connection Failed",
+                    f"Could not connect to repository:\n{repo_path}\n\n"
+                    "Ensure Git is installed and the path is valid."
+                )
+                
+        except Exception as e:
+            logging.error(f"Error connecting to Git: {e}")
+            QMessageBox.critical(
+                self,
+                "Connection Error",
+                f"Error connecting to Git repository:\n{str(e)}"
+            )
+    
     def _on_connect_or_logout_clicked(self):
         """Handle Connect button click - acts as Connect or Logout depending on state."""
         provider_type = self.provider_combo.currentData()
@@ -2113,6 +2225,39 @@ class CloudSavePanel(QWidget):
             else:
                 # Connect
                 self._connect_to_webdav()
+        elif provider_type == "git":
+            # Git connection logic
+            from cloud_utils.provider_factory import ProviderFactory, ProviderType
+            git_provider = ProviderFactory.get_provider(ProviderType.GIT)
+            
+            if git_provider and git_provider.is_connected:
+                # Disconnect
+                git_provider.disconnect()
+                self.connection_status_label.setText("● Not Connected")
+                self.connection_status_label.setStyleSheet("color: #FF5555;")
+                self.disconnect_button.setText("Connect to Git")
+                self.disconnect_button.setEnabled(True)
+                
+                # Disable action buttons
+                self.upload_button.setEnabled(False)
+                self.download_button.setEnabled(False)
+                self.delete_button.setEnabled(False)
+                self.delete_button.setStyleSheet("""
+                    QPushButton {
+                        background-color: #555555;
+                        color: #888888;
+                        border: 1px solid #444444;
+                    }
+                    QPushButton:hover {
+                        background-color: #555555;
+                        color: #888888;
+                    }
+                """)
+                
+                self._repopulate_table()
+            else:
+                # Connect
+                self._connect_to_git()
         else:
             QMessageBox.information(
                 self,
@@ -2437,6 +2582,8 @@ class CloudSavePanel(QWidget):
                     self.disconnect_button.setText("Connect to FTP Server")
                 elif provider_type == "webdav":
                     self.disconnect_button.setText("Connect to WebDAV")
+                elif provider_type == "git":
+                    self.disconnect_button.setText("Connect to Git")
                 
                 self.disconnect_button.setEnabled(True)
                 self.connection_status_label.setText("● Not Connected")
@@ -2483,6 +2630,11 @@ class CloudSavePanel(QWidget):
                     self.disconnect_button.setEnabled(True)
                     self.connection_status_label.setText("● Not Connected")
                     self.connection_status_label.setStyleSheet("color: #FF5555;")
+                elif provider_type == "git":
+                    self.disconnect_button.setText("Connect to Git")
+                    self.disconnect_button.setEnabled(True)
+                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setStyleSheet("color: #FF5555;")
                 
                 self._repopulate_table()
             else:
@@ -2493,6 +2645,8 @@ class CloudSavePanel(QWidget):
                     self._connect_to_smb()
                 elif provider_type == "webdav":
                     self._connect_to_webdav()
+                elif provider_type == "git":
+                    self._connect_to_git()
     
     def _on_logout_clicked(self):
         """Handle logout - delete token file and disconnect."""
@@ -3505,6 +3659,13 @@ class CloudSavePanel(QWidget):
                     self._connect_to_webdav()
                 else:
                     logging.warning("Auto-connect enabled but WebDAV URL not configured")
+            elif active_provider == 'git':
+                git_repo_path = self.cloud_settings.get('git_repo_path', '')
+                if git_repo_path:
+                    logging.info(f"Auto-connect on startup enabled, connecting to Git ({git_repo_path})...")
+                    self._connect_to_git()
+                else:
+                    logging.warning("Auto-connect enabled but Git repo path not configured")
             else:
                 logging.debug(f"Auto-connect enabled but unknown provider: {active_provider}")
             return

@@ -17,6 +17,7 @@ class ProviderType(Enum):
     SMB = "smb"  # Network folder (Windows shares, NAS)
     FTP = "ftp"
     WEBDAV = "webdav"
+    GIT = "git"  # Git repository (local + optional remote push/pull)
 
 
 class StorageProvider(ABC):
@@ -41,6 +42,14 @@ class StorageProvider(ABC):
         
         # Bandwidth limiting (in Mbps, None = unlimited)
         self.bandwidth_limit_mbps: Optional[float] = None
+    
+    def set_progress_callback(self, callback: Optional[Callable[[int, int, str], None]]) -> None:
+        """Set the progress callback for file-level progress (current, total, message)."""
+        self.progress_callback = callback
+    
+    def set_chunk_callback(self, callback: Optional[Callable[[int, int], None]]) -> None:
+        """Set the chunk callback for byte-level progress (current_bytes, total_bytes)."""
+        self.chunk_callback = callback
     
     @property
     @abstractmethod

@@ -197,4 +197,11 @@ def register_all_providers() -> None:
     except ImportError:
         logging.debug("WebDAV provider not yet implemented")
     
+    # Git Provider
+    try:
+        from cloud_utils.git_provider import GitProvider
+        ProviderFactory.register_provider(ProviderType.GIT, GitProvider)
+    except ImportError as e:
+        logging.debug(f"Git provider not available: {e}")
+    
     logging.info(f"Registered {len(ProviderFactory._provider_registry)} storage providers")
