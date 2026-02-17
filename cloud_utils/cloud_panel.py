@@ -504,6 +504,17 @@ class CloudSavePanel(QWidget):
         self._sort_column = None  # Column index being sorted (1=State, 2=Profile, 3=Local, 4=Cloud)
         self._sort_ascending = True  # True = ascending (A-Z, ▲), False = descending (Z-A, ▼)
         
+        # --- Icon cache: load once at startup to avoid per-row disk I/O ---
+        self._icon_cache = {}  # key -> QPixmap (scaled)
+        self._checkmark_style = ""  # cached checkmark style for checkboxes
+        self._preload_icons()
+        
+        # Debounce timer for _repopulate_table to avoid rapid successive rebuilds
+        self._repopulate_timer = QTimer(self)
+        self._repopulate_timer.setSingleShot(True)
+        self._repopulate_timer.setInterval(50)  # 50ms debounce
+        self._repopulate_timer.timeout.connect(self._do_repopulate_table)
+        
         # Use stacked widget to switch between main panel and settings
         self.stacked_widget = QStackedWidget(self)
         
@@ -531,6 +542,27 @@ class CloudSavePanel(QWidget):
         # Load cloud settings from disk
         self._load_cloud_settings_from_disk()
         
+    def _preload_icons(self):
+        """Pre-load and cache all icons used in the backup table to avoid per-row disk I/O."""
+        try:
+            # Cache state icons (32x32 scaled)
+            for icon_name in ("cloud_local.png", "local.png", "cloud.png"):
+                icon_path = resource_path(f"icons/{icon_name}")
+                if os.path.exists(icon_path):
+                    pixmap = QPixmap(icon_path)
+                    self._icon_cache[icon_name] = pixmap.scaled(
+                        32, 32,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+
+            # Cache checkmark style for checkboxes
+            checkmark_path = resource_path("icons/checkmark.png")
+            if os.path.exists(checkmark_path):
+                self._checkmark_style = f"image: url({checkmark_path});"
+        except Exception as e:
+            logging.warning(f"Error preloading icons: {e}")
+
     def _load_cloud_settings_from_disk(self):
         """Load cloud settings from disk on initialization."""
         try:
@@ -966,7 +998,19 @@ class CloudSavePanel(QWidget):
             self.backup_table.setHorizontalHeaderItem(i, QTableWidgetItem(label))
 
     def _repopulate_table(self):
+        """Schedule a debounced table repopulation (avoids rapid successive rebuilds)."""
+        self._repopulate_timer.start()  # restarts the 50ms timer on each call
+
+    def _do_repopulate_table(self):
         """Refresh the table UI using cached local data and cloud data (no disk I/O)."""
+        # Disable UI updates during bulk population to prevent per-row redraws
+        self.backup_table.setUpdatesEnabled(False)
+        try:
+            self._do_repopulate_table_inner()
+        finally:
+            self.backup_table.setUpdatesEnabled(True)
+
+    def _do_repopulate_table_inner(self):
         self.backup_table.setRowCount(0)
         self.local_backups.clear()
         
@@ -1182,18 +1226,8 @@ class CloudSavePanel(QWidget):
         checkbox_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         checkbox = QCheckBox()
-        # Custom checkbox styling - larger and more modern
-        # Try to use checkmark icon if available, otherwise use Unicode checkmark
-        try:
-            from utils import resource_path
-            checkmark_path = resource_path("icons/checkmark.png")
-            if os.path.exists(checkmark_path):
-                checkmark_style = f"image: url({checkmark_path});"
-            else:
-                # Fallback: use a simple filled square
-                checkmark_style = ""
-        except Exception:
-            checkmark_style = ""
+        # Use pre-cached checkmark style (loaded once at startup)
+        checkmark_style = self._checkmark_style
         
         checkbox.setStyleSheet(f"""
             QCheckBox {{
@@ -1248,28 +1282,17 @@ class CloudSavePanel(QWidget):
             icon_name = None
             tooltip = "Unknown state"
         
-        # Create icon label
+        # Create icon label - use pre-cached icons
         if icon_name:
-            try:
-                from utils import resource_path
-                icon_path = resource_path(f"icons/{icon_name}")
-                if os.path.exists(icon_path):
-                    icon_label = QLabel()
-                    icon_label.setStyleSheet("background-color: transparent;")  # Transparent background
-                    pixmap = QPixmap(icon_path)
-                    # Scale icon to fit nicely (24x24 pixels for better visibility)
-                    scaled_pixmap = pixmap.scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                    icon_label.setPixmap(scaled_pixmap)
-                    icon_label.setToolTip(tooltip)
-                    state_layout.addWidget(icon_label)
-                else:
-                    # Fallback to text if icon not found
-                    text_label = QLabel("Both" if has_local and has_cloud else ("Local" if has_local else "Cloud"))
-                    text_label.setToolTip(tooltip)
-                    state_layout.addWidget(text_label)
-            except Exception as e:
-                logging.warning(f"Error loading state icon: {e}")
-                # Fallback to text
+            cached_pixmap = self._icon_cache.get(icon_name)
+            if cached_pixmap:
+                icon_label = QLabel()
+                icon_label.setStyleSheet("background-color: transparent;")
+                icon_label.setPixmap(cached_pixmap)
+                icon_label.setToolTip(tooltip)
+                state_layout.addWidget(icon_label)
+            else:
+                # Fallback to text if icon not found in cache
                 text_label = QLabel("Both" if has_local and has_cloud else ("Local" if has_local else "Cloud"))
                 text_label.setToolTip(tooltip)
                 state_layout.addWidget(text_label)
