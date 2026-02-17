@@ -2041,8 +2041,24 @@ class MainWindow(QMainWindow):
                     act_ungroup.triggered.connect(self.handlers.handle_ungroup)
                     act_shortcut.triggered.connect(self.handlers.handle_create_shortcut)
                     
+                    # Add/Edit Note action for groups
+                    profile_name_for_note = self.profile_table_manager.get_selected_profile_name()
+                    from gui_components import notes_manager
+                    has_note = notes_manager.has_note(profile_name_for_note) if profile_name_for_note else False
+                    act_note = QAction("Edit Note" if has_note else "Add Note", self)
+                    act_note.setToolTip("Add or edit a text note for this profile")
+                    try:
+                        note_icon_path = resource_path("icons/note.png")
+                        if os.path.exists(note_icon_path):
+                            act_note.setIcon(QIcon(note_icon_path))
+                    except Exception:
+                        pass
+                    act_note.triggered.connect(lambda: self.profile_table_manager.show_note_editor(profile_name_for_note))
+                    
                     menu.addAction(act_edit_group)
                     menu.addAction(act_ungroup)
+                    menu.addSeparator()
+                    menu.addAction(act_note)
                     menu.addSeparator()
                     menu.addAction(act_shortcut)
                 else:
@@ -2062,7 +2078,24 @@ class MainWindow(QMainWindow):
                     
                     act_edit.triggered.connect(self.handlers.handle_show_edit_profile)
                     act_shortcut.triggered.connect(self.handlers.handle_create_shortcut)
+                    
+                    # Add/Edit Note action
+                    profile_name_for_note = self.profile_table_manager.get_selected_profile_name()
+                    from gui_components import notes_manager
+                    has_note = notes_manager.has_note(profile_name_for_note) if profile_name_for_note else False
+                    act_note = QAction("Edit Note" if has_note else "Add Note", self)
+                    act_note.setToolTip("Add or edit a text note for this profile")
+                    try:
+                        note_icon_path = resource_path("icons/note.png")
+                        if os.path.exists(note_icon_path):
+                            act_note.setIcon(QIcon(note_icon_path))
+                    except Exception:
+                        pass
+                    act_note.triggered.connect(lambda: self.profile_table_manager.show_note_editor(profile_name_for_note))
+                    
                     menu.addAction(act_edit)
+                    menu.addSeparator()
+                    menu.addAction(act_note)
                     menu.addSeparator()
                     
                     # Add "Create Group" option when multiple profiles are selected

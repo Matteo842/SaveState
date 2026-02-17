@@ -3,18 +3,399 @@
 import logging
 import os
 from PySide6.QtWidgets import (QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, 
-                               QWidget, QHBoxLayout, QPushButton, QStyledItemDelegate, QStyleOptionViewItem, QStyle)
-from PySide6.QtCore import Qt, QLocale, Slot, QSize
-from PySide6.QtGui import QIcon, QColor, QPalette
+                               QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QStyledItemDelegate,
+                               QStyleOptionViewItem, QStyle, QTextEdit, QLabel, QApplication)
+from PySide6.QtCore import Qt, QLocale, Slot, QSize, Signal, QTimer, QPoint, QEvent
+from PySide6.QtGui import QIcon, QColor, QPalette, QPainter
 import core_logic
 import config
 
 # Import the new manager and utils
 from gui_components import favorites_manager # Assuming it's in gui_components
+from gui_components import notes_manager  # For profile notes
 from gui_components.empty_state_widget import EmptyStateWidget
 from gui_components import icon_extractor  # For game icon extraction
 from utils import resource_path # <--- Import from utils
 from gui_utils import open_folder_in_file_manager  # For opening folders cross-platform
+
+
+class NoteOverlayButton(QPushButton):
+    """Small floating button showing note icon, positioned over column 1 of a table row.
+    Emits signals on hover enter/leave for popup management."""
+    hover_entered = Signal(str)  # profile_name
+    hover_left = Signal()
+
+    def __init__(self, profile_name, parent=None):
+        super().__init__(parent)
+        self.profile_name = profile_name
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def enterEvent(self, event):
+        self.hover_entered.emit(self.profile_name)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.hover_left.emit()
+        super().leaveEvent(event)
+
+
+class NotePopupWidget(QWidget):
+    """Speech-bubble style popup for displaying and editing profile notes.
+    Two modes:
+    - Preview: semi-transparent with visible background, completely non-interactive
+              (mouse events pass through via WA_TransparentForMouseEvents)
+    - Edit: solid/opaque, editable text with Save/Cancel buttons
+    """
+    note_saved = Signal(str, str)  # profile_name, note_text
+
+    def __init__(self, parent=None, is_dark_mode=True):
+        super().__init__(parent)
+        self._profile_name = ""
+        self._original_text = ""  # For cancel/discard
+        self._edit_mode = False
+        self._is_dark_mode = is_dark_mode
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.setInterval(350)  # ms delay before hiding in preview mode
+        self._hide_timer.timeout.connect(self._do_hide)
+        self._event_filter_installed = False
+
+        # Setup UI
+        self.setFixedWidth(380)
+        self.setMinimumHeight(80)
+        self.setMaximumHeight(320)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(4)
+
+        # Header label
+        self.header_label = QLabel()
+        layout.addWidget(self.header_label)
+
+        # Text area for note content
+        self.text_edit = QTextEdit()
+        self.text_edit.setPlaceholderText("Write your note here...")
+        self.text_edit.setMinimumHeight(50)
+        self.text_edit.setMaximumHeight(220)
+        self.text_edit.setAcceptRichText(False)  # Plain text only
+        layout.addWidget(self.text_edit)
+
+        # Save & Cancel button row (visible only in edit mode) - INSIDE the popup box
+        self.button_row = QWidget()
+        btn_layout = QHBoxLayout(self.button_row)
+        btn_layout.setContentsMargins(0, 6, 0, 2)
+        btn_layout.setSpacing(8)
+        btn_layout.addStretch(1)
+
+        self.cancel_button = QPushButton("Cancel \u2717")
+        self.cancel_button.setFixedHeight(28)
+        self.cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cancel_button.clicked.connect(self.cancel_and_close)
+        btn_layout.addWidget(self.cancel_button)
+
+        self.save_close_button = QPushButton("Save \u2713")
+        self.save_close_button.setFixedHeight(28)
+        self.save_close_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.save_close_button.clicked.connect(self.save_and_close)
+        btn_layout.addWidget(self.save_close_button)
+
+        layout.addWidget(self.button_row)
+        self.button_row.hide()  # Hidden in preview mode
+
+        self.hide()  # Start hidden
+        self._apply_style()
+
+    def set_dark_mode(self, is_dark: bool):
+        """Update the popup's theme mode."""
+        self._is_dark_mode = is_dark
+        self._apply_style()
+
+    def _apply_style(self):
+        """Apply styling based on current mode (preview/edit) and theme."""
+        if self._edit_mode:
+            self._apply_edit_style()
+        else:
+            self._apply_preview_style()
+
+    def _apply_preview_style(self):
+        """Semi-transparent preview: visible background (~35% alpha), completely non-interactive."""
+        self._edit_mode = False
+        self.text_edit.setReadOnly(True)
+        self.button_row.hide()
+        # Make the entire popup non-interactive - mouse events pass through
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.text_edit.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        if self._is_dark_mode:
+            self.setStyleSheet("""
+                NotePopupWidget {
+                    background-color: rgba(25, 25, 25, 153);
+                    border: 1px solid rgba(120, 120, 120, 120);
+                    border-radius: 8px;
+                }
+            """)
+            self.text_edit.setStyleSheet("""
+                QTextEdit {
+                    background-color: transparent;
+                    color: rgba(220, 220, 220, 200);
+                    border: none;
+                    font-size: 10pt;
+                }
+                QTextEdit QScrollBar { width: 0px; height: 0px; }
+            """)
+            self.header_label.setStyleSheet(
+                "color: rgba(180, 180, 180, 200); font-weight: bold; font-size: 9pt;")
+        else:
+            self.setStyleSheet("""
+                NotePopupWidget {
+                    background-color: rgba(240, 240, 240, 153);
+                    border: 1px solid rgba(140, 140, 140, 120);
+                    border-radius: 8px;
+                }
+            """)
+            self.text_edit.setStyleSheet("""
+                QTextEdit {
+                    background-color: transparent;
+                    color: rgba(40, 40, 40, 200);
+                    border: none;
+                    font-size: 10pt;
+                }
+                QTextEdit QScrollBar { width: 0px; height: 0px; }
+            """)
+            self.header_label.setStyleSheet(
+                "color: rgba(80, 80, 80, 200); font-weight: bold; font-size: 9pt;")
+
+    def _apply_edit_style(self):
+        """Solid, editable mode with Save/Cancel buttons."""
+        self._edit_mode = True
+        # Re-enable mouse interaction
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.text_edit.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextEditorInteraction)
+        self.text_edit.setReadOnly(False)
+        self.text_edit.setFocus()
+        self.button_row.show()
+        if self._is_dark_mode:
+            self.setStyleSheet("""
+                NotePopupWidget {
+                    background-color: rgba(30, 30, 30, 255);
+                    border: 2px solid #C4A000;
+                    border-radius: 8px;
+                }
+            """)
+            self.text_edit.setStyleSheet("""
+                QTextEdit {
+                    background-color: rgba(20, 20, 20, 255);
+                    color: #ffffff;
+                    border: 1px solid #555;
+                    border-radius: 4px;
+                    font-size: 10pt;
+                    padding: 4px;
+                }
+            """)
+            self.header_label.setStyleSheet("color: #ccc; font-weight: bold; font-size: 9pt;")
+            self.save_close_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #C4A000;
+                    color: #1a1a1a;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 16px;
+                    font-size: 9pt;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #D4B400;
+                }
+            """)
+            self.cancel_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #444;
+                    color: #ddd;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 16px;
+                    font-size: 9pt;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #555;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                NotePopupWidget {
+                    background-color: rgba(255, 255, 255, 255);
+                    border: 2px solid #007c8e;
+                    border-radius: 8px;
+                }
+            """)
+            self.text_edit.setStyleSheet("""
+                QTextEdit {
+                    background-color: rgba(250, 250, 250, 255);
+                    color: #1E1E1E;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    font-size: 10pt;
+                    padding: 4px;
+                }
+            """)
+            self.header_label.setStyleSheet("color: #333; font-weight: bold; font-size: 9pt;")
+            self.save_close_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #007c8e;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 16px;
+                    font-size: 9pt;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #009aad;
+                }
+            """)
+            self.cancel_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #ccc;
+                    color: #333;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 16px;
+                    font-size: 9pt;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #bbb;
+                }
+            """)
+
+    def show_for_profile(self, profile_name, note_text, pos, edit=False):
+        """Show the popup for a given profile at the specified position."""
+        self._hide_timer.stop()
+        self._profile_name = profile_name
+        self._original_text = note_text  # Store original for cancel
+        self.header_label.setText(f"\U0001f4dd {profile_name}")
+        self.text_edit.setPlainText(note_text)
+        if edit:
+            self._apply_edit_style()
+        else:
+            self._apply_preview_style()
+        self.adjustSize()
+        # Ensure popup stays within the parent widget bounds
+        if self.parent():
+            parent_rect = self.parent().rect()
+            x = min(pos.x(), parent_rect.width() - self.width() - 5)
+            y = min(pos.y(), parent_rect.height() - self.height() - 5)
+            x = max(5, x)
+            y = max(5, y)
+            self.move(x, y)
+        else:
+            self.move(pos)
+        self.show()
+        self.raise_()
+        # Install event filter to catch clicks outside the popup
+        if edit:
+            self._install_click_outside_filter()
+
+    def _install_click_outside_filter(self):
+        """Install event filter on the application to detect clicks outside."""
+        if not self._event_filter_installed:
+            app = QApplication.instance()
+            if app:
+                app.installEventFilter(self)
+                self._event_filter_installed = True
+
+    def _remove_click_outside_filter(self):
+        """Remove the click-outside event filter."""
+        if self._event_filter_installed:
+            app = QApplication.instance()
+            if app:
+                app.removeEventFilter(self)
+            self._event_filter_installed = False
+
+    def eventFilter(self, watched, event):
+        """Catch mouse clicks outside the popup to save and close."""
+        if event.type() == QEvent.Type.MouseButtonPress:
+            if self._edit_mode and self.isVisible():
+                # Use mapToGlobal for reliable position comparison
+                click_pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+                popup_tl = self.mapToGlobal(QPoint(0, 0))
+                popup_br = self.mapToGlobal(QPoint(self.width(), self.height()))
+                from PySide6.QtCore import QRect
+                popup_global_rect = QRect(popup_tl, popup_br)
+                if not popup_global_rect.contains(click_pos):
+                    self.save_and_close()
+                    return False  # Don't consume the click event
+        return super().eventFilter(watched, event)
+
+    def switch_to_edit_mode(self):
+        """Switch from preview to edit mode."""
+        self._hide_timer.stop()
+        if not self._edit_mode:
+            self._original_text = self.text_edit.toPlainText()
+            self._apply_edit_style()
+            self._install_click_outside_filter()
+
+    def schedule_hide(self):
+        """Schedule a delayed hide (for hover leave transitions)."""
+        if not self._edit_mode:
+            self._hide_timer.start()
+
+    def cancel_hide(self):
+        """Cancel any pending hide."""
+        self._hide_timer.stop()
+
+    def _do_hide(self):
+        """Actually hide the popup (called by timer)."""
+        if not self._edit_mode:
+            self.hide()
+
+    def save_and_close(self):
+        """Save the current note text and close the popup."""
+        self._remove_click_outside_filter()
+        if self._profile_name:
+            new_text = self.text_edit.toPlainText()
+            self.note_saved.emit(self._profile_name, new_text)
+        self._edit_mode = False
+        self._hide_timer.stop()
+        self.button_row.hide()
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.hide()
+
+    def cancel_and_close(self):
+        """Discard changes and close the popup without saving."""
+        self._remove_click_outside_filter()
+        self._edit_mode = False
+        self._hide_timer.stop()
+        self.button_row.hide()
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.hide()
+
+    @property
+    def is_edit_mode(self):
+        return self._edit_mode
+
+    @property
+    def current_profile(self):
+        return self._profile_name
+
+    def keyPressEvent(self, event):
+        """Handle Escape to cancel the popup."""
+        if event.key() == Qt.Key.Key_Escape:
+            self.cancel_and_close()
+        else:
+            super().keyPressEvent(event)
+
+    def paintEvent(self, event):
+        """Required override for QWidget subclasses to render stylesheet backgrounds.
+        Without this, background-color in stylesheets is completely ignored."""
+        from PySide6.QtWidgets import QStyleOption
+        opt = QStyleOption()
+        opt.initFrom(self)
+        p = QPainter(self)
+        self.style().drawPrimitive(QStyle.PrimitiveElement.PE_Widget, opt, p, self)
+        p.end()
 
 class ProfileSelectionDelegate(QStyledItemDelegate):
     """
@@ -135,6 +516,22 @@ class ProfileListManager:
         self.trash_icon_path = trash_icon_path if os.path.exists(trash_icon_path) else None
         # --- End Loading Icons ---
 
+        # --- Loading Note Icon ---
+        note_icon_path = resource_path("icons/note.png")
+        self.note_icon_path = note_icon_path if os.path.exists(note_icon_path) else None
+        if not self.note_icon_path:
+            logging.info("Note icon 'note.png' not found. Will use fallback text.")
+        # --- End Loading Note Icon ---
+
+        # --- Note Overlay System ---
+        self._note_overlay_buttons = []  # List of active NoteOverlayButton instances
+        current_theme = self.main_window.current_settings.get('theme', 'dark')
+        is_dark = (current_theme == 'dark')
+        # Create the shared note popup widget (child of main window for proper positioning)
+        self.note_popup = NotePopupWidget(parent=self.main_window, is_dark_mode=is_dark)
+        self.note_popup.note_saved.connect(self._on_note_saved)
+        # --- End Note Overlay System ---
+
         # --- Create Empty State Widget ---
         self.empty_state_widget = EmptyStateWidget()
         # Insert it into the same layout as the table widget
@@ -179,8 +576,11 @@ class ProfileListManager:
         # Repaint when selection changes (to switch between horizontal/vertical selection indicator)
         self.table_widget.itemSelectionChanged.connect(self._on_selection_changed)
         
+        # Scroll: reposition note overlays and hide popup
+        self.table_widget.verticalScrollBar().valueChanged.connect(self._reposition_note_overlays)
+        self.table_widget.verticalScrollBar().valueChanged.connect(lambda: self._dismiss_note_popup_if_preview())
+
         # Set Custom Delegate with current theme and table reference for multi-selection
-        current_theme = self.main_window.current_settings.get('theme', 'dark')
         is_dark = (current_theme == 'dark')
         self.delegate = ProfileSelectionDelegate(self.table_widget, is_dark_mode=is_dark, table_widget=self.table_widget)
         self.table_widget.setItemDelegate(self.delegate)
@@ -193,6 +593,12 @@ class ProfileListManager:
         current_theme = self.main_window.current_settings.get('theme', 'dark')
         is_dark = (current_theme == 'dark')
         self.delegate.set_dark_mode(is_dark)
+        # Update note popup theme
+        if hasattr(self, 'note_popup'):
+            self.note_popup.set_dark_mode(is_dark)
+        # Rebuild note overlays with updated theme
+        if hasattr(self, '_note_overlay_buttons'):
+            self._create_note_overlays()
         # Force a repaint of the table to apply the new colors
         self.table_widget.viewport().update()
 
@@ -442,6 +848,10 @@ class ProfileListManager:
         # Update button states AFTER populating the table
         self.main_window.update_action_button_states()
         
+        # --- Create note overlay buttons for profiles with notes ---
+        self._create_note_overlays()
+        # --- End note overlays ---
+
         logging.debug("Profile table update finished.")
 
     @Slot(int, int)
@@ -687,4 +1097,186 @@ class ProfileListManager:
             self.main_window.handlers.handle_delete_profile()
 
 
+    # ========================================================================
+    # NOTE OVERLAY SYSTEM
+    # ========================================================================
 
+    def _clear_note_overlays(self):
+        """Remove all existing note overlay buttons from the viewport."""
+        for btn in self._note_overlay_buttons:
+            try:
+                btn.hover_entered.disconnect()
+                btn.hover_left.disconnect()
+                btn.clicked.disconnect()
+                btn.deleteLater()
+            except Exception:
+                pass
+        self._note_overlay_buttons.clear()
+
+    def _create_note_overlays(self):
+        """Create floating note buttons for all rows that have notes.
+        Buttons are children of the table viewport, positioned over column 1."""
+        self._clear_note_overlays()
+
+        all_notes = notes_manager.load_notes()
+        if not all_notes:
+            return
+
+        current_theme = self.main_window.current_settings.get('theme', 'dark')
+        is_dark = (current_theme == 'dark')
+        hover_bg = "#353535" if is_dark else "#D0D0D0"
+
+        viewport = self.table_widget.viewport()
+
+        for row in range(self.table_widget.rowCount()):
+            name_item = self.table_widget.item(row, 1)
+            if not name_item:
+                continue
+            profile_name = name_item.data(Qt.ItemDataRole.UserRole)
+            if not profile_name or profile_name not in all_notes:
+                continue
+
+            # Create the note button as a child of the viewport
+            btn = NoteOverlayButton(profile_name, parent=viewport)
+            btn.setFlat(True)
+
+            # Set icon or fallback text
+            if self.note_icon_path and os.path.exists(self.note_icon_path):
+                btn.setIcon(QIcon(self.note_icon_path))
+                btn.setIconSize(QSize(18, 18))
+            else:
+                btn.setText("\U0001f4dd")
+
+            btn.setFixedSize(26, 26)
+            #btn.setToolTip(f"Note for '{profile_name}'")
+
+            # Transparent square button styling (matching delete button pattern)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    width: 26px;
+                    height: 26px;
+                    min-width: 26px;
+                    min-height: 26px;
+                    max-width: 26px;
+                    max-height: 26px;
+                    border-radius: 4px;
+                    border: none;
+                    background-color: transparent;
+                    padding: 0px;
+                    margin: 0px;
+                }}
+                QPushButton:hover {{
+                    background-color: {hover_bg};
+                }}
+            """)
+
+            # Connect signals
+            btn.hover_entered.connect(self._on_note_hover_enter)
+            btn.hover_left.connect(self._on_note_hover_leave)
+            btn.clicked.connect(lambda checked=False, pn=profile_name: self._on_note_button_clicked(pn))
+
+            # Store row index as a property for repositioning
+            btn.setProperty("row_index", row)
+            self._note_overlay_buttons.append(btn)
+            btn.show()
+
+        # Position all buttons correctly
+        self._reposition_note_overlays()
+
+    def _reposition_note_overlays(self):
+        """Reposition all note overlay buttons based on current scroll and column positions."""
+        viewport = self.table_widget.viewport()
+        viewport_rect = viewport.rect()
+
+        for btn in self._note_overlay_buttons:
+            row = btn.property("row_index")
+            if row is None:
+                btn.hide()
+                continue
+
+            # Get the visual rect for the name cell (column 1)
+            name_item = self.table_widget.item(row, 1)
+            if not name_item:
+                btn.hide()
+                continue
+
+            item_rect = self.table_widget.visualItemRect(name_item)
+
+            # Check if the row is visible in the viewport
+            if not viewport_rect.intersects(item_rect):
+                btn.hide()
+                continue
+
+            # Position: right side of column 1, vertically centered
+            btn_x = item_rect.right() - btn.width() - 4
+            btn_y = item_rect.top() + (item_rect.height() - btn.height()) // 2
+            btn.move(btn_x, btn_y)
+            btn.show()
+            btn.raise_()
+
+    def _get_popup_position(self, profile_name):
+        """Calculate the popup position in main window coordinates, below the note button."""
+        for btn in self._note_overlay_buttons:
+            if btn.profile_name == profile_name:
+                # Map button's bottom-left to main window coordinates
+                btn_bottom_left = btn.mapTo(self.main_window, QPoint(0, btn.height()))
+                return QPoint(btn_bottom_left.x() - 50, btn_bottom_left.y() + 4)
+        # Fallback: center of table mapped to main window
+        table_center = self.table_widget.mapTo(self.main_window,
+                                                QPoint(self.table_widget.width() // 3,
+                                                       self.table_widget.height() // 3))
+        return table_center
+
+    def _on_note_hover_enter(self, profile_name):
+        """Show note popup in preview mode when hovering the note button."""
+        # Don't interrupt edit mode on a different profile
+        if self.note_popup.isVisible() and self.note_popup.is_edit_mode:
+            return
+        self.note_popup.cancel_hide()
+        note_text = notes_manager.get_note(profile_name)
+        if note_text:
+            pos = self._get_popup_position(profile_name)
+            self.note_popup.show_for_profile(profile_name, note_text, pos, edit=False)
+
+    def _on_note_hover_leave(self):
+        """Schedule popup hide when mouse leaves the note button."""
+        if not self.note_popup.is_edit_mode:
+            self.note_popup.schedule_hide()
+
+    def _on_note_button_clicked(self, profile_name):
+        """Handle click on note button: toggle between edit mode and close."""
+        if self.note_popup.isVisible() and self.note_popup.current_profile == profile_name:
+            if self.note_popup.is_edit_mode:
+                # Already editing this profile - save and close
+                self.note_popup.save_and_close()
+            else:
+                # Preview mode - switch to edit
+                self.note_popup.switch_to_edit_mode()
+        else:
+            # Show popup in edit mode for this profile
+            if self.note_popup.isVisible():
+                self.note_popup.save_and_close()
+            note_text = notes_manager.get_note(profile_name)
+            pos = self._get_popup_position(profile_name)
+            self.note_popup.show_for_profile(profile_name, note_text, pos, edit=True)
+
+    def show_note_editor(self, profile_name):
+        """Public method: open the note popup in edit mode for a profile.
+        Called from context menu 'Add/Edit Note' action."""
+        if self.note_popup.isVisible():
+            self.note_popup.save_and_close()
+        note_text = notes_manager.get_note(profile_name)
+        pos = self._get_popup_position(profile_name)
+        self.note_popup.show_for_profile(profile_name, note_text, pos, edit=True)
+
+    def _on_note_saved(self, profile_name, note_text):
+        """Handle note_saved signal from the popup: persist and refresh overlays."""
+        notes_manager.set_note(profile_name, note_text)
+        logging.info(f"Note {'saved' if note_text.strip() else 'removed'} for profile '{profile_name}'.")
+        # Rebuild overlays to show/hide note icons
+        self._create_note_overlays()
+
+    def _dismiss_note_popup_if_preview(self):
+        """Dismiss the note popup if it's showing in preview mode (e.g. on scroll)."""
+        if self.note_popup.isVisible() and not self.note_popup.is_edit_mode:
+            self.note_popup.hide()
