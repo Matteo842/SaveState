@@ -6,11 +6,12 @@ import logging
 import shutil
 import zipfile
 import tempfile
+import threading
 import config
 
 from PySide6.QtWidgets import QMessageBox, QDialog, QInputDialog, QApplication, QFileDialog
 from PySide6.QtCore import Slot, QUrl, QPropertyAnimation, QTimer, Qt
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QIcon
 
 # Import dialogs
 from dialogs.settings_dialog import SettingsDialog
@@ -25,7 +26,7 @@ import settings_manager
 import shortcut_utils
 import config
 from gui_utils import WorkerThread, SteamSearchWorkerThread, open_folder_in_file_manager
-from utils import sanitize_filename
+from utils import sanitize_filename, resource_path
 
 
 class MainWindowHandlers:
@@ -33,6 +34,12 @@ class MainWindowHandlers:
     def __init__(self, main_window):
         self.main_window = main_window
         self.tr = main_window.tr # Helper for translations
+        # Cancel flag for multi-profile backup operations (thread-safe)
+        self._cancel_backup_event = threading.Event()
+        # When True, the backup button is in "cancel" mode (text/style changed)
+        self._backup_cancel_mode = False
+        # Store the original backup button stylesheet so we can restore it
+        self._backup_button_original_style = None
 
     # --- Log Handling ----
     # Shows or hides the log panel and updates the button's tooltip.
@@ -741,6 +748,100 @@ class MainWindowHandlers:
             self.main_window.profiles = core_logic.load_profiles()
             self.main_window.profile_table_manager.update_profile_table()
 
+    # --- Cancel Multi-Backup ---
+    @Slot()
+    def handle_cancel_backup(self):
+        """Request cancellation of an ongoing multi-profile backup.
+        
+        This sets a thread-safe event flag that the worker checks between profiles.
+        The currently-in-progress backup will complete normally to avoid data corruption,
+        but no further profiles will be processed.
+        """
+        if self._cancel_backup_event.is_set():
+            return  # Already cancelling
+        
+        logging.info("[Backup Cancel] User requested cancellation of multi-profile backup.")
+        self._cancel_backup_event.set()
+        
+        # Update UI to reflect cancellation is pending
+        self.main_window.status_label.setText("Cancelling backup after current profile completes...")
+        btn = self.main_window.backup_button
+        btn.setEnabled(False)
+        btn.setText("⏳ Cancelling...")
+
+    def _enter_cancel_mode(self):
+        """Transform the backup button into a cancel button for multi-profile operations.
+        
+        Changes the button text, icon, and style to indicate it will cancel the operation.
+        The button dimensions stay the same because we only change internal properties.
+        """
+        btn = self.main_window.backup_button
+        # Save original stylesheet so we can restore it later
+        self._backup_button_original_style = btn.styleSheet()
+        self._backup_cancel_mode = True
+        
+        btn.setText("✕ Cancel Backup")
+        btn.setIcon(QIcon())  # Remove icon to avoid confusion
+        btn.setEnabled(True)  # Must be enabled so user can click to cancel
+        btn.setStyleSheet("""
+            QPushButton#BackupButton {
+                background-color: #8B0000;
+                border: 1px solid #FF4444;
+                color: #FFFFFF;
+                border-radius: 5px;
+                padding: 8px 12px;
+                font-weight: bold;
+                font-size: 12pt;
+            }
+            QPushButton#BackupButton:hover {
+                background-color: #B22222;
+                border-color: #FF6666;
+            }
+            QPushButton#BackupButton:pressed {
+                background-color: #660000;
+                border-color: #CC3333;
+            }
+            QPushButton#BackupButton:disabled {
+                background-color: #444444;
+                border-color: #555555;
+                color: #888888;
+            }
+        """)
+        # Hide the toggle button while in cancel mode
+        if hasattr(self.main_window, 'backup_mode_toggle'):
+            self.main_window.backup_mode_toggle.setVisible(False)
+        logging.debug("Backup button entered cancel mode.")
+
+    def _exit_cancel_mode(self):
+        """Restore the backup button to its original state after a multi-profile operation."""
+        btn = self.main_window.backup_button
+        self._backup_cancel_mode = False
+        
+        # Restore original stylesheet
+        if self._backup_button_original_style is not None:
+            btn.setStyleSheet(self._backup_button_original_style)
+            self._backup_button_original_style = None
+        
+        # Restore icon
+        backup_icon_path = resource_path("icons/backup.png")
+        if os.path.exists(backup_icon_path):
+            btn.setIcon(QIcon(backup_icon_path))
+        
+        # Restore text based on current mode
+        backup_mode = getattr(self.main_window, 'backup_mode', 'single')
+        if backup_mode == 'all':
+            btn.setText("Backup All")
+        else:
+            selection_count = self.main_window.profile_table_manager.get_selection_count()
+            if selection_count > 1:
+                btn.setText("Backup Selected")
+            else:
+                btn.setText("Backup")
+        
+        # Restore toggle button visibility
+        self.main_window.update_action_button_states()
+        logging.debug("Backup button exited cancel mode, original state restored.")
+
     # Starts backup process for ALL profiles sequentially.
     @Slot()
     def handle_backup_all(self):
@@ -776,16 +877,32 @@ class MainWindowHandlers:
         global_settings = self.main_window.current_settings
         backup_base_dir = global_settings.get('backup_base_dir', config.BACKUP_BASE_DIR)
         
+        # Reset cancel flag and show cancel button
+        self._cancel_backup_event.clear()
+        
         self.main_window.status_label.setText(f"Starting backup for all {profile_count} profiles...")
         self.main_window.set_controls_enabled(False)
+        self._enter_cancel_mode()
+        
+        # Capture cancel event reference for the worker thread closure
+        cancel_event = self._cancel_backup_event
         
         def backup_all_task():
             """Worker function to backup all profiles."""
             results = []
             failed = []
             skipped = []
+            was_cancelled = False
             
             for idx, (profile_name, profile_data) in enumerate(profiles.items(), 1):
+                # --- CANCEL CHECK: Between profiles (safe point) ---
+                if cancel_event.is_set():
+                    remaining = profile_count - idx + 1
+                    logging.info(f"[Backup All] Cancelled by user at profile {idx}/{profile_count}. "
+                                 f"{len(results)} completed, {remaining} not started.")
+                    was_cancelled = True
+                    break
+                
                 logging.info(f"[Backup All] Processing {idx}/{profile_count}: '{profile_name}'")
                 
                 if not isinstance(profile_data, dict):
@@ -875,18 +992,25 @@ class MainWindowHandlers:
                     logging.error(f"[Backup All] Exception for '{profile_name}': {e}", exc_info=True)
             
             # Build summary
-            summary = f"Backup All completed.\n\n"
+            if was_cancelled:
+                summary = f"Backup All cancelled by user.\n\n"
+            else:
+                summary = f"Backup All completed.\n\n"
             summary += f"✓ Successful: {len(results)}\n"
             if failed:
                 summary += f"✗ Failed: {len(failed)}\n"
             if skipped:
                 summary += f"⊘ Skipped: {len(skipped)}\n"
+            if was_cancelled:
+                not_processed = profile_count - len(results) - len(failed) - len(skipped)
+                if not_processed > 0:
+                    summary += f"⊘ Not started (cancelled): {not_processed}\n"
             
-            all_success = len(failed) == 0 and len(skipped) == 0
+            all_success = len(failed) == 0 and len(skipped) == 0 and not was_cancelled
             
             # Store detailed results in a list that the callback can access
             backup_all_results.clear()
-            backup_all_results.extend([results, failed, skipped])
+            backup_all_results.extend([results, failed, skipped, was_cancelled])
             
             return all_success, summary
         
@@ -895,16 +1019,29 @@ class MainWindowHandlers:
         
         def on_backup_all_finished(success, message):
             """Callback when backup all is finished."""
+            self._exit_cancel_mode()
             self.main_window.set_controls_enabled(True)
             
             # Retrieve detailed results from shared list
-            if len(backup_all_results) >= 3:
-                results, failed, skipped = backup_all_results
+            was_cancelled = False
+            if len(backup_all_results) >= 4:
+                results, failed, skipped, was_cancelled = backup_all_results
+            elif len(backup_all_results) >= 3:
+                results, failed, skipped = backup_all_results[:3]
             else:
                 results, failed, skipped = [], [], []
             
             # Show detailed result
-            if success and len(failed) == 0:
+            if was_cancelled:
+                # Cancellation report
+                detail_msg = message
+                if len(results) > 0:
+                    detail_msg += f"\n\nBackups completed before cancellation are safe and preserved."
+                QMessageBox.information(self.main_window, "Backup Cancelled", detail_msg)
+                self.main_window.status_label.setText(
+                    f"Backup cancelled: {len(results)} profile(s) backed up before cancellation."
+                )
+            elif success and len(failed) == 0:
                 QMessageBox.information(self.main_window, "Backup All Completed", message)
                 self.main_window.status_label.setText(f"Backup All completed: {len(results)} profile(s) backed up.")
             else:
@@ -987,16 +1124,35 @@ class MainWindowHandlers:
         backup_base_dir = global_settings.get('backup_base_dir', config.BACKUP_BASE_DIR)
         
         profiles = self.main_window.profiles
+        
+        # Reset cancel flag and show cancel button (only for multi-profile)
+        self._cancel_backup_event.clear()
+        show_cancel = profile_count >= 2
+        
         self.main_window.status_label.setText(f"Backing up {profile_count} selected profiles...")
         self.main_window.set_controls_enabled(False)
+        if show_cancel:
+            self._enter_cancel_mode()
+        
+        # Capture cancel event reference for the worker thread closure
+        cancel_event = self._cancel_backup_event
         
         def backup_selected_task():
             """Worker function to backup selected profiles."""
             results = []
             failed = []
             skipped = []
+            was_cancelled = False
             
             for idx, profile_name in enumerate(selected_profile_names, 1):
+                # --- CANCEL CHECK: Between profiles (safe point) ---
+                if cancel_event.is_set():
+                    remaining = profile_count - idx + 1
+                    logging.info(f"[Backup Selected] Cancelled by user at profile {idx}/{profile_count}. "
+                                 f"{len(results)} completed, {remaining} not started.")
+                    was_cancelled = True
+                    break
+                
                 logging.info(f"[Backup Selected] Processing {idx}/{profile_count}: '{profile_name}'")
                 
                 profile_data = profiles.get(profile_name)
@@ -1062,17 +1218,24 @@ class MainWindowHandlers:
                     logging.error(f"[Backup Selected] Exception for '{profile_name}': {e}", exc_info=True)
             
             # Build summary
-            summary = f"Backup completed.\n\n"
+            if was_cancelled:
+                summary = f"Backup cancelled by user.\n\n"
+            else:
+                summary = f"Backup completed.\n\n"
             summary += f"✓ Successful: {len(results)}\n"
             if failed:
                 summary += f"✗ Failed: {len(failed)}\n"
             if skipped:
                 summary += f"⊘ Skipped: {len(skipped)}\n"
+            if was_cancelled:
+                not_processed = profile_count - len(results) - len(failed) - len(skipped)
+                if not_processed > 0:
+                    summary += f"⊘ Not started (cancelled): {not_processed}\n"
             
-            all_success = len(failed) == 0 and len(skipped) == 0
+            all_success = len(failed) == 0 and len(skipped) == 0 and not was_cancelled
             
             backup_selected_results.clear()
-            backup_selected_results.extend([results, failed, skipped])
+            backup_selected_results.extend([results, failed, skipped, was_cancelled])
             
             return all_success, summary
         
@@ -1080,14 +1243,26 @@ class MainWindowHandlers:
         
         def on_backup_selected_finished(success, message):
             """Callback when backup selected is finished."""
+            self._exit_cancel_mode()
             self.main_window.set_controls_enabled(True)
             
-            if len(backup_selected_results) >= 3:
-                results, failed, skipped = backup_selected_results
+            was_cancelled = False
+            if len(backup_selected_results) >= 4:
+                results, failed, skipped, was_cancelled = backup_selected_results
+            elif len(backup_selected_results) >= 3:
+                results, failed, skipped = backup_selected_results[:3]
             else:
                 results, failed, skipped = [], [], []
             
-            if success and len(failed) == 0:
+            if was_cancelled:
+                detail_msg = message
+                if len(results) > 0:
+                    detail_msg += f"\n\nBackups completed before cancellation are safe and preserved."
+                QMessageBox.information(self.main_window, "Backup Cancelled", detail_msg)
+                self.main_window.status_label.setText(
+                    f"Backup cancelled: {len(results)} profile(s) backed up before cancellation."
+                )
+            elif success and len(failed) == 0:
                 QMessageBox.information(self.main_window, "Backup Completed", message)
                 self.main_window.status_label.setText(f"Backup completed: {len(results)} profile(s) backed up.")
             else:
@@ -1115,6 +1290,11 @@ class MainWindowHandlers:
     # Starts the backup process (Single or All based on mode)
     @Slot()
     def handle_backup(self):
+        # If button is in cancel mode, handle cancellation instead of backup
+        if self._backup_cancel_mode:
+            self.handle_cancel_backup()
+            return
+        
         # Redirect to Backup All if mode is enabled
         if getattr(self.main_window, 'backup_mode', 'single') == 'all':
             self.handle_backup_all()
