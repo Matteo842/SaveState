@@ -113,12 +113,12 @@ SaveState automatically detects save data locations for a wide range of emulator
 | | | | |
 |-------------|-------------|-------------|-------------|
 | **RetroArch** ★ | Ryujinx | Yuzu | Rpcs3 |
-| **Dolphin** ★ | DuckStation | PPSSPP | Citra |
-| Azahar | mGBA | Snes9x | DeSmuME |
-| Cemu | Flycast | ShadPs4 | SameBoy |
-| PCSX2 \* | Xenia | Eden (yuzu) | melonDS |
-| Gopher64 | Citron | Vita3K | Mednafen/Mednaffe |
-| ymir |  |  |  |
+| **Dolphin** ★ | **ares** ★ | DuckStation | PPSSPP |
+| Citra | Azahar | mGBA | Snes9x |
+| DeSmuME | Cemu | Flycast | ShadPs4 |
+| SameBoy | PCSX2 \* | Xenia | Eden (yuzu) |
+| melonDS | Gopher64 | Citron | Vita3K |
+| Mednafen/Mednaffe | ymir |  |  |
 
 ★ *Enhanced integration with guided setup*
 
