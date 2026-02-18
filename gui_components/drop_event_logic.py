@@ -614,6 +614,82 @@ class DropEventMixin:
                     else:
                         profiles_data = result_profiles
                 
+                # ares two-step flow: select system (console), then game
+                if emulator_key == 'ares' and profiles_data is not None:
+                    try:
+                        from emulator_utils.ares_manager import list_ares_systems
+                        # Resolve ares hint path (handle .lnk shortcuts)
+                        ares_hint = file_path
+                        if platform.system() == "Windows" and isinstance(ares_hint, str) and ares_hint.lower().endswith('.lnk'):
+                            try:
+                                import winshell
+                                shortcut = winshell.shortcut(ares_hint)
+                                resolved_target = shortcut.path
+                                if resolved_target and os.path.exists(resolved_target):
+                                    ares_hint = resolved_target
+                            except Exception:
+                                pass
+                        if os.path.isfile(ares_hint):
+                            ares_hint = os.path.dirname(ares_hint)
+
+                        systems = list_ares_systems(ares_hint)
+                        if not systems:
+                            QMessageBox.warning(mw, "ares", "No systems with saves detected for ares.")
+                        else:
+                            from dialogs.ares_dialog import AresSetupDialog
+                            setup_dialog = AresSetupDialog(ares_hint, systems, mw)
+                            if setup_dialog.exec():
+                                system_id = setup_dialog.get_selected_system()
+                                selected_profile = setup_dialog.get_selected_profile_data()
+                                if system_id and selected_profile:
+                                    profile_id = selected_profile.get('id', '')
+                                    selected_name = selected_profile.get('name', profile_id)
+                                    save_paths = selected_profile.get('paths', [])
+                                    profile_name = f"ares - {selected_name}"
+                                    if profile_name in mw.profiles:
+                                        reply = QMessageBox.question(
+                                            mw, "Existing Profile",
+                                            f"A profile named '{profile_name}' already exists. Overwrite it?",
+                                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                            QMessageBox.StandardButton.No)
+                                        if reply == QMessageBox.StandardButton.No:
+                                            mw.status_label.setText("Profile creation cancelled.")
+                                            self._hide_overlay_if_visible(mw)
+                                            mw.set_controls_enabled(True)
+                                            QApplication.restoreOverrideCursor()
+                                            event.acceptProposedAction()
+                                            return True
+                                    new_profile = {
+                                        'name': profile_name,
+                                        'paths': save_paths,
+                                        'emulator': 'ares'
+                                    }
+                                    # Add emulator_executable for icon extraction
+                                    ares_exe = os.path.join(ares_hint, 'ares.exe') if os.path.isdir(ares_hint) else ares_hint
+                                    if ares_exe and os.path.exists(ares_exe):
+                                        new_profile['emulator_executable'] = ares_exe
+                                    # Copy extra data from selected profile
+                                    for k, v in selected_profile.items():
+                                        if k not in ['name', 'paths']:
+                                            new_profile[k] = v
+                                    mw.profiles[profile_name] = new_profile
+                                    if mw.core_logic.save_profiles(mw.profiles):
+                                        if hasattr(mw, 'profile_table_manager'):
+                                            mw.profile_table_manager.update_profile_table()
+                                            mw.profile_table_manager.select_profile_in_table(profile_name)
+                                        mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
+                                    else:
+                                        QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
+                    except Exception as e_ares:
+                        logging.error(f"ares flow error: {e_ares}", exc_info=True)
+                        QMessageBox.critical(mw, "ares Error", f"An error occurred while scanning ares: {e_ares}")
+                    # Finish handling for ares
+                    self._hide_overlay_if_visible(mw)
+                    mw.set_controls_enabled(True)
+                    QApplication.restoreOverrideCursor()
+                    event.acceptProposedAction()
+                    return True
+                
                 # RetroArch two-step flow: select core, then games
                 if emulator_key == 'RetroArch' or emulator_key == 'retroarch':
                     try:
@@ -1100,6 +1176,68 @@ class DropEventMixin:
                     QApplication.restoreOverrideCursor()
                     event.acceptProposedAction()
                     return
+
+                # ares two-step flow (fallback): select system, then game
+                if emulator_key == 'ares' and profiles_data is not None:
+                    try:
+                        from emulator_utils.ares_manager import list_ares_systems
+                        ares_hint = target_path
+                        if os.path.isfile(ares_hint):
+                            ares_hint = os.path.dirname(ares_hint)
+
+                        systems = list_ares_systems(ares_hint)
+                        if not systems:
+                            QMessageBox.warning(mw, "ares", "No systems with saves detected for ares.")
+                        else:
+                            from dialogs.ares_dialog import AresSetupDialog
+                            setup_dialog = AresSetupDialog(ares_hint, systems, mw)
+                            if setup_dialog.exec():
+                                system_id = setup_dialog.get_selected_system()
+                                selected_profile = setup_dialog.get_selected_profile_data()
+                                if system_id and selected_profile:
+                                    profile_id = selected_profile.get('id', '')
+                                    selected_name = selected_profile.get('name', profile_id)
+                                    save_paths = selected_profile.get('paths', [])
+                                    profile_name = f"ares - {selected_name}"
+                                    if profile_name in mw.profiles:
+                                        reply = QMessageBox.question(
+                                            mw, "Existing Profile",
+                                            f"A profile named '{profile_name}' already exists. Overwrite it?",
+                                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                            QMessageBox.StandardButton.No)
+                                        if reply == QMessageBox.StandardButton.No:
+                                            mw.status_label.setText("Profile creation cancelled.")
+                                            self._hide_overlay_if_visible(mw)
+                                            mw.set_controls_enabled(True)
+                                            QApplication.restoreOverrideCursor()
+                                            event.acceptProposedAction()
+                                            return
+                                    new_profile = {
+                                        'name': profile_name,
+                                        'paths': save_paths,
+                                        'emulator': 'ares'
+                                    }
+                                    if target_path and os.path.exists(target_path):
+                                        new_profile['emulator_executable'] = target_path
+                                    for k, v in selected_profile.items():
+                                        if k not in ['name', 'paths']:
+                                            new_profile[k] = v
+                                    mw.profiles[profile_name] = new_profile
+                                    if mw.core_logic.save_profiles(mw.profiles):
+                                        if hasattr(mw, 'profile_table_manager'):
+                                            mw.profile_table_manager.update_profile_table()
+                                            mw.profile_table_manager.select_profile_in_table(profile_name)
+                                        mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
+                                    else:
+                                        QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
+                    except Exception as e_ares:
+                        logging.error(f"ares flow error (fallback): {e_ares}", exc_info=True)
+                        QMessageBox.critical(mw, "ares Error", f"An error occurred while scanning ares: {e_ares}")
+                    self._hide_overlay_if_visible(mw)
+                    mw.set_controls_enabled(True)
+                    QApplication.restoreOverrideCursor()
+                    event.acceptProposedAction()
+                    return  # handled ares
 
                 # RetroArch two-step flow in fallback branch
                 if emulator_key == 'RetroArch' or emulator_key == 'retroarch':

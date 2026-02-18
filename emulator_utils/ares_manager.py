@@ -441,6 +441,161 @@ def find_ares_profiles(executable_path: str | None = None) -> list[dict] | None:
         return []
 
 
+def _resolve_ares_saves_path(executable_path: str | None = None) -> Optional[str]:
+    """
+    Resolves the ares saves directory path.
+    
+    Returns:
+        The saves path string if found, configured, and existing. None otherwise.
+    """
+    settings_path = _find_settings_bml(executable_path)
+    if not settings_path:
+        log.warning("Could not find ares settings.bml.")
+        return None
+    
+    saves_path = _parse_bml_saves_path(settings_path)
+    if not saves_path:
+        log.warning("ares Saves path is not configured.")
+        return None
+    
+    if not os.path.isdir(saves_path):
+        log.warning(f"ares Saves path does not exist: {saves_path}")
+        return None
+    
+    return saves_path
+
+
+def list_ares_systems(executable_path: str | None = None) -> list[dict]:
+    """
+    List the ares systems (consoles) that have save files.
+    
+    This is the first step of the two-step flow, analogous to
+    RetroArch's list_retroarch_cores(). Each entry contains:
+        - id: folder name (e.g. "Game Boy", "PlayStation")
+        - name: display name (same as folder name)
+        - count: number of save files found
+    
+    Args:
+        executable_path: Optional path to the ares executable or its directory.
+    
+    Returns:
+        List of system dicts sorted by name. Empty list if nothing found.
+    """
+    saves_path = _resolve_ares_saves_path(executable_path)
+    if not saves_path:
+        return []
+    
+    _known_systems_lower = {s.lower() for s in ARES_SYSTEMS}
+    systems = []
+    
+    try:
+        for entry in os.listdir(saves_path):
+            system_dir = os.path.join(saves_path, entry)
+            if not os.path.isdir(system_dir):
+                continue
+            
+            # Only include known ares system folders
+            if entry.lower() not in _known_systems_lower:
+                continue
+            
+            # Count save files in this system directory
+            count = 0
+            try:
+                for f in os.listdir(system_dir):
+                    if os.path.isfile(os.path.join(system_dir, f)):
+                        ext = os.path.splitext(f)[1].lower()
+                        if ext in ARES_SAVE_EXTENSIONS:
+                            count += 1
+            except OSError:
+                continue
+            
+            if count > 0:
+                systems.append({
+                    'id': entry,
+                    'name': entry,
+                    'count': count
+                })
+    except OSError as e:
+        log.error(f"Error listing ares systems in '{saves_path}': {e}")
+        return []
+    
+    systems.sort(key=lambda s: s.get('name', '').lower())
+    log.info(f"Found {len(systems)} ares systems with saves.")
+    return systems
+
+
+def find_ares_profiles_for_system(
+    system_id: str,
+    executable_path: str | None = None
+) -> list[dict]:
+    """
+    Find save profiles for a specific ares system (console).
+    
+    This is the second step of the two-step flow, analogous to
+    RetroArch's find_retroarch_profiles(). Returns profiles for the
+    selected system only.
+    
+    Args:
+        system_id: The system folder name (e.g. "Game Boy", "PlayStation").
+        executable_path: Optional path to the ares executable or its directory.
+    
+    Returns:
+        List of profile dicts for the given system. Empty list if nothing found.
+    """
+    system_id = (system_id or '').strip()
+    if not system_id:
+        return []
+    
+    saves_path = _resolve_ares_saves_path(executable_path)
+    if not saves_path:
+        return []
+    
+    system_dir = os.path.join(saves_path, system_id)
+    if not os.path.isdir(system_dir):
+        log.warning(f"ares system directory does not exist: {system_dir}")
+        return []
+    
+    profiles = []
+    game_saves = {}  # game_name -> list of file paths
+    
+    try:
+        for save_file in os.listdir(system_dir):
+            save_path = os.path.join(system_dir, save_file)
+            if not os.path.isfile(save_path):
+                continue
+            
+            ext = os.path.splitext(save_file)[1].lower()
+            if ext in ARES_SAVE_EXTENSIONS:
+                game_name = os.path.splitext(save_file)[0]
+                if game_name not in game_saves:
+                    game_saves[game_name] = []
+                game_saves[game_name].append(save_path)
+    except OSError as e:
+        log.error(f"Error scanning ares system directory '{system_dir}': {e}")
+        return []
+    
+    for game_name, save_files in game_saves.items():
+        safe_system = re.sub(r'[^a-zA-Z0-9]', '_', system_id).lower()
+        safe_game = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', game_name).lower()
+        profile_id = f"ares_{safe_system}_{safe_game}"
+        
+        display_name = sanitize_profile_display_name(game_name)
+        
+        profile = {
+            'id': profile_id,
+            'name': display_name,
+            'paths': sorted(save_files),
+            'emulator': 'ares',
+            'system': system_id
+        }
+        profiles.append(profile)
+        log.debug(f"  ares profile: ID='{profile_id}', Name='{display_name}', Files={len(save_files)}")
+    
+    profiles.sort(key=lambda p: p.get('name', ''))
+    log.info(f"Found {len(profiles)} ares profiles for system '{system_id}'.")
+    return profiles
+
+
 # Example Usage (for testing this module directly)
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG,
