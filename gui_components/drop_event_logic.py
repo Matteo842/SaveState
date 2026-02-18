@@ -572,6 +572,28 @@ class DropEventMixin:
                             f"An error occurred while trying to detect SameBoy profiles: {e}\n"
                             "You can try adding the emulator again or set the path manually via settings (if available).")
 
+                # Special handling for ares emulator: saves path not configured
+                if emulator_key == 'ares' and profiles_data is None:
+                    logging.warning("ares detected, but no custom save path is configured in settings.bml.")
+                    QMessageBox.warning(
+                        mw, "ares - Save Path Not Configured",
+                        "ares was detected, but no custom save path is configured.\n\n"
+                        "When no custom path is set, ares stores saves alongside your ROM files, "
+                        "making automatic detection impossible.\n\n"
+                        "To enable SaveState integration:\n"
+                        "1. Open ares\n"
+                        "2. Go to Settings → Paths → Saves\n"
+                        "3. Click 'Assign' and choose a dedicated folder\n"
+                        "4. Drag & drop ares into SaveState again\n\n"
+                        "After setting a custom path, ares will organize saves by system "
+                        "and SaveState will be able to detect them automatically.")
+                    # Hide overlay and restore controls, then return
+                    self._hide_overlay_if_visible(mw)
+                    mw.set_controls_enabled(True)
+                    QApplication.restoreOverrideCursor()
+                    event.acceptProposedAction()
+                    return True
+
                 # Generic manual prompt for emulators that store saves next to ROMs (return None to request user input)
                 if profiles_data is None and emulator_key in {'melonds', 'mgba', 'snes9x'}:
                     # Safely derive a base path for hinting; target_path may not always be set
@@ -1057,6 +1079,28 @@ class DropEventMixin:
                             f"An error occurred while trying to detect SameBoy profiles: {e}\n"
                             "You can try adding the emulator again or set the path manually via settings (if available).")
                 
+                # Special handling for ares emulator: saves path not configured
+                if emulator_key == 'ares' and profiles_data is None:
+                    logging.warning("ares detected (fallback), but no custom save path is configured in settings.bml.")
+                    QMessageBox.warning(
+                        mw, "ares - Save Path Not Configured",
+                        "ares was detected, but no custom save path is configured.\n\n"
+                        "When no custom path is set, ares stores saves alongside your ROM files, "
+                        "making automatic detection impossible.\n\n"
+                        "To enable SaveState integration:\n"
+                        "1. Open ares\n"
+                        "2. Go to Settings → Paths → Saves\n"
+                        "3. Click 'Assign' and choose a dedicated folder\n"
+                        "4. Drag & drop ares into SaveState again\n\n"
+                        "After setting a custom path, ares will organize saves by system "
+                        "and SaveState will be able to detect them automatically.")
+                    # Hide overlay and restore controls, then return
+                    self._hide_overlay_if_visible(mw)
+                    mw.set_controls_enabled(True)
+                    QApplication.restoreOverrideCursor()
+                    event.acceptProposedAction()
+                    return
+
                 # RetroArch two-step flow in fallback branch
                 if emulator_key == 'RetroArch' or emulator_key == 'retroarch':
                     try:

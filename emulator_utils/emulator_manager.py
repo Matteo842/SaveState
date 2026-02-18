@@ -27,6 +27,7 @@ from .gopher64_manager import find_gopher64_profiles
 from .vita3k_manager import find_vita3k_profiles
 from .mednafen_manager import find_mednafen_profiles
 from .ymir_manager import find_ymir_profiles
+from .ares_manager import find_ares_profiles
 # RetroArch support (core-based front-end)
 from .retroarch_manager import list_retroarch_cores, find_retroarch_profiles
 #from .xemu_manager import find_xemu_profiles
@@ -46,7 +47,7 @@ KNOWN_EMULATORS = [
     # Questi devono corrispondere esattamente alle chiavi in EMULATORS
     'rpcs3', 'yuzu', 'eden', 'citron', 'ppsspp', 'citra', 'azahar', 'ryujinx', 'dolphin',
     'duckstation', 'mgba', 'snes9x', 'desmume', 'melonds', 'cemu', 'flycast', 'shadps4',
-    'sameboy', 'xenia', 'pcsx2', 'gopher64', 'vita3k', 'mednafen', 'mednaffe', 'ymir', 'retroarch',
+    'sameboy', 'xenia', 'pcsx2', 'gopher64', 'vita3k', 'mednafen', 'mednaffe', 'ymir', 'ares', 'retroarch',
 ]
 
 UNKNOWN_EMULATORS = [
@@ -54,7 +55,7 @@ UNKNOWN_EMULATORS = [
     # Yuzu/Ryujinx forks
     'suyu', 'sudachi', 'ryubing', 'lime3ds', 'folium', 'strato', 'ryujinx-ldn', 'power-emu',
     # Altri emulatori
-    'aethersx2', 'ares', 'blastem', 'bsnes', 'beetle-psx', 'bizhawk', 'cxbx',
+    'aethersx2', 'blastem', 'bsnes', 'beetle-psx', 'bizhawk', 'cxbx',
     'cxbx-reloaded', 'decaf', 'demul', 'dosbox', 'dosbox-staging', 'dosbox-x',
     'epsxe', 'fceux', 'fusion', 'genesisplusgx', 'higan', 'ideas', 'kega',
     'kronos', 'mame', 'mesen', 'mikage', 'mupen64plus',
@@ -166,6 +167,10 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'ymir': {
         'name': 'Ymir',
         'profile_finder': lambda path: find_ymir_profiles(path)
+    },
+    'ares': {
+        'name': 'ares',
+        'profile_finder': lambda path: find_ares_profiles(path)
     },
     # RetroArch is a front-end; we expose a special entry primarily for detection.
     # Its finder will return a list of available cores when called, but the UI
