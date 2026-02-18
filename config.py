@@ -6,7 +6,7 @@ import platform # Aggiunto per system detection
 
 # --- Nome Applicazione (per cartella AppData) ---
 APP_NAME = "SaveState"
-APP_VERSION = "2.4.1" # Restored APP_VERSION
+APP_VERSION = "2.5.0" # Restored APP_VERSION
 
 # --- SINGLE INSTANCE CONSTANTS (defined here for early access before heavy imports) ---
 import re  # Needed for sanitize_server_name
