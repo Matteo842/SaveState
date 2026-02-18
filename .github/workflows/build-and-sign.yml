@@ -6,7 +6,7 @@ on:
       version:
         description: 'Version Number (e.g., 2.1.0 or 2.4B)'
         required: true
-        default: '2.0.0'
+        default: '2.5.0'
 
 env:
   RELEASE_VERSION: ${{ github.event.inputs.version }}
