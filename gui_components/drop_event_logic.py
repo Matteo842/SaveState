@@ -665,7 +665,8 @@ class DropEventMixin:
                                         'emulator': 'ares'
                                     }
                                     # Add emulator_executable for icon extraction
-                                    ares_exe = os.path.join(ares_hint, 'ares.exe') if os.path.isdir(ares_hint) else ares_hint
+                                    exe_name = 'ares.exe' if platform.system() == "Windows" else 'ares'
+                                    ares_exe = os.path.join(ares_hint, exe_name) if os.path.isdir(ares_hint) else ares_hint
                                     if ares_exe and os.path.exists(ares_exe):
                                         new_profile['emulator_executable'] = ares_exe
                                     # Copy extra data from selected profile
@@ -1219,6 +1220,11 @@ class DropEventMixin:
                                     }
                                     if target_path and os.path.exists(target_path):
                                         new_profile['emulator_executable'] = target_path
+                                    elif ares_hint and os.path.isdir(ares_hint):
+                                        exe_name = 'ares.exe' if platform.system() == "Windows" else 'ares'
+                                        fallback_exe = os.path.join(ares_hint, exe_name)
+                                        if os.path.exists(fallback_exe):
+                                            new_profile['emulator_executable'] = fallback_exe
                                     for k, v in selected_profile.items():
                                         if k not in ['name', 'paths']:
                                             new_profile[k] = v
