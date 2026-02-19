@@ -6,6 +6,15 @@ import re
 
 APP_NAME = "SaveState" # Same as in config.py, used for some utility functions if needed.
 
+def _is_nuitka_compiled():
+    """Detect Nuitka at runtime. __compiled__ is replaced with True by the Nuitka
+    compiler; in CPython it raises NameError."""
+    try:
+        _ = __compiled__  # type: ignore[name-defined]
+        return True
+    except NameError:
+        return False
+
 def resource_path(relative_path):
     """
     Get absolute path to resource, works for dev, PyInstaller, and Nuitka.
@@ -21,10 +30,12 @@ def resource_path(relative_path):
         if hasattr(sys, '_MEIPASS'):
             base_path = sys._MEIPASS
             logging.debug(f"resource_path: Using PyInstaller _MEIPASS: {base_path}")
-        # 2. Nuitka: Check if we're running as a compiled executable
-        #    Nuitka sets __compiled__ at module level, or we can check sys.frozen
-        elif getattr(sys, 'frozen', False) or '__compiled__' in dir():
-            # For Nuitka onefile/standalone, resources are next to the executable
+        # 2. Nuitka or generic frozen: compiled executable
+        #    __compiled__ is replaced with True by Nuitka at compile time;
+        #    'in dir()' does NOT work inside a function, so we use try/except.
+        #    In Nuitka onefile, __file__ already resolves to the temp extraction
+        #    directory where data files are, so this branch is equivalent but explicit.
+        elif getattr(sys, 'frozen', False) or _is_nuitka_compiled():
             base_path = os.path.dirname(sys.executable)
             logging.debug(f"resource_path: Using Nuitka/frozen executable dir: {base_path}")
         else:

@@ -82,24 +82,35 @@ def sanitize_shortcut_filename(name):
         safe_name = "profilo_backup" # Nome di fallback
     return safe_name
 
-def is_packaged():
+def is_nuitka():
     """
-    Controlla se stiamo girando da un eseguibile pacchettizzato (PyInstaller o Nuitka).
+    Check if running from a Nuitka compiled executable.
     
-    Both PyInstaller and Nuitka set sys.frozen = True when running as a packaged executable.
-    PyInstaller additionally sets sys._MEIPASS to the temp extraction folder.
-    Nuitka does NOT have _MEIPASS.
+    Nuitka replaces the __compiled__ constant with True at compile time.
+    This works reliably even in onefile mode where sys.frozen may not be set.
+    Falls back to sys.frozen check (without PyInstaller's _MEIPASS) as secondary method.
     """
-    return getattr(sys, 'frozen', False)
+    try:
+        _ = __compiled__  # type: ignore[name-defined]  — Nuitka replaces this with True
+        return not hasattr(sys, '_MEIPASS')
+    except NameError:
+        pass
+    return getattr(sys, 'frozen', False) and not hasattr(sys, '_MEIPASS')
 
 def is_pyinstaller():
     """Check if running from a PyInstaller bundle."""
     return hasattr(sys, '_MEIPASS')
 
-def is_nuitka():
-    """Check if running from a Nuitka compiled executable."""
-    # Nuitka sets sys.frozen but does NOT have _MEIPASS
-    return getattr(sys, 'frozen', False) and not hasattr(sys, '_MEIPASS')
+def is_packaged():
+    """
+    Controlla se stiamo girando da un eseguibile pacchettizzato (PyInstaller o Nuitka).
+    
+    Uses multiple detection strategies:
+    - PyInstaller: sys._MEIPASS is set
+    - Nuitka: __compiled__ constant or sys.frozen without _MEIPASS
+    - Generic frozen: sys.frozen flag
+    """
+    return is_pyinstaller() or is_nuitka() or getattr(sys, 'frozen', False)
 
 def ensure_persistent_icon():
     """
