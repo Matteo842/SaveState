@@ -2462,7 +2462,11 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _ctrl_nav_up(self):
-        """Move selection up — inside an open dialog if present, else in the profile list."""
+        """Move selection up — QMenu → dialog → profile list."""
+        menu = self._ctrl_active_popup()
+        if menu is not None:
+            self._ctrl_send_key(menu, Qt.Key.Key_Up)
+            return
         dialog = self._ctrl_active_dialog()
         if dialog is not None:
             self._ctrl_dialog_nav(dialog, -1)
@@ -2486,7 +2490,11 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _ctrl_nav_down(self):
-        """Move selection down — inside an open dialog if present, else in the profile list."""
+        """Move selection down — QMenu → dialog → profile list."""
+        menu = self._ctrl_active_popup()
+        if menu is not None:
+            self._ctrl_send_key(menu, Qt.Key.Key_Down)
+            return
         dialog = self._ctrl_active_dialog()
         if dialog is not None:
             self._ctrl_dialog_nav(dialog, +1)
@@ -2550,6 +2558,24 @@ class MainWindow(QMainWindow):
             "controller_button_mappings", CTRL_DEFAULT_MAPPINGS
         )
         action = mappings.get(button, "")
+
+        # ── Priority 1: QMenu popup ────────────────────────────────────────
+        menu = self._ctrl_active_popup()
+        if menu is not None:
+            if action == "back":
+                self._ctrl_send_key(menu, Qt.Key.Key_Escape)
+            elif action:
+                self._ctrl_send_key(menu, Qt.Key.Key_Return)
+            return
+
+        # ── Priority 2: Any visible QDialog (QMessageBox, ManageBackups…) ─
+        dialog = self._ctrl_active_dialog()
+        if dialog is not None:
+            if action == "back":
+                self._ctrl_dialog_interact(dialog, accept=False)
+            elif action:
+                self._ctrl_dialog_interact(dialog, accept=True)
+            return
         if not action:
             return
         if action == "backup":
@@ -2566,6 +2592,8 @@ class MainWindow(QMainWindow):
             self._ctrl_do_page("up")
         elif action == "page_down":
             self._ctrl_do_page("down")
+        elif action == "context_menu":
+            self._ctrl_do_context_menu()
 
     # --- Controller action implementations ---
 
@@ -2595,15 +2623,7 @@ class MainWindow(QMainWindow):
             self.manage_backups_button.click()
 
     def _ctrl_do_back(self):
-        """Close open dialog or navigate back from an inline panel."""
-        dialog = self._ctrl_active_dialog()
-        if dialog is not None:
-            close_btn = getattr(dialog, 'close_button', None)
-            if close_btn is not None:
-                close_btn.click()
-            else:
-                dialog.reject()
-            return
+        """Navigate back from an inline panel (dialogs are handled in _ctrl_dispatch)."""
         if getattr(self, '_controller_mode_active', False):
             self.exit_controller_panel()
         elif getattr(self, '_settings_mode_active', False):
@@ -2614,6 +2634,19 @@ class MainWindow(QMainWindow):
             self.profile_editor_group.setVisible(False)
             self.profile_group.setVisible(True)
             self.exit_profile_edit_mode()
+
+    def _ctrl_do_context_menu(self):
+        """Open the profile table context menu for the currently selected row."""
+        if self._ctrl_modal_open() or not self._ctrl_table_is_active():
+            return
+        table = self.profile_table_widget
+        current_row = table.currentRow()
+        if current_row < 0:
+            return
+        # Compute center of the selected row in viewport coordinates
+        rect = table.visualRect(table.model().index(current_row, 1))
+        pos = rect.center()
+        self._on_profile_table_context_menu(pos)
 
     def _ctrl_do_delete(self):
         if self._ctrl_modal_open():
@@ -2754,6 +2787,75 @@ class MainWindow(QMainWindow):
 
     # --- Controller dialog helpers ---
 
+    def _ctrl_active_popup(self):
+        """Return the active QMenu popup if one is open, else None."""
+        popup = QApplication.activePopupWidget()
+        if popup is not None and isinstance(popup, QMenu):
+            return popup
+        return None
+
+    def _ctrl_send_key(self, widget, key: Qt.Key):
+        """Synthesize a key-press event and send it to widget."""
+        from PySide6.QtGui import QKeyEvent
+        ev = QKeyEvent(QEvent.Type.KeyPress, key, Qt.KeyboardModifier.NoModifier)
+        QApplication.sendEvent(widget, ev)
+
+    def _ctrl_dialog_interact(self, dialog, *, accept: bool):
+        """Accept or reject an open QDialog via the controller.
+
+        accept=True  (A button) → click the default/OK/Yes button
+        accept=False (B button) → click Cancel/No/Close or call reject()
+        """
+        from PySide6.QtWidgets import QMessageBox, QPushButton
+
+        if isinstance(dialog, QMessageBox):
+            if accept:
+                # Always look for explicit accept buttons first (Yes/Ok…).
+                # Do NOT use defaultButton() — it is often set to "No" on
+                # confirmation dialogs and would click the wrong button.
+                for sb in (QMessageBox.StandardButton.Yes,
+                           QMessageBox.StandardButton.Ok,
+                           QMessageBox.StandardButton.Open,
+                           QMessageBox.StandardButton.Save,
+                           QMessageBox.StandardButton.Apply):
+                    btn = dialog.button(sb)
+                    if btn is not None:
+                        btn.click()
+                        return
+                # Fallback: single-button dialogs (e.g. info with only OK)
+                dialog.accept()
+            else:
+                for sb in (QMessageBox.StandardButton.No,
+                           QMessageBox.StandardButton.Cancel,
+                           QMessageBox.StandardButton.Close,
+                           QMessageBox.StandardButton.Discard,
+                           QMessageBox.StandardButton.Abort):
+                    btn = dialog.button(sb)
+                    if btn is not None:
+                        btn.click()
+                        return
+                # Single-button dialog (only OK): B also dismisses it
+                dialog.reject()
+        else:
+            # Generic QDialog: use close_button attribute if present,
+            # otherwise find the default QPushButton, or accept/reject directly.
+            if accept:
+                close_btn = getattr(dialog, 'close_button', None)
+                if close_btn is not None:
+                    close_btn.click()
+                    return
+                for btn in dialog.findChildren(QPushButton):
+                    if btn.isDefault() and btn.isEnabled() and btn.isVisible():
+                        btn.click()
+                        return
+                dialog.accept()
+            else:
+                close_btn = getattr(dialog, 'close_button', None)
+                if close_btn is not None:
+                    close_btn.click()
+                else:
+                    dialog.reject()
+
     def _ctrl_active_dialog(self):
         """Return the first visible QDialog (any type), or None."""
         for w in QApplication.topLevelWidgets():
@@ -2798,10 +2900,12 @@ class MainWindow(QMainWindow):
     # --- Controller guard helpers ---
 
     def _ctrl_modal_open(self) -> bool:
-        """True if any QDialog is currently visible (modal or non-modal).
+        """True if any QDialog or QMenu popup is currently visible.
         ManageBackupsDialog and similar are opened with show(), not exec(),
-        so activeModalWidget() is always None. We scan all top-level widgets
-        instead — if any QDialog is visible, block further controller actions."""
+        so activeModalWidget() is always None — we scan topLevelWidgets instead.
+        QMenu is handled separately (routed, not blocked) so we exclude it here."""
+        if QApplication.activePopupWidget() is not None:
+            return False  # QMenu popup: handled by _ctrl_dispatch, not blocked
         return any(
             isinstance(w, QDialog) and w.isVisible()
             for w in QApplication.topLevelWidgets()
