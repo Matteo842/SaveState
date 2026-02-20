@@ -65,6 +65,7 @@ from cloud_utils.cloud_panel import CloudSavePanel
 import cloud_settings_manager
 import core_logic # Mantenuto per load_profiles
 from gui_handlers import MainWindowHandlers
+from controller_manager import ControllerManager
 
 # --- COSTANTI GLOBALI PER IDENTIFICARE L'ISTANZA ---
 # Import from config.py for early access in main.py before heavy imports
@@ -211,6 +212,7 @@ class MainWindow(QMainWindow):
         self.profile_table_widget = QTableWidget()
         
         self.settings_button = QPushButton()
+        self.controller_button = QPushButton()
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
         self.new_profile_button = QPushButton()
@@ -296,11 +298,20 @@ class MainWindow(QMainWindow):
             self.settings_icon_cloud = self.settings_icon_normal  # Fallback to normal icon
             
         self.theme_button = QPushButton()
-        # Style settings/theme as square, icon-only buttons for the title bar
+        # Style settings/theme/controller as square, icon-only buttons for the title bar
         self.settings_button.setFlat(True)
         self.settings_button.setFixedSize(QSize(28, 28))
         self.theme_button.setFlat(True)
         self.theme_button.setFixedSize(QSize(28, 28))
+        controller_icon_path = resource_path("icons/controller.png")
+        if os.path.exists(controller_icon_path):
+            self.controller_button.setIcon(QIcon(controller_icon_path))
+            self.controller_button.setIconSize(QSize(20, 20))
+        else:
+            self.controller_button.setText("🎮")
+        self.controller_button.setFlat(True)
+        self.controller_button.setFixedSize(QSize(28, 28))
+        self.controller_button.setToolTip("Controller Settings")
         
         #self.status_label = QLabel(self.tr("Pronto."))
         self.status_label.setObjectName("StatusLabel")
@@ -507,8 +518,10 @@ class MainWindow(QMainWindow):
         # Move Settings and Theme buttons to the title bar
         self.settings_button.setObjectName("SettingsButton")
         self.theme_button.setObjectName("ThemeButton")
+        self.controller_button.setObjectName("ControllerButton")
         title_layout.addWidget(self.settings_button)
         title_layout.addWidget(self.theme_button)
+        title_layout.addWidget(self.controller_button)
         # Window control buttons (minimize, close) - no maximize/fullscreen
         self.minimize_button = QPushButton()
         self.minimize_button.setObjectName("MinimizeButton")
@@ -535,11 +548,14 @@ class MainWindow(QMainWindow):
             """
             QWidget#CustomTitleBar { background-color: #0d0d0d; border-bottom: 1px solid #333333; }
             QLabel#TitleLabel { color: #f2f2f2; font-size: 14pt; font-weight: 700; }
-            QPushButton#SettingsButton, QPushButton#ThemeButton, QPushButton#MinimizeButton, QPushButton#CloseButton {
+            QPushButton#SettingsButton, QPushButton#ThemeButton, QPushButton#ControllerButton, QPushButton#MinimizeButton, QPushButton#CloseButton {
                 border: none; background: transparent; min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; padding: 0px; border-radius: 4px;
             }
-            QPushButton#SettingsButton:hover, QPushButton#ThemeButton:hover, QPushButton#MinimizeButton:hover {
+            QPushButton#SettingsButton:hover, QPushButton#ThemeButton:hover, QPushButton#ControllerButton:hover, QPushButton#MinimizeButton:hover {
                 background-color: rgba(255, 255, 255, 0.15);
+            }
+            QPushButton#ControllerButton[active="true"] {
+                background-color: rgba(255, 255, 255, 0.2);
             }
             QPushButton#CloseButton:hover { background-color: #b00020; }
             """
@@ -766,6 +782,71 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.settings_panel_group, stretch=1)
         # --- End Inline Settings Panel ---
 
+        # --- Inline Controller Settings Panel (hidden by default) ---
+        self.controller_panel_group = QGroupBox("Controller Settings")
+        controller_panel_main_layout = QVBoxLayout()
+        controller_panel_main_layout.setContentsMargins(16, 12, 16, 12)
+        controller_panel_main_layout.setSpacing(16)
+
+        controller_desc = QLabel(
+            "Enable controller/gamepad support for navigating the app with a controller or Steam Deck.\n"
+            "When enabled, the interface responds to gamepad inputs for buttons and list navigation."
+        )
+        controller_desc.setWordWrap(True)
+        controller_desc.setObjectName("ControllerDescLabel")
+        controller_panel_main_layout.addWidget(controller_desc)
+
+        controller_toggle_row = QHBoxLayout()
+        controller_toggle_row.setSpacing(12)
+        self.controller_enabled_switch = QCheckBox("Enable controller compatibility")
+        self.controller_enabled_switch.setObjectName("ControllerSwitch")
+        self.controller_enabled_switch.setStyleSheet(
+            """
+            QCheckBox#ControllerSwitch {
+                spacing: 8px;
+                font-size: 11pt;
+            }
+            QCheckBox#ControllerSwitch::indicator {
+                width: 44px;
+                height: 24px;
+                border-radius: 12px;
+                border: none;
+            }
+            QCheckBox#ControllerSwitch::indicator:unchecked {
+                background-color: #555555;
+                image: url(none);
+            }
+            QCheckBox#ControllerSwitch::indicator:checked {
+                background-color: #2d7d46;
+                image: url(none);
+            }
+            QCheckBox#ControllerSwitch::indicator:unchecked:hover {
+                background-color: #666666;
+            }
+            QCheckBox#ControllerSwitch::indicator:checked:hover {
+                background-color: #38a158;
+            }
+            """
+        )
+        controller_toggle_row.addWidget(self.controller_enabled_switch)
+        controller_toggle_row.addStretch(1)
+        controller_panel_main_layout.addLayout(controller_toggle_row)
+
+        controller_panel_main_layout.addStretch(1)
+
+        controller_buttons_row = QHBoxLayout()
+        self.controller_exit_button = QPushButton("Exit")
+        self.controller_save_button = QPushButton("Save")
+        controller_buttons_row.addStretch(1)
+        controller_buttons_row.addWidget(self.controller_exit_button)
+        controller_buttons_row.addWidget(self.controller_save_button)
+        controller_panel_main_layout.addLayout(controller_buttons_row)
+
+        self.controller_panel_group.setLayout(controller_panel_main_layout)
+        self.controller_panel_group.setVisible(False)
+        content_layout.addWidget(self.controller_panel_group, stretch=1)
+        # --- End Inline Controller Settings Panel ---
+
         # --- Inline Cloud Save Panel (hidden by default) ---
         self.cloud_panel = CloudSavePanel(
             backup_base_dir=self.current_settings.get("backup_base_dir", ""),
@@ -965,6 +1046,10 @@ class MainWindow(QMainWindow):
         self.settings_exit_button.clicked.connect(self.handlers.handle_settings_exit)
         self.settings_save_button.clicked.connect(self.handlers.handle_settings_save)
         self.settings_browse_button.clicked.connect(self.handlers.handle_settings_browse)
+        # Controller panel connections
+        self.controller_button.clicked.connect(self.handlers.handle_controller)
+        self.controller_exit_button.clicked.connect(self.handlers.handle_controller_exit)
+        self.controller_save_button.clicked.connect(self.handlers.handle_controller_save)
         # Log button connections use handlers
         self.toggle_log_button.pressed.connect(self.handlers.handle_log_button_pressed)
         self.toggle_log_button.released.connect(self.handlers.handle_log_button_released)
@@ -991,6 +1076,11 @@ class MainWindow(QMainWindow):
         
         # Position backup toggle after UI is set up (use timer to ensure layout is complete)
         QTimer.singleShot(100, self._position_backup_toggle)
+
+        # Initialize controller manager (start only if enabled in settings)
+        self.controller_manager = ControllerManager(self)
+        if self.current_settings.get("controller_support_enabled", True):
+            self.controller_manager.start()
     
     def reset_internal_state(self):
         """Resetta lo stato interno per le operazioni di drag & drop."""
@@ -2318,6 +2408,39 @@ class MainWindow(QMainWindow):
         """Clear flag after settings panel is closed."""
         self._settings_mode_active = False
 
+    # --- Controller Panel Management ---
+    def show_controller_panel(self):
+        """Show inline controller settings panel, replacing the profiles UI."""
+        try:
+            self.controller_enabled_switch.setChecked(
+                self.current_settings.get("controller_support_enabled", True)
+            )
+            self.profile_group.setVisible(False)
+            self.actions_group.setVisible(False)
+            self.general_group.setVisible(False)
+            if hasattr(self, 'general_cloud_row'):
+                self.general_cloud_row.setVisible(False)
+            if hasattr(self, 'cloud_group'):
+                self.cloud_group.setVisible(False)
+            self.bottom_controls_widget.setVisible(False)
+            self.controller_panel_group.setVisible(True)
+            self._controller_mode_active = True
+        except Exception as e:
+            logging.error(f"Error showing controller panel: {e}")
+
+    def exit_controller_panel(self):
+        """Exit controller settings panel and return to normal UI."""
+        self.controller_panel_group.setVisible(False)
+        self.profile_group.setVisible(True)
+        self.actions_group.setVisible(True)
+        self.general_group.setVisible(True)
+        if hasattr(self, 'general_cloud_row'):
+            self.general_cloud_row.setVisible(True)
+        if hasattr(self, 'cloud_group'):
+            self.cloud_group.setVisible(True)
+        self.bottom_controls_widget.setVisible(True)
+        self._controller_mode_active = False
+
     # --- Cloud Panel Management ---
     def show_cloud_panel(self):
         """Show inline cloud save panel, replacing the profiles UI."""
@@ -2372,6 +2495,158 @@ class MainWindow(QMainWindow):
             self.settings_button.setIcon(self.settings_icon_normal)
             logging.debug("Settings icon restored to normal icon")
 
+    # --- Controller input slots ---
+
+    @Slot()
+    def _ctrl_nav_up(self):
+        """Move selection up in the profile list."""
+        if not self._ctrl_table_is_active():
+            return
+        table = self.profile_table_widget
+        current = table.currentRow()
+        row = self._ctrl_prev_visible_row(current)
+        if row is not None:
+            table.selectRow(row)
+            table.scrollTo(table.model().index(row, 0))
+
+    @Slot()
+    def _ctrl_nav_down(self):
+        """Move selection down in the profile list."""
+        if not self._ctrl_table_is_active():
+            return
+        table = self.profile_table_widget
+        current = table.currentRow()
+        row = self._ctrl_next_visible_row(current)
+        if row is not None:
+            table.selectRow(row)
+            table.scrollTo(table.model().index(row, 0))
+
+    @Slot()
+    def _ctrl_btn_a(self):
+        """A button: Backup selected profile."""
+        if getattr(self, '_controller_mode_active', False):
+            self.exit_controller_panel()
+            return
+        if getattr(self, '_settings_mode_active', False):
+            self.exit_settings_panel()
+            return
+        if self.backup_button.isEnabled():
+            self.backup_button.click()
+
+    @Slot()
+    def _ctrl_btn_b(self):
+        """B button: Back / close current panel."""
+        if getattr(self, '_controller_mode_active', False):
+            self.exit_controller_panel()
+        elif getattr(self, '_settings_mode_active', False):
+            self.exit_settings_panel()
+        elif getattr(self, '_cloud_mode_active', False):
+            self.exit_cloud_panel()
+        elif getattr(self, '_edit_mode_active', False):
+            self.profile_editor_group.setVisible(False)
+            self.profile_group.setVisible(True)
+            self.exit_profile_edit_mode()
+
+    @Slot()
+    def _ctrl_btn_x(self):
+        """X button: Restore selected profile."""
+        if self._ctrl_table_is_active() and self.restore_button.isEnabled():
+            self.restore_button.click()
+
+    @Slot()
+    def _ctrl_btn_y(self):
+        """Y button: Manage Backups."""
+        if self._ctrl_table_is_active() and self.manage_backups_button.isEnabled():
+            self.manage_backups_button.click()
+
+    @Slot()
+    def _ctrl_btn_start(self):
+        """Start button: Backup (same as A)."""
+        self._ctrl_btn_a()
+
+    @Slot()
+    def _ctrl_btn_lb(self):
+        """LB: Page up in profile list."""
+        if not self._ctrl_table_is_active():
+            return
+        table = self.profile_table_widget
+        visible = self._ctrl_visible_rows()
+        if not visible:
+            return
+        current = table.currentRow()
+        if current not in visible:
+            table.selectRow(visible[0])
+            return
+        pos = visible.index(current)
+        page = max(0, pos - 5)
+        table.selectRow(visible[page])
+        table.scrollTo(table.model().index(visible[page], 0))
+
+    @Slot()
+    def _ctrl_btn_rb(self):
+        """RB: Page down in profile list."""
+        if not self._ctrl_table_is_active():
+            return
+        table = self.profile_table_widget
+        visible = self._ctrl_visible_rows()
+        if not visible:
+            return
+        current = table.currentRow()
+        if current not in visible:
+            table.selectRow(visible[-1])
+            return
+        pos = visible.index(current)
+        page = min(len(visible) - 1, pos + 5)
+        table.selectRow(visible[page])
+        table.scrollTo(table.model().index(visible[page], 0))
+
+    @Slot(int)
+    def _ctrl_on_connected(self, idx: int):
+        logging.info(f"Controller {idx} connected.")
+        self.status_label.setText(f"Controller {idx + 1} connected.")
+
+    @Slot(int)
+    def _ctrl_on_disconnected(self, idx: int):
+        logging.info(f"Controller {idx} disconnected.")
+
+    # --- Controller navigation helpers ---
+
+    def _ctrl_table_is_active(self) -> bool:
+        """True when the main profile table is visible and usable."""
+        return (
+            not getattr(self, '_settings_mode_active', False) and
+            not getattr(self, '_controller_mode_active', False) and
+            not getattr(self, '_cloud_mode_active', False) and
+            not getattr(self, '_edit_mode_active', False) and
+            self.profile_table_widget.isVisible()
+        )
+
+    def _ctrl_visible_rows(self) -> list[int]:
+        """Return list of non-hidden row indices in the profile table."""
+        table = self.profile_table_widget
+        return [r for r in range(table.rowCount()) if not table.isRowHidden(r)]
+
+    def _ctrl_next_visible_row(self, current: int) -> int | None:
+        visible = self._ctrl_visible_rows()
+        if not visible:
+            return None
+        if current < 0:
+            return visible[0]
+        for r in visible:
+            if r > current:
+                return r
+        return None
+
+    def _ctrl_prev_visible_row(self, current: int) -> int | None:
+        visible = self._ctrl_visible_rows()
+        if not visible:
+            return None
+        if current < 0:
+            return visible[-1]
+        for r in reversed(visible):
+            if r < current:
+                return r
+        return None
 
 
 # --- End of MainWindow class definition ---

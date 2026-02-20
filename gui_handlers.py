@@ -348,6 +348,58 @@ class MainWindowHandlers:
         self.main_window.exit_settings_panel()
         logging.debug("Settings panel closed without saving.")
 
+    # --- Controller Panel Handlers ---
+    @Slot()
+    def handle_controller(self):
+        """Toggle the inline controller settings panel."""
+        if getattr(self.main_window, '_controller_mode_active', False):
+            self.main_window.exit_controller_panel()
+            logging.debug("Controller panel toggled OFF (closed).")
+        else:
+            if getattr(self.main_window, '_settings_mode_active', False):
+                self.main_window.exit_settings_panel()
+            if getattr(self.main_window, '_edit_mode_active', False):
+                self.main_window.profile_editor_group.setVisible(False)
+                self.main_window.profile_group.setVisible(True)
+                self.main_window.exit_profile_edit_mode()
+            self.main_window.show_controller_panel()
+            logging.debug("Controller panel toggled ON (opened).")
+
+    @Slot()
+    def handle_controller_exit(self):
+        """Exit the inline controller settings panel without saving."""
+        self.main_window.exit_controller_panel()
+        logging.debug("Controller panel closed without saving.")
+
+    @Slot()
+    def handle_controller_save(self):
+        """Save controller settings and start/stop the controller manager accordingly."""
+        try:
+            enabled = self.main_window.controller_enabled_switch.isChecked()
+            self.main_window.current_settings["controller_support_enabled"] = enabled
+
+            if settings_manager.save_settings(self.main_window.current_settings):
+                logging.info(f"Controller support enabled: {enabled}")
+
+                # Apply immediately: start or stop the controller manager
+                cm = getattr(self.main_window, 'controller_manager', None)
+                if cm is not None:
+                    if enabled and not cm.is_running():
+                        cm.start()
+                        self.main_window.status_label.setText("Controller support enabled.")
+                    elif not enabled and cm.is_running():
+                        cm.stop()
+                        self.main_window.status_label.setText("Controller support disabled.")
+                    else:
+                        self.main_window.status_label.setText("Controller settings saved.")
+            else:
+                self.main_window.status_label.setText("Failed to save controller settings.")
+                logging.error("Failed to save controller settings.")
+
+            self.main_window.exit_controller_panel()
+        except Exception as e:
+            logging.error(f"Error saving controller settings: {e}")
+
     @Slot()
     def handle_settings_browse(self):
         """Opens dialog to select backup folder from inline settings panel."""
