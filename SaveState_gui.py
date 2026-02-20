@@ -38,7 +38,8 @@ except ImportError:
                     "Install pynput for this feature (e.g., 'pip install pynput').")
 
 from PySide6.QtGui import (
-     QIcon, QColor, QDragEnterEvent, QDropEvent, QDragLeaveEvent, QDragMoveEvent, QPalette, QAction, QCursor
+    QIcon, QColor, QDragEnterEvent, QDropEvent, QDragLeaveEvent, QDragMoveEvent,
+    QPalette, QAction, QCursor, QPixmap, QPainter, QFont,
 )
 
 # Import condizionale per PyWin32 (solo su Windows)
@@ -824,28 +825,6 @@ class MainWindow(QMainWindow):
 
         actions_group.setLayout(actions_layout)
 
-        # Controller badge overlays: parented to actions_group, floated above the buttons via _position_ctrl_badges()
-        # They are NOT in the layout — they don't affect button sizing at all.
-        _bs = ("border-radius: 10px; background-color: {bg}; color: white; "
-               "font-size: 8pt; font-weight: bold;")
-        self.ctrl_badge_backup = QLabel("A", actions_group)
-        self.ctrl_badge_backup.setStyleSheet(_bs.format(bg="#1E8449"))
-        self.ctrl_badge_backup.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.ctrl_badge_backup.setFixedSize(QSize(20, 20))
-        self.ctrl_badge_backup.setVisible(False)
-
-        self.ctrl_badge_restore = QLabel("X", actions_group)
-        self.ctrl_badge_restore.setStyleSheet(_bs.format(bg="#1A5276"))
-        self.ctrl_badge_restore.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.ctrl_badge_restore.setFixedSize(QSize(20, 20))
-        self.ctrl_badge_restore.setVisible(False)
-
-        self.ctrl_badge_manage = QLabel("Y", actions_group)
-        self.ctrl_badge_manage.setStyleSheet(_bs.format(bg="#7D6608"))
-        self.ctrl_badge_manage.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.ctrl_badge_manage.setFixedSize(QSize(20, 20))
-        self.ctrl_badge_manage.setVisible(False)
-        
         # Add the toggle button as a child of actions_group (not backup_button)
         # This allows it to remain enabled even when backup_button is disabled
         self.backup_mode_toggle.setParent(actions_group)
@@ -1047,7 +1026,6 @@ class MainWindow(QMainWindow):
         
         # Position backup toggle and controller badges after layout is complete
         QTimer.singleShot(100, self._position_backup_toggle)
-        QTimer.singleShot(120, self._position_ctrl_badges)
 
         # Initialize controller manager (start only if enabled in settings)
         self.controller_manager = ControllerManager(self)
@@ -1094,27 +1072,6 @@ class MainWindow(QMainWindow):
             self.backup_mode_toggle.raise_()  # Ensure it stays on top
         except Exception as e:
             pass  # Fail silently for UI polish
-
-    def _position_ctrl_badges(self):
-        """Position controller badge overlays at the top-left edge of each action button."""
-        try:
-            badge_h = 20
-            pairs = [
-                (getattr(self, 'ctrl_badge_backup',  None), self.backup_button),
-                (getattr(self, 'ctrl_badge_restore', None), self.restore_button),
-                (getattr(self, 'ctrl_badge_manage',  None), self.manage_backups_button),
-            ]
-            for badge, btn in pairs:
-                if badge is None or not btn:
-                    continue
-                btn_pos = btn.mapTo(self.actions_group, btn.rect().topLeft())
-                # Float the badge at the left side of the button, half above the top edge
-                x = btn_pos.x() + 8
-                y = btn_pos.y() - badge_h // 2
-                badge.move(x, y)
-                badge.raise_()
-        except Exception:
-            pass
 
     # --- UI and Event Handling ---
     # Centers the loading label within the overlay widget.
@@ -1243,11 +1200,9 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'actions_group') and watched is self.actions_group:
                 if event.type() == QEvent.Type.Resize or event.type() == QEvent.Type.Show:
                     self._position_backup_toggle()
-                    self._position_ctrl_badges()
             elif hasattr(self, 'backup_button') and watched is self.backup_button:
                 if event.type() == QEvent.Type.Resize or event.type() == QEvent.Type.Move or event.type() == QEvent.Type.Show:
                     self._position_backup_toggle()
-                    self._position_ctrl_badges()
         except Exception as e:
              pass # Fail silently for UI polish
 
@@ -2693,41 +2648,81 @@ class MainWindow(QMainWindow):
         table.selectRow(row)
         table.scrollTo(table.model().index(row, 0))
 
-    def _ctrl_deactivate(self):
-        """Immediately hide all controller UI when support is disabled at runtime."""
-        for badge in self._ctrl_badges():
-            badge.setVisible(False)
+    # --- Controller badge icons (set directly on action buttons via setIcon) ---
+
+    def _make_ctrl_badge_icon(self, letter: str, color: str, size: int = 18) -> QIcon:
+        """Generate a circular badge QIcon with a letter, rendered at `size` px."""
+        px = QPixmap(size, size)
+        px.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(px)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(QColor(color))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(0, 0, size, size)
+        painter.setPen(QColor("white"))
+        font = QFont()
+        font.setPixelSize(max(8, size - 6))
+        font.setBold(True)
+        painter.setFont(font)
+        from PySide6.QtCore import QRect
+        painter.drawText(QRect(0, 0, size, size), Qt.AlignmentFlag.AlignCenter,
+                         letter[:2] if len(letter) > 2 else letter)
+        painter.end()
+        return QIcon(px)
 
     def _ctrl_update_badges(self):
-        """Update badge letter/color to reflect the current button mapping, then show them."""
+        """Set badge icons on action buttons based on the current button mapping.
+        Saves original icons the first time so they can be restored on disconnect."""
         mappings: dict = self.current_settings.get(
             "controller_button_mappings", CTRL_DEFAULT_MAPPINGS
         )
-        # action → (badge widget, badge label on button) pairs
-        action_badge_map = {
-            "backup":        (getattr(self, 'ctrl_badge_backup',  None),),
-            "restore":       (getattr(self, 'ctrl_badge_restore', None),),
-            "manage_backups":(getattr(self, 'ctrl_badge_manage',  None),),
-        }
-        # Build reverse mapping: action → button name
+        # Build reverse mapping: action → first physical button assigned to it
         action_to_btn: dict[str, str] = {}
-        for btn, action in mappings.items():
+        for btn_name, action in mappings.items():
             if action and action not in action_to_btn:
-                action_to_btn[action] = btn
+                action_to_btn[action] = btn_name
 
-        _bs = "border-radius: 10px; background-color: {bg}; color: white; font-size: 8pt; font-weight: bold;"
-        for action, badges in action_badge_map.items():
-            btn_name = action_to_btn.get(action, "")
-            for badge in badges:
-                if badge is None:
-                    continue
-                if btn_name:
-                    badge.setText(btn_name[:2] if len(btn_name) > 2 else btn_name)
-                    color = CTRL_BADGE_COLOR.get(btn_name, "#555")
-                    badge.setStyleSheet(_bs.format(bg=color))
-                    badge.setVisible(True)
-                else:
-                    badge.setVisible(False)
+        # action → the UI button it controls
+        action_btn_map: dict[str, object] = {
+            "backup":         self.backup_button,
+            "restore":        self.restore_button,
+            "manage_backups": self.manage_backups_button,
+        }
+
+        icon_size = QSize(18, 18)
+
+        for action, ui_btn in action_btn_map.items():
+            btn_id = id(ui_btn)
+            # Save original icon once
+            if btn_id not in getattr(self, '_ctrl_orig_icons', {}):
+                if not hasattr(self, '_ctrl_orig_icons'):
+                    self._ctrl_orig_icons = {}
+                self._ctrl_orig_icons[btn_id] = ui_btn.icon()
+
+            phys_btn = action_to_btn.get(action, "")
+            if phys_btn:
+                badge_icon = self._make_ctrl_badge_icon(
+                    phys_btn, CTRL_BADGE_COLOR.get(phys_btn, "#555")
+                )
+                ui_btn.setIcon(badge_icon)
+                ui_btn.setIconSize(icon_size)
+            else:
+                # No button mapped to this action — restore original icon
+                orig = getattr(self, '_ctrl_orig_icons', {}).get(btn_id)
+                if orig is not None:
+                    ui_btn.setIcon(orig)
+
+    def _ctrl_restore_button_icons(self):
+        """Restore all action buttons to their original icons (on disconnect/disable)."""
+        for ui_btn in (self.backup_button, self.restore_button, self.manage_backups_button):
+            orig = getattr(self, '_ctrl_orig_icons', {}).get(id(ui_btn))
+            if orig is not None:
+                ui_btn.setIcon(orig)
+                ui_btn.setIconSize(QSize(16, 16))
+
+    def _ctrl_deactivate(self):
+        """Immediately restore button icons when controller support is disabled at runtime."""
+        self._ctrl_restore_button_icons()
 
     @Slot(int)
     def _ctrl_on_connected(self, idx: int):
@@ -2738,7 +2733,7 @@ class MainWindow(QMainWindow):
     @Slot(int)
     def _ctrl_on_disconnected(self, idx: int):
         logging.info(f"Controller {idx} disconnected.")
-        # Only hide badges if no other controller is still connected
+        # Only restore icons if no other controller is still connected
         from controller_manager import XINPUT_STATE
         any_connected = False
         if hasattr(self, 'controller_manager') and self.controller_manager.is_running():
@@ -2755,16 +2750,7 @@ class MainWindow(QMainWindow):
                 except Exception:
                     pass
         if not any_connected:
-            for badge in self._ctrl_badges():
-                badge.setVisible(False)
-
-    def _ctrl_badges(self):
-        """Return all controller badge labels."""
-        return [b for b in (
-            getattr(self, 'ctrl_badge_backup',  None),
-            getattr(self, 'ctrl_badge_restore', None),
-            getattr(self, 'ctrl_badge_manage',  None),
-        ) if b is not None]
+            self._ctrl_restore_button_icons()
 
     # --- Controller dialog helpers ---
 
