@@ -252,17 +252,11 @@ class MainWindowHandlers:
             
             # Toggle inline settings panel (normal mode)
             if getattr(self.main_window, '_settings_mode_active', False):
-                # Settings are open, close them (same as Exit button)
                 self.main_window.exit_settings_panel()
                 logging.debug("Settings panel toggled OFF (closed).")
             else:
-                # Close profile editor if it's open before showing settings
-                if getattr(self.main_window, '_edit_mode_active', False):
-                    self.main_window.profile_editor_group.setVisible(False)
-                    self.main_window.profile_group.setVisible(True)
-                    self.main_window.exit_profile_edit_mode()
-                    logging.debug("Profile editor closed before opening settings.")
-                # Settings are closed, open them
+                # Close any other open panel first
+                self.main_window._close_active_panel()
                 self.main_window.show_settings_panel()
                 logging.debug("Settings panel toggled ON (opened).")
             return  # Exit early for inline mode
@@ -356,12 +350,8 @@ class MainWindowHandlers:
             self.main_window.exit_controller_panel()
             logging.debug("Controller panel toggled OFF (closed).")
         else:
-            if getattr(self.main_window, '_settings_mode_active', False):
-                self.main_window.exit_settings_panel()
-            if getattr(self.main_window, '_edit_mode_active', False):
-                self.main_window.profile_editor_group.setVisible(False)
-                self.main_window.profile_group.setVisible(True)
-                self.main_window.exit_profile_edit_mode()
+            # Close any other open panel first
+            self.main_window._close_active_panel()
             self.main_window.show_controller_panel()
             logging.debug("Controller panel toggled ON (opened).")
 
@@ -373,10 +363,16 @@ class MainWindowHandlers:
 
     @Slot()
     def handle_controller_save(self):
-        """Save controller settings and start/stop the controller manager accordingly."""
+        """Save controller settings (enable flag + button mappings) and apply immediately."""
         try:
             enabled = self.main_window.controller_enabled_switch.isChecked()
             self.main_window.current_settings["controller_support_enabled"] = enabled
+
+            # Collect button→action mappings from the combo boxes
+            new_mappings = {}
+            for btn_name, combo in self.main_window.ctrl_mapping_combos.items():
+                new_mappings[btn_name] = combo.currentData() or ""
+            self.main_window.current_settings["controller_button_mappings"] = new_mappings
 
             if settings_manager.save_settings(self.main_window.current_settings):
                 logging.info(f"Controller support enabled: {enabled}")
@@ -389,11 +385,13 @@ class MainWindowHandlers:
                         self.main_window.status_label.setText("Controller support enabled.")
                     elif not enabled and cm.is_running():
                         cm.stop()
-                        # The poller thread is killed — disconnection signals won't fire,
-                        # so we manually clean up all controller UI right now.
+                        # Thread killed — disconnection signals won't fire; clean up manually.
                         self.main_window._ctrl_deactivate()
                         self.main_window.status_label.setText("Controller support disabled.")
                     else:
+                        # Already in the right state — just refresh badge labels/colors
+                        if enabled and cm.is_running():
+                            self.main_window._ctrl_update_badges()
                         self.main_window.status_label.setText("Controller settings saved.")
             else:
                 self.main_window.status_label.setText("Failed to save controller settings.")

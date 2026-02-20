@@ -66,6 +66,10 @@ import cloud_settings_manager
 import core_logic # Mantenuto per load_profiles
 from gui_handlers import MainWindowHandlers
 from controller_manager import ControllerManager
+from gui_components.controller_panel import (
+    ControllerPanel,
+    CTRL_BUTTONS, CTRL_ACTIONS, CTRL_DEFAULT_MAPPINGS, CTRL_BADGE_COLOR,
+)
 
 # --- COSTANTI GLOBALI PER IDENTIFICARE L'ISTANZA ---
 # Import from config.py for early access in main.py before heavy imports
@@ -783,76 +787,13 @@ class MainWindow(QMainWindow):
         # --- End Inline Settings Panel ---
 
         # --- Inline Controller Settings Panel (hidden by default) ---
-        self.controller_panel_group = QGroupBox("Controller Settings")
-        controller_panel_main_layout = QVBoxLayout()
-        controller_panel_main_layout.setContentsMargins(16, 12, 16, 12)
-        controller_panel_main_layout.setSpacing(16)
-
-        controller_desc = QLabel(
-            "Enable controller/gamepad support (XInput — Xbox, Steam Deck, and compatible devices).\n\n"
-            "Button mapping:\n"
-            "  D-pad / Left stick  →  Navigate profile list\n"
-            "  A                   →  Backup selected profile\n"
-            "  X                   →  Restore selected profile\n"
-            "  Y                   →  Manage Backups\n"
-            "  B                   →  Back / close current panel\n"
-            "  Start               →  Backup (alternative)\n"
-            "  View / Select       →  Delete selected profile\n"
-            "  LB / RB             →  Page up / Page down"
-        )
-        controller_desc.setWordWrap(True)
-        controller_desc.setObjectName("ControllerDescLabel")
-        controller_panel_main_layout.addWidget(controller_desc)
-
-        controller_toggle_row = QHBoxLayout()
-        controller_toggle_row.setSpacing(12)
-        self.controller_enabled_switch = QCheckBox("Enable controller compatibility")
-        self.controller_enabled_switch.setObjectName("ControllerSwitch")
-        self.controller_enabled_switch.setStyleSheet(
-            """
-            QCheckBox#ControllerSwitch {
-                spacing: 8px;
-                font-size: 11pt;
-            }
-            QCheckBox#ControllerSwitch::indicator {
-                width: 44px;
-                height: 24px;
-                border-radius: 12px;
-                border: none;
-            }
-            QCheckBox#ControllerSwitch::indicator:unchecked {
-                background-color: #555555;
-                image: url(none);
-            }
-            QCheckBox#ControllerSwitch::indicator:checked {
-                background-color: #2d7d46;
-                image: url(none);
-            }
-            QCheckBox#ControllerSwitch::indicator:unchecked:hover {
-                background-color: #666666;
-            }
-            QCheckBox#ControllerSwitch::indicator:checked:hover {
-                background-color: #38a158;
-            }
-            """
-        )
-        controller_toggle_row.addWidget(self.controller_enabled_switch)
-        controller_toggle_row.addStretch(1)
-        controller_panel_main_layout.addLayout(controller_toggle_row)
-
-        controller_panel_main_layout.addStretch(1)
-
-        controller_buttons_row = QHBoxLayout()
-        self.controller_exit_button = QPushButton("Exit")
-        self.controller_save_button = QPushButton("Save")
-        controller_buttons_row.addStretch(1)
-        controller_buttons_row.addWidget(self.controller_exit_button)
-        controller_buttons_row.addWidget(self.controller_save_button)
-        controller_panel_main_layout.addLayout(controller_buttons_row)
-
-        self.controller_panel_group.setLayout(controller_panel_main_layout)
-        self.controller_panel_group.setVisible(False)
+        self.controller_panel_group = ControllerPanel(parent=self)
         content_layout.addWidget(self.controller_panel_group, stretch=1)
+        # Convenience aliases used by the rest of the class and by gui_handlers
+        self.controller_enabled_switch = self.controller_panel_group.controller_enabled_switch
+        self.ctrl_mapping_combos       = self.controller_panel_group.ctrl_mapping_combos
+        self.controller_exit_button    = self.controller_panel_group.exit_button
+        self.controller_save_button    = self.controller_panel_group.save_button
         # --- End Inline Controller Settings Panel ---
 
         # --- Inline Cloud Save Panel (hidden by default) ---
@@ -2466,9 +2407,7 @@ class MainWindow(QMainWindow):
     def show_controller_panel(self):
         """Show inline controller settings panel, replacing the profiles UI."""
         try:
-            self.controller_enabled_switch.setChecked(
-                self.current_settings.get("controller_support_enabled", True)
-            )
+            self.controller_panel_group.populate(self.current_settings)
             self.profile_group.setVisible(False)
             self.actions_group.setVisible(False)
             self.general_group.setVisible(False)
@@ -2549,6 +2488,21 @@ class MainWindow(QMainWindow):
             self.settings_button.setIcon(self.settings_icon_normal)
             logging.debug("Settings icon restored to normal icon")
 
+    def _close_active_panel(self):
+        """Close whichever inline panel is currently open (if any)."""
+        if getattr(self, '_settings_mode_active', False):
+            self.exit_settings_panel()
+        elif getattr(self, '_controller_mode_active', False):
+            self.exit_controller_panel()
+        elif getattr(self, '_cloud_mode_active', False):
+            self.exit_cloud_panel()
+        elif getattr(self, '_edit_mode_active', False):
+            if hasattr(self, 'profile_editor_group'):
+                self.profile_editor_group.setVisible(False)
+            if hasattr(self, 'profile_group'):
+                self.profile_group.setVisible(True)
+            self.exit_profile_edit_mode()
+
     # --- Controller input slots ---
 
     @Slot()
@@ -2599,9 +2553,69 @@ class MainWindow(QMainWindow):
         table.selectRow(row)
         table.scrollTo(table.model().index(row, 0))
 
+    # --- Controller physical-button slots (call dispatcher) ---
+
     @Slot()
     def _ctrl_btn_a(self):
-        """A button: Backup selected profile."""
+        self._ctrl_dispatch("A")
+
+    @Slot()
+    def _ctrl_btn_b(self):
+        self._ctrl_dispatch("B")
+
+    @Slot()
+    def _ctrl_btn_x(self):
+        self._ctrl_dispatch("X")
+
+    @Slot()
+    def _ctrl_btn_y(self):
+        self._ctrl_dispatch("Y")
+
+    @Slot()
+    def _ctrl_btn_start(self):
+        self._ctrl_dispatch("Start")
+
+    @Slot()
+    def _ctrl_btn_delete(self):
+        self._ctrl_dispatch("View/Select")
+
+    @Slot()
+    def _ctrl_btn_lb(self):
+        self._ctrl_dispatch("LB")
+
+    @Slot()
+    def _ctrl_btn_rb(self):
+        self._ctrl_dispatch("RB")
+
+    # --- Controller dispatcher — maps physical button → configured action ---
+
+    def _ctrl_dispatch(self, button: str):
+        """Resolve the action assigned to a physical button and execute it."""
+        mappings: dict = self.current_settings.get(
+            "controller_button_mappings", CTRL_DEFAULT_MAPPINGS
+        )
+        action = mappings.get(button, "")
+        if not action:
+            return
+        if action == "backup":
+            self._ctrl_do_backup()
+        elif action == "restore":
+            self._ctrl_do_restore()
+        elif action == "manage_backups":
+            self._ctrl_do_manage_backups()
+        elif action == "back":
+            self._ctrl_do_back()
+        elif action == "delete":
+            self._ctrl_do_delete()
+        elif action == "page_up":
+            self._ctrl_do_page("up")
+        elif action == "page_down":
+            self._ctrl_do_page("down")
+
+    # --- Controller action implementations ---
+
+    def _ctrl_do_backup(self):
+        """Backup action: also closes any open inline panel first."""
         if getattr(self, '_controller_mode_active', False):
             self.exit_controller_panel()
             return
@@ -2613,12 +2627,22 @@ class MainWindow(QMainWindow):
         if self.backup_button.isEnabled():
             self.backup_button.click()
 
-    @Slot()
-    def _ctrl_btn_b(self):
-        """B button: close open dialog, or back from an inline panel."""
+    def _ctrl_do_restore(self):
+        if self._ctrl_modal_open():
+            return
+        if self._ctrl_table_is_active() and self.restore_button.isEnabled():
+            self.restore_button.click()
+
+    def _ctrl_do_manage_backups(self):
+        if self._ctrl_modal_open():
+            return
+        if self._ctrl_table_is_active() and self.manage_backups_button.isEnabled():
+            self.manage_backups_button.click()
+
+    def _ctrl_do_back(self):
+        """Close open dialog or navigate back from an inline panel."""
         dialog = self._ctrl_active_dialog()
         if dialog is not None:
-            # Find the Close/Cancel/Reject button and click it, or call reject()
             close_btn = getattr(dialog, 'close_button', None)
             if close_btn is not None:
                 close_btn.click()
@@ -2636,30 +2660,7 @@ class MainWindow(QMainWindow):
             self.profile_group.setVisible(True)
             self.exit_profile_edit_mode()
 
-    @Slot()
-    def _ctrl_btn_x(self):
-        """X button: Restore selected profile."""
-        if self._ctrl_modal_open():
-            return
-        if self._ctrl_table_is_active() and self.restore_button.isEnabled():
-            self.restore_button.click()
-
-    @Slot()
-    def _ctrl_btn_y(self):
-        """Y button: Manage Backups."""
-        if self._ctrl_modal_open():
-            return
-        if self._ctrl_table_is_active() and self.manage_backups_button.isEnabled():
-            self.manage_backups_button.click()
-
-    @Slot()
-    def _ctrl_btn_start(self):
-        """Start button: Backup (same as A)."""
-        self._ctrl_btn_a()
-
-    @Slot()
-    def _ctrl_btn_delete(self):
-        """View/Select button: Delete selected profile (with confirmation)."""
+    def _ctrl_do_delete(self):
         if self._ctrl_modal_open():
             return
         if not self._ctrl_table_is_active():
@@ -2669,9 +2670,7 @@ class MainWindow(QMainWindow):
         elif self.profile_table_widget.currentRow() >= 0:
             self.handlers.handle_delete_profile()
 
-    @Slot()
-    def _ctrl_btn_lb(self):
-        """LB: Page up in profile list."""
+    def _ctrl_do_page(self, direction: str):
         if not self._ctrl_table_is_active():
             return
         table = self.profile_table_widget
@@ -2679,50 +2678,68 @@ class MainWindow(QMainWindow):
         if not visible:
             return
         current = table.currentRow()
-        if current not in visible:
-            table.selectRow(visible[0])
-            return
-        pos = visible.index(current)
-        page = max(0, pos - 5)
-        table.selectRow(visible[page])
-        table.scrollTo(table.model().index(visible[page], 0))
-
-    @Slot()
-    def _ctrl_btn_rb(self):
-        """RB: Page down in profile list."""
-        if not self._ctrl_table_is_active():
-            return
-        table = self.profile_table_widget
-        visible = self._ctrl_visible_rows()
-        if not visible:
-            return
-        current = table.currentRow()
-        if current not in visible:
-            table.selectRow(visible[-1])
-            return
-        pos = visible.index(current)
-        page = min(len(visible) - 1, pos + 5)
-        table.selectRow(visible[page])
-        table.scrollTo(table.model().index(visible[page], 0))
+        if direction == "up":
+            if current not in visible:
+                row = visible[0]
+            else:
+                pos = visible.index(current)
+                row = visible[max(0, pos - 5)]
+        else:
+            if current not in visible:
+                row = visible[-1]
+            else:
+                pos = visible.index(current)
+                row = visible[min(len(visible) - 1, pos + 5)]
+        table.selectRow(row)
+        table.scrollTo(table.model().index(row, 0))
 
     def _ctrl_deactivate(self):
         """Immediately hide all controller UI when support is disabled at runtime."""
         for badge in self._ctrl_badges():
             badge.setVisible(False)
 
+    def _ctrl_update_badges(self):
+        """Update badge letter/color to reflect the current button mapping, then show them."""
+        mappings: dict = self.current_settings.get(
+            "controller_button_mappings", CTRL_DEFAULT_MAPPINGS
+        )
+        # action → (badge widget, badge label on button) pairs
+        action_badge_map = {
+            "backup":        (getattr(self, 'ctrl_badge_backup',  None),),
+            "restore":       (getattr(self, 'ctrl_badge_restore', None),),
+            "manage_backups":(getattr(self, 'ctrl_badge_manage',  None),),
+        }
+        # Build reverse mapping: action → button name
+        action_to_btn: dict[str, str] = {}
+        for btn, action in mappings.items():
+            if action and action not in action_to_btn:
+                action_to_btn[action] = btn
+
+        _bs = "border-radius: 10px; background-color: {bg}; color: white; font-size: 8pt; font-weight: bold;"
+        for action, badges in action_badge_map.items():
+            btn_name = action_to_btn.get(action, "")
+            for badge in badges:
+                if badge is None:
+                    continue
+                if btn_name:
+                    badge.setText(btn_name[:2] if len(btn_name) > 2 else btn_name)
+                    color = CTRL_BADGE_COLOR.get(btn_name, "#555")
+                    badge.setStyleSheet(_bs.format(bg=color))
+                    badge.setVisible(True)
+                else:
+                    badge.setVisible(False)
+
     @Slot(int)
     def _ctrl_on_connected(self, idx: int):
         logging.info(f"Controller {idx} connected.")
         self.status_label.setText(f"Controller {idx + 1} connected.")
-        for badge in self._ctrl_badges():
-            badge.setVisible(True)
+        self._ctrl_update_badges()
 
     @Slot(int)
     def _ctrl_on_disconnected(self, idx: int):
         logging.info(f"Controller {idx} disconnected.")
         # Only hide badges if no other controller is still connected
-        from controller_manager import ControllerPoller, XINPUT_STATE
-        import ctypes
+        from controller_manager import XINPUT_STATE
         any_connected = False
         if hasattr(self, 'controller_manager') and self.controller_manager.is_running():
             import platform as _plat
@@ -2743,12 +2760,11 @@ class MainWindow(QMainWindow):
 
     def _ctrl_badges(self):
         """Return all controller badge labels."""
-        badges = []
-        for attr in ('ctrl_badge_backup', 'ctrl_badge_restore', 'ctrl_badge_manage'):
-            b = getattr(self, attr, None)
-            if b is not None:
-                badges.append(b)
-        return badges
+        return [b for b in (
+            getattr(self, 'ctrl_badge_backup',  None),
+            getattr(self, 'ctrl_badge_restore', None),
+            getattr(self, 'ctrl_badge_manage',  None),
+        ) if b is not None]
 
     # --- Controller dialog helpers ---
 
