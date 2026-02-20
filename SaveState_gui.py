@@ -2561,11 +2561,19 @@ class MainWindow(QMainWindow):
         if not self._ctrl_table_is_active():
             return
         table = self.profile_table_widget
+        visible = self._ctrl_visible_rows()
+        if not visible:
+            return
         current = table.currentRow()
-        row = self._ctrl_prev_visible_row(current)
-        if row is not None:
-            table.selectRow(row)
-            table.scrollTo(table.model().index(row, 0))
+        if not table.selectionModel().hasSelection() or current not in visible:
+            # Nothing selected yet — select the first visible row
+            row = visible[0]
+        else:
+            row = self._ctrl_prev_visible_row(current)
+            if row is None:
+                row = current  # Already at top; keep selection (ensures item stays selected)
+        table.selectRow(row)
+        table.scrollTo(table.model().index(row, 0))
 
     @Slot()
     def _ctrl_nav_down(self):
@@ -2577,11 +2585,19 @@ class MainWindow(QMainWindow):
         if not self._ctrl_table_is_active():
             return
         table = self.profile_table_widget
+        visible = self._ctrl_visible_rows()
+        if not visible:
+            return
         current = table.currentRow()
-        row = self._ctrl_next_visible_row(current)
-        if row is not None:
-            table.selectRow(row)
-            table.scrollTo(table.model().index(row, 0))
+        if not table.selectionModel().hasSelection() or current not in visible:
+            # Nothing selected yet — select the first visible row
+            row = visible[0]
+        else:
+            row = self._ctrl_next_visible_row(current)
+            if row is None:
+                row = current  # Already at bottom; keep selection
+        table.selectRow(row)
+        table.scrollTo(table.model().index(row, 0))
 
     @Slot()
     def _ctrl_btn_a(self):
@@ -2740,7 +2756,8 @@ class MainWindow(QMainWindow):
 
     def _ctrl_dialog_nav(self, dialog, direction: int):
         """Navigate up (direction=-1) or down (+1) inside an open dialog.
-        Works generically with any dialog that contains a QTableWidget or QListWidget."""
+        Works generically with any dialog that contains a QTableWidget or QListWidget.
+        Always selects a row — even if there is only one item."""
         from PySide6.QtWidgets import QTableWidget, QListWidget
         # Try QTableWidget first
         for table in dialog.findChildren(QTableWidget):
@@ -2749,13 +2766,13 @@ class MainWindow(QMainWindow):
                 if count == 0:
                     return
                 current = table.currentRow()
-                if current < 0:
+                if not table.selectionModel().hasSelection() or current < 0:
                     table.selectRow(0)
                     return
                 new_row = max(0, current + direction) if direction < 0 else min(count - 1, current + direction)
-                if new_row != current:
-                    table.selectRow(new_row)
-                    table.scrollTo(table.model().index(new_row, 0))
+                # Always call selectRow — ensures single-item lists get selected too
+                table.selectRow(new_row)
+                table.scrollTo(table.model().index(new_row, 0))
                 return
         # Fallback: QListWidget
         for lst in dialog.findChildren(QListWidget):
@@ -2768,8 +2785,7 @@ class MainWindow(QMainWindow):
                     lst.setCurrentRow(0)
                     return
                 new_row = max(0, current + direction) if direction < 0 else min(count - 1, current + direction)
-                if new_row != current:
-                    lst.setCurrentRow(new_row)
+                lst.setCurrentRow(new_row)
                 return
 
     # --- Controller guard helpers ---
