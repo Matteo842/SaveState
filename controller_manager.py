@@ -262,6 +262,7 @@ class ControllerManager:
         p.btn_x.connect(mw._ctrl_btn_x)
         p.btn_y.connect(mw._ctrl_btn_y)
         p.btn_start.connect(mw._ctrl_btn_start)
+        p.btn_back.connect(mw._ctrl_btn_delete)
         p.btn_lb.connect(mw._ctrl_btn_lb)
         p.btn_rb.connect(mw._ctrl_btn_rb)
         p.controller_connected.connect(mw._ctrl_on_connected)

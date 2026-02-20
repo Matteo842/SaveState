@@ -515,13 +515,13 @@ class MainWindow(QMainWindow):
         self.title_label.setObjectName("TitleLabel")
         title_layout.addWidget(self.title_label)
         title_layout.addStretch(1)
-        # Move Settings and Theme buttons to the title bar
+        # Right-side icon buttons: Controller first, then Settings, then Theme
+        self.controller_button.setObjectName("ControllerButton")
         self.settings_button.setObjectName("SettingsButton")
         self.theme_button.setObjectName("ThemeButton")
-        self.controller_button.setObjectName("ControllerButton")
+        title_layout.addWidget(self.controller_button)
         title_layout.addWidget(self.settings_button)
         title_layout.addWidget(self.theme_button)
-        title_layout.addWidget(self.controller_button)
         # Window control buttons (minimize, close) - no maximize/fullscreen
         self.minimize_button = QPushButton()
         self.minimize_button.setObjectName("MinimizeButton")
@@ -789,8 +789,16 @@ class MainWindow(QMainWindow):
         controller_panel_main_layout.setSpacing(16)
 
         controller_desc = QLabel(
-            "Enable controller/gamepad support for navigating the app with a controller or Steam Deck.\n"
-            "When enabled, the interface responds to gamepad inputs for buttons and list navigation."
+            "Enable controller/gamepad support (XInput — Xbox, Steam Deck, and compatible devices).\n\n"
+            "Button mapping:\n"
+            "  D-pad / Left stick  →  Navigate profile list\n"
+            "  A                   →  Backup selected profile\n"
+            "  X                   →  Restore selected profile\n"
+            "  Y                   →  Manage Backups\n"
+            "  B                   →  Back / close current panel\n"
+            "  Start               →  Backup (alternative)\n"
+            "  View / Select       →  Delete selected profile\n"
+            "  LB / RB             →  Page up / Page down"
         )
         controller_desc.setWordWrap(True)
         controller_desc.setObjectName("ControllerDescLabel")
@@ -864,16 +872,38 @@ class MainWindow(QMainWindow):
         actions_layout.setContentsMargins(20, 8, 20, 8)
         actions_layout.setSpacing(20)
 
-        # Allow buttons to expand naturally
+        # Allow buttons to expand naturally — sizes unchanged
         self.backup_button.setMaximumWidth(16777215) # Reset max width to default (QWIDGETSIZE_MAX)
         self.restore_button.setMaximumWidth(16777215)
         self.manage_backups_button.setMaximumWidth(16777215)
-        
+
         actions_layout.addWidget(self.backup_button)
         actions_layout.addWidget(self.restore_button)
         actions_layout.addWidget(self.manage_backups_button)
-        
+
         actions_group.setLayout(actions_layout)
+
+        # Controller badge overlays: parented to actions_group, floated above the buttons via _position_ctrl_badges()
+        # They are NOT in the layout — they don't affect button sizing at all.
+        _bs = ("border-radius: 10px; background-color: {bg}; color: white; "
+               "font-size: 8pt; font-weight: bold;")
+        self.ctrl_badge_backup = QLabel("A", actions_group)
+        self.ctrl_badge_backup.setStyleSheet(_bs.format(bg="#1E8449"))
+        self.ctrl_badge_backup.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.ctrl_badge_backup.setFixedSize(QSize(20, 20))
+        self.ctrl_badge_backup.setVisible(False)
+
+        self.ctrl_badge_restore = QLabel("X", actions_group)
+        self.ctrl_badge_restore.setStyleSheet(_bs.format(bg="#1A5276"))
+        self.ctrl_badge_restore.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.ctrl_badge_restore.setFixedSize(QSize(20, 20))
+        self.ctrl_badge_restore.setVisible(False)
+
+        self.ctrl_badge_manage = QLabel("Y", actions_group)
+        self.ctrl_badge_manage.setStyleSheet(_bs.format(bg="#7D6608"))
+        self.ctrl_badge_manage.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.ctrl_badge_manage.setFixedSize(QSize(20, 20))
+        self.ctrl_badge_manage.setVisible(False)
         
         # Add the toggle button as a child of actions_group (not backup_button)
         # This allows it to remain enabled even when backup_button is disabled
@@ -1074,8 +1104,9 @@ class MainWindow(QMainWindow):
         self.updateUiText()
         self.setWindowIcon(QIcon(resource_path("icon.png"))) # Icona finestra principale
         
-        # Position backup toggle after UI is set up (use timer to ensure layout is complete)
+        # Position backup toggle and controller badges after layout is complete
         QTimer.singleShot(100, self._position_backup_toggle)
+        QTimer.singleShot(120, self._position_ctrl_badges)
 
         # Initialize controller manager (start only if enabled in settings)
         self.controller_manager = ControllerManager(self)
@@ -1122,7 +1153,28 @@ class MainWindow(QMainWindow):
             self.backup_mode_toggle.raise_()  # Ensure it stays on top
         except Exception as e:
             pass  # Fail silently for UI polish
-    
+
+    def _position_ctrl_badges(self):
+        """Position controller badge overlays at the top-left edge of each action button."""
+        try:
+            badge_h = 20
+            pairs = [
+                (getattr(self, 'ctrl_badge_backup',  None), self.backup_button),
+                (getattr(self, 'ctrl_badge_restore', None), self.restore_button),
+                (getattr(self, 'ctrl_badge_manage',  None), self.manage_backups_button),
+            ]
+            for badge, btn in pairs:
+                if badge is None or not btn:
+                    continue
+                btn_pos = btn.mapTo(self.actions_group, btn.rect().topLeft())
+                # Float the badge at the left side of the button, half above the top edge
+                x = btn_pos.x() + 8
+                y = btn_pos.y() - badge_h // 2
+                badge.move(x, y)
+                badge.raise_()
+        except Exception:
+            pass
+
     # --- UI and Event Handling ---
     # Centers the loading label within the overlay widget.
     def _center_loading_label(self):
@@ -1244,15 +1296,17 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logging.debug(f"eventFilter exception: {e}")
             
-        # Handle manual positioning of the backup toggle button
-        # Toggle is now a child of actions_group, positioned over backup_button
+        # Handle manual positioning of the backup toggle button and controller badges
+        # Toggle/badges are children of actions_group, positioned over their respective buttons
         try:
             if hasattr(self, 'actions_group') and watched is self.actions_group:
                 if event.type() == QEvent.Type.Resize or event.type() == QEvent.Type.Show:
                     self._position_backup_toggle()
+                    self._position_ctrl_badges()
             elif hasattr(self, 'backup_button') and watched is self.backup_button:
                 if event.type() == QEvent.Type.Resize or event.type() == QEvent.Type.Move or event.type() == QEvent.Type.Show:
                     self._position_backup_toggle()
+                    self._position_ctrl_badges()
         except Exception as e:
              pass # Fail silently for UI polish
 
@@ -2530,12 +2584,16 @@ class MainWindow(QMainWindow):
         if getattr(self, '_settings_mode_active', False):
             self.exit_settings_panel()
             return
+        if self._ctrl_modal_open():
+            return
         if self.backup_button.isEnabled():
             self.backup_button.click()
 
     @Slot()
     def _ctrl_btn_b(self):
-        """B button: Back / close current panel."""
+        """B button: Back / close current inline panel (ignored while a modal dialog is open)."""
+        if self._ctrl_modal_open():
+            return
         if getattr(self, '_controller_mode_active', False):
             self.exit_controller_panel()
         elif getattr(self, '_settings_mode_active', False):
@@ -2550,12 +2608,16 @@ class MainWindow(QMainWindow):
     @Slot()
     def _ctrl_btn_x(self):
         """X button: Restore selected profile."""
+        if self._ctrl_modal_open():
+            return
         if self._ctrl_table_is_active() and self.restore_button.isEnabled():
             self.restore_button.click()
 
     @Slot()
     def _ctrl_btn_y(self):
         """Y button: Manage Backups."""
+        if self._ctrl_modal_open():
+            return
         if self._ctrl_table_is_active() and self.manage_backups_button.isEnabled():
             self.manage_backups_button.click()
 
@@ -2563,6 +2625,18 @@ class MainWindow(QMainWindow):
     def _ctrl_btn_start(self):
         """Start button: Backup (same as A)."""
         self._ctrl_btn_a()
+
+    @Slot()
+    def _ctrl_btn_delete(self):
+        """View/Select button: Delete selected profile (with confirmation)."""
+        if self._ctrl_modal_open():
+            return
+        if not self._ctrl_table_is_active():
+            return
+        if self.delete_profile_button.isEnabled():
+            self.delete_profile_button.click()
+        elif self.profile_table_widget.currentRow() >= 0:
+            self.handlers.handle_delete_profile()
 
     @Slot()
     def _ctrl_btn_lb(self):
@@ -2604,10 +2678,65 @@ class MainWindow(QMainWindow):
     def _ctrl_on_connected(self, idx: int):
         logging.info(f"Controller {idx} connected.")
         self.status_label.setText(f"Controller {idx + 1} connected.")
+        for badge in self._ctrl_badges():
+            badge.setVisible(True)
 
     @Slot(int)
     def _ctrl_on_disconnected(self, idx: int):
         logging.info(f"Controller {idx} disconnected.")
+        # Only hide badges if no other controller is still connected
+        from controller_manager import ControllerPoller, XINPUT_STATE
+        import ctypes
+        any_connected = False
+        if hasattr(self, 'controller_manager') and self.controller_manager.is_running():
+            import platform as _plat
+            if _plat.system() == "Windows":
+                try:
+                    import ctypes as _ct
+                    _xi = _ct.windll.xinput1_4
+                    for i in range(4):
+                        st = XINPUT_STATE()
+                        if _xi.XInputGetState(i, _ct.byref(st)) == 0:
+                            any_connected = True
+                            break
+                except Exception:
+                    pass
+        if not any_connected:
+            for badge in self._ctrl_badges():
+                badge.setVisible(False)
+
+    def _ctrl_badges(self):
+        """Return all controller badge labels."""
+        badges = []
+        for attr in ('ctrl_badge_backup', 'ctrl_badge_restore', 'ctrl_badge_manage'):
+            b = getattr(self, attr, None)
+            if b is not None:
+                badges.append(b)
+        return badges
+
+    # --- Controller guard helpers ---
+
+    def _ctrl_modal_open(self) -> bool:
+        """True if any QDialog is currently visible (modal or non-modal).
+        ManageBackupsDialog and similar are opened with show(), not exec(),
+        so activeModalWidget() is always None. We scan all top-level widgets
+        instead — if any QDialog is visible, block further controller actions."""
+        return any(
+            isinstance(w, QDialog) and w.isVisible()
+            for w in QApplication.topLevelWidgets()
+        )
+
+    # Keep the cooldown helpers for any future use (currently unused by the modal guard)
+    def _ctrl_cooldown_active(self) -> bool:
+        return getattr(self, '_ctrl_action_cooldown', False)
+
+    def _ctrl_start_cooldown(self, ms: int = 1000):
+        self._ctrl_action_cooldown = True
+        QTimer.singleShot(ms, self._ctrl_clear_cooldown)
+
+    @Slot()
+    def _ctrl_clear_cooldown(self):
+        self._ctrl_action_cooldown = False
 
     # --- Controller navigation helpers ---
 
