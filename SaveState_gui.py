@@ -2553,7 +2553,11 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _ctrl_nav_up(self):
-        """Move selection up in the profile list."""
+        """Move selection up — inside an open dialog if present, else in the profile list."""
+        dialog = self._ctrl_active_dialog()
+        if dialog is not None:
+            self._ctrl_dialog_nav(dialog, -1)
+            return
         if not self._ctrl_table_is_active():
             return
         table = self.profile_table_widget
@@ -2565,7 +2569,11 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _ctrl_nav_down(self):
-        """Move selection down in the profile list."""
+        """Move selection down — inside an open dialog if present, else in the profile list."""
+        dialog = self._ctrl_active_dialog()
+        if dialog is not None:
+            self._ctrl_dialog_nav(dialog, +1)
+            return
         if not self._ctrl_table_is_active():
             return
         table = self.profile_table_widget
@@ -2591,8 +2599,15 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _ctrl_btn_b(self):
-        """B button: Back / close current inline panel (ignored while a modal dialog is open)."""
-        if self._ctrl_modal_open():
+        """B button: close open dialog, or back from an inline panel."""
+        dialog = self._ctrl_active_dialog()
+        if dialog is not None:
+            # Find the Close/Cancel/Reject button and click it, or call reject()
+            close_btn = getattr(dialog, 'close_button', None)
+            if close_btn is not None:
+                close_btn.click()
+            else:
+                dialog.reject()
             return
         if getattr(self, '_controller_mode_active', False):
             self.exit_controller_panel()
@@ -2714,6 +2729,49 @@ class MainWindow(QMainWindow):
                 badges.append(b)
         return badges
 
+    # --- Controller dialog helpers ---
+
+    def _ctrl_active_dialog(self):
+        """Return the first visible QDialog (any type), or None."""
+        for w in QApplication.topLevelWidgets():
+            if isinstance(w, QDialog) and w.isVisible():
+                return w
+        return None
+
+    def _ctrl_dialog_nav(self, dialog, direction: int):
+        """Navigate up (direction=-1) or down (+1) inside an open dialog.
+        Works generically with any dialog that contains a QTableWidget or QListWidget."""
+        from PySide6.QtWidgets import QTableWidget, QListWidget
+        # Try QTableWidget first
+        for table in dialog.findChildren(QTableWidget):
+            if table.isEnabled() and table.isVisible():
+                count = table.rowCount()
+                if count == 0:
+                    return
+                current = table.currentRow()
+                if current < 0:
+                    table.selectRow(0)
+                    return
+                new_row = max(0, current + direction) if direction < 0 else min(count - 1, current + direction)
+                if new_row != current:
+                    table.selectRow(new_row)
+                    table.scrollTo(table.model().index(new_row, 0))
+                return
+        # Fallback: QListWidget
+        for lst in dialog.findChildren(QListWidget):
+            if lst.isEnabled() and lst.isVisible():
+                count = lst.count()
+                if count == 0:
+                    return
+                current = lst.currentRow()
+                if current < 0:
+                    lst.setCurrentRow(0)
+                    return
+                new_row = max(0, current + direction) if direction < 0 else min(count - 1, current + direction)
+                if new_row != current:
+                    lst.setCurrentRow(new_row)
+                return
+
     # --- Controller guard helpers ---
 
     def _ctrl_modal_open(self) -> bool:
@@ -2741,8 +2799,9 @@ class MainWindow(QMainWindow):
     # --- Controller navigation helpers ---
 
     def _ctrl_table_is_active(self) -> bool:
-        """True when the main profile table is visible and usable."""
+        """True when the main profile table is visible, usable, and no dialog is open."""
         return (
+            not self._ctrl_modal_open() and
             not getattr(self, '_settings_mode_active', False) and
             not getattr(self, '_controller_mode_active', False) and
             not getattr(self, '_cloud_mode_active', False) and
