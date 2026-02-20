@@ -389,6 +389,9 @@ class MainWindowHandlers:
                         self.main_window.status_label.setText("Controller support enabled.")
                     elif not enabled and cm.is_running():
                         cm.stop()
+                        # The poller thread is killed — disconnection signals won't fire,
+                        # so we manually clean up all controller UI right now.
+                        self.main_window._ctrl_deactivate()
                         self.main_window.status_label.setText("Controller support disabled.")
                     else:
                         self.main_window.status_label.setText("Controller settings saved.")

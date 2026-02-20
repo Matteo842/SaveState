@@ -2705,6 +2705,11 @@ class MainWindow(QMainWindow):
         table.selectRow(visible[page])
         table.scrollTo(table.model().index(visible[page], 0))
 
+    def _ctrl_deactivate(self):
+        """Immediately hide all controller UI when support is disabled at runtime."""
+        for badge in self._ctrl_badges():
+            badge.setVisible(False)
+
     @Slot(int)
     def _ctrl_on_connected(self, idx: int):
         logging.info(f"Controller {idx} connected.")
