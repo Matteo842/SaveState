@@ -2679,20 +2679,24 @@ class MainWindow(QMainWindow):
         self._ctrl_dispatch("LT+RT")
 
     @Slot()
-    def _ctrl_btn_lb_long(self):
-        """Long press LB toggles between Actions and General focus."""
-        logging.info("LB long press signal received in GUI")
-        # Only works on the main profile view, not inside panels
+    def _ctrl_on_lt_hold(self):
+        """LT pressed (alone) — switch focus to General section."""
         if (getattr(self, '_settings_mode_active', False) or
                 getattr(self, '_controller_mode_active', False) or
                 getattr(self, '_cloud_mode_active', False) or
                 getattr(self, '_edit_mode_active', False)):
-            logging.info("LB long press ignored — inside a panel")
             return
-        current = getattr(self, '_ctrl_focus_section', 'actions')
-        new_section = 'general' if current == 'actions' else 'actions'
-        logging.info(f"LB long press: switching from '{current}' to '{new_section}'")
-        self._ctrl_set_focus_section(new_section)
+        self._ctrl_set_focus_section('general')
+
+    @Slot()
+    def _ctrl_on_lt_release(self):
+        """LT released — switch focus back to Actions section."""
+        if (getattr(self, '_settings_mode_active', False) or
+                getattr(self, '_controller_mode_active', False) or
+                getattr(self, '_cloud_mode_active', False) or
+                getattr(self, '_edit_mode_active', False)):
+            return
+        self._ctrl_set_focus_section('actions')
 
     @Slot()
     def _ctrl_on_any_input(self):
@@ -2711,32 +2715,39 @@ class MainWindow(QMainWindow):
 
     def _ctrl_set_focus_section(self, section: str):
         """Set which section is controller-focused ('actions' or 'general').
-        The focused section looks normal; the other is visually dimmed.
-        Also updates badge icons to show on the focused section's buttons."""
+        The focused section is at full opacity; the other is heavily dimmed
+        using QGraphicsOpacityEffect to grey out everything including icons."""
+        from PySide6.QtWidgets import QGraphicsOpacityEffect
         self._ctrl_focus_section = section
-        _DIM_STYLE = "QGroupBox { color: #666666; } QGroupBox * { color: #666666; }"
-        _ACTIVE_STYLE = ""  # Reset to default
+
+        def _dim(widget):
+            eff = QGraphicsOpacityEffect(widget)
+            eff.setOpacity(0.25)
+            widget.setGraphicsEffect(eff)
+
+        def _undim(widget):
+            widget.setGraphicsEffect(None)
+
         if section == 'actions':
             if hasattr(self, 'actions_group'):
-                self.actions_group.setStyleSheet(_ACTIVE_STYLE)
+                _undim(self.actions_group)
             if hasattr(self, 'general_group'):
-                self.general_group.setStyleSheet(_DIM_STYLE)
+                _dim(self.general_group)
             if hasattr(self, 'cloud_group'):
-                self.cloud_group.setStyleSheet(_DIM_STYLE)
+                _dim(self.cloud_group)
             # Restore badges on Actions buttons, remove from General
             self._ctrl_update_badges()
             self._ctrl_restore_general_icons()
         elif section == 'general':
             if hasattr(self, 'actions_group'):
-                self.actions_group.setStyleSheet(_DIM_STYLE)
+                _dim(self.actions_group)
             if hasattr(self, 'general_group'):
-                self.general_group.setStyleSheet(_ACTIVE_STYLE)
+                _undim(self.general_group)
             if hasattr(self, 'cloud_group'):
-                self.cloud_group.setStyleSheet(_ACTIVE_STYLE)
+                _undim(self.cloud_group)
             # Put badges on General buttons, restore Actions to original
             self._ctrl_restore_button_icons()
             self._ctrl_update_general_badges()
-        logging.debug(f"Controller focus section set to: {section}")
 
     def _ctrl_update_general_badges(self):
         """Set badge icons on General section buttons when General has focus.
@@ -2794,13 +2805,10 @@ class MainWindow(QMainWindow):
     def _ctrl_clear_focus_section(self):
         """Remove controller-focus dimming from all sections (on disconnect)."""
         self._ctrl_focus_section = None
-        _RESET = ""
-        if hasattr(self, 'actions_group'):
-            self.actions_group.setStyleSheet(_RESET)
-        if hasattr(self, 'general_group'):
-            self.general_group.setStyleSheet(_RESET)
-        if hasattr(self, 'cloud_group'):
-            self.cloud_group.setStyleSheet(_RESET)
+        for widget_name in ('actions_group', 'general_group', 'cloud_group'):
+            widget = getattr(self, widget_name, None)
+            if widget is not None:
+                widget.setGraphicsEffect(None)
         # Restore all icons
         self._ctrl_restore_general_icons()
 

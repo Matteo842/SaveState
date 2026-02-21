@@ -84,10 +84,11 @@ class ControllerPoller(QObject):
     btn_y     = Signal()   # Manage Backups
     btn_start = Signal()   # Backup (alt)
     btn_back  = Signal()   # View / Select button
-    btn_lb    = Signal()   # Page up (short press)
-    btn_lb_long = Signal() # Long press LB (toggle Actions/General focus)
+    btn_lb    = Signal()   # Page up
     btn_rb    = Signal()   # Page down
     btn_l1l2  = Signal()   # L1+L2 combo (LB + Left Trigger simultaneously)
+    lt_hold   = Signal()   # LT pressed alone (switch to General section)
+    lt_release = Signal()  # LT released (switch back to Actions section)
     any_input = Signal()   # Emitted on any button/nav input (to switch to controller mode)
     controller_connected    = Signal(int)
     controller_disconnected = Signal(int)
@@ -99,9 +100,8 @@ class ControllerPoller(QObject):
         self._prev_buttons: dict[int, int] = {}
         self._prev_connected: dict[int, bool] = {}
         self._prev_l1l2: dict[int, bool] = {}   # combo state per controller
-        self._lb_press_time: dict[int, float] = {}  # per-controller LB hold start time
-        self._lt_press_time: dict[int, float] = {}  # per-controller LT (analog trigger) hold start time
-        self._prev_lt_active: dict[int, bool] = {}  # per-controller previous LT state
+        self._prev_lt_active: dict[int, bool] = {}  # per-controller previous LT-alone state
+        self._lt_holding: dict[int, bool] = {}      # True while LT hold signal has been emitted
 
         # Per-controller, per-direction repeat tracking
         # Key: (controller_idx, direction_str)  Value: (first_press_time, last_repeat_time)
@@ -189,56 +189,32 @@ class ControllerPoller(QObject):
             if just_pressed & BTN_Y:          self.btn_y.emit();     _any = True
             if just_pressed & BTN_START:      self.btn_start.emit(); _any = True
             if just_pressed & BTN_BACK:       self.btn_back.emit();  _any = True
+            if just_pressed & BTN_LB:         self.btn_lb.emit();    _any = True
             if just_pressed & BTN_RB:         self.btn_rb.emit();    _any = True
 
-            # ── LB: short press vs long press detection ──────────────
-            LONG_PRESS_THRESHOLD = 0.5  # seconds
-            lb_held = bool(buttons & BTN_LB)
-            lb_was_held = bool(prev & BTN_LB)
+            # ── LT (analog trigger): hold / release for section toggle ─
+            #    LT held alone (without RT) → lt_hold (switch to General)
+            #    LT released                → lt_release (back to Actions)
+            #    LT+RT together             → combo handled above, not here
+            lt_alone = lt_active and not rt_active
+            prev_lt_alone = self._prev_lt_active.get(idx, False)
+            was_holding = self._lt_holding.get(idx, False)
 
-            if lb_held and not lb_was_held:
-                # LB just pressed — record the start time
-                logging.info(f"LB (digital) pressed down at {now:.3f}")
-                self._lb_press_time[idx] = now
-            elif lb_held and lb_was_held:
-                # LB still being held — check if threshold crossed
-                start = self._lb_press_time.get(idx)
-                if start is not None and (now - start) >= LONG_PRESS_THRESHOLD:
-                    logging.info(f"LB (digital) long press detected (held {now - start:.2f}s)")
-                    self.btn_lb_long.emit()
-                    self._lb_press_time.pop(idx, None)
-                    _any = True
-            elif not lb_held and lb_was_held:
-                start = self._lb_press_time.pop(idx, None)
-                if start is not None:
-                    logging.info(f"LB (digital) short press (released after {now - start:.2f}s)")
-                    self.btn_lb.emit()
-                    _any = True
+            if lt_alone and not prev_lt_alone:
+                # LT just pressed alone → switch to General
+                self.lt_hold.emit()
+                self._lt_holding[idx] = True
+                _any = True
+            elif not lt_active and was_holding:
+                # LT released after being held → switch back to Actions
+                self.lt_release.emit()
+                self._lt_holding[idx] = False
+            elif rt_active and was_holding:
+                # RT pressed while LT held → cancel hold (LT+RT combo takes over)
+                self.lt_release.emit()
+                self._lt_holding[idx] = False
 
-            # ── LT (analog trigger): long press detection ─────────────
-            #    LT held alone (without RT) for LONG_PRESS_THRESHOLD → toggle
-            #    If RT is pressed too, LT+RT combo handles it instead.
-            prev_lt = self._prev_lt_active.get(idx, False)
-            self._prev_lt_active[idx] = lt_active
-
-            if lt_active and not prev_lt and not rt_active:
-                # LT just pressed (alone) — start tracking
-                logging.info(f"LT (analog) pressed down at {now:.3f}")
-                self._lt_press_time[idx] = now
-            elif lt_active and prev_lt and not rt_active:
-                # LT still held alone — check threshold
-                start = self._lt_press_time.get(idx)
-                if start is not None and (now - start) >= LONG_PRESS_THRESHOLD:
-                    logging.info(f"LT (analog) long press detected (held {now - start:.2f}s)")
-                    self.btn_lb_long.emit()
-                    self._lt_press_time.pop(idx, None)
-                    _any = True
-            elif not lt_active and prev_lt:
-                # LT released
-                self._lt_press_time.pop(idx, None)
-            elif rt_active:
-                # RT pressed while LT held → cancel LT long press
-                self._lt_press_time.pop(idx, None)
+            self._prev_lt_active[idx] = lt_alone
 
             if _any:
                 self.any_input.emit()
@@ -337,9 +313,10 @@ class ControllerManager:
         p.btn_start.connect(mw._ctrl_btn_start)
         p.btn_back.connect(mw._ctrl_btn_delete)
         p.btn_lb.connect(mw._ctrl_btn_lb)
-        p.btn_lb_long.connect(mw._ctrl_btn_lb_long)
         p.btn_rb.connect(mw._ctrl_btn_rb)
         p.btn_l1l2.connect(mw._ctrl_btn_l1l2)
+        p.lt_hold.connect(mw._ctrl_on_lt_hold)
+        p.lt_release.connect(mw._ctrl_on_lt_release)
         p.any_input.connect(mw._ctrl_on_any_input)
         p.controller_connected.connect(mw._ctrl_on_connected)
         p.controller_disconnected.connect(mw._ctrl_on_disconnected)
