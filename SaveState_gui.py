@@ -2469,6 +2469,7 @@ class MainWindow(QMainWindow):
             self.cloud_group.setVisible(True)
         self.bottom_controls_widget.setVisible(True)  # Show search bar and log button again
         self.exit_settings_mode()
+        self._ctrl_reapply_focus_if_connected()
 
     def enter_settings_mode(self):
         """Set flag when settings panel is shown."""
@@ -2509,6 +2510,7 @@ class MainWindow(QMainWindow):
             self.cloud_group.setVisible(True)
         self.bottom_controls_widget.setVisible(True)
         self._controller_mode_active = False
+        self._ctrl_reapply_focus_if_connected()
 
     # --- Cloud Panel Management ---
     def show_cloud_panel(self):
@@ -2547,6 +2549,7 @@ class MainWindow(QMainWindow):
             self.cloud_group.setVisible(True)
         self.bottom_controls_widget.setVisible(True)  # Show search bar and log button again
         self.exit_cloud_mode()
+        self._ctrl_reapply_focus_if_connected()
 
     def enter_cloud_mode(self):
         """Set flag when cloud panel is shown."""
@@ -2675,6 +2678,139 @@ class MainWindow(QMainWindow):
     def _ctrl_btn_l1l2(self):
         self._ctrl_dispatch("LT+RT")
 
+    @Slot()
+    def _ctrl_btn_lb_long(self):
+        """Long press LB toggles between Actions and General focus."""
+        logging.info("LB long press signal received in GUI")
+        # Only works on the main profile view, not inside panels
+        if (getattr(self, '_settings_mode_active', False) or
+                getattr(self, '_controller_mode_active', False) or
+                getattr(self, '_cloud_mode_active', False) or
+                getattr(self, '_edit_mode_active', False)):
+            logging.info("LB long press ignored — inside a panel")
+            return
+        current = getattr(self, '_ctrl_focus_section', 'actions')
+        new_section = 'general' if current == 'actions' else 'actions'
+        logging.info(f"LB long press: switching from '{current}' to '{new_section}'")
+        self._ctrl_set_focus_section(new_section)
+
+    @Slot()
+    def _ctrl_on_any_input(self):
+        """Called on any controller button/nav press. Enters controller-focus mode."""
+        # If already in controller-focus mode, nothing to do
+        if getattr(self, '_ctrl_focus_section', None) is not None:
+            return
+        # Only activate on the main profile view
+        if (getattr(self, '_settings_mode_active', False) or
+                getattr(self, '_controller_mode_active', False) or
+                getattr(self, '_cloud_mode_active', False) or
+                getattr(self, '_edit_mode_active', False)):
+            return
+        # First controller input → focus on "Actions", dim "General"
+        self._ctrl_set_focus_section('actions')
+
+    def _ctrl_set_focus_section(self, section: str):
+        """Set which section is controller-focused ('actions' or 'general').
+        The focused section looks normal; the other is visually dimmed.
+        Also updates badge icons to show on the focused section's buttons."""
+        self._ctrl_focus_section = section
+        _DIM_STYLE = "QGroupBox { color: #666666; } QGroupBox * { color: #666666; }"
+        _ACTIVE_STYLE = ""  # Reset to default
+        if section == 'actions':
+            if hasattr(self, 'actions_group'):
+                self.actions_group.setStyleSheet(_ACTIVE_STYLE)
+            if hasattr(self, 'general_group'):
+                self.general_group.setStyleSheet(_DIM_STYLE)
+            if hasattr(self, 'cloud_group'):
+                self.cloud_group.setStyleSheet(_DIM_STYLE)
+            # Restore badges on Actions buttons, remove from General
+            self._ctrl_update_badges()
+            self._ctrl_restore_general_icons()
+        elif section == 'general':
+            if hasattr(self, 'actions_group'):
+                self.actions_group.setStyleSheet(_DIM_STYLE)
+            if hasattr(self, 'general_group'):
+                self.general_group.setStyleSheet(_ACTIVE_STYLE)
+            if hasattr(self, 'cloud_group'):
+                self.cloud_group.setStyleSheet(_ACTIVE_STYLE)
+            # Put badges on General buttons, restore Actions to original
+            self._ctrl_restore_button_icons()
+            self._ctrl_update_general_badges()
+        logging.debug(f"Controller focus section set to: {section}")
+
+    def _ctrl_update_general_badges(self):
+        """Set badge icons on General section buttons when General has focus.
+        A→New Profile, X→Steam, Y→Open Backup Folder, Start→Cloud."""
+        saved: dict = self.current_settings.get("controller_button_mappings", {})
+        mappings: dict = {**CTRL_DEFAULT_MAPPINGS, **saved}
+        # Reverse mapping: action → physical button
+        action_to_btn: dict[str, str] = {}
+        for btn_name, action in mappings.items():
+            if action and action not in action_to_btn:
+                action_to_btn[action] = btn_name
+
+        # In General mode, these actions map to General buttons
+        general_map = {
+            "backup":         self.new_profile_button     if hasattr(self, 'new_profile_button') else None,
+            "restore":        self.steam_button            if hasattr(self, 'steam_button') else None,
+            "manage_backups": self.open_backup_dir_button  if hasattr(self, 'open_backup_dir_button') else None,
+            "context_menu":   self.cloud_button            if hasattr(self, 'cloud_button') else None,
+        }
+        icon_size = QSize(18, 18)
+        for action, ui_btn in general_map.items():
+            if ui_btn is None:
+                continue
+            btn_id = id(ui_btn)
+            # Save original icon once
+            if not hasattr(self, '_ctrl_orig_icons'):
+                self._ctrl_orig_icons = {}
+            if btn_id not in self._ctrl_orig_icons:
+                self._ctrl_orig_icons[btn_id] = ui_btn.icon()
+            phys_btn = action_to_btn.get(action, "")
+            if phys_btn:
+                badge_icon = self._make_ctrl_badge_icon(
+                    phys_btn, CTRL_BADGE_COLOR.get(phys_btn, "#555")
+                )
+                ui_btn.setIcon(badge_icon)
+                ui_btn.setIconSize(icon_size)
+
+    def _ctrl_restore_general_icons(self):
+        """Restore General section buttons to their original icons."""
+        gen_btns = []
+        if hasattr(self, 'new_profile_button'):
+            gen_btns.append(self.new_profile_button)
+        if hasattr(self, 'steam_button'):
+            gen_btns.append(self.steam_button)
+        if hasattr(self, 'open_backup_dir_button'):
+            gen_btns.append(self.open_backup_dir_button)
+        if hasattr(self, 'cloud_button'):
+            gen_btns.append(self.cloud_button)
+        for ui_btn in gen_btns:
+            orig = getattr(self, '_ctrl_orig_icons', {}).get(id(ui_btn))
+            if orig is not None:
+                ui_btn.setIcon(orig)
+                ui_btn.setIconSize(QSize(16, 16))
+
+    def _ctrl_clear_focus_section(self):
+        """Remove controller-focus dimming from all sections (on disconnect)."""
+        self._ctrl_focus_section = None
+        _RESET = ""
+        if hasattr(self, 'actions_group'):
+            self.actions_group.setStyleSheet(_RESET)
+        if hasattr(self, 'general_group'):
+            self.general_group.setStyleSheet(_RESET)
+        if hasattr(self, 'cloud_group'):
+            self.cloud_group.setStyleSheet(_RESET)
+        # Restore all icons
+        self._ctrl_restore_general_icons()
+
+    def _ctrl_reapply_focus_if_connected(self):
+        """Re-apply focus section dimming when returning to main view.
+        Only applies if a controller is connected and focus was previously set."""
+        focus = getattr(self, '_ctrl_focus_section', None)
+        if focus is not None:
+            self._ctrl_set_focus_section(focus)
+
     # --- Controller dispatcher — maps physical button → configured action ---
 
     def _ctrl_dispatch(self, button: str):
@@ -2700,6 +2836,39 @@ class MainWindow(QMainWindow):
             return
         if not action:
             return
+
+        # ── Priority 3: General section has focus ──────────────────────────
+        if getattr(self, '_ctrl_focus_section', 'actions') == 'general':
+            # When General is focused, route primary actions to General buttons
+            if action == "back":
+                # B always switches back to Actions focus
+                self._ctrl_set_focus_section('actions')
+            elif action == "backup":
+                # A → New Profile
+                if hasattr(self, 'new_profile_button') and self.new_profile_button.isEnabled():
+                    self.new_profile_button.click()
+            elif action == "restore":
+                # X → Manage Steam
+                if hasattr(self, 'steam_button') and self.steam_button.isEnabled():
+                    self.steam_button.click()
+            elif action == "manage_backups":
+                # Y → Open Backup Folder
+                if hasattr(self, 'open_backup_dir_button') and self.open_backup_dir_button.isEnabled():
+                    self.open_backup_dir_button.click()
+            elif action == "context_menu":
+                # Start → Cloud
+                if hasattr(self, 'cloud_button') and self.cloud_button.isEnabled():
+                    self.cloud_button.click()
+            elif action in ("page_up", "page_down"):
+                # Page navs still work on profile list even in General mode
+                self._ctrl_do_page("up" if action == "page_up" else "down")
+            elif action == "backup_all":
+                self._ctrl_do_backup_all()
+            elif action == "delete":
+                self._ctrl_do_delete()
+            return
+
+        # ── Priority 4: Actions section (default) ─────────────────────────
         if action == "backup":
             self._ctrl_do_backup()
         elif action == "restore":
@@ -2932,6 +3101,7 @@ class MainWindow(QMainWindow):
         if not any_connected:
             self._ctrl_restore_button_icons()
             self._ctrl_uninstall_dialog_badger()
+            self._ctrl_clear_focus_section()
 
     # --- Controller dialog helpers ---
 

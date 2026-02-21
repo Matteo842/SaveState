@@ -179,6 +179,20 @@ class ControllerPanel(QGroupBox):
                 self._l1l2_row_widgets = [btn_lbl, combo]
 
         mapping_outer.addLayout(grid)
+
+        # ── Long Press LB info label ──────────────────────────────────
+        lp_row = QHBoxLayout()
+        lp_row.setSpacing(12)
+        lp_badge = QLabel("Hold LB")
+        lp_badge.setStyleSheet(_badge_ss.format(bg=CTRL_BADGE_COLOR.get("LB", "#4A235A")))
+        lp_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lp_badge.setFixedWidth(80)
+        lp_label = QLabel("Toggle General / Actions  (always)")
+        lp_label.setStyleSheet("color: #888; font-style: italic; font-size: 9pt;")
+        lp_row.addWidget(lp_badge)
+        lp_row.addWidget(lp_label, 1)
+        mapping_outer.addLayout(lp_row)
+
         mapping_group.setLayout(mapping_outer)
         main_layout.addWidget(mapping_group, stretch=1)
 
