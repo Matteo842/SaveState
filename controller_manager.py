@@ -68,6 +68,9 @@ POLL_INTERVAL = 1 / 30      # ~30 fps polling
 # Poller worker (runs in a QThread)
 # ---------------------------------------------------------------------------
 
+TRIGGER_THRESHOLD = 128  # Analog trigger value (0-255) above which it counts as "pressed"
+
+
 class ControllerPoller(QObject):
     """Polls XInput state and emits signals for navigation and button presses."""
 
@@ -83,6 +86,7 @@ class ControllerPoller(QObject):
     btn_back  = Signal()   # View / Select button
     btn_lb    = Signal()   # Page up
     btn_rb    = Signal()   # Page down
+    btn_l1l2  = Signal()   # L1+L2 combo (LB + Left Trigger simultaneously)
     controller_connected    = Signal(int)
     controller_disconnected = Signal(int)
 
@@ -92,6 +96,7 @@ class ControllerPoller(QObject):
         self._xinput = None
         self._prev_buttons: dict[int, int] = {}
         self._prev_connected: dict[int, bool] = {}
+        self._prev_l1l2: dict[int, bool] = {}   # combo state per controller
 
         # Per-controller, per-direction repeat tracking
         # Key: (controller_idx, direction_str)  Value: (first_press_time, last_repeat_time)
@@ -157,6 +162,15 @@ class ControllerPoller(QObject):
 
             # Rising-edge detection (button just pressed this tick)
             just_pressed = buttons & ~prev
+
+            # ── LT+RT combo: both analog triggers pressed simultaneously ──
+            lt_active   = state.Gamepad.bLeftTrigger  > TRIGGER_THRESHOLD
+            rt_active   = state.Gamepad.bRightTrigger > TRIGGER_THRESHOLD
+            ltrt_now    = lt_active and rt_active
+            prev_l1l2   = self._prev_l1l2.get(idx, False)
+            if ltrt_now and not prev_l1l2:
+                self.btn_l1l2.emit()   # signal name kept for compatibility
+            self._prev_l1l2[idx] = ltrt_now
 
             if just_pressed & BTN_DPAD_UP:    self.nav_up.emit()
             if just_pressed & BTN_DPAD_DOWN:  self.nav_down.emit()
@@ -265,5 +279,6 @@ class ControllerManager:
         p.btn_back.connect(mw._ctrl_btn_delete)
         p.btn_lb.connect(mw._ctrl_btn_lb)
         p.btn_rb.connect(mw._ctrl_btn_rb)
+        p.btn_l1l2.connect(mw._ctrl_btn_l1l2)
         p.controller_connected.connect(mw._ctrl_on_connected)
         p.controller_disconnected.connect(mw._ctrl_on_disconnected)

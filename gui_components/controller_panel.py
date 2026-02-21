@@ -12,13 +12,14 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 
 # Re-exported so other modules only need to import from here
-CTRL_BUTTONS = ["A", "B", "X", "Y", "Start", "View/Select", "LB", "RB"]
+CTRL_BUTTONS = ["A", "B", "X", "Y", "Start", "View/Select", "LB", "RB", "LT+RT"]
 
 CTRL_ACTIONS = [
     ("",               "(None — disabled)"),
     ("backup",         "Backup"),
     ("restore",        "Restore"),
     ("manage_backups", "Manage Backups"),
+    ("backup_all",     "Backup all profiles"),
     ("context_menu",   "Open context menu"),
     ("back",           "Back / Close panel"),
     ("delete",         "Delete profile"),
@@ -35,6 +36,7 @@ CTRL_DEFAULT_MAPPINGS: dict[str, str] = {
     "View/Select": "delete",
     "LB":          "page_up",
     "RB":          "page_down",
+    "LT+RT":       "backup_all",
 }
 
 CTRL_BADGE_COLOR: dict[str, str] = {
@@ -46,6 +48,7 @@ CTRL_BADGE_COLOR: dict[str, str] = {
     "View/Select": "#616A6B",
     "LB":          "#4A235A",
     "RB":          "#4A235A",
+    "LT+RT":       "#784212",
 }
 
 
@@ -88,6 +91,12 @@ class ControllerPanel(QGroupBox):
             action_id = saved_mappings.get(btn_name, CTRL_DEFAULT_MAPPINGS.get(btn_name, ""))
             idx = combo.findData(action_id)
             combo.setCurrentIndex(idx if idx >= 0 else 0)
+
+    def set_profile_count(self, count: int):
+        """Show or hide the L1+L2 row based on profile count (requires ≥3 profiles)."""
+        visible = count >= 3
+        for w in self._l1l2_row_widgets:
+            w.setVisible(visible)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -148,6 +157,8 @@ class ControllerPanel(QGroupBox):
         )
 
         self.ctrl_mapping_combos: dict[str, QComboBox] = {}
+        self._l1l2_row_widgets: list = []   # widgets to show/hide based on profile count
+
         for row_i, btn_name in enumerate(CTRL_BUTTONS):
             btn_lbl = QLabel(btn_name)
             btn_lbl.setStyleSheet(_badge_ss.format(bg=CTRL_BADGE_COLOR.get(btn_name, "#555")))
@@ -160,6 +171,12 @@ class ControllerPanel(QGroupBox):
                 combo.addItem(action_label, action_id)
             self.ctrl_mapping_combos[btn_name] = combo
             grid.addWidget(combo, row_i, 1)
+
+            if btn_name == "LT+RT":
+                # Hidden by default until profile count ≥ 3
+                btn_lbl.setVisible(False)
+                combo.setVisible(False)
+                self._l1l2_row_widgets = [btn_lbl, combo]
 
         mapping_outer.addLayout(grid)
         mapping_group.setLayout(mapping_outer)

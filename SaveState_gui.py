@@ -2363,6 +2363,7 @@ class MainWindow(QMainWindow):
         """Show inline controller settings panel, replacing the profiles UI."""
         try:
             self.controller_panel_group.populate(self.current_settings)
+            self.controller_panel_group.set_profile_count(len(self.profiles))
             self.profile_group.setVisible(False)
             self.actions_group.setVisible(False)
             self.general_group.setVisible(False)
@@ -2550,14 +2551,18 @@ class MainWindow(QMainWindow):
     def _ctrl_btn_rb(self):
         self._ctrl_dispatch("RB")
 
+    @Slot()
+    def _ctrl_btn_l1l2(self):
+        self._ctrl_dispatch("LT+RT")
+
     # --- Controller dispatcher — maps physical button → configured action ---
 
     def _ctrl_dispatch(self, button: str):
-        """Resolve the action assigned to a physical button and execute it."""
-        mappings: dict = self.current_settings.get(
-            "controller_button_mappings", CTRL_DEFAULT_MAPPINGS
-        )
-        action = mappings.get(button, "")
+        """Resolve the action assigned to a physical button and execute it.
+        Falls back to CTRL_DEFAULT_MAPPINGS for any button not found in saved
+        settings (handles renames across app versions gracefully)."""
+        saved: dict = self.current_settings.get("controller_button_mappings", {})
+        action = saved.get(button) or CTRL_DEFAULT_MAPPINGS.get(button, "")
 
         # ── Priority 1: QMenu popup ────────────────────────────────────────
         menu = self._ctrl_active_popup()
@@ -2594,6 +2599,8 @@ class MainWindow(QMainWindow):
             self._ctrl_do_page("down")
         elif action == "context_menu":
             self._ctrl_do_context_menu()
+        elif action == "backup_all":
+            self._ctrl_do_backup_all()
 
     # --- Controller action implementations ---
 
@@ -2634,6 +2641,14 @@ class MainWindow(QMainWindow):
             self.profile_editor_group.setVisible(False)
             self.profile_group.setVisible(True)
             self.exit_profile_edit_mode()
+
+    def _ctrl_do_backup_all(self):
+        """Backup all profiles — only available when ≥3 profiles exist."""
+        if self._ctrl_modal_open() or not self._ctrl_table_is_active():
+            return
+        if len(self.profiles) < 3:
+            return
+        self.handlers.handle_backup_all()
 
     def _ctrl_do_context_menu(self):
         """Open the profile table context menu for the currently selected row."""
@@ -2706,9 +2721,9 @@ class MainWindow(QMainWindow):
     def _ctrl_update_badges(self):
         """Set badge icons on action buttons based on the current button mapping.
         Saves original icons the first time so they can be restored on disconnect."""
-        mappings: dict = self.current_settings.get(
-            "controller_button_mappings", CTRL_DEFAULT_MAPPINGS
-        )
+        saved: dict = self.current_settings.get("controller_button_mappings", {})
+        # Merge defaults first so new/renamed buttons always have a value
+        mappings: dict = {**CTRL_DEFAULT_MAPPINGS, **saved}
         # Build reverse mapping: action → first physical button assigned to it
         action_to_btn: dict[str, str] = {}
         for btn_name, action in mappings.items():
