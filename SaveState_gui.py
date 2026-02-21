@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QProgressBar, QGroupBox, QLineEdit,
     QStyle, QDockWidget, QPlainTextEdit, QTableWidget, QGraphicsOpacityEffect,
     QDialog, QFileDialog, QMenu, QSpinBox, QComboBox, QCheckBox, QFormLayout,
-    QSizeGrip, QMessageBox, QGridLayout, QSystemTrayIcon
+    QSizeGrip, QMessageBox, QGridLayout, QSystemTrayIcon, QInputDialog
 )
 from PySide6.QtGui import QKeyEvent # Added for keyPressEvent
 from PySide6.QtCore import (
@@ -168,6 +168,16 @@ class _ControllerDialogBadger(_QObject):
             _set(dialog.configure_button, "backup", "A", "#1E8449")
             _set(dialog.close_button,     "back",   "B", "#922B21")
             _set(dialog.refresh_button,   "restore", "X", "#1A5276")
+            return
+
+        # ── QInputDialog  (Select Steam Profile, etc.: OK / Cancel)
+        if isinstance(dialog, QInputDialog):
+            for bb in dialog.findChildren(_QDialogButtonBox):
+                ok_btn = bb.button(_QDialogButtonBox.StandardButton.Ok)
+                cancel_btn = bb.button(_QDialogButtonBox.StandardButton.Cancel)
+                _set(ok_btn, "backup", "A", "#1E8449")
+                _set(cancel_btn, "back", "B", "#922B21")
+                return
             return
 
         # ── RestoreDialog  (ok_button + button_box with Cancel) ────────
@@ -3036,7 +3046,10 @@ class MainWindow(QMainWindow):
             dialog.accept()
 
     def _ctrl_active_dialog(self):
-        """Return the first visible QDialog (any type), or None."""
+        """Return the active visible QDialog, preferring the modal one if present."""
+        modal = QApplication.activeModalWidget()
+        if modal is not None and isinstance(modal, QDialog) and modal.isVisible():
+            return modal
         for w in QApplication.topLevelWidgets():
             if isinstance(w, QDialog) and w.isVisible():
                 return w
@@ -3044,10 +3057,23 @@ class MainWindow(QMainWindow):
 
     def _ctrl_dialog_nav(self, dialog, direction: int):
         """Navigate up (direction=-1) or down (+1) inside an open dialog.
-        Supports QTableWidget, QListWidget, and QTreeWidget (top-level items).
-        Always selects a row — even if there is only one item."""
+        Supports QTableWidget, QListWidget, QTreeWidget (top-level items),
+        and QComboBox (e.g. QInputDialog with getItem)."""
         from PySide6.QtWidgets import QTableWidget, QListWidget, QTreeWidget
-        # Try QTableWidget first
+        # QComboBox first (e.g. Select Steam Profile QInputDialog)
+        for combo in dialog.findChildren(QComboBox):
+            if combo.isEnabled() and combo.isVisible() and combo.isEditable() == False:
+                count = combo.count()
+                if count == 0:
+                    return
+                current = combo.currentIndex()
+                if current < 0:
+                    combo.setCurrentIndex(0)
+                    return
+                new_idx = max(0, current + direction) if direction < 0 else min(count - 1, current + direction)
+                combo.setCurrentIndex(new_idx)
+                return
+        # Try QTableWidget
         for table in dialog.findChildren(QTableWidget):
             if table.isEnabled() and table.isVisible():
                 count = table.rowCount()
