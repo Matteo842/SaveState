@@ -161,6 +161,15 @@ class _ControllerDialogBadger(_QObject):
             _set(dialog.delete_all_button, "restore", "X", "#1A5276")
             return
 
+        # ── SteamDialog  (configure_button, refresh_button, close_button)
+        if (hasattr(dialog, 'configure_button') and
+                hasattr(dialog, 'refresh_button') and
+                hasattr(dialog, 'close_button')):
+            _set(dialog.configure_button, "backup", "A", "#1E8449")
+            _set(dialog.close_button,     "back",   "B", "#922B21")
+            _set(dialog.refresh_button,   "restore", "X", "#1A5276")
+            return
+
         # ── RestoreDialog  (ok_button + button_box with Cancel) ────────
         if hasattr(dialog, 'ok_button') and hasattr(dialog, 'button_box'):
             _set(dialog.ok_button, "backup", "A", "#1E8449")
@@ -2983,6 +2992,18 @@ class MainWindow(QMainWindow):
             # Any other action → do nothing (don't close unintentionally)
             return
 
+        # ── SteamDialog  (configure_button, refresh_button, close_button)
+        if (hasattr(dialog, 'configure_button') and
+                hasattr(dialog, 'refresh_button') and
+                hasattr(dialog, 'close_button')):
+            if action in _REJECT:
+                _click(dialog.close_button)
+            elif action == "restore":           # X → Refresh Games List
+                _click(dialog.refresh_button)
+            elif action == "backup":            # A → Configure Selected Profile
+                _click(dialog.configure_button)
+            return
+
         # ── RestoreDialog  (ok_button + button_box with Cancel) ────────
         if hasattr(dialog, 'ok_button') and hasattr(dialog, 'button_box'):
             if action in _REJECT:
@@ -3023,9 +3044,9 @@ class MainWindow(QMainWindow):
 
     def _ctrl_dialog_nav(self, dialog, direction: int):
         """Navigate up (direction=-1) or down (+1) inside an open dialog.
-        Works generically with any dialog that contains a QTableWidget or QListWidget.
+        Supports QTableWidget, QListWidget, and QTreeWidget (top-level items).
         Always selects a row — even if there is only one item."""
-        from PySide6.QtWidgets import QTableWidget, QListWidget
+        from PySide6.QtWidgets import QTableWidget, QListWidget, QTreeWidget
         # Try QTableWidget first
         for table in dialog.findChildren(QTableWidget):
             if table.isEnabled() and table.isVisible():
@@ -3053,6 +3074,23 @@ class MainWindow(QMainWindow):
                     return
                 new_row = max(0, current + direction) if direction < 0 else min(count - 1, current + direction)
                 lst.setCurrentRow(new_row)
+                return
+        # QTreeWidget (e.g. SteamDialog game list)
+        for tree in dialog.findChildren(QTreeWidget):
+            if tree.isEnabled() and tree.isVisible():
+                count = tree.topLevelItemCount()
+                if count == 0:
+                    return
+                current_item = tree.currentItem()
+                current = tree.indexOfTopLevelItem(current_item) if current_item else -1
+                if current < 0:
+                    tree.setCurrentItem(tree.topLevelItem(0))
+                    tree.scrollToItem(tree.topLevelItem(0))
+                    return
+                new_idx = max(0, current + direction) if direction < 0 else min(count - 1, current + direction)
+                item = tree.topLevelItem(new_idx)
+                tree.setCurrentItem(item)
+                tree.scrollToItem(item)
                 return
 
     # --- Controller guard helpers ---
