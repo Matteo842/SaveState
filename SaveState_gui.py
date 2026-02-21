@@ -79,71 +79,104 @@ from config import SHARED_MEM_KEY, LOCAL_SERVER_NAME
 
 
 # ---------------------------------------------------------------------------
-# Controller dialog badger — adds A/B badge icons to QMessageBox buttons
+# Controller dialog badger — adds controller badge icons to dialog buttons
 # ---------------------------------------------------------------------------
 
 from PySide6.QtCore import QObject as _QObject, QEvent as _QEvent
+from PySide6.QtWidgets import QDialogButtonBox as _QDialogButtonBox
 
 class _ControllerDialogBadger(_QObject):
     """Application-level event filter.
-    Watches for QMessageBox instances being shown and adds small badge icons
-    (A = accept, B = back) to their Yes/OK and No/Cancel buttons, using the
-    current controller button mapping from the main window."""
+    Watches for any QDialog being shown and adds controller badge icons to its
+    buttons, using the current button mapping from the main window.
+
+    Recognised dialog patterns (by attribute inspection, no class imports):
+      • QMessageBox              — Yes/OK → A,  No/Cancel → B
+      • RestoreDialog            — ok_button → A, Cancel → B
+      • ManageBackupsDialog      — delete_button → A, close_button → B,
+                                   delete_all_button → X
+      • Any dialog with button_box (QDialogButtonBox) — OK → A, Cancel → B
+    """
 
     def __init__(self, main_window):
         super().__init__()
         self._mw = main_window
 
     def eventFilter(self, watched, event):
-        if (event.type() == _QEvent.Type.Show
-                and isinstance(watched, QMessageBox)):
-            # Use singleShot(0) so the dialog is fully laid out before we patch it
+        if event.type() == _QEvent.Type.Show and isinstance(watched, QDialog):
             QTimer.singleShot(0, lambda d=watched: self._badge(d))
-        return False  # never consume events
+        return False
 
-    def _badge(self, dialog: QMessageBox):
+    # ------------------------------------------------------------------
+    def _badge(self, dialog):
         if not dialog.isVisible():
             return
 
-        mw = self._mw
-        # Resolve which physical button is mapped to "back" and to the primary confirm
-        saved: dict = mw.current_settings.get("controller_button_mappings", {})
+        mw   = self._mw
+        make = mw._make_ctrl_badge_icon
+        sz   = QSize(16, 16)
+
+        # Resolve action → physical button name from current mapping
+        saved   = mw.current_settings.get("controller_button_mappings", {})
         mapping = {**CTRL_DEFAULT_MAPPINGS, **saved}
-        # Reverse: action → first button
         action_to_btn: dict[str, str] = {}
         for btn_name, action in mapping.items():
             if action and action not in action_to_btn:
                 action_to_btn[action] = btn_name
 
-        confirm_btn_name = action_to_btn.get("backup", "A")
-        back_btn_name    = action_to_btn.get("back",   "B")
-        confirm_color = CTRL_BADGE_COLOR.get(confirm_btn_name, "#1E8449")
-        back_color    = CTRL_BADGE_COLOR.get(back_btn_name,    "#922B21")
+        def _icon(action_key, fallback_btn, fallback_color):
+            btn_name = action_to_btn.get(action_key, fallback_btn)
+            color    = CTRL_BADGE_COLOR.get(btn_name, fallback_color)
+            return make(btn_name, color, 16), sz
 
-        icon_size = QSize(16, 16)
+        def _set(widget, action_key, fallback_btn, fallback_color):
+            if widget and widget.isVisible():
+                ico, sz_ = _icon(action_key, fallback_btn, fallback_color)
+                widget.setIcon(ico)
+                widget.setIconSize(sz_)
 
-        # Accept buttons (Yes / OK / Open …)
-        for sb in (QMessageBox.StandardButton.Yes,
-                   QMessageBox.StandardButton.Ok,
-                   QMessageBox.StandardButton.Open,
-                   QMessageBox.StandardButton.Save):
-            btn = dialog.button(sb)
-            if btn is not None:
-                btn.setIcon(mw._make_ctrl_badge_icon(confirm_btn_name, confirm_color, 16))
-                btn.setIconSize(icon_size)
-                break
+        # ── QMessageBox ────────────────────────────────────────────────
+        if isinstance(dialog, QMessageBox):
+            for sb in (QMessageBox.StandardButton.Yes, QMessageBox.StandardButton.Ok,
+                       QMessageBox.StandardButton.Open, QMessageBox.StandardButton.Save):
+                btn = dialog.button(sb)
+                if btn:
+                    _set(btn, "backup", "A", "#1E8449")
+                    break
+            for sb in (QMessageBox.StandardButton.No, QMessageBox.StandardButton.Cancel,
+                       QMessageBox.StandardButton.Close, QMessageBox.StandardButton.Discard,
+                       QMessageBox.StandardButton.Abort):
+                btn = dialog.button(sb)
+                if btn:
+                    _set(btn, "back", "B", "#922B21")
+                    break
+            return
 
-        # Reject buttons (No / Cancel / Close …)
-        for sb in (QMessageBox.StandardButton.No,
-                   QMessageBox.StandardButton.Cancel,
-                   QMessageBox.StandardButton.Close,
-                   QMessageBox.StandardButton.Discard,
-                   QMessageBox.StandardButton.Abort):
-            btn = dialog.button(sb)
-            if btn is not None:
-                btn.setIcon(mw._make_ctrl_badge_icon(back_btn_name, back_color, 16))
-                btn.setIconSize(icon_size)
-                break
+        # ── ManageBackupsDialog  (delete_button, delete_all_button, close_button)
+        if (hasattr(dialog, 'delete_button') and
+                hasattr(dialog, 'delete_all_button') and
+                hasattr(dialog, 'close_button')):
+            _set(dialog.delete_button,     "backup",  "A", "#1E8449")
+            _set(dialog.close_button,      "back",    "B", "#922B21")
+            _set(dialog.delete_all_button, "restore", "X", "#1A5276")
+            return
+
+        # ── RestoreDialog  (ok_button + button_box with Cancel) ────────
+        if hasattr(dialog, 'ok_button') and hasattr(dialog, 'button_box'):
+            _set(dialog.ok_button, "backup", "A", "#1E8449")
+            bb = dialog.button_box
+            if isinstance(bb, _QDialogButtonBox):
+                cancel = bb.button(_QDialogButtonBox.StandardButton.Cancel)
+                _set(cancel, "back", "B", "#922B21")
+            return
+
+        # ── Generic dialog with QDialogButtonBox  (New Profile, Edit…) ─
+        if hasattr(dialog, 'button_box') and isinstance(dialog.button_box, _QDialogButtonBox):
+            bb = dialog.button_box
+            ok_btn     = bb.button(_QDialogButtonBox.StandardButton.Ok)
+            cancel_btn = bb.button(_QDialogButtonBox.StandardButton.Cancel)
+            _set(ok_btn,     "backup", "A", "#1E8449")
+            _set(cancel_btn, "back",   "B", "#922B21")
 
 
 # --- Finestra Principale ---
@@ -2644,15 +2677,7 @@ class MainWindow(QMainWindow):
         # ── Priority 2: Any visible QDialog (QMessageBox, ManageBackups…) ─
         dialog = self._ctrl_active_dialog()
         if dialog is not None:
-            # Actions that open/trigger new things should REJECT the dialog
-            # (pressing "delete" again while the delete confirmation is open
-            # dismisses it rather than confirming — same for other openers).
-            _REJECT_ACTIONS = {"back", "delete", "context_menu",
-                               "page_up", "page_down", "backup_all"}
-            if action in _REJECT_ACTIONS:
-                self._ctrl_dialog_interact(dialog, accept=False)
-            elif action:
-                self._ctrl_dialog_interact(dialog, accept=True)
+            self._ctrl_dialog_dispatch(dialog, action)
             return
         if not action:
             return
@@ -2904,61 +2929,90 @@ class MainWindow(QMainWindow):
         ev = QKeyEvent(QEvent.Type.KeyPress, key, Qt.KeyboardModifier.NoModifier)
         QApplication.sendEvent(widget, ev)
 
-    def _ctrl_dialog_interact(self, dialog, *, accept: bool):
-        """Accept or reject an open QDialog via the controller.
+    def _ctrl_dialog_dispatch(self, dialog, action: str):
+        """Route a controller action to the correct button of the open dialog.
 
-        accept=True  (A button) → click the default/OK/Yes button
-        accept=False (B button) → click Cancel/No/Close or call reject()
+        Dispatches per dialog type (identified by attributes), so each dialog's
+        buttons are triggered correctly regardless of the generic accept/reject logic.
         """
-        from PySide6.QtWidgets import QMessageBox, QPushButton
+        from PySide6.QtWidgets import QDialogButtonBox as _DBB
 
+        # Actions that should always REJECT / CLOSE any dialog
+        _REJECT = {"back", "delete", "context_menu",
+                   "page_up", "page_down", "backup_all"}
+
+        def _click(btn):
+            if btn and btn.isEnabled() and btn.isVisible():
+                btn.click()
+
+        # ── QMessageBox ────────────────────────────────────────────────
         if isinstance(dialog, QMessageBox):
-            if accept:
-                # Always look for explicit accept buttons first (Yes/Ok…).
-                # Do NOT use defaultButton() — it is often set to "No" on
-                # confirmation dialogs and would click the wrong button.
-                for sb in (QMessageBox.StandardButton.Yes,
-                           QMessageBox.StandardButton.Ok,
-                           QMessageBox.StandardButton.Open,
-                           QMessageBox.StandardButton.Save,
-                           QMessageBox.StandardButton.Apply):
-                    btn = dialog.button(sb)
-                    if btn is not None:
-                        btn.click()
-                        return
-                # Fallback: single-button dialogs (e.g. info with only OK)
-                dialog.accept()
-            else:
+            if action in _REJECT:
                 for sb in (QMessageBox.StandardButton.No,
                            QMessageBox.StandardButton.Cancel,
                            QMessageBox.StandardButton.Close,
                            QMessageBox.StandardButton.Discard,
                            QMessageBox.StandardButton.Abort):
                     btn = dialog.button(sb)
-                    if btn is not None:
+                    if btn:
                         btn.click()
                         return
-                # Single-button dialog (only OK): B also dismisses it
                 dialog.reject()
-        else:
-            # Generic QDialog: use close_button attribute if present,
-            # otherwise find the default QPushButton, or accept/reject directly.
-            if accept:
-                close_btn = getattr(dialog, 'close_button', None)
-                if close_btn is not None:
-                    close_btn.click()
-                    return
-                for btn in dialog.findChildren(QPushButton):
-                    if btn.isDefault() and btn.isEnabled() and btn.isVisible():
+            else:
+                for sb in (QMessageBox.StandardButton.Yes,
+                           QMessageBox.StandardButton.Ok,
+                           QMessageBox.StandardButton.Open,
+                           QMessageBox.StandardButton.Save):
+                    btn = dialog.button(sb)
+                    if btn:
                         btn.click()
                         return
                 dialog.accept()
+            return
+
+        # ── ManageBackupsDialog  (delete_button, delete_all_button, close_button)
+        if (hasattr(dialog, 'delete_button') and
+                hasattr(dialog, 'delete_all_button') and
+                hasattr(dialog, 'close_button')):
+            if action in _REJECT:
+                _click(dialog.close_button)
+            elif action == "restore":           # X → Delete All
+                _click(dialog.delete_all_button)
+            elif action == "backup":            # A → Delete Selected
+                _click(dialog.delete_button)
+            # Any other action → do nothing (don't close unintentionally)
+            return
+
+        # ── RestoreDialog  (ok_button + button_box with Cancel) ────────
+        if hasattr(dialog, 'ok_button') and hasattr(dialog, 'button_box'):
+            if action in _REJECT:
+                dialog.reject()
             else:
-                close_btn = getattr(dialog, 'close_button', None)
-                if close_btn is not None:
-                    close_btn.click()
+                _click(dialog.ok_button)
+            return
+
+        # ── Generic dialog with QDialogButtonBox ───────────────────────
+        if hasattr(dialog, 'button_box') and isinstance(dialog.button_box, _DBB):
+            bb = dialog.button_box
+            if action in _REJECT:
+                cancel = bb.button(_DBB.StandardButton.Cancel)
+                if cancel:
+                    cancel.click()
                 else:
                     dialog.reject()
+            else:
+                ok = bb.button(_DBB.StandardButton.Ok)
+                if ok and ok.isEnabled():
+                    ok.click()
+                else:
+                    dialog.accept()
+            return
+
+        # ── Last-resort fallback ────────────────────────────────────────
+        if action in _REJECT:
+            dialog.reject()
+        else:
+            dialog.accept()
 
     def _ctrl_active_dialog(self):
         """Return the first visible QDialog (any type), or None."""
