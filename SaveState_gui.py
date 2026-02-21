@@ -78,6 +78,74 @@ from config import SHARED_MEM_KEY, LOCAL_SERVER_NAME
 # --- FINE COSTANTI ---
 
 
+# ---------------------------------------------------------------------------
+# Controller dialog badger — adds A/B badge icons to QMessageBox buttons
+# ---------------------------------------------------------------------------
+
+from PySide6.QtCore import QObject as _QObject, QEvent as _QEvent
+
+class _ControllerDialogBadger(_QObject):
+    """Application-level event filter.
+    Watches for QMessageBox instances being shown and adds small badge icons
+    (A = accept, B = back) to their Yes/OK and No/Cancel buttons, using the
+    current controller button mapping from the main window."""
+
+    def __init__(self, main_window):
+        super().__init__()
+        self._mw = main_window
+
+    def eventFilter(self, watched, event):
+        if (event.type() == _QEvent.Type.Show
+                and isinstance(watched, QMessageBox)):
+            # Use singleShot(0) so the dialog is fully laid out before we patch it
+            QTimer.singleShot(0, lambda d=watched: self._badge(d))
+        return False  # never consume events
+
+    def _badge(self, dialog: QMessageBox):
+        if not dialog.isVisible():
+            return
+
+        mw = self._mw
+        # Resolve which physical button is mapped to "back" and to the primary confirm
+        saved: dict = mw.current_settings.get("controller_button_mappings", {})
+        mapping = {**CTRL_DEFAULT_MAPPINGS, **saved}
+        # Reverse: action → first button
+        action_to_btn: dict[str, str] = {}
+        for btn_name, action in mapping.items():
+            if action and action not in action_to_btn:
+                action_to_btn[action] = btn_name
+
+        confirm_btn_name = action_to_btn.get("backup", "A")
+        back_btn_name    = action_to_btn.get("back",   "B")
+        confirm_color = CTRL_BADGE_COLOR.get(confirm_btn_name, "#1E8449")
+        back_color    = CTRL_BADGE_COLOR.get(back_btn_name,    "#922B21")
+
+        icon_size = QSize(16, 16)
+
+        # Accept buttons (Yes / OK / Open …)
+        for sb in (QMessageBox.StandardButton.Yes,
+                   QMessageBox.StandardButton.Ok,
+                   QMessageBox.StandardButton.Open,
+                   QMessageBox.StandardButton.Save):
+            btn = dialog.button(sb)
+            if btn is not None:
+                btn.setIcon(mw._make_ctrl_badge_icon(confirm_btn_name, confirm_color, 16))
+                btn.setIconSize(icon_size)
+                break
+
+        # Reject buttons (No / Cancel / Close …)
+        for sb in (QMessageBox.StandardButton.No,
+                   QMessageBox.StandardButton.Cancel,
+                   QMessageBox.StandardButton.Close,
+                   QMessageBox.StandardButton.Discard,
+                   QMessageBox.StandardButton.Abort):
+            btn = dialog.button(sb)
+            if btn is not None:
+                btn.setIcon(mw._make_ctrl_badge_icon(back_btn_name, back_color, 16))
+                btn.setIconSize(icon_size)
+                break
+
+
 # --- Finestra Principale ---
 # Approccio semplificato: mostrare l'overlay quando la finestra è attiva
 
@@ -2576,7 +2644,12 @@ class MainWindow(QMainWindow):
         # ── Priority 2: Any visible QDialog (QMessageBox, ManageBackups…) ─
         dialog = self._ctrl_active_dialog()
         if dialog is not None:
-            if action == "back":
+            # Actions that open/trigger new things should REJECT the dialog
+            # (pressing "delete" again while the delete confirmation is open
+            # dismisses it rather than confirming — same for other openers).
+            _REJECT_ACTIONS = {"back", "delete", "context_menu",
+                               "page_up", "page_down", "backup_all"}
+            if action in _REJECT_ACTIONS:
                 self._ctrl_dialog_interact(dialog, accept=False)
             elif action:
                 self._ctrl_dialog_interact(dialog, accept=True)
@@ -2771,12 +2844,27 @@ class MainWindow(QMainWindow):
     def _ctrl_deactivate(self):
         """Immediately restore button icons when controller support is disabled at runtime."""
         self._ctrl_restore_button_icons()
+        self._ctrl_uninstall_dialog_badger()
+
+    def _ctrl_install_dialog_badger(self):
+        """Install an app-level event filter that adds A/B badges to QMessageBox buttons."""
+        if not hasattr(self, '_ctrl_dialog_badger') or self._ctrl_dialog_badger is None:
+            self._ctrl_dialog_badger = _ControllerDialogBadger(self)
+            QApplication.instance().installEventFilter(self._ctrl_dialog_badger)
+
+    def _ctrl_uninstall_dialog_badger(self):
+        """Remove the dialog badge event filter."""
+        badger = getattr(self, '_ctrl_dialog_badger', None)
+        if badger is not None:
+            QApplication.instance().removeEventFilter(badger)
+            self._ctrl_dialog_badger = None
 
     @Slot(int)
     def _ctrl_on_connected(self, idx: int):
         logging.info(f"Controller {idx} connected.")
         self.status_label.setText(f"Controller {idx + 1} connected.")
         self._ctrl_update_badges()
+        self._ctrl_install_dialog_badger()
 
     @Slot(int)
     def _ctrl_on_disconnected(self, idx: int):
@@ -2799,6 +2887,7 @@ class MainWindow(QMainWindow):
                     pass
         if not any_connected:
             self._ctrl_restore_button_icons()
+            self._ctrl_uninstall_dialog_badger()
 
     # --- Controller dialog helpers ---
 
