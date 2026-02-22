@@ -1323,8 +1323,16 @@ class MainWindow(QMainWindow):
             elif hasattr(self, 'backup_button') and watched is self.backup_button:
                 if event.type() == QEvent.Type.Resize or event.type() == QEvent.Type.Move or event.type() == QEvent.Type.Show:
                     self._position_backup_toggle()
-        except Exception as e:
-             pass # Fail silently for UI polish
+        except Exception:
+            pass  # Fail silently for UI polish
+
+        # ── Mouse usage → exit controller visual mode ─────────────────
+        try:
+            if event.type() == QEvent.Type.MouseButtonPress:
+                if getattr(self, '_ctrl_focus_section', None) is not None:
+                    self._ctrl_exit_visual_mode()
+        except Exception:
+            pass
 
         return super().eventFilter(watched, event)
 
@@ -2704,6 +2712,11 @@ class MainWindow(QMainWindow):
         # If already in controller-focus mode, nothing to do
         if getattr(self, '_ctrl_focus_section', None) is not None:
             return
+        # Cooldown: don't re-enter controller mode for 0.5s after mouse was used
+        import time
+        mouse_at = getattr(self, '_ctrl_mouse_used_at', 0)
+        if time.time() - mouse_at < 0.5:
+            return
         # Only activate on the main profile view
         if (getattr(self, '_settings_mode_active', False) or
                 getattr(self, '_controller_mode_active', False) or
@@ -2818,6 +2831,23 @@ class MainWindow(QMainWindow):
         focus = getattr(self, '_ctrl_focus_section', None)
         if focus is not None:
             self._ctrl_set_focus_section(focus)
+
+    def _ctrl_exit_visual_mode(self):
+        """Exit controller visual mode (called when mouse is used).
+        Removes all badges, dimming and resets focus section so the UI
+        looks normal for mouse users. Controller mode re-activates
+        automatically on the next controller button press."""
+        self._ctrl_focus_section = None
+        import time
+        self._ctrl_mouse_used_at = time.time()  # cooldown to prevent instant re-entry
+        # Remove dimming effects from all sections
+        for widget_name in ('actions_group', 'general_group', 'cloud_group'):
+            widget = getattr(self, widget_name, None)
+            if widget is not None:
+                widget.setGraphicsEffect(None)
+        # Restore all button icons to originals (remove badge icons)
+        self._ctrl_restore_button_icons()
+        self._ctrl_restore_general_icons()
 
     # --- Controller dispatcher — maps physical button → configured action ---
 
@@ -3084,8 +3114,11 @@ class MainWindow(QMainWindow):
     def _ctrl_on_connected(self, idx: int):
         logging.info(f"Controller {idx} connected.")
         self.status_label.setText(f"Controller {idx + 1} connected.")
-        self._ctrl_update_badges()
         self._ctrl_install_dialog_badger()
+        # Install app-wide event filter to detect mouse usage
+        if not getattr(self, '_ctrl_mouse_filter_installed', False):
+            QApplication.instance().installEventFilter(self)
+            self._ctrl_mouse_filter_installed = True
 
     @Slot(int)
     def _ctrl_on_disconnected(self, idx: int):
@@ -3110,6 +3143,10 @@ class MainWindow(QMainWindow):
             self._ctrl_restore_button_icons()
             self._ctrl_uninstall_dialog_badger()
             self._ctrl_clear_focus_section()
+            # Remove app-wide mouse detection filter
+            if getattr(self, '_ctrl_mouse_filter_installed', False):
+                QApplication.instance().removeEventFilter(self)
+                self._ctrl_mouse_filter_installed = False
 
     # --- Controller dialog helpers ---
 
