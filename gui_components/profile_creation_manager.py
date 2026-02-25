@@ -394,7 +394,10 @@ class ProfileCreationManager:
         if is_minecraft and minecraft_path:
             validated_path = self.validate_save_path(minecraft_path, profile_name)
             if validated_path:
-                mw.profiles[profile_name] = {'path': validated_path}
+                mw.profiles[profile_name] = {
+                    'path': validated_path,
+                    'backup_folder_name': core_logic.sanitize_foldername(profile_name)
+                }
                 if core_logic.save_profiles(mw.profiles):
                     logging.info(f"Minecraft profile '{profile_name}' created.")
                     if hasattr(mw, 'profile_table_manager'):
@@ -430,7 +433,10 @@ class ProfileCreationManager:
             
             if validated_path:
                 logging.debug(f"handle_new_profile - Valid path: '{validated_path}'.")
-                mw.profiles[profile_name] = {'path': validated_path}
+                mw.profiles[profile_name] = {
+                    'path': validated_path,
+                    'backup_folder_name': core_logic.sanitize_foldername(profile_name)
+                }
                 logging.debug("handle_new_profile - Attempting to save profiles to file...")
                 save_success = core_logic.save_profiles(mw.profiles)
                 logging.debug(f"handle_new_profile - Result of core_logic.save_profiles: {save_success}")
@@ -526,7 +532,10 @@ class ProfileCreationManager:
                     return
 
                 # Create and save new profile
-                mw.profiles[profile_name] = {'path': world_path} # Save as dictionary
+                mw.profiles[profile_name] = {
+                    'path': world_path,
+                    'backup_folder_name': core_logic.sanitize_foldername(profile_name)
+                }
                 if core_logic.save_profiles(mw.profiles):
                     logging.info(f"Minecraft profile '{profile_name}' created.")
                     # Update the table via the table manager in MainWindow
@@ -755,7 +764,10 @@ class ProfileCreationManager:
 
             if validated_path:
                 logging.debug(f"Final path validated: {validated_path}. Preparing to save profile '{profile_name}'")
-                profile_data = {'path': validated_path}
+                profile_data = {
+                    'path': validated_path,
+                    'backup_folder_name': core_logic.sanitize_foldername(profile_name)
+                }
                 
                 # --- NUOVO: Aggiungi game_executable per le icone ---
                 if game_executable_from_results and os.path.exists(game_executable_from_results):

@@ -1046,13 +1046,16 @@ class CloudSavePanel(QWidget):
         except Exception:
             favorites = {}
 
-        # Build reverse mapping: sanitized folder name -> original profile name
-        # This is needed because backup folders are created with sanitized names
-        # (e.g., "Hollow Knight: Silksong" -> "Hollow Knight Silksong")
+        # Build reverse mapping: backup folder name -> original profile name
+        # Uses backup_folder_name from profile data (stable across renames),
+        # falling back to sanitize_foldername for profiles without it
         sanitized_to_profile = {}
-        for profile_name in self.profiles.keys():
-            sanitized_name = sanitize_foldername(profile_name)
-            sanitized_to_profile[sanitized_name] = profile_name
+        for profile_name, profile_data in self.profiles.items():
+            if isinstance(profile_data, dict):
+                folder_name = profile_data.get('backup_folder_name', sanitize_foldername(profile_name))
+            else:
+                folder_name = sanitize_foldername(profile_name)
+            sanitized_to_profile[folder_name] = profile_name
 
         # Prepare backup data with metadata for sorting
         backup_items = []
@@ -1090,7 +1093,11 @@ class CloudSavePanel(QWidget):
             has_any_cloud = False
             
             for member_name in member_names:
-                sanitized_member = sanitize_foldername(member_name)
+                member_data = self.profiles.get(member_name, {})
+                if isinstance(member_data, dict):
+                    sanitized_member = member_data.get('backup_folder_name', sanitize_foldername(member_name))
+                else:
+                    sanitized_member = sanitize_foldername(member_name)
                 # Check local backups
                 if sanitized_member in all_backups:
                     member_backup = all_backups[sanitized_member]
@@ -3522,9 +3529,13 @@ class CloudSavePanel(QWidget):
                 continue
             
             # Check if this profile is a member of the group
-            # Members are stored as original names, folder_name is sanitized
+            # Members are stored as original names, folder_name uses backup_folder_name
             for member_name in member_names:
-                sanitized_member = sanitize_foldername(member_name)
+                member_data = self.profiles.get(member_name, {})
+                if isinstance(member_data, dict):
+                    sanitized_member = member_data.get('backup_folder_name', sanitize_foldername(member_name))
+                else:
+                    sanitized_member = sanitize_foldername(member_name)
                 if folder_name == sanitized_member:
                     checkbox_widget = self.backup_table.cellWidget(row, 0)
                     if checkbox_widget:
@@ -3562,7 +3573,11 @@ class CloudSavePanel(QWidget):
                             logging.debug(f"Group members: {member_names}")
                             if member_names:
                                 for member_name in member_names:
-                                    sanitized_member = sanitize_foldername(member_name)
+                                    member_data = self.profiles.get(member_name, {})
+                                    if isinstance(member_data, dict):
+                                        sanitized_member = member_data.get('backup_folder_name', sanitize_foldername(member_name))
+                                    else:
+                                        sanitized_member = sanitize_foldername(member_name)
                                     logging.debug(f"  Adding member: {member_name} -> {sanitized_member}")
                                     if sanitized_member not in selected_set:
                                         selected_set.add(sanitized_member)

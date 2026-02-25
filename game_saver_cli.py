@@ -160,7 +160,10 @@ if __name__ == "__main__":
                 break
 
             # Add the new profile (as a dictionary)
-            profiles_dict[new_profile_name] = {'path': new_profile_path}
+            profiles_dict[new_profile_name] = {
+                'path': new_profile_path,
+                'backup_folder_name': core_logic.sanitize_foldername(new_profile_name)
+            }
             print_info(f"\nProfile '{new_profile_name}' will be saved with path: '{new_profile_path}'")
 
             # Save the updated profiles dictionary
@@ -272,7 +275,10 @@ if __name__ == "__main__":
                 return profiles_dict
 
             # Add profile and save
-            profiles_dict[sanitized_name] = {'path': world_path}
+            profiles_dict[sanitized_name] = {
+                'path': world_path,
+                'backup_folder_name': core_logic.sanitize_foldername(sanitized_name)
+            }
             print_info(f"\nProfile '{sanitized_name}' will be created for world path: '{world_path}'")
 
             if core_logic.save_profiles(profiles_dict):
@@ -384,7 +390,7 @@ if __name__ == "__main__":
 
                         if space_ok:
                             success, message = core_logic.perform_backup(
-                                profile_name, save_path, backup_base, max_bk, max_src_size, compression
+                                profile_name, save_path, backup_base, max_bk, max_src_size, compression, profile_data=profile_data
                             )
                             if success:
                                 print_success(f"\nBackup Result:\n{message}")
@@ -414,7 +420,7 @@ if __name__ == "__main__":
             print_title(f"Restore Backup for {profile_name}")
             print_info(f"(Searching for backups in: {backup_base_dir})")
 
-            backups = core_logic.list_available_backups(profile_name, backup_base_dir)
+            backups = core_logic.list_available_backups(profile_name, backup_base_dir, profile_data=profiles_dict.get(profile_name, {}))
 
             if not backups:
                 print_info("No backups found for this profile.")

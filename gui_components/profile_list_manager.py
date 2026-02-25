@@ -739,14 +739,15 @@ class ProfileListManager:
                     total_count = 0
                     latest_backup_dt = None
                     for member_name in member_profiles:
-                        m_count, m_last_dt = core_logic.get_profile_backup_summary(member_name, current_backup_base_dir)
+                        member_data = self.profiles.get(member_name, {})
+                        m_count, m_last_dt = core_logic.get_profile_backup_summary(member_name, current_backup_base_dir, profile_data=member_data)
                         total_count += m_count
                         if m_last_dt and (latest_backup_dt is None or m_last_dt > latest_backup_dt):
                             latest_backup_dt = m_last_dt
                     count = total_count
                     last_backup_dt = latest_backup_dt
                 else:
-                    count, last_backup_dt = core_logic.get_profile_backup_summary(profile_name, current_backup_base_dir)
+                    count, last_backup_dt = core_logic.get_profile_backup_summary(profile_name, current_backup_base_dir, profile_data=profile_data)
 
                 info_str = ""
                 if is_group:

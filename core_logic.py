@@ -133,6 +133,26 @@ def sanitize_foldername(name):
     return safe_name
 
 
+def get_backup_folder_name(profile_name, profile_data=None):
+    """Get the backup folder name for a profile.
+    
+    If the profile has a 'backup_folder_name' field, use that (stable across renames).
+    Otherwise, fall back to sanitize_foldername(profile_name) for backwards compatibility.
+    
+    Args:
+        profile_name: The current display name of the profile
+        profile_data: Optional profile data dict that may contain 'backup_folder_name'
+        
+    Returns:
+        The folder name to use for this profile's backups
+    """
+    if isinstance(profile_data, dict):
+        stored_folder = profile_data.get('backup_folder_name')
+        if stored_folder and isinstance(stored_folder, str):
+            return stored_folder
+    return sanitize_foldername(profile_name)
+
+
 def _is_safe_zip_path(member_path: str, target_dir: str) -> bool:
     """
     Check if a ZIP member path is safe to extract (prevents Zip Slip vulnerability).
@@ -697,13 +717,13 @@ def handle_profile_rename_in_group(old_name: str, new_name: str, profiles_dict: 
 
 
 # <<< Function to get profile backup summary >>>
-def get_profile_backup_summary(profile_name, backup_base_dir):
+def get_profile_backup_summary(profile_name, backup_base_dir, profile_data=None):
     """
     Returns a summary of backups for a profile.
     Returns: tuple (count: int, last_backup_datetime: datetime | None)
     """
     # Use the existing function that already sorts by date (newest first)
-    backups = list_available_backups(profile_name, backup_base_dir) # Pass the argument
+    backups = list_available_backups(profile_name, backup_base_dir, profile_data=profile_data)
     count = len(backups)
     last_backup_dt = None
 
@@ -818,6 +838,19 @@ def load_profiles():
 
     logging.info(f"Loaded and processed {len(loaded_profiles)} profiles from '{PROFILES_FILE_PATH}'.")
     
+    # --- Migration: ensure every profile has a stable backup_folder_name ---
+    migration_needed = False
+    for name, data in loaded_profiles.items():
+        if isinstance(data, dict) and 'backup_folder_name' not in data:
+            # Skip group profiles - they don't have their own backup folders
+            if data.get('type') == 'group':
+                continue
+            data['backup_folder_name'] = sanitize_foldername(name)
+            migration_needed = True
+            logging.debug(f"Migration: set backup_folder_name='{data['backup_folder_name']}' for profile '{name}'")
+    
+    if migration_needed:
+        logging.info("backup_folder_name migration applied to existing profiles. Will be saved on next save.")
     # Clean up orphaned icons from deleted profiles
     try:
         from gui_components.icon_extractor import cleanup_orphaned_icons
@@ -891,15 +924,15 @@ def delete_profile(profiles, profile_name):
         return False
 
 # --- Backup/Restore Operations ---
-def manage_backups(profile_name, backup_base_dir, max_backups):
+def manage_backups(profile_name, backup_base_dir, max_backups, profile_data=None):
     """Delete older .zip backups if they exceed the specified limit.
     
     Locked backups are excluded from the count and are never deleted during rotation.
     """
     deleted_files = []
-    sanitized_folder_name = sanitize_foldername(profile_name)
-    profile_backup_dir = os.path.join(backup_base_dir, sanitized_folder_name)
-    logging.debug(f"ManageBackups - Original name: '{profile_name}', Folder searched: '{profile_backup_dir}'")
+    folder_name = get_backup_folder_name(profile_name, profile_data)
+    profile_backup_dir = os.path.join(backup_base_dir, folder_name)
+    logging.debug(f"ManageBackups - Original name: '{profile_name}', Folder: '{folder_name}', Searched: '{profile_backup_dir}'")
     
     # Try to get the locked backup path for this profile
     locked_backup_path = None
@@ -1400,9 +1433,9 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
         Tuple (success: bool, message: str)
     """
     logging.info(f"Starting perform_backup for: '{profile_name}'")
-    sanitized_folder_name = sanitize_foldername(profile_name)
+    sanitized_folder_name = get_backup_folder_name(profile_name, profile_data)
     profile_backup_dir = os.path.join(backup_base_dir, sanitized_folder_name)
-    logging.info(f"Original Name: '{profile_name}', Sanitized Folder Name: '{sanitized_folder_name}'")
+    logging.info(f"Original Name: '{profile_name}', Backup Folder Name: '{sanitized_folder_name}'")
     logging.debug(f"Backup path built: '{profile_backup_dir}'")
 
     is_multiple_paths = isinstance(source_paths, list)
@@ -1449,7 +1482,7 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
                                                     zip_compression, zip_compresslevel)
             if success:
                 # Manage old backups
-                deleted_files = manage_backups(profile_name, backup_base_dir, max_backups)
+                deleted_files = manage_backups(profile_name, backup_base_dir, max_backups, profile_data=profile_data)
                 deleted_msg = f" Deleted {len(deleted_files)} obsolete backups." if deleted_files else ""
                 return True, f"Backup completed successfully:\n'{archive_name}'" + deleted_msg
             else:
@@ -1511,22 +1544,20 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
     # --- END ZIP Archive Creation ---
 
     # --- Gestione Vecchi Backup ---
-    deleted_files = manage_backups(profile_name, backup_base_dir, max_backups)
+    deleted_files = manage_backups(profile_name, backup_base_dir, max_backups, profile_data=profile_data)
     deleted_msg = f" Deleted {len(deleted_files)} obsolete backups." if deleted_files else ""
     # --- FINE Gestione ---
 
     return True, f"Backup completed successfully:\n'{archive_name}'" + deleted_msg
 
 # --- Support Function for Folder Size Calculation ---
-def list_available_backups(profile_name, backup_base_dir):
+def list_available_backups(profile_name, backup_base_dir, profile_data=None):
     """Restituisce una lista di tuple (nome_file, percorso_completo, data_modifica_str) per i backup di un profilo."""
     backups = []
-    sanitized_folder_name = sanitize_foldername(profile_name)
-    # <<< MODIFICATO: Usa backup_base_dir dalle impostazioni (richiede passaggio o accesso globale)
-    # Assumendo che 'config' fornisca il percorso corretto
+    folder_name = get_backup_folder_name(profile_name, profile_data)
     
-    profile_backup_dir = os.path.join(backup_base_dir, sanitized_folder_name)
-    logging.debug(f"ListBackups - Original name: '{profile_name}', Folder searched: '{profile_backup_dir}'")
+    profile_backup_dir = os.path.join(backup_base_dir, folder_name)
+    logging.debug(f"ListBackups - Original name: '{profile_name}', Folder: '{folder_name}', Searched: '{profile_backup_dir}'")
 
     if not os.path.isdir(profile_backup_dir):
         return backups # Nessuna cartella = nessun backup

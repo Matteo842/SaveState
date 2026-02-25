@@ -301,7 +301,12 @@ class ManageBackupsDialog(QDialog):
             current_backup_base_dir = config.BACKUP_BASE_DIR
         # --- END RECOVER SETTINGS ---
 
-        backups = core_logic.list_available_backups(self.profile_name, current_backup_base_dir)
+        # Get profile_data for stable backup folder resolution
+        profile_data = None
+        if parent_window and hasattr(parent_window, 'profiles'):
+            profile_data = parent_window.profiles.get(self.profile_name, {})
+        
+        backups = core_logic.list_available_backups(self.profile_name, current_backup_base_dir, profile_data=profile_data)
         
         # Get locked backup for this profile
         locked_backup_path = lock_backup_manager.get_locked_backup_for_profile(self.profile_name)

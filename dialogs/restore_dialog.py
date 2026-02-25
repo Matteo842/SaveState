@@ -143,9 +143,11 @@ class RestoreDialog(QDialog):
         # --- Call core_logic only if we have a profile name ---
         backups = []
         if profile_name:
-            # The function list_available_backups must already have been modified
-            # to return (name, path, datetime_obj)
-            backups = core_logic.list_available_backups(profile_name, current_backup_base_dir)
+            # Use backup_folder_name from profile_data for stable folder resolution
+            profile_data = None
+            if parent and hasattr(parent, 'profiles'):
+                profile_data = parent.profiles.get(profile_name, {})
+            backups = core_logic.list_available_backups(profile_name, current_backup_base_dir, profile_data=profile_data)
 
         if not backups and profile_name:
             # Handle no backups found (only show if we have a profile)

@@ -1709,7 +1709,7 @@ class MainWindowHandlers:
                 continue
             
             # Get latest backup
-            backups = core_logic.list_available_backups(profile_name, backup_base_dir)
+            backups = core_logic.list_available_backups(profile_name, backup_base_dir, profile_data=profile_data)
             
             if not backups:
                 skipped_profiles.append(profile_name)
@@ -2334,6 +2334,16 @@ class MainWindowHandlers:
 
             # Apply rename if needed
             if new_name != original_name:
+                # Ensure backup_folder_name is preserved (or set from original name)
+                # This keeps the backup folder stable across renames
+                if 'backup_folder_name' not in new_data:
+                    new_data['backup_folder_name'] = core_logic.sanitize_foldername(original_name)
+                    logging.info(f"[Edit Profile] Set backup_folder_name='{new_data['backup_folder_name']}' "
+                                 f"from original name '{original_name}' before rename to '{new_name}'")
+                else:
+                    logging.debug(f"[Edit Profile] Preserving existing backup_folder_name='{new_data['backup_folder_name']}' "
+                                  f"during rename '{original_name}' -> '{new_name}'")
+                
                 # Update favorites mapping if needed
                 try:
                     from gui_components import favorites_manager
