@@ -2493,6 +2493,26 @@ class MainWindow(QMainWindow):
         try:
             self.controller_panel_group.populate(self.current_settings)
             self.controller_panel_group.set_profile_count(len(self.profiles))
+
+            # Detect current controller connection and update indicator
+            ctrl_connected = False
+            cm = getattr(self, 'controller_manager', None)
+            if cm is not None and cm.is_running():
+                try:
+                    import platform as _plat
+                    if _plat.system() == "Windows":
+                        import ctypes as _ct
+                        from controller_manager import XINPUT_STATE
+                        _xi = _ct.windll.xinput1_4
+                        for i in range(4):
+                            st = XINPUT_STATE()
+                            if _xi.XInputGetState(i, _ct.byref(st)) == 0:
+                                ctrl_connected = True
+                                break
+                except Exception:
+                    pass
+            self.controller_panel_group.update_connection_status(ctrl_connected)
+
             self.profile_group.setVisible(False)
             self.actions_group.setVisible(False)
             self.general_group.setVisible(False)
@@ -2706,6 +2726,7 @@ class MainWindow(QMainWindow):
             return
         self._ctrl_set_focus_section('actions')
 
+
     @Slot()
     def _ctrl_on_any_input(self):
         """Called on any controller button/nav press. Enters controller-focus mode."""
@@ -2855,6 +2876,20 @@ class MainWindow(QMainWindow):
         """Resolve the action assigned to a physical button and execute it.
         Falls back to CTRL_DEFAULT_MAPPINGS for any button not found in saved
         settings (handles renames across app versions gracefully)."""
+        # ── Shortcut capture intercept ─────────────────────────────────
+        # If the controller panel is open and a shortcut row is waiting
+        # for a button assignment, deliver the pressed button name there
+        # instead of executing any action.
+        if getattr(self, '_controller_mode_active', False):
+            try:
+                panel = self.controller_panel_group
+                capturing_row = panel.shortcuts_panel.get_capturing_row()
+                if capturing_row is not None:
+                    panel.deliver_captured_button(button)
+                    return
+            except Exception:
+                pass
+
         saved: dict = self.current_settings.get("controller_button_mappings", {})
         action = saved.get(button) or CTRL_DEFAULT_MAPPINGS.get(button, "")
 
@@ -3115,6 +3150,11 @@ class MainWindow(QMainWindow):
         logging.info(f"Controller {idx} connected.")
         self.status_label.setText(f"Controller {idx + 1} connected.")
         self._ctrl_install_dialog_badger()
+        # Update controller panel status indicator
+        try:
+            self.controller_panel_group.update_connection_status(True)
+        except Exception:
+            pass
         # Install app-wide event filter to detect mouse usage
         if not getattr(self, '_ctrl_mouse_filter_installed', False):
             QApplication.instance().installEventFilter(self)
@@ -3143,6 +3183,11 @@ class MainWindow(QMainWindow):
             self._ctrl_restore_button_icons()
             self._ctrl_uninstall_dialog_badger()
             self._ctrl_clear_focus_section()
+            # Update controller panel status indicator
+            try:
+                self.controller_panel_group.update_connection_status(False)
+            except Exception:
+                pass
             # Remove app-wide mouse detection filter
             if getattr(self, '_ctrl_mouse_filter_installed', False):
                 QApplication.instance().removeEventFilter(self)

@@ -358,12 +358,17 @@ class MainWindowHandlers:
     @Slot()
     def handle_controller_exit(self):
         """Exit the inline controller settings panel without saving."""
+        # Cancel any ongoing shortcut button capture
+        try:
+            self.main_window.controller_panel_group.cancel_shortcut_capture()
+        except Exception:
+            pass
         self.main_window.exit_controller_panel()
         logging.debug("Controller panel closed without saving.")
 
     @Slot()
     def handle_controller_save(self):
-        """Save controller settings (enable flag + button mappings) and apply immediately."""
+        """Save controller settings (enable flag + button mappings + shortcut profiles) and apply immediately."""
         try:
             enabled = self.main_window.controller_enabled_switch.isChecked()
             self.main_window.current_settings["controller_support_enabled"] = enabled
@@ -373,6 +378,14 @@ class MainWindowHandlers:
             for btn_name, combo in self.main_window.ctrl_mapping_combos.items():
                 new_mappings[btn_name] = combo.currentData() or ""
             self.main_window.current_settings["controller_button_mappings"] = new_mappings
+
+            # Collect controller shortcut profiles
+            try:
+                shortcut_profiles = self.main_window.controller_panel_group.get_shortcut_profiles()
+                self.main_window.current_settings["controller_shortcut_profiles"] = shortcut_profiles
+                logging.debug(f"Controller shortcut profiles to save: {len(shortcut_profiles)}")
+            except Exception as e_sp:
+                logging.warning(f"Error collecting shortcut profiles: {e_sp}")
 
             if settings_manager.save_settings(self.main_window.current_settings):
                 logging.info(f"Controller support enabled: {enabled}")
