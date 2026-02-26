@@ -2615,6 +2615,9 @@ class MainWindow(QMainWindow):
     @Slot()
     def _ctrl_nav_up(self):
         """Move selection up — QMenu → dialog → profile list."""
+        from PySide6.QtWidgets import QApplication
+        if QApplication.activeWindow() is None:
+            return
         menu = self._ctrl_active_popup()
         if menu is not None:
             self._ctrl_send_key(menu, Qt.Key.Key_Up)
@@ -2643,6 +2646,9 @@ class MainWindow(QMainWindow):
     @Slot()
     def _ctrl_nav_down(self):
         """Move selection down — QMenu → dialog → profile list."""
+        from PySide6.QtWidgets import QApplication
+        if QApplication.activeWindow() is None:
+            return
         menu = self._ctrl_active_popup()
         if menu is not None:
             self._ctrl_send_key(menu, Qt.Key.Key_Down)
@@ -2709,6 +2715,9 @@ class MainWindow(QMainWindow):
     @Slot()
     def _ctrl_on_lt_hold(self):
         """LT pressed (alone) — switch focus to General section."""
+        from PySide6.QtWidgets import QApplication
+        if QApplication.activeWindow() is None:
+            return
         if (getattr(self, '_settings_mode_active', False) or
                 getattr(self, '_controller_mode_active', False) or
                 getattr(self, '_cloud_mode_active', False) or
@@ -2719,6 +2728,9 @@ class MainWindow(QMainWindow):
     @Slot()
     def _ctrl_on_lt_release(self):
         """LT released — switch focus back to Actions section."""
+        from PySide6.QtWidgets import QApplication
+        if QApplication.activeWindow() is None:
+            return
         if (getattr(self, '_settings_mode_active', False) or
                 getattr(self, '_controller_mode_active', False) or
                 getattr(self, '_cloud_mode_active', False) or
@@ -2730,6 +2742,9 @@ class MainWindow(QMainWindow):
     @Slot()
     def _ctrl_on_any_input(self):
         """Called on any controller button/nav press. Enters controller-focus mode."""
+        from PySide6.QtWidgets import QApplication
+        if QApplication.activeWindow() is None:
+            return
         # If already in controller-focus mode, nothing to do
         if getattr(self, '_ctrl_focus_section', None) is not None:
             return
@@ -2876,6 +2891,10 @@ class MainWindow(QMainWindow):
         """Resolve the action assigned to a physical button and execute it.
         Falls back to CTRL_DEFAULT_MAPPINGS for any button not found in saved
         settings (handles renames across app versions gracefully)."""
+        from PySide6.QtWidgets import QApplication
+        if QApplication.activeWindow() is None:
+            return
+        
         # ── Shortcut capture intercept ─────────────────────────────────
         # If the controller panel is open and a shortcut row is waiting
         # for a button assignment, deliver the pressed button name there
