@@ -1329,7 +1329,8 @@ class MainWindow(QMainWindow):
         # ── Mouse usage → exit controller visual mode ─────────────────
         try:
             if event.type() == QEvent.Type.MouseButtonPress:
-                if getattr(self, '_ctrl_focus_section', None) is not None:
+                in_cloud_ctrl = getattr(self, '_cloud_mode_active', False) and getattr(self.cloud_panel, '_ctrl_mode_active', False) if hasattr(self, 'cloud_panel') else False
+                if getattr(self, '_ctrl_focus_section', None) is not None or in_cloud_ctrl:
                     self._ctrl_exit_visual_mode()
         except Exception:
             pass

@@ -8,13 +8,62 @@ Similar to the settings panel, this is embedded in the main window.
 import os
 import logging
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox,
-    QCheckBox, QLineEdit, QProgressBar, QMessageBox, QStackedWidget,
-    QComboBox
+    QProgressBar, QCheckBox, QComboBox, QLineEdit, QStackedWidget,
+    QMessageBox, QApplication, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QDialog,
+    QDialogButtonBox
 )
-from PySide6.QtCore import Qt, Signal, Slot, QEvent, QThread, QObject, QTimer, QSize
-from PySide6.QtGui import QIcon, QColor, QPixmap
+from PySide6.QtCore import Qt, QSize, Signal, QTimer, QThread, Slot, QObject, QEvent
+from PySide6.QtGui import QIcon, QPixmap, QMovie, QColor, QPalette, QPainter
+
+class CloudSelectionDelegate(QStyledItemDelegate):
+    """Custom Delegate to draw the selection with theme support mimicking multi-profile selection."""
+    def __init__(self, parent=None, main_window=None):
+        super().__init__(parent)
+        self.main_window = main_window
+    
+    def paint(self, painter, option, index):
+        painter.save()
+        if option.state & QStyle.State_Selected:
+            theme_name = self.main_window.current_settings.get('theme', 'dark') if self.main_window else 'dark'
+            if theme_name == 'dark':
+                bg_color = QColor("#2A2A2A")       
+                accent_color = QColor("#A10808")   
+                text_color = QColor(Qt.GlobalColor.white)
+            else:
+                bg_color = QColor("#C8E6E3")       
+                accent_color = QColor("#007c8e")   
+                text_color = QColor("#1E1E1E")     
+            
+            painter.fillRect(option.rect, bg_color)
+            
+            if index.column() == 0:
+                bar_width = 4
+                painter.fillRect(
+                    option.rect.x(),  
+                    option.rect.y(), 
+                    bar_width, 
+                    option.rect.height(), 
+                    accent_color
+                )
+            
+            opt = QStyleOptionViewItem(option)
+            opt.state &= ~QStyle.State.State_Selected 
+            
+            palette = opt.palette
+            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.Text, text_color)
+            palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.WindowText, text_color)
+            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.Text, text_color)
+            palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.WindowText, text_color)
+            opt.palette = palette
+            
+            super().paint(painter, opt, index)
+        else:
+            super().paint(painter, option, index)
+            
+        painter.restore()
+
 from cloud_utils.cloud_settings_panel import CloudSettingsPanel
 from cloud_utils.google_drive_manager import get_drive_manager, StorageCheckWorker
 import cloud_settings_manager
@@ -806,6 +855,10 @@ class CloudSavePanel(QWidget):
                 background-color: #3a3a3a;
             }
         """)
+        
+        # Set Custom Delegate
+        self.delegate = CloudSelectionDelegate(self.backup_table, main_window=self.main_window)
+        self.backup_table.setItemDelegate(self.delegate)
         
         list_layout.addWidget(self.backup_table)
         list_group.setLayout(list_layout)
@@ -1651,9 +1704,11 @@ class CloudSavePanel(QWidget):
         from PySide6.QtCore import Qt, QSize
         
         # Hide selection background
+        self.backup_table.clearSelection()
+        self.backup_table.setCurrentItem(None)
         self.backup_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.backup_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.backup_table.clearSelection()
+        self.backup_table.viewport().update()
         
         # Restore original icons
         if hasattr(self, '_ctrl_orig_icons'):
