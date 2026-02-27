@@ -2626,6 +2626,10 @@ class MainWindow(QMainWindow):
         if dialog is not None:
             self._ctrl_dialog_nav(dialog, -1)
             return
+        if getattr(self, '_cloud_mode_active', False):
+            if hasattr(self, 'cloud_panel'):
+                self.cloud_panel.handle_controller_nav(-1)
+            return
         if not self._ctrl_table_is_active():
             return
         table = self.profile_table_widget
@@ -2656,6 +2660,10 @@ class MainWindow(QMainWindow):
         dialog = self._ctrl_active_dialog()
         if dialog is not None:
             self._ctrl_dialog_nav(dialog, +1)
+            return
+        if getattr(self, '_cloud_mode_active', False):
+            if hasattr(self, 'cloud_panel'):
+                self.cloud_panel.handle_controller_nav(1)
             return
         if not self._ctrl_table_is_active():
             return
@@ -2745,20 +2753,29 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QApplication
         if QApplication.activeWindow() is None:
             return
+        # Intercept for Cloud panel
+        if getattr(self, '_cloud_mode_active', False):
+            if hasattr(self, 'cloud_panel') and not getattr(self.cloud_panel, '_ctrl_mode_active', False):
+                self.cloud_panel.enter_controller_mode()
+            return
+            
         # If already in controller-focus mode, nothing to do
         if getattr(self, '_ctrl_focus_section', None) is not None:
             return
+            
         # Cooldown: don't re-enter controller mode for 0.5s after mouse was used
         import time
         mouse_at = getattr(self, '_ctrl_mouse_used_at', 0)
         if time.time() - mouse_at < 0.5:
             return
+            
         # Only activate on the main profile view
         if (getattr(self, '_settings_mode_active', False) or
                 getattr(self, '_controller_mode_active', False) or
                 getattr(self, '_cloud_mode_active', False) or
                 getattr(self, '_edit_mode_active', False)):
             return
+            
         # First controller input → focus on "Actions", dim "General"
         self._ctrl_set_focus_section('actions')
 
@@ -2876,6 +2893,11 @@ class MainWindow(QMainWindow):
         self._ctrl_focus_section = None
         import time
         self._ctrl_mouse_used_at = time.time()  # cooldown to prevent instant re-entry
+        
+        # Cloud panel exit
+        if getattr(self, '_cloud_mode_active', False) and hasattr(self, 'cloud_panel'):
+            self.cloud_panel.exit_controller_mode()
+            
         # Remove dimming effects from all sections
         for widget_name in ('actions_group', 'general_group', 'cloud_group'):
             widget = getattr(self, widget_name, None)
@@ -2921,12 +2943,20 @@ class MainWindow(QMainWindow):
                 self._ctrl_send_key(menu, Qt.Key.Key_Return)
             return
 
-        # ── Priority 2: Any visible QDialog (QMessageBox, ManageBackups…) ─
         dialog = self._ctrl_active_dialog()
         if dialog is not None:
             self._ctrl_dialog_dispatch(dialog, action)
             return
         if not action:
+            return
+
+        # ── Priority 2.5: Cloud mode active ────────────────────────────────
+        if getattr(self, '_cloud_mode_active', False):
+            if action == "back":
+                self._ctrl_do_back()
+            else:
+                if hasattr(self, 'cloud_panel'):
+                    self.cloud_panel.handle_controller_action(action)
             return
 
         # ── Priority 3: General section has focus ──────────────────────────

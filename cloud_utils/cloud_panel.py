@@ -1542,6 +1542,127 @@ class CloudSavePanel(QWidget):
         # call the base class's event handler
         return super().event(event_obj)
     
+    def handle_controller_nav(self, direction: int):
+        """Navigate up (-1) or down (+1) in the backup table."""
+        table = self.backup_table
+        if not table.isVisible() or not table.isEnabled():
+            return
+        count = table.rowCount()
+        if count == 0:
+            return
+        
+        current = table.currentRow()
+        if current < 0:
+            row = 0
+        else:
+            row = min(max(0, current + direction), count - 1)
+        
+        table.selectRow(row)
+        table.scrollTo(table.model().index(row, 0))
+
+    def handle_controller_action(self, action: str):
+        """Handle mapped controller actions when cloud panel is active."""
+        if action == "backup":          # Default A button: Toggle checkbox
+            table = self.backup_table
+            row = table.currentRow()
+            if row >= 0:
+                checkbox_widget = table.cellWidget(row, 0)
+                if checkbox_widget:
+                    checkbox = checkbox_widget.findChild(QCheckBox)
+                    if checkbox:
+                        checkbox.setChecked(not checkbox.isChecked())
+                        
+        elif action == "restore":       # Default X button: Upload
+            if self.upload_button.isEnabled():
+                self.upload_button.click()
+                
+        elif action == "manage_backups":# Default Y button: Download
+            if self.download_button.isEnabled():
+                self.download_button.click()
+                
+        elif action == "delete":        # Delete button: Delete from cloud
+            if self.delete_button.isEnabled():
+                self.delete_button.click()
+                
+        elif action == "context_menu":  # Start: Refresh
+            if self.refresh_button.isEnabled():
+                self.refresh_button.click()
+    
+    def enter_controller_mode(self):
+        """Enable visual selection in the table and show button badges when using a controller."""
+        self._ctrl_mode_active = True
+        import logging
+        from PySide6.QtWidgets import QTableWidget
+        from PySide6.QtCore import Qt, QSize
+        
+        # Enable visible selection on the table
+        self.backup_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.backup_table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.backup_table.setFocus()
+        
+        # If no row selected, select first
+        if self.backup_table.rowCount() > 0 and self.backup_table.currentRow() < 0:
+            self.backup_table.selectRow(0)
+            self.backup_table.scrollTo(self.backup_table.model().index(0, 0))
+            
+        # Add badges to action buttons
+        try:
+            from gui_components.controller_panel import CTRL_DEFAULT_MAPPINGS, CTRL_BADGE_COLOR
+            saved = self.main_window.current_settings.get("controller_button_mappings", {})
+            mappings = {**CTRL_DEFAULT_MAPPINGS, **saved}
+            
+            action_to_btn = {}
+            for btn_name, action in mappings.items():
+                if action and action not in action_to_btn:
+                    action_to_btn[action] = btn_name
+                    
+            action_btn_map = {
+                "restore": self.upload_button,
+                "manage_backups": self.download_button, 
+                "delete": self.delete_button,
+                "context_menu": self.refresh_button,
+            }
+            
+            icon_size = QSize(18, 18)
+            
+            if not hasattr(self, '_ctrl_orig_icons'):
+                self._ctrl_orig_icons = {}
+                
+            for action, ui_btn in action_btn_map.items():
+                btn_id = id(ui_btn)
+                if btn_id not in self._ctrl_orig_icons:
+                    self._ctrl_orig_icons[btn_id] = ui_btn.icon()
+                    
+                phys_btn = action_to_btn.get(action, "")
+                if phys_btn and hasattr(self.main_window, '_make_ctrl_badge_icon'):
+                    badge = self.main_window._make_ctrl_badge_icon(
+                        phys_btn, CTRL_BADGE_COLOR.get(phys_btn, "#555")
+                    )
+                    ui_btn.setIcon(badge)
+                    ui_btn.setIconSize(icon_size)
+                         
+        except Exception as e:
+            logging.error(f"Error entering cloud controller mode: {e}")
+
+    def exit_controller_mode(self):
+        """Restore native mouse look: hide table selection, remove button badges."""
+        self._ctrl_mode_active = False
+        from PySide6.QtWidgets import QTableWidget
+        from PySide6.QtCore import Qt, QSize
+        
+        # Hide selection background
+        self.backup_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.backup_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.backup_table.clearSelection()
+        
+        # Restore original icons
+        if hasattr(self, '_ctrl_orig_icons'):
+            for ui_btn in (self.upload_button, self.download_button, self.delete_button, self.refresh_button):
+                orig = self._ctrl_orig_icons.get(id(ui_btn))
+                if orig is not None:
+                    ui_btn.setIcon(orig)
+                    ui_btn.setIconSize(QSize(16, 16))
+
     def _on_refresh_clicked(self):
         """Refresh the backup list."""
         # Prevent spam clicking with cooldown
