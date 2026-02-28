@@ -104,11 +104,29 @@ class _ControllerDialogBadger(_QObject):
 
     def eventFilter(self, watched, event):
         if event.type() == _QEvent.Type.Show and isinstance(watched, QDialog):
-            QTimer.singleShot(0, lambda d=watched: self._badge(d))
+            QTimer.singleShot(0, lambda d=watched: self.update_dialog(d))
         return False
 
+    def update_all_open_dialogs(self):
+        """Update badges on all open dialogs according to the current input mode."""
+        from PySide6.QtWidgets import QApplication
+        for w in QApplication.topLevelWidgets():
+            if isinstance(w, QDialog) and w.isVisible():
+                self.update_dialog(w)
+
+    def update_dialog(self, dialog):
+        """Show or hide badges on a dialog depending on the active controller mode."""
+        if not dialog.isVisible():
+            return
+            
+        mw = self._mw
+        in_cloud_ctrl = getattr(mw, '_cloud_mode_active', False) and getattr(mw.cloud_panel, '_ctrl_mode_active', False) if hasattr(mw, 'cloud_panel') else False
+        is_ctrl_active = getattr(mw, '_ctrl_focus_section', None) is not None or in_cloud_ctrl
+        
+        self._badge(dialog, apply=is_ctrl_active)
+
     # ------------------------------------------------------------------
-    def _badge(self, dialog):
+    def _badge(self, dialog, apply=True):
         if not dialog.isVisible():
             return
 
@@ -131,9 +149,12 @@ class _ControllerDialogBadger(_QObject):
 
         def _set(widget, action_key, fallback_btn, fallback_color):
             if widget and widget.isVisible():
-                ico, sz_ = _icon(action_key, fallback_btn, fallback_color)
-                widget.setIcon(ico)
-                widget.setIconSize(sz_)
+                if apply:
+                    ico, sz_ = _icon(action_key, fallback_btn, fallback_color)
+                    widget.setIcon(ico)
+                    widget.setIconSize(sz_)
+                else:
+                    widget.setIcon(QIcon())
 
         # ── QMessageBox ────────────────────────────────────────────────
         if isinstance(dialog, QMessageBox):
@@ -2758,6 +2779,9 @@ class MainWindow(QMainWindow):
         if getattr(self, '_cloud_mode_active', False):
             if hasattr(self, 'cloud_panel') and not getattr(self.cloud_panel, '_ctrl_mode_active', False):
                 self.cloud_panel.enter_controller_mode()
+                badger = getattr(self, '_ctrl_dialog_badger', None)
+                if badger is not None:
+                    badger.update_all_open_dialogs()
             return
             
         # If already in controller-focus mode, nothing to do
@@ -2815,6 +2839,11 @@ class MainWindow(QMainWindow):
             # Put badges on General buttons, restore Actions to original
             self._ctrl_restore_button_icons()
             self._ctrl_update_general_badges()
+            
+        # Update any open dialogs so they show badges now that we are in controller mode
+        badger = getattr(self, '_ctrl_dialog_badger', None)
+        if badger is not None:
+            badger.update_all_open_dialogs()
 
     def _ctrl_update_general_badges(self):
         """Set badge icons on General section buttons when General has focus.
@@ -2907,6 +2936,11 @@ class MainWindow(QMainWindow):
         # Restore all button icons to originals (remove badge icons)
         self._ctrl_restore_button_icons()
         self._ctrl_restore_general_icons()
+        
+        # Remove badges from any open dialogs since mouse was used
+        badger = getattr(self, '_ctrl_dialog_badger', None)
+        if badger is not None:
+            badger.update_all_open_dialogs()
 
     @Slot(list)
     def _ctrl_on_buttons_state_changed(self, active_buttons: list):
