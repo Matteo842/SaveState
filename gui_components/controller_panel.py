@@ -326,6 +326,7 @@ class ControllerPanel(QGroupBox):
 
         # ── Exit / Save buttons ────────────────────────────────────────
         btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
         self.exit_button = QPushButton("Exit")
         self.save_button = QPushButton("Save")
         btn_row.addStretch(1)
