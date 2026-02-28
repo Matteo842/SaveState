@@ -602,7 +602,7 @@ class MainWindowHandlers:
     # --- Profile Actions (Delete, Backup, Restore, Manage, Shortcut) ---
     # Handles the deletion of the selected profile(s) after confirmation.
     @Slot()
-    def handle_delete_profile(self):
+    def handle_delete_profile(self, skip_confirmation: bool = False):
         # Check if multiple profiles are selected
         selected_profile_names = self.main_window.profile_table_manager.get_selected_profile_names()
         
@@ -611,7 +611,7 @@ class MainWindowHandlers:
         
         # If multiple profiles selected, use batch deletion
         if len(selected_profile_names) > 1:
-            self._handle_delete_multiple_profiles(selected_profile_names)
+            self._handle_delete_multiple_profiles(selected_profile_names, skip_confirmation=skip_confirmation)
             return
         
         # Single profile deletion (original logic)
@@ -622,18 +622,21 @@ class MainWindowHandlers:
         # Handle group deletion differently
         if is_group:
             member_count = len(core_logic.get_group_member_profiles(profile_name, self.main_window.profiles))
-            msg_box = QMessageBox(self.main_window)
-            msg_box.setWindowTitle("Confirm Group Deletion")
-            msg_box.setIcon(QMessageBox.Icon.Warning)
-            msg_box.setTextFormat(Qt.TextFormat.RichText)
-            msg_box.setText(
-                f"Are you sure you want to delete the group '{profile_name}'?<br><br>"
-                f"<b>This group contains {member_count} profile(s).</b><br><br>"
-                f"The member profiles will NOT be deleted - they will become visible again."
-            )
-            msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            msg_box.setDefaultButton(QMessageBox.StandardButton.No)
-            reply = msg_box.exec()
+            if not skip_confirmation:
+                msg_box = QMessageBox(self.main_window)
+                msg_box.setWindowTitle("Confirm Group Deletion")
+                msg_box.setIcon(QMessageBox.Icon.Warning)
+                msg_box.setTextFormat(Qt.TextFormat.RichText)
+                msg_box.setText(
+                    f"Are you sure you want to delete the group '{profile_name}'?<br><br>"
+                    f"<b>This group contains {member_count} profile(s).</b><br><br>"
+                    f"The member profiles will NOT be deleted - they will become visible again."
+                )
+                msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+                reply = msg_box.exec()
+            else:
+                reply = QMessageBox.StandardButton.Yes
             
             if reply == QMessageBox.StandardButton.Yes:
                 # Use ungroup to properly handle member cleanup
@@ -649,17 +652,21 @@ class MainWindowHandlers:
                     QMessageBox.warning(self.main_window, "Deletion Failed", error)
             return
 
-        msg_box = QMessageBox(self.main_window)
-        msg_box.setWindowTitle("Confirm Deletion")
-        msg_box.setIcon(QMessageBox.Icon.Warning)
-        msg_box.setTextFormat(Qt.TextFormat.RichText)
-        msg_box.setText(
-            f"Are you sure you want to delete the profile '{profile_name}'?<br><br>"
-            f"<b>This does not delete already created backup files.</b>"
-        )
-        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        msg_box.setDefaultButton(QMessageBox.StandardButton.No)
-        reply = msg_box.exec()
+        if not skip_confirmation:
+            msg_box = QMessageBox(self.main_window)
+            msg_box.setWindowTitle("Confirm Deletion")
+            msg_box.setIcon(QMessageBox.Icon.Warning)
+            msg_box.setTextFormat(Qt.TextFormat.RichText)
+            msg_box.setText(
+                f"Are you sure you want to delete the profile '{profile_name}'?<br><br>"
+                f"<b>This does not delete already created backup files.</b>"
+            )
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+            reply = msg_box.exec()
+        else:
+            reply = QMessageBox.StandardButton.Yes
+
         if reply == QMessageBox.StandardButton.Yes:
             success, result_code = self._delete_single_profile(profile_name, profile_data)
             if success:
@@ -735,7 +742,7 @@ class MainWindowHandlers:
                 return True, "folder_check_error"
         return False, "delete_failed"
     
-    def _handle_delete_multiple_profiles(self, profile_names: list):
+    def _handle_delete_multiple_profiles(self, profile_names: list, skip_confirmation: bool = False):
         """Handle deletion of multiple selected profiles."""
         profile_count = len(profile_names)
         
@@ -749,31 +756,34 @@ class MainWindowHandlers:
             else:
                 profiles_in_selection.append(name)
         
-        # Build confirmation message
-        msg_box = QMessageBox(self.main_window)
-        msg_box.setWindowTitle("Confirm Multiple Deletion")
-        msg_box.setIcon(QMessageBox.Icon.Warning)
-        msg_box.setTextFormat(Qt.TextFormat.RichText)
-        
-        # Build profile list (limit to 5 for display)
-        display_names = profile_names[:5]
-        names_list = "<br>".join([f"• {name}" for name in display_names])
-        if profile_count > 5:
-            names_list += f"<br>• ... and {profile_count - 5} more"
-        
-        group_warning = ""
-        if groups_in_selection:
-            group_warning = f"<br><br><b>Note:</b> {len(groups_in_selection)} group(s) will be ungrouped (members become visible)."
-        
-        msg_box.setText(
-            f"Are you sure you want to delete <b>{profile_count}</b> profiles?<br><br>"
-            f"{names_list}"
-            f"{group_warning}<br><br>"
-            f"<b>This does not delete already created backup files.</b>"
-        )
-        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        msg_box.setDefaultButton(QMessageBox.StandardButton.No)
-        reply = msg_box.exec()
+        if not skip_confirmation:
+            # Build confirmation message
+            msg_box = QMessageBox(self.main_window)
+            msg_box.setWindowTitle("Confirm Multiple Deletion")
+            msg_box.setIcon(QMessageBox.Icon.Warning)
+            msg_box.setTextFormat(Qt.TextFormat.RichText)
+            
+            # Build profile list (limit to 5 for display)
+            display_names = profile_names[:5]
+            names_list = "<br>".join([f"• {name}" for name in display_names])
+            if profile_count > 5:
+                names_list += f"<br>• ... and {profile_count - 5} more"
+            
+            group_warning = ""
+            if groups_in_selection:
+                group_warning = f"<br><br><b>Note:</b> {len(groups_in_selection)} group(s) will be ungrouped (members become visible)."
+            
+            msg_box.setText(
+                f"Are you sure you want to delete <b>{profile_count}</b> profiles?<br><br>"
+                f"{names_list}"
+                f"{group_warning}<br><br>"
+                f"<b>This does not delete already created backup files.</b>"
+            )
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+            reply = msg_box.exec()
+        else:
+            reply = QMessageBox.StandardButton.Yes
         
         if reply != QMessageBox.StandardButton.Yes:
             return
@@ -910,34 +920,41 @@ class MainWindowHandlers:
 
     # Starts backup process for ALL profiles sequentially.
     @Slot()
-    def handle_backup_all(self):
+    def handle_backup_all(self, skip_confirmation: bool = False):
         """Backup all profiles sequentially."""
         profiles = self.main_window.profiles
         if not profiles:
-            QMessageBox.information(self.main_window, "No Profiles", "There are no profiles to backup.")
+            if not skip_confirmation:
+                QMessageBox.information(self.main_window, "No Profiles", "There are no profiles to backup.")
             return
         
         # Check for existing worker thread
         if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
-            QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+            if not skip_confirmation:
+                QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+            else:
+                logging.warning("Skipped scheduled backup via macro: worker thread currently running.")
             return
         
-        # Confirmation dialog with bold profile count
-        profile_count = len(profiles)
-        msg_box = QMessageBox(self.main_window)
-        msg_box.setWindowTitle("Backup All Profiles")
-        msg_box.setIcon(QMessageBox.Icon.Question)
-        msg_box.setTextFormat(Qt.TextFormat.RichText)
-        msg_box.setText(
-            f"This will backup all <b>{profile_count}</b> profile(s).<br><br>"
-            f"Do you want to proceed?"
-        )
-        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
-        reply = msg_box.exec()
-        
-        if reply != QMessageBox.StandardButton.Yes:
-            return
+        if not skip_confirmation:
+            # Confirmation dialog with bold profile count
+            profile_count = len(profiles)
+            msg_box = QMessageBox(self.main_window)
+            msg_box.setWindowTitle("Backup All Profiles")
+            msg_box.setIcon(QMessageBox.Icon.Question)
+            msg_box.setTextFormat(Qt.TextFormat.RichText)
+            msg_box.setText(
+                f"This will backup all <b>{profile_count}</b> profile(s).<br><br>"
+                f"Do you want to proceed?"
+            )
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
+            reply = msg_box.exec()
+            
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        else:
+            profile_count = len(profiles)
         
         # Get global settings for backup
         global_settings = self.main_window.current_settings
@@ -1098,31 +1115,35 @@ class MainWindowHandlers:
                 results, failed, skipped = [], [], []
             
             # Show detailed result
+            if not skip_confirmation:
+                # Show detailed result
+                if was_cancelled:
+                    # Cancellation report
+                    detail_msg = message
+                    if len(results) > 0:
+                        detail_msg += f"\n\nBackups completed before cancellation are safe and preserved."
+                    QMessageBox.information(self.main_window, "Backup Cancelled", detail_msg)
+                elif success and len(failed) == 0:
+                    QMessageBox.information(self.main_window, "Backup All Completed", message)
+                else:
+                    # Build detailed message
+                    detail_msg = message + "\n"
+                    if failed:
+                        detail_msg += "\n--- Failed ---\n" + "\n".join(failed[:10])
+                        if len(failed) > 10:
+                            detail_msg += f"\n... and {len(failed) - 10} more"
+                    if skipped:
+                        detail_msg += "\n\n--- Skipped ---\n" + "\n".join(skipped[:5])
+                        if len(skipped) > 5:
+                            detail_msg += f"\n... and {len(skipped) - 5} more"
+                    
+                    QMessageBox.warning(self.main_window, "Backup All Completed with Issues", detail_msg)
+            
             if was_cancelled:
-                # Cancellation report
-                detail_msg = message
-                if len(results) > 0:
-                    detail_msg += f"\n\nBackups completed before cancellation are safe and preserved."
-                QMessageBox.information(self.main_window, "Backup Cancelled", detail_msg)
-                self.main_window.status_label.setText(
-                    f"Backup cancelled: {len(results)} profile(s) backed up before cancellation."
-                )
+                self.main_window.status_label.setText(f"Backup cancelled: {len(results)} profile(s) backed up before cancellation.")
             elif success and len(failed) == 0:
-                QMessageBox.information(self.main_window, "Backup All Completed", message)
                 self.main_window.status_label.setText(f"Backup All completed: {len(results)} profile(s) backed up.")
             else:
-                # Build detailed message
-                detail_msg = message + "\n"
-                if failed:
-                    detail_msg += "\n--- Failed ---\n" + "\n".join(failed[:10])
-                    if len(failed) > 10:
-                        detail_msg += f"\n... and {len(failed) - 10} more"
-                if skipped:
-                    detail_msg += "\n\n--- Skipped ---\n" + "\n".join(skipped[:5])
-                    if len(skipped) > 5:
-                        detail_msg += f"\n... and {len(skipped) - 5} more"
-                
-                QMessageBox.warning(self.main_window, "Backup All Completed with Issues", detail_msg)
                 self.main_window.status_label.setText(f"Backup All: {len(results)} succeeded, {len(failed)} failed, {len(skipped)} skipped.")
             
             # Refresh the profile table to show updated backup info
@@ -1157,8 +1178,8 @@ class MainWindowHandlers:
         # Refresh button state enablement
         mw.update_action_button_states()
 
-    def _handle_backup_selected(self, selected_profile_names: list):
-        """Backup multiple selected profiles (triggered by Ctrl+Click or Shift+Click selection)."""
+    def _handle_backup_selected(self, selected_profile_names: list, skip_confirmation: bool = False):
+        """Backup multiple selected profiles (triggered by Ctrl+Click or Shift+Click selection, or macro shortcut)."""
         if not selected_profile_names:
             return
         
@@ -1166,24 +1187,28 @@ class MainWindowHandlers:
         
         # Check for existing worker thread
         if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
-            QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+            if not skip_confirmation:
+                QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+            else:
+                logging.warning("Skipped scheduled backup via macro: worker thread currently running.")
             return
         
-        # Confirmation dialog
-        msg_box = QMessageBox(self.main_window)
-        msg_box.setWindowTitle("Backup Selected Profiles")
-        msg_box.setIcon(QMessageBox.Icon.Question)
-        msg_box.setTextFormat(Qt.TextFormat.RichText)
-        msg_box.setText(
-            f"Backup <b>{profile_count}</b> selected profile(s)?<br><br>"
-            f"<small>{', '.join(selected_profile_names[:5])}{' ...' if profile_count > 5 else ''}</small>"
-        )
-        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
-        reply = msg_box.exec()
-        
-        if reply != QMessageBox.StandardButton.Yes:
-            return
+        if not skip_confirmation:
+            # Confirmation dialog
+            msg_box = QMessageBox(self.main_window)
+            msg_box.setWindowTitle("Backup Selected Profiles")
+            msg_box.setIcon(QMessageBox.Icon.Question)
+            msg_box.setTextFormat(Qt.TextFormat.RichText)
+            msg_box.setText(
+                f"Backup <b>{profile_count}</b> selected profile(s)?<br><br>"
+                f"<small>{', '.join(selected_profile_names[:5])}{' ...' if profile_count > 5 else ''}</small>"
+            )
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
+            reply = msg_box.exec()
+            
+            if reply != QMessageBox.StandardButton.Yes:
+                return
         
         # Get global settings and profiles for backup
         global_settings = self.main_window.current_settings
@@ -1320,29 +1345,34 @@ class MainWindowHandlers:
             else:
                 results, failed, skipped = [], [], []
             
+            if not skip_confirmation:
+                if was_cancelled:
+                    detail_msg = message
+                    if len(results) > 0:
+                        detail_msg += f"\n\nBackups completed before cancellation are safe and preserved."
+                    QMessageBox.information(self.main_window, "Backup Cancelled", detail_msg)
+                elif success and len(failed) == 0:
+                    QMessageBox.information(self.main_window, "Backup Completed", message)
+                else:
+                    detail_msg = message + "\n"
+                    if failed:
+                        detail_msg += "\n--- Failed ---\n" + "\n".join(failed[:10])
+                        if len(failed) > 10:
+                            detail_msg += f"\n... and {len(failed) - 10} more"
+                    if skipped:
+                        detail_msg += "\n\n--- Skipped ---\n" + "\n".join(skipped[:5])
+                        if len(skipped) > 5:
+                            detail_msg += f"\n... and {len(skipped) - 5} more"
+                    
+                    QMessageBox.warning(self.main_window, "Backup Completed with Issues", detail_msg)
+                    
             if was_cancelled:
-                detail_msg = message
-                if len(results) > 0:
-                    detail_msg += f"\n\nBackups completed before cancellation are safe and preserved."
-                QMessageBox.information(self.main_window, "Backup Cancelled", detail_msg)
                 self.main_window.status_label.setText(
                     f"Backup cancelled: {len(results)} profile(s) backed up before cancellation."
                 )
             elif success and len(failed) == 0:
-                QMessageBox.information(self.main_window, "Backup Completed", message)
                 self.main_window.status_label.setText(f"Backup completed: {len(results)} profile(s) backed up.")
             else:
-                detail_msg = message + "\n"
-                if failed:
-                    detail_msg += "\n--- Failed ---\n" + "\n".join(failed[:10])
-                    if len(failed) > 10:
-                        detail_msg += f"\n... and {len(failed) - 10} more"
-                if skipped:
-                    detail_msg += "\n\n--- Skipped ---\n" + "\n".join(skipped[:5])
-                    if len(skipped) > 5:
-                        detail_msg += f"\n... and {len(skipped) - 5} more"
-                
-                QMessageBox.warning(self.main_window, "Backup Completed with Issues", detail_msg)
                 self.main_window.status_label.setText(f"Backup: {len(results)} succeeded, {len(failed)} failed, {len(skipped)} skipped.")
             
             self.main_window.profile_table_manager.update_profile_table()

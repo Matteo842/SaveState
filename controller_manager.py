@@ -126,6 +126,7 @@ class ControllerPoller(QObject):
     any_input = Signal()   # Emitted on any button/nav input
     controller_connected    = Signal(int)
     controller_disconnected = Signal(int)
+    buttons_state_changed = Signal(list) # List of currently active button labels
 
     def __init__(self):
         super().__init__()
@@ -141,6 +142,7 @@ class ControllerPoller(QObject):
         self._prev_lt_active: dict[int, bool] = {}
         self._lt_holding: dict[int, bool] = {}
         self._nav_repeat: dict[tuple, tuple] = {}
+        self._prev_active_labels: dict[int, set] = {}
 
         # SDL2-specific state
         self._sdl2_controllers: dict[int, ctypes.c_void_p] = {}
@@ -384,6 +386,29 @@ class ControllerPoller(QObject):
         now       : Current time.monotonic() value
         """
         prev = self._prev_buttons.get(idx, 0)
+        
+        # Determine all currently pressed physical buttons (for macro checks)
+        active_labels = set()
+        if buttons & BTN_A:          active_labels.add("A")
+        if buttons & BTN_B:          active_labels.add("B")
+        if buttons & BTN_X:          active_labels.add("X")
+        if buttons & BTN_Y:          active_labels.add("Y")
+        if buttons & BTN_START:      active_labels.add("Start")
+        if buttons & BTN_BACK:       active_labels.add("View/Select")
+        if buttons & BTN_LB:         active_labels.add("LB")
+        if buttons & BTN_RB:         active_labels.add("RB")
+        if buttons & BTN_DPAD_UP:    active_labels.add("D-Up")
+        if buttons & BTN_DPAD_DOWN:  active_labels.add("D-Down")
+        if buttons & BTN_DPAD_LEFT:  active_labels.add("D-Left")
+        if buttons & BTN_DPAD_RIGHT: active_labels.add("D-Right")
+        if lt_value > TRIGGER_THRESHOLD: active_labels.add("LT")
+        if rt_value > TRIGGER_THRESHOLD: active_labels.add("RT")
+        
+        prev_labels = self._prev_active_labels.get(idx, set())
+        if active_labels != prev_labels:
+            if active_labels:
+                self.buttons_state_changed.emit(list(active_labels))
+            self._prev_active_labels[idx] = active_labels
 
         # Rising-edge detection (button just pressed this tick)
         just_pressed = buttons & ~prev
@@ -536,3 +561,5 @@ class ControllerManager:
         p.any_input.connect(mw._ctrl_on_any_input)
         p.controller_connected.connect(mw._ctrl_on_connected)
         p.controller_disconnected.connect(mw._ctrl_on_disconnected)
+        if hasattr(mw, '_ctrl_on_buttons_state_changed'):
+            p.buttons_state_changed.connect(mw._ctrl_on_buttons_state_changed)

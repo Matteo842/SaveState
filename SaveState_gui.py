@@ -2493,7 +2493,7 @@ class MainWindow(QMainWindow):
         """Show inline controller settings panel, replacing the profiles UI."""
         try:
             self.controller_panel_group.populate(self.current_settings)
-            self.controller_panel_group.set_profile_count(len(self.profiles))
+            self.controller_panel_group.set_profiles(self.profiles)
 
             # Detect current controller connection and update indicator
             ctrl_connected = False
@@ -2908,6 +2908,88 @@ class MainWindow(QMainWindow):
         self._ctrl_restore_button_icons()
         self._ctrl_restore_general_icons()
 
+    @Slot(list)
+    def _ctrl_on_buttons_state_changed(self, active_buttons: list):
+        """Evaluate custom macro shortcuts when the button state changes."""
+        from PySide6.QtWidgets import QApplication
+        
+        settings = getattr(self, "current_settings", {})
+        shortcuts = settings.get("controller_shortcut_profiles", [])
+        if not shortcuts:
+            return
+            
+        # Ignore empty states (all buttons released)
+        if not active_buttons:
+            return
+            
+        active_set = set(active_buttons)
+        
+        import time
+        now = time.time()
+        cooldown = getattr(self, '_shortcut_last_trigger', 0)
+        if now - cooldown < 0.5:
+            return  # Prevent rapid re-triggers
+            
+        is_background = QApplication.activeWindow() is None
+            
+        for sc in shortcuts:
+            expected = set(sc.get("buttons", []))
+            if not expected:
+                continue
+                
+            if sc.get("background_enabled", False) is False and is_background:
+                continue
+                
+            if active_set == expected:
+                action = sc.get("action", "")
+                target_profile = sc.get("target_profile", "")
+                if action:
+                    self._shortcut_last_trigger = now
+                    self._execute_custom_shortcut(action, target_profile)
+                    break
+
+    def _execute_custom_shortcut(self, action: str, target_profile: str):
+        """Executes the mapped action for a custom shortcut, applying it to a specific profile if chosen."""
+        from PySide6.QtWidgets import QApplication
+        is_bg = QApplication.activeWindow() is None
+        import logging
+        
+        logging.info(f"Executing shortcut action: {action} (target: {target_profile if target_profile else 'current selection'})")
+        
+        # If there's a specific profile targeted, try to select it first so regular actions apply to it
+        if target_profile and hasattr(self, 'profile_table_manager') and hasattr(self, 'profile_table_widget'):
+            # Find row with this profile and select it
+            for row in range(self.profile_table_widget.rowCount()):
+                item = self.profile_table_widget.item(row, 0)
+                if item and item.text() == target_profile:
+                    self.profile_table_widget.selectRow(row)
+                    break
+        
+        if action == "backup":
+            if target_profile:
+                if hasattr(self, 'handlers') and hasattr(self.handlers, '_handle_backup_selected'):
+                    # Direct call to bypass UI disable state checks during backgrounding
+                    self.handlers._handle_backup_selected([target_profile], skip_confirmation=True)
+            else:
+                if hasattr(self, 'handlers') and hasattr(self.handlers, '_handle_backup_selected'):
+                    selected_profiles = self.profile_table_manager.get_selected_profile_names()
+                    if selected_profiles:
+                        self.handlers._handle_backup_selected(selected_profiles, skip_confirmation=True)
+        elif action == "restore":
+            if not is_bg: 
+                self._ctrl_do_restore()
+        elif action == "manage_backups":
+            if not is_bg:
+                self._ctrl_do_manage_backups()
+        elif action == "delete":
+            if not is_bg:
+                self._ctrl_do_delete(skip_confirmation=True)
+        elif action == "backup_all":
+            self._ctrl_do_backup_all(skip_confirmation=True)
+        elif action == "context_menu":
+            if not is_bg:
+                self._ctrl_do_context_menu()
+
     # --- Controller dispatcher — maps physical button → configured action ---
 
     def _ctrl_dispatch(self, button: str):
@@ -3051,13 +3133,13 @@ class MainWindow(QMainWindow):
             self.profile_group.setVisible(True)
             self.exit_profile_edit_mode()
 
-    def _ctrl_do_backup_all(self):
+    def _ctrl_do_backup_all(self, skip_confirmation: bool = False):
         """Backup all profiles — only available when ≥3 profiles exist."""
         if self._ctrl_modal_open() or not self._ctrl_table_is_active():
             return
         if len(self.profiles) < 3:
             return
-        self.handlers.handle_backup_all()
+        self.handlers.handle_backup_all(skip_confirmation=skip_confirmation)
 
     def _ctrl_do_context_menu(self):
         """Open the profile table context menu for the currently selected row."""
@@ -3072,11 +3154,17 @@ class MainWindow(QMainWindow):
         pos = rect.center()
         self._on_profile_table_context_menu(pos)
 
-    def _ctrl_do_delete(self):
+    def _ctrl_do_delete(self, skip_confirmation: bool = False):
         if self._ctrl_modal_open():
             return
         if not self._ctrl_table_is_active():
             return
+        # If it's a macro bypassing confirmation, don't simulate a click on a button that ignores our flag
+        if skip_confirmation:
+            if self.profile_table_widget.currentRow() >= 0:
+                self.handlers.handle_delete_profile(skip_confirmation=True)
+            return
+
         if self.delete_profile_button.isEnabled():
             self.delete_profile_button.click()
         elif self.profile_table_widget.currentRow() >= 0:

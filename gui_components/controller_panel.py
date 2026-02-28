@@ -164,11 +164,15 @@ class ControllerPanel(QGroupBox):
         # Always start on Tab 0 (Button Mapping)
         self._switch_tab(0)
 
-    def set_profile_count(self, count: int):
-        """Show or hide the L1+L2 row based on profile count (requires ≥3 profiles)."""
+    def set_profiles(self, profiles: dict):
+        """Show or hide the L1+L2 row based on profile count and pass profiles to shortcuts."""
+        count = len(profiles)
         visible = count >= 3
         for w in self._l1l2_row_widgets:
             w.setVisible(visible)
+            
+        # Pass profile names to shortcut panel
+        self.shortcuts_panel.set_profiles(list(profiles.keys()))
 
     # ------------------------------------------------------------------
     # UI construction

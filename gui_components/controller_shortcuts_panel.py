@@ -111,8 +111,19 @@ class ShortcutProfileRow(QFrame):
         return {
             "buttons": buttons,
             "action": self.action_combo.currentData() or "",
+            "target_profile": self.profile_combo.currentText(),
             "background_enabled": self.background_check.isChecked(),
         }
+
+    def set_profiles(self, profiles_list: list[str]):
+        """Populate the profile combo box with available profiles."""
+        current_profile = self.profile_combo.currentText()
+        self.profile_combo.clear()
+        self.profile_combo.addItems(profiles_list)
+        if current_profile in profiles_list:
+            self.profile_combo.setCurrentText(current_profile)
+        elif profiles_list:
+            pass # Keep default
 
     def set_tray_available(self, available: bool):
         """Enable / disable the background checkbox depending on tray setting."""
@@ -203,6 +214,7 @@ class ShortcutProfileRow(QFrame):
         self.action_combo.setMinimumWidth(160)
         for action_id, action_label in SHORTCUT_ACTIONS:
             self.action_combo.addItem(action_label, action_id)
+        self.action_combo.currentIndexChanged.connect(self._on_action_changed)
         top_row.addWidget(self.action_combo)
 
         top_row.addStretch(1)
@@ -232,11 +244,23 @@ class ShortcutProfileRow(QFrame):
 
         root.addLayout(top_row)
 
-        # Row 2: background checkbox
+        # Row 2: profile combo + background checkbox
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(10)
+        
+        # — profile combo
+        self.profile_combo = QComboBox()
+        self.profile_combo.setMinimumWidth(160)
+        self.profile_combo.setVisible(False)
+        bottom_row.addWidget(self.profile_combo)
+
         self.background_check = QCheckBox("Active when app is closed (system tray)")
         self.background_check.setStyleSheet("font-size: 9pt; color: #aaa;")
         self.background_check.setEnabled(False)  # disabled until tray confirmed
-        root.addWidget(self.background_check)
+        bottom_row.addWidget(self.background_check)
+        
+        bottom_row.addStretch(1)
+        root.addLayout(bottom_row)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -248,6 +272,12 @@ class ShortcutProfileRow(QFrame):
         if self._capturing_slot is not None and self._capturing_slot != slot_index:
             self.cancel_capture()
         self.capture_requested.emit(self, slot_index)
+
+    def _on_action_changed(self):
+        """Show/hide profile combo based on selected action."""
+        action = self.action_combo.currentData()
+        requires_profile = action in ("backup", "restore", "delete", "context_menu")
+        self.profile_combo.setVisible(requires_profile)
 
     def _update_slot_display(self, slot_index: int):
         btn = self._slot_buttons[slot_index]
@@ -274,8 +304,19 @@ class ShortcutProfileRow(QFrame):
         idx = self.action_combo.findData(action)
         if idx >= 0:
             self.action_combo.setCurrentIndex(idx)
+        
+        target_profile = data.get("target_profile", "")
+        # The list might not be populated yet during initial creation, so we add it silently
+        if target_profile:
+            self.profile_combo.clear()
+            self.profile_combo.addItem(target_profile)
+            self.profile_combo.setCurrentText(target_profile)
+            
         bg = data.get("background_enabled", False)
         self.background_check.setChecked(bg)
+        
+        # Ensure correct initial visibility
+        self._on_action_changed()
 
     @staticmethod
     def _slot_default_ss() -> str:
@@ -314,6 +355,7 @@ class ControllerShortcutsPanel(QWidget):
         super().__init__(parent)
         self._rows: list[ShortcutProfileRow] = []
         self._tray_available = False
+        self._profiles_list: list[str] = []
         self._build_ui()
 
     # ------------------------------------------------------------------
@@ -339,6 +381,12 @@ class ControllerShortcutsPanel(QWidget):
         self._tray_available = available
         for r in self._rows:
             r.set_tray_available(available)
+
+    def set_profiles(self, profiles_list: list[str]):
+        """Update the list of profiles for all shortcut rows."""
+        self._profiles_list = profiles_list
+        for r in self._rows:
+            r.set_profiles(profiles_list)
 
     def cancel_all_captures(self):
         """Cancel any active capture."""
@@ -427,6 +475,8 @@ class ControllerShortcutsPanel(QWidget):
     def _add_row(self, data: dict | None = None):
         row = ShortcutProfileRow(profile_data=data, parent=self)
         row.set_tray_available(self._tray_available)
+        if self._profiles_list:
+            row.set_profiles(self._profiles_list)
         row.remove_requested.connect(self._on_remove_requested)
         row.capture_requested.connect(self._on_capture_requested)
         self._rows.append(row)
