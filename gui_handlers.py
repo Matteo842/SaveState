@@ -25,7 +25,7 @@ from emulator_utils.pcsx2_manager import backup_pcsx2_save, restore_pcsx2_save
 import settings_manager
 import shortcut_utils
 import config
-from gui_utils import WorkerThread, SteamSearchWorkerThread, open_folder_in_file_manager
+from gui_utils import WorkerThread, SteamSearchWorkerThread, open_folder_in_file_manager, NotificationPopup
 from utils import sanitize_filename, resource_path
 
 
@@ -38,6 +38,8 @@ class MainWindowHandlers:
         self._cancel_backup_event = threading.Event()
         # When True, the backup button is in "cancel" mode (text/style changed)
         self._backup_cancel_mode = False
+        # Flag set by _execute_custom_shortcut to signal that notification should be shown
+        self._shortcut_background_notification = False
         # Store the original backup button stylesheet so we can restore it
         self._backup_button_original_style = None
 
@@ -1114,6 +1116,21 @@ class MainWindowHandlers:
             else:
                 results, failed, skipped = [], [], []
             
+            # Show tray notification for controller shortcut triggers
+            if skip_confirmation and self._shortcut_background_notification:
+                self._shortcut_background_notification = False
+                notif_success = success and len(failed) == 0
+                if was_cancelled:
+                    notif_title = "Backup Cancelled"
+                    notif_msg = f"Backup All cancelled.\n✓ {len(results)} completed before cancellation."
+                elif notif_success:
+                    notif_title = "Backup Complete"
+                    notif_msg = f"Backup All completed successfully.\n✓ {len(results)} profile(s) backed up."
+                else:
+                    notif_title = "Backup Error"
+                    notif_msg = f"Backup All: {len(results)} succeeded, {len(failed)} failed."
+                self._show_controller_shortcut_notification(notif_success, notif_title, notif_msg)
+            
             # Show detailed result
             if not skip_confirmation:
                 # Show detailed result
@@ -1344,6 +1361,24 @@ class MainWindowHandlers:
                 results, failed, skipped = backup_selected_results[:3]
             else:
                 results, failed, skipped = [], [], []
+            
+            # Show tray notification for controller shortcut triggers
+            if skip_confirmation and self._shortcut_background_notification:
+                self._shortcut_background_notification = False
+                notif_success = success and len(failed) == 0
+                profile_names = ', '.join(selected_profile_names[:3])
+                if len(selected_profile_names) > 3:
+                    profile_names += f' +{len(selected_profile_names) - 3} more'
+                if was_cancelled:
+                    notif_title = "Backup Cancelled"
+                    notif_msg = f"Backup cancelled.\n✓ {len(results)} completed before cancellation."
+                elif notif_success:
+                    notif_title = "Backup Complete"
+                    notif_msg = f"Backup completed successfully:\n'{profile_names}'"
+                else:
+                    notif_title = "Backup Error"
+                    notif_msg = f"Backup failed for: {profile_names}"
+                self._show_controller_shortcut_notification(notif_success, notif_title, notif_msg)
             
             if not skip_confirmation:
                 if was_cancelled:
@@ -3040,6 +3075,12 @@ class MainWindowHandlers:
         self.main_window.set_controls_enabled(True)
         self.main_window.worker_thread = None # Clear worker thread reference on main window
 
+        # Show tray notification for controller shortcut triggers (single profile backup path)
+        if self._shortcut_background_notification:
+            self._shortcut_background_notification = False
+            notif_title = "Backup Complete" if success else "Backup Error"
+            self._show_controller_shortcut_notification(success, notif_title, main_message)
+
         if not success:
             QMessageBox.critical(self.main_window, "Operation Error", message)
         else:
@@ -3047,6 +3088,51 @@ class MainWindowHandlers:
 
         # Always update the table to reflect changes (e.g., backup info)
         self.main_window.profile_table_manager.update_profile_table()
+
+    def _show_controller_shortcut_notification(self, success: bool, title: str, message: str):
+        """Show a NotificationPopup for controller shortcut actions triggered while app is in system tray.
+        Uses the same NotificationPopup widget as desktop shortcut notifications."""
+        try:
+            import re
+            clean_message = re.sub(r'\n+', '\n', message).strip()
+
+            icon_path = None
+            if success:
+                icon_path_candidate = resource_path(os.path.join("icons", "SaveStateIconBK.ico"))
+                if os.path.exists(icon_path_candidate):
+                    icon_path = icon_path_candidate
+
+            # No parent so the popup is independent from the (hidden) main window
+            popup = NotificationPopup(title, clean_message, success, parent=None, icon_path=icon_path)
+
+            # Keep a reference so the popup is not garbage-collected before the
+            # auto-close timer fires (6 seconds).  Clear it when the widget is destroyed.
+            self._active_notification_popup = popup
+            popup.destroyed.connect(lambda: setattr(self, '_active_notification_popup', None))
+
+            # Apply current theme QSS
+            try:
+                theme = self.main_window.current_settings.get('theme', 'dark')
+                qss = config.DARK_THEME_QSS if theme == 'dark' else config.LIGHT_THEME_QSS
+                popup.setStyleSheet(qss)
+            except Exception as e_qss:
+                logging.warning(f"Failed to apply QSS to controller shortcut notification: {e_qss}")
+
+            popup.adjustSize()
+
+            # Position in bottom-right corner of the screen
+            primary_screen = QApplication.primaryScreen()
+            if primary_screen:
+                screen_geometry = primary_screen.availableGeometry()
+                margin = 15
+                popup_x = screen_geometry.width() - popup.width() - margin
+                popup_y = screen_geometry.height() - popup.height() - margin
+                popup.move(popup_x, popup_y)
+
+            popup.show()
+            logging.info(f"Controller shortcut notification shown: {title} - {clean_message}")
+        except Exception as e:
+            logging.error(f"Error showing controller shortcut notification: {e}", exc_info=True)
 
 # --- FINE METODI HANDLERS ---
 

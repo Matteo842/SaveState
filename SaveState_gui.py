@@ -3004,6 +3004,10 @@ class MainWindow(QMainWindow):
                     self.profile_table_widget.selectRow(row)
                     break
         
+        # Set flag so backup-finished callbacks show a tray notification when app is in background
+        if is_bg and hasattr(self, 'handlers'):
+            self.handlers._shortcut_background_notification = True
+        
         if action == "backup":
             if target_profile:
                 if hasattr(self, 'handlers') and hasattr(self.handlers, '_handle_backup_selected'):
