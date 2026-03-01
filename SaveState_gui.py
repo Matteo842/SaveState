@@ -657,7 +657,7 @@ class MainWindow(QMainWindow):
         title_layout = QHBoxLayout()
         title_layout.setContentsMargins(12, 4, 12, 4)
         title_layout.setSpacing(6)
-        self.title_label = QLabel("SaveState - 1.4.6")
+        self.title_label = QLabel("SaveState - 2.6.0")
         self.title_label.setObjectName("TitleLabel")
         title_layout.addWidget(self.title_label)
         title_layout.addStretch(1)
@@ -1397,9 +1397,9 @@ class MainWindow(QMainWindow):
     def updateUiText(self):
         """Updates the UI text"""
         logging.debug(">>> updateUiText: START <<<")
-        self.setWindowTitle("SaveState - 2.5")
+        self.setWindowTitle("SaveState - 2.6")
         if hasattr(self, 'title_label'):
-            self.title_label.setText("SaveState - 2.5")
+            self.title_label.setText("SaveState - 2.6")
         self.profile_table_manager.retranslate_headers()
         # Keep Settings as icon-only in the title bar
         self.settings_button.setText("")
