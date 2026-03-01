@@ -40,8 +40,6 @@ class ThemeManager:
 
         # Configure the theme button (base properties)
         self.theme_button.setFlat(True)
-        self.theme_button.setFixedSize(QSize(24, 24)) # Adjust size if needed
-        self.theme_button.setObjectName("ThemeToggleButton")
         # Connect the button click signal to the internal method of this manager
         self.theme_button.clicked.connect(self.handle_theme_toggle)
 

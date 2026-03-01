@@ -976,21 +976,18 @@ QHeaderView::section:last {
     border-right: 0px;
 }
 
-QPushButton#ThemeToggleButton,
 QPushButton#LogToggleButton {
     border: none;                /* Nessun bordo */
     background-color: transparent; /* Sfondo trasparente */
     padding: 2px;               /* Padding piccolo */
     margin: 1px;                /* Margine piccolo per spaziatura */
-    min-width: none;            /* ANNULLA min-width generale */
-    /* La dimensione è gestita da setFixedSize(24,24) in Python */
+    min-width: 0px;            /* ANNULLA min-width generale */
+    /* La dimensione è gestita in Python */
 }
 /* Effetti Hover/Pressed (Opzionali, uguali per entrambi) */
-QPushButton#ThemeToggleButton:hover,
 QPushButton#LogToggleButton:hover {
     background-color: #5A5A5A; /* Sfondo leggero al passaggio */
 }
-QPushButton#ThemeToggleButton:pressed,
 QPushButton#LogToggleButton:pressed {
     background-color: #404040; /* Sfondo leggero alla pressione */
 }
@@ -1293,21 +1290,18 @@ QHeaderView::section:last {
     border-right: 0px;
 }
 
-QPushButton#ThemeToggleButton,
 QPushButton#LogToggleButton {
     border: none;
     background-color: transparent;
     padding: 2px;
     margin: 1px;
-    min-width: none; /* ANNULLA min-width generale */
-    /* La dimensione è gestita da setFixedSize(24,24) in Python */
+    min-width: 0px; /* ANNULLA min-width generale */
+    /* La dimensione è gestita in Python */
 }
 /* Effetti Hover/Pressed (Opzionali, uguali per entrambi) */
-QPushButton#ThemeToggleButton:hover,
 QPushButton#LogToggleButton:hover {
     background-color: #DCDCDC; /* Sfondo leggero chiaro al passaggio */
 }
-QPushButton#ThemeToggleButton:pressed,
 QPushButton#LogToggleButton:pressed {
     background-color: #C8C8C8; /* Sfondo leggero chiaro alla pressione */
 }

@@ -661,13 +661,18 @@ class MainWindow(QMainWindow):
         self.title_label.setObjectName("TitleLabel")
         title_layout.addWidget(self.title_label)
         title_layout.addStretch(1)
-        # Right-side icon buttons: Controller first, then Settings, then Theme
+        # Right-side icon buttons: Controller, then Theme, then spacer, then Settings
         self.controller_button.setObjectName("ControllerButton")
         self.settings_button.setObjectName("SettingsButton")
         self.theme_button.setObjectName("ThemeButton")
+        
         title_layout.addWidget(self.controller_button)
-        title_layout.addWidget(self.settings_button)
         title_layout.addWidget(self.theme_button)
+        
+        # Distanziatore
+        title_layout.addSpacing(16)
+        
+        title_layout.addWidget(self.settings_button)
         # Window control buttons (minimize, close) - no maximize/fullscreen
         self.minimize_button = QPushButton()
         self.minimize_button.setObjectName("MinimizeButton")
