@@ -468,7 +468,26 @@ class DropEventMixin:
             
             # Se è un launcher supportato, gestiscilo
             if launcher_status == 'supported':
-                launcher_result = handler_instance._check_if_launcher(file_path)
+                try:
+                    launcher_result = handler_instance._check_if_launcher(file_path)
+                except Exception as e_launcher:
+                    # Check if this is a database locked error (Playnite is running)
+                    from launcher_utils.playnite_manager import PlayniteDatabaseLockedException
+                    if isinstance(e_launcher, PlayniteDatabaseLockedException):
+                        mw = handler_instance.main_window
+                        display_name = launcher_name.capitalize() if launcher_name else "Launcher"
+                        logging.warning(f"{display_name} database is locked: {e_launcher}")
+                        QMessageBox.warning(mw, f"{display_name} Library",
+                            f"Cannot read the {display_name} library because {display_name} is currently running.\n\n"
+                            f"The database file is locked:\n{e_launcher.db_path}\n\n"
+                            f"Please close {display_name} and try again.")
+                        self._hide_overlay_if_visible(mw)
+                        mw.set_controls_enabled(True)
+                        QApplication.restoreOverrideCursor()
+                        event.acceptProposedAction()
+                        return
+                    else:
+                        raise  # Re-raise unexpected exceptions
                 if launcher_result:
                     launcher_key, profiles_data = launcher_result
                     logging.info(f"DragDropHandler.dropEvent: Detected launcher: {launcher_key}")

@@ -706,6 +706,10 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
             launcher_result = launcher_manager.detect_and_find_profiles(target_path)
             return launcher_result
         except Exception as e:
+            # Let PlayniteDatabaseLockedException propagate to the UI layer
+            from launcher_utils.playnite_manager import PlayniteDatabaseLockedException
+            if isinstance(e, PlayniteDatabaseLockedException):
+                raise
             logging.error(f"Error checking if file is a launcher: {e}", exc_info=True)
             return None
             

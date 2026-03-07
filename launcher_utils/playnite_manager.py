@@ -24,6 +24,16 @@ from typing import Optional, List, Dict
 
 log = logging.getLogger(__name__)
 
+
+class PlayniteDatabaseLockedException(Exception):
+    """Raised when the Playnite database cannot be read because Playnite is running."""
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        super().__init__(
+            f"Permission denied reading Playnite database: {db_path}. "
+            "Playnite is currently running and has locked the database file."
+        )
+
 # Blacklist of names that are NOT games (social media, launchers, websites, etc.)
 # These entries appear in Playnite but should not be shown as games
 NON_GAME_BLACKLIST = [
@@ -317,6 +327,7 @@ def read_games_db(db_path: str) -> List[Dict]:
         log.error(f"Playnite database not found: {db_path}")
     except PermissionError:
         log.error(f"Permission denied reading Playnite database: {db_path}. Please close Playnite and try again.")
+        raise PlayniteDatabaseLockedException(db_path)
     except Exception as e:
         log.error(f"Error reading Playnite database: {e}", exc_info=True)
     finally:

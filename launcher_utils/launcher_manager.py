@@ -6,7 +6,7 @@ import os
 from typing import Dict, List, Any, Optional
 
 # Import specific launcher profile finders
-from .playnite_manager import find_playnite_profiles
+from .playnite_manager import find_playnite_profiles, PlayniteDatabaseLockedException
 from .heroic_manager import find_heroic_profiles
 
 # Configure basic logging for this module
@@ -244,6 +244,8 @@ def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] 
                 log.info(f"Profile finder for {launcher_name} ran. Found {len(profiles)} profiles.")
                 return launcher_name, profiles
                 
+            except PlayniteDatabaseLockedException:
+                raise  # Let this propagate to the UI layer
             except Exception as e:
                 log.error(f"Error calling profile finder for {launcher_name}: {e}", exc_info=True)
                 return launcher_name, []
