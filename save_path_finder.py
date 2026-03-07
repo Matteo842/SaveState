@@ -158,6 +158,178 @@ def get_numeral_variants(name: str) -> List[str]:
     return list(variants)
 
 
+def _split_acronym_word(name: str) -> List[Tuple[str, str]]:
+    """Divide un nome compatto in possibili coppie (acronimo, parola).
+    
+    Cerca punti di split dove una sequenza di maiuscole (acronimo) è seguita
+    da una parola con iniziale maiuscola.
+    
+    Esempio: "ACMirage" -> [("AC", "Mirage")]
+             "GTA5" -> [("GTA", "5")]
+             "GTASanAndreas" -> [("GTA", "SanAndreas"), ("GTAS", "anAndreas")]
+             "REVillage" -> [("RE", "Village")]
+    """
+    if not name or len(name) < 3:
+        return []
+    
+    results = []
+    
+    # Pattern 1: sequenza di maiuscole seguita da maiuscola+minuscola (es: ACMirage, REVillage)
+    # Cerca transizioni tipo "AC" + "Mirage" dove AC è tutto maiuscolo e M inizia una nuova parola
+    for i in range(2, len(name)):
+        prefix = name[:i]
+        suffix = name[i:]
+        
+        if not suffix:
+            continue
+            
+        # Il prefisso deve essere tutto maiuscole (o maiuscole+numeri per casi come "GTA5")
+        prefix_is_acronym = all(c.isupper() or c.isdigit() for c in prefix) and any(c.isupper() for c in prefix)
+        
+        # Il suffisso deve iniziare con maiuscola seguita da minuscola (inizio parola)
+        # oppure essere un numero
+        suffix_starts_word = (len(suffix) >= 2 and suffix[0].isupper() and suffix[1].islower()) or suffix[0].isdigit()
+        
+        if prefix_is_acronym and suffix_starts_word:
+            results.append((prefix, suffix))
+    
+    # Pattern 2: sequenza di maiuscole+numeri alla fine (es: "GTA5")
+    # Il numero finale potrebbe essere un numero di versione, non una parola
+    for i in range(2, len(name)):
+        prefix = name[:i]
+        suffix = name[i:]
+        if suffix.isdigit() and len(suffix) <= 2 and all(c.isupper() for c in prefix):
+            if (prefix, suffix) not in results:
+                results.append((prefix, suffix))
+    
+    return results
+
+
+def _matches_acronym_plus_word(compact_name: str, full_name: str) -> bool:
+    """Verifica se un nome compatto corrisponde a un nome completo tramite pattern acronimo+parola.
+    
+    Esempio: 
+        _matches_acronym_plus_word("ACMirage", "Assassin's Creed Mirage") -> True
+        _matches_acronym_plus_word("ACOdyssey", "Assassin's Creed Odyssey") -> True  
+        _matches_acronym_plus_word("REVillage", "Resident Evil Village") -> True
+        _matches_acronym_plus_word("GTA5", "Grand Theft Auto 5") -> True
+        _matches_acronym_plus_word("ACMirage", "Ace Combat Mirage") -> True (ambiguo ma accettabile)
+    """
+    if not compact_name or not full_name:
+        return False
+    
+    splits = _split_acronym_word(compact_name)
+    if not splits:
+        return False
+    
+    # Pulisci il nome completo e ottieni le parole
+    clean_full = re.sub(r"[^a-zA-Z0-9\s]", '', full_name)
+    full_words = clean_full.split()
+    if len(full_words) < 2:
+        return False
+    
+    for acronym_part, word_part in splits:
+        acronym_upper = acronym_part.upper()
+        word_lower = word_part.lower()
+        # Normalizza word_part: split camelCase in parole separate
+        word_part_words = re.findall(r'[A-Z][a-z]*|[a-z]+|\d+', word_part)
+        word_part_joined_lower = ''.join(w.lower() for w in word_part_words)
+        
+        # Verifica che l'acronimo corrisponda alle iniziali delle prime N parole del nome completo
+        # L'acronimo deve matchare le iniziali di un prefisso contiguo delle parole
+        acr_len = len(acronym_upper)
+        
+        if acr_len >= len(full_words):
+            continue  # L'acronimo non può coprire tutte le parole, deve rimanere spazio per word_part
+        
+        # Prendi le iniziali delle prime N parole
+        initials = ''.join(w[0].upper() for w in full_words[:acr_len] if w)
+        
+        if initials != acronym_upper:
+            continue
+        
+        # Ora verifica che word_part corrisponda alle parole rimanenti
+        remaining_words = full_words[acr_len:]
+        remaining_joined_lower = ''.join(w.lower() for w in remaining_words)
+        
+        # Match diretto delle parole rimanenti
+        if word_part_joined_lower == remaining_joined_lower:
+            logging.debug(f"Acronym+word match: '{compact_name}' matches '{full_name}' "
+                         f"(acronym='{acronym_part}' -> initials='{initials}', "
+                         f"word='{word_part}' -> remaining='{' '.join(remaining_words)}')")
+            return True
+        
+        # Match parziale: word_part corrisponde alla prima delle parole rimanenti
+        if remaining_words and remaining_words[0].lower() == word_lower:
+            # Verifica che non ci siano troppe parole rimanenti non coperte
+            # (per evitare match troppo vaghi)
+            if len(remaining_words) <= 2:  # es: "Mirage" o "San Andreas"
+                logging.debug(f"Acronym+word partial match: '{compact_name}' matches '{full_name}' "
+                             f"(word '{word_part}' matches first remaining word)")
+                return True
+        
+        # Match come prefisso delle parole rimanenti (per nomi concatenati)
+        # Es: "ACOrigins" vs "Assassin's Creed Origins" 
+        if remaining_joined_lower.startswith(word_part_joined_lower) and len(word_part_joined_lower) >= 3:
+            logging.debug(f"Acronym+word prefix match: '{compact_name}' matches '{full_name}'")
+            return True
+            
+        # Match fuzzy sulle parole rimanenti (per piccole differenze)
+        if THEFUZZ_AVAILABLE and len(word_part_joined_lower) >= 4:
+            ratio = fuzz.ratio(word_part_joined_lower, remaining_joined_lower)
+            if ratio >= 85:
+                logging.debug(f"Acronym+word fuzzy match: '{compact_name}' matches '{full_name}' "
+                             f"(ratio={ratio})")
+                return True
+    
+    return False
+
+
+def _generate_folder_abbreviations(folder_name: str) -> Set[str]:
+    """Genera abbreviazioni per un nome di cartella, da usare per reverse matching.
+    
+    Quando il game_name potrebbe essere un'abbreviazione (es: shortcut rinominato),
+    generiamo le possibili abbreviazioni del nome della cartella per confronto.
+    
+    Esempio: "Assassin's Creed Mirage" -> {"ACM", "ACMirage", "AssassinsCreedMirage", ...}
+    """
+    if not folder_name or len(folder_name) < 3:
+        return set()
+    
+    abbreviations = set()
+    clean_name = re.sub(r"[^a-zA-Z0-9\s]", '', folder_name)
+    words = clean_name.split()
+    
+    if len(words) < 2:
+        return abbreviations
+    
+    # Acronimo completo
+    acr = ''.join(w[0].upper() for w in words if w)
+    if len(acr) >= 2:
+        abbreviations.add(acr)
+    
+    # Pattern acronimo+ultima parola (es: "AC" + "Mirage" -> "ACMirage")
+    for split_point in range(1, len(words)):
+        prefix_words = words[:split_point]
+        suffix_words = words[split_point:]
+        
+        # Acronimo delle prime parole + le parole rimanenti concatenate
+        prefix_acr = ''.join(w[0].upper() for w in prefix_words if w)
+        suffix_concat = ''.join(w for w in suffix_words)
+        
+        if len(prefix_acr) >= 1 and len(suffix_concat) >= 2:
+            combined = prefix_acr + suffix_concat
+            if len(combined) >= 3:
+                abbreviations.add(combined)
+    
+    # Nome senza spazi
+    no_spaces = clean_name.replace(' ', '')
+    if len(no_spaces) >= 3:
+        abbreviations.add(no_spaces)
+    
+    return abbreviations
+
+
 class Threshold:
     """Soglie e costanti numeriche usate nel modulo."""
     MIN_ABBREVIATION_LENGTH = 2
@@ -1096,6 +1268,11 @@ class SavePathFinder:
                 logging.debug(f"Word containment match: '{words2[0]}' found in {words1}")
                 return True
                 
+        # Controlla pattern acronimo+parola (es: "ACMirage" vs "Assassin's Creed Mirage")
+        # Questo gestisce il caso in cui il nome del gioco è un'abbreviazione compatta
+        if _matches_acronym_plus_word(name1, name2) or _matches_acronym_plus_word(name2, name1):
+            return True
+                
         # Controlla fuzzy matching - ma NON se c'è mismatch di versione
         # Es: "DOOM" (90% simile a "DOOM 2") non deve matchare
         if THEFUZZ_AVAILABLE and not version_mismatch:
@@ -1206,6 +1383,18 @@ class SavePathFinder:
                 continue
             if self._are_names_similar(abbrev, folder_name):
                 logging.debug(f"Match found via abbreviation '{abbrev}' for folder '{folder_name}'")
+                return True
+        
+        # Reverse matching: genera abbreviazioni dal nome della cartella e controlla
+        # se il game_name corrisponde a una di esse.
+        # Questo gestisce il caso in cui il game_name è un'abbreviazione (es: shortcut "ACMirage")
+        # e la cartella ha il nome completo (es: "Assassin's Creed Mirage")
+        game_name_upper = self.context.sanitized_name.upper().replace(' ', '')
+        folder_abbreviations = _generate_folder_abbreviations(folder_name)
+        for folder_abbrev in folder_abbreviations:
+            if game_name_upper == folder_abbrev.upper().replace(' ', ''):
+                logging.debug(f"Reverse abbreviation match: game '{self.context.sanitized_name}' "
+                             f"matches folder abbreviation '{folder_abbrev}' of '{folder_name}'")
                 return True
             
         return False
