@@ -368,6 +368,22 @@ class PathScore:
     
     def __init__(self, game_context: 'GameContext'):
         self.game_context = game_context
+        # Cache per-istanza: questi valori non cambiano durante la ricerca di un gioco
+        self._prime_locations = self._compute_prime_locations()
+        self._saved_games_lower = self._compute_path_lower('Saved Games')
+        self._documents_lower = self._compute_path_lower('Documents')
+        self._steam_userdata_lower = (
+            game_context.steam_userdata_path.lower().replace('\\', '/')
+            if game_context.steam_userdata_path else None
+        )
+    
+    def _compute_path_lower(self, subfolder: str) -> str:
+        """Calcola e normalizza un percorso utente (helper per cache init)."""
+        try:
+            path = os.path.join(os.path.expanduser('~'), subfolder)
+            return os.path.normpath(path).lower()
+        except Exception:
+            return ''
         
     def calculate(self, path: str, source: str, contains_saves: bool) -> int:
         """Calcola il punteggio per un dato percorso."""
@@ -411,16 +427,15 @@ class PathScore:
         """Identifica il tipo di percorso."""
         is_steam_remote = False
         is_steam_base = False
-        if self.game_context.steam_userdata_path:
+        if self._steam_userdata_lower:
             # Normalizza per confronto cross-platform (source_lower è già lower)
             source_check = source_lower.replace('\\', '/')
             path_check = path_lower.replace('\\', '/')
-            userdata_lower = self.game_context.steam_userdata_path.lower()
             # Controlla sia nel source che nel path stesso
             is_steam_remote = (('steam userdata' in source_check and '/remote' in source_check) or
-                             (userdata_lower in path_check and '/remote' in path_check))
+                             (self._steam_userdata_lower in path_check and '/remote' in path_check))
             is_steam_base = (('steam userdata' in source_check and source_check.endswith('/base')) or
-                           (userdata_lower in path_check and path_check.endswith('/base')))
+                           (self._steam_userdata_lower in path_check and path_check.endswith('/base')))
         is_in_prime_location = self._is_prime_location(path_lower) and not (is_steam_remote or is_steam_base)
         is_install_dir_walk = 'installdirwalk' in source_lower
         
@@ -441,29 +456,20 @@ class PathScore:
     
     def _is_in_saved_games(self, path_lower: str) -> bool:
         """Verifica se il percorso è nella cartella 'Saved Games'."""
-        try:
-            saved_games = os.path.join(os.path.expanduser('~'), 'Saved Games')
-            saved_games_lower = os.path.normpath(saved_games).lower()
-            return path_lower.startswith(saved_games_lower + os.sep)
-        except Exception:
-            return False
+        return bool(self._saved_games_lower and 
+                    path_lower.startswith(self._saved_games_lower + os.sep))
     
     def _is_in_documents(self, path_lower: str) -> bool:
         """Verifica se il percorso è nella cartella Documents."""
-        try:
-            documents = os.path.join(os.path.expanduser('~'), 'Documents')
-            documents_lower = os.path.normpath(documents).lower()
-            return path_lower.startswith(documents_lower + os.sep)
-        except Exception:
-            return False
+        return bool(self._documents_lower and 
+                    path_lower.startswith(self._documents_lower + os.sep))
     
     def _is_prime_location(self, path_lower: str) -> bool:
         """Verifica se il percorso è in una locazione primaria."""
-        prime_locations = self._get_prime_locations()
-        return any(path_lower.startswith(loc + os.sep) for loc in prime_locations)
+        return any(path_lower.startswith(loc + os.sep) for loc in self._prime_locations)
     
-    def _get_prime_locations(self) -> List[str]:
-        """Ottiene le locazioni primarie per i salvataggi."""
+    def _compute_prime_locations(self) -> List[str]:
+        """Calcola le locazioni primarie per i salvataggi (chiamata una volta nel __init__)."""
         try:
             user_profile = os.path.expanduser('~')
             locations = [
@@ -915,6 +921,8 @@ class SavePathFinder:
         self.path_scorer = PathScore(game_context)
         self.checked_paths: Set[str] = set()
         self.guesses_data: Dict[str, PathCandidate] = {}
+        # Cache per-istanza per reverse matching (invariante durante la ricerca)
+        self._game_name_upper_nospace = game_context.sanitized_name.upper().replace(' ', '')
     
     def _is_cancelled(self) -> bool:
         """Verifica se l'operazione è stata cancellata."""
@@ -1377,10 +1385,9 @@ class SavePathFinder:
         # se il game_name corrisponde a una di esse.
         # Questo gestisce il caso in cui il game_name è un'abbreviazione (es: shortcut "ACMirage")
         # e la cartella ha il nome completo (es: "Assassin's Creed Mirage")
-        game_name_upper = self.context.sanitized_name.upper().replace(' ', '')
         folder_abbreviations = _generate_folder_abbreviations(folder_name)
         for folder_abbrev in folder_abbreviations:
-            if game_name_upper == folder_abbrev.upper().replace(' ', ''):
+            if self._game_name_upper_nospace == folder_abbrev.upper().replace(' ', ''):
                 logging.debug(f"Reverse abbreviation match: game '{self.context.sanitized_name}' "
                              f"matches folder abbreviation '{folder_abbrev}' of '{folder_name}'")
                 return True
