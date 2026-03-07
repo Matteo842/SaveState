@@ -11,7 +11,7 @@ import glob
 from typing import List, Dict, Set, Tuple, Optional, NamedTuple
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
+
 
 import config
 import cancellation_utils
@@ -49,6 +49,14 @@ class ScoreWeight(Enum):
     GENERIC_FOLDER_PENALTY = -150
     SHORT_NAME_PENALTY = -30
     INSTALL_DIR_NO_SAVES_PENALTY = -300
+
+
+# Nomi di cartelle molto specifiche per i salvataggi
+# Più specifiche di "UserData", "Data", "Profile"
+SPECIFIC_SAVE_FOLDERS = {
+    'saves', 'save', 'savegame', 'savegames', 'savedata', 'save_data',
+    'saved', 'gamesave', 'gamesaves', 'saved games'
+}
 
 
 # Estensioni "sicure" per file di salvataggio - versione ristretta per deep scan
@@ -401,23 +409,18 @@ class PathScore:
     
     def _identify_path_type(self, path_lower: str, source_lower: str) -> Dict[str, bool]:
         """Identifica il tipo di percorso."""
-        # Controlla se è un percorso Steam remote
         is_steam_remote = False
-        if self.game_context.steam_userdata_path:
-            # Normalizza source_lower e path per confronto cross-platform
-            source_check = source_lower.replace('\\', '/').lower()
-            path_check = path_lower.replace('\\', '/')
-            # Controlla sia nel source che nel path stesso
-            is_steam_remote = (('steam userdata' in source_check and '/remote' in source_check) or
-                             (self.game_context.steam_userdata_path.lower() in path_check and
-                              '/remote' in path_check))
         is_steam_base = False
         if self.game_context.steam_userdata_path:
-            source_check = source_lower.replace('\\', '/').lower()
+            # Normalizza per confronto cross-platform (source_lower è già lower)
+            source_check = source_lower.replace('\\', '/')
             path_check = path_lower.replace('\\', '/')
+            userdata_lower = self.game_context.steam_userdata_path.lower()
+            # Controlla sia nel source che nel path stesso
+            is_steam_remote = (('steam userdata' in source_check and '/remote' in source_check) or
+                             (userdata_lower in path_check and '/remote' in path_check))
             is_steam_base = (('steam userdata' in source_check and source_check.endswith('/base')) or
-                           (self.game_context.steam_userdata_path.lower() in path_check and
-                            path_check.endswith('/base')))
+                           (userdata_lower in path_check and path_check.endswith('/base')))
         is_in_prime_location = self._is_prime_location(path_lower) and not (is_steam_remote or is_steam_base)
         is_install_dir_walk = 'installdirwalk' in source_lower
         
@@ -515,12 +518,7 @@ class PathScore:
             score += ScoreWeight.COMMON_SAVE_SUBDIR.value
             
         # Bonus extra per cartelle con nomi molto specifici per i salvataggi
-        # Queste sono più specifiche di "UserData", "Data", "Profile"
-        specific_save_folders = {
-            'saves', 'save', 'savegame', 'savegames', 'savedata', 'save_data',
-            'saved', 'gamesave', 'gamesaves', 'saved games'
-        }
-        if basename_lower in specific_save_folders:
+        if basename_lower in SPECIFIC_SAVE_FOLDERS:
             score += ScoreWeight.SPECIFIC_SAVE_FOLDER.value
             
         if (basename_lower in self.game_context.game_abbreviations_lower or
@@ -569,12 +567,7 @@ class PathScore:
     
     def _clean_for_comparison(self, name: str) -> str:
         """Pulisce un nome per il confronto."""
-        if not isinstance(name, str):
-            return ""
-        name = re.sub(r'[™®©:]', '', name)
-        name = re.sub(r'[-_]', ' ', name)
-        name = re.sub(r'\s+', ' ', name).strip()
-        return name.lower()
+        return clean_for_comparison(name)
     
     def _get_penalties(
         self, basename_lower: str, contains_saves: bool, 
@@ -1085,12 +1078,7 @@ class SavePathFinder:
     
     def _clean_for_comparison(self, name: str) -> str:
         """Pulisce un nome per il confronto."""
-        if not isinstance(name, str):
-            return ""
-        name = re.sub(r'[™®©:]', '', name)
-        name = re.sub(r'[-_]', ' ', name)
-        name = re.sub(r'\s+', ' ', name).strip()
-        return name.lower()
+        return clean_for_comparison(name)
     
     def _check_save_content(self, path: str) -> bool:
         """Verifica se la directory contiene file di salvataggio."""
