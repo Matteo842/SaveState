@@ -209,6 +209,55 @@ def get_desktop_path():
         # Fallback generico per altri sistemi operativi
         return os.path.join(os.path.expanduser("~"), "Desktop")
 
+def generate_playnite_script(profile_name: str) -> str:
+    """
+    Generates a PowerShell script line for Playnite's per-game exit script.
+    
+    The user can paste this into Playnite's "Script to execute after game exits"
+    field to automatically trigger a SaveState backup when the game closes.
+    
+    Uses Start-Process with -WindowStyle Hidden so the backup runs silently
+    in the background. The notification popup will still appear.
+    
+    Args:
+        profile_name: Name of the SaveState profile to backup
+        
+    Returns:
+        The PowerShell command string ready to paste into Playnite.
+    """
+    if is_packaged():
+        # Packaged mode (PyInstaller or Nuitka)
+        if is_nuitka():
+            # Nuitka: sys.argv[0] is the actual exe path on disk
+            target_exe = os.path.abspath(sys.argv[0])
+        else:
+            # PyInstaller: sys.executable is the actual exe
+            target_exe = sys.executable
+        
+        # PowerShell command using Start-Process
+        script = (
+            f'Start-Process -FilePath "{target_exe}" '
+            f'-ArgumentList \'--backup "{profile_name}"\' '
+            f'-WindowStyle Hidden'
+        )
+    else:
+        # Script mode (.py) - use main.py as entry point
+        main_script = resource_path("main.py")
+        python_exe = sys.executable
+        pythonw_path = os.path.join(os.path.dirname(python_exe), 'pythonw.exe')
+        
+        # Prefer pythonw.exe (no console window) over python.exe
+        interpreter = pythonw_path if os.path.exists(pythonw_path) else python_exe
+        
+        script = (
+            f'Start-Process -FilePath "{interpreter}" '
+            f'-ArgumentList \'"{main_script}" --backup "{profile_name}"\' '
+            f'-WindowStyle Hidden'
+        )
+    
+    return script
+
+
 def create_backup_shortcut(profile_name):
     """
     Crea un collegamento sul desktop per eseguire il backup di un profilo.

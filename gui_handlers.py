@@ -2153,6 +2153,220 @@ class MainWindowHandlers:
         else:
             QMessageBox.warning(self.main_window, "Error Creating Shortcut", message)
 
+    @Slot()
+    def handle_playnite_script(self):
+        """Show a dialog with the Playnite integration script and instructions."""
+        profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
+        if not profile_name:
+            logging.warning("handle_playnite_script called without selected profile.")
+            QMessageBox.warning(self.main_window, "No Selection", "No profile selected.")
+            return
+
+        logging.info(f"Generating Playnite script for profile: '{profile_name}'")
+
+        try:
+            script_text = shortcut_utils.generate_playnite_script(profile_name)
+        except Exception as e:
+            logging.error(f"Error generating Playnite script: {e}", exc_info=True)
+            QMessageBox.critical(self.main_window, "Error", f"Failed to generate script: {e}")
+            return
+
+        # --- Build the dialog ---
+        from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QTextEdit,
+                                        QPushButton, QHBoxLayout, QFrame)
+        from PySide6.QtGui import QFont, QClipboard
+        from PySide6.QtCore import Qt
+
+        dialog = QDialog(self.main_window)
+        dialog.setWindowTitle(f"Playnite Integration — {profile_name}")
+        dialog.setMinimumWidth(600)
+        dialog.setMaximumWidth(800)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #1e1e1e;
+            }
+            QLabel {
+                color: #e0e0e0;
+            }
+            QLabel#titleLabel {
+                font-size: 14pt;
+                font-weight: bold;
+                color: #ffffff;
+                padding-bottom: 4px;
+            }
+            QLabel#subtitleLabel {
+                font-size: 9pt;
+                color: #aaaaaa;
+                padding-bottom: 8px;
+            }
+            QLabel#stepLabel {
+                font-size: 10pt;
+                color: #d0d0d0;
+                padding: 2px 0px;
+            }
+            QLabel#stepNumber {
+                font-size: 10pt;
+                font-weight: bold;
+                color: #4fc3f7;
+                min-width: 24px;
+            }
+            QTextEdit {
+                background-color: #2d2d2d;
+                color: #78c878;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                padding: 8px;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 9pt;
+                selection-background-color: #4a4a6a;
+            }
+            QPushButton#copyButton {
+                background-color: #8B0000;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 20px;
+                font-size: 10pt;
+                font-weight: bold;
+            }
+            QPushButton#copyButton:hover {
+                background-color: #a00000;
+            }
+            QPushButton#copyButton:pressed {
+                background-color: #6a0000;
+            }
+            QPushButton#closeButton {
+                background-color: #3d3d3d;
+                color: #cccccc;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                padding: 8px 20px;
+                font-size: 10pt;
+            }
+            QPushButton#closeButton:hover {
+                background-color: #4d4d4d;
+            }
+            QFrame#separator {
+                background-color: #444444;
+                max-height: 1px;
+            }
+        """)
+
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(6)
+        layout.setContentsMargins(20, 16, 20, 16)
+
+        # Title
+        title_label = QLabel(f"🎮  Playnite — Auto Backup")
+        title_label.setObjectName("titleLabel")
+        layout.addWidget(title_label)
+
+        subtitle = QLabel(f"Profile: {profile_name}")
+        subtitle.setObjectName("subtitleLabel")
+        layout.addWidget(subtitle)
+
+        # Separator
+        sep1 = QFrame()
+        sep1.setObjectName("separator")
+        sep1.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(sep1)
+
+        # Instructions
+        instructions_title = QLabel("📋  How to use:")
+        instructions_title.setObjectName("stepLabel")
+        instructions_title.setStyleSheet("font-weight: bold; padding-top: 6px; font-size: 10pt; color: #ffffff;")
+        layout.addWidget(instructions_title)
+
+        steps = [
+            "In Playnite, right-click the game and select <b>Edit...</b>",
+            "Go to the <b>Scripts</b> tab",
+            "Paste the script below into <b>\"Script to execute after game exits\"</b>",
+            "Uncheck <b>\"Execute global script\"</b> if you only want this specific action",
+            "Click <b>Save</b>",
+        ]
+
+        for i, step_text in enumerate(steps, 1):
+            step_row = QHBoxLayout()
+            step_row.setSpacing(6)
+
+            num_label = QLabel(f"{i}.")
+            num_label.setObjectName("stepNumber")
+            num_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
+            num_label.setFixedWidth(20)
+            step_row.addWidget(num_label)
+
+            text_label = QLabel(step_text)
+            text_label.setObjectName("stepLabel")
+            text_label.setWordWrap(True)
+            step_row.addWidget(text_label, 1)
+
+            layout.addLayout(step_row)
+
+        layout.addSpacing(4)
+
+        # Separator
+        sep2 = QFrame()
+        sep2.setObjectName("separator")
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(sep2)
+
+        layout.addSpacing(4)
+
+        # Script label
+        script_label = QLabel("PowerShell Script:")
+        script_label.setStyleSheet("font-weight: bold; font-size: 10pt; color: #ffffff;")
+        layout.addWidget(script_label)
+
+        # Script text area
+        script_edit = QTextEdit()
+        script_edit.setPlainText(script_text)
+        script_edit.setReadOnly(True)
+        script_edit.setFixedHeight(80)
+        script_edit.selectAll()  # Pre-select for easy copy
+        layout.addWidget(script_edit)
+
+        # Info note
+        note_label = QLabel(
+            "ℹ️  The backup will run silently when you close the game. "
+            "A notification popup will confirm the result."
+        )
+        note_label.setWordWrap(True)
+        note_label.setStyleSheet("color: #888888; font-size: 8pt; padding: 2px 0px;")
+        layout.addWidget(note_label)
+
+        layout.addSpacing(8)
+
+        # Buttons row
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)
+
+        copy_button = QPushButton("📋  Copy to Clipboard")
+        copy_button.setObjectName("copyButton")
+        copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        close_button = QPushButton("Close")
+        close_button.setObjectName("closeButton")
+        close_button.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        def on_copy():
+            clipboard = QApplication.clipboard()
+            clipboard.setText(script_text)
+            copy_button.setText("✅  Copied!")
+            # Reset after 2 seconds
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(2000, lambda: copy_button.setText("📋  Copy to Clipboard"))
+            logging.info(f"Playnite script for '{profile_name}' copied to clipboard.")
+
+        copy_button.clicked.connect(on_copy)
+        close_button.clicked.connect(dialog.accept)
+
+        button_layout.addStretch()
+        button_layout.addWidget(copy_button)
+        button_layout.addWidget(close_button)
+        layout.addLayout(button_layout)
+
+        dialog.exec()
+
     # --- Profile Group Handlers ---
     @Slot()
     def handle_create_group_from_selection(self):

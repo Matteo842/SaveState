@@ -2256,6 +2256,19 @@ class MainWindow(QMainWindow):
                     menu.addAction(act_note)
                     menu.addSeparator()
                     menu.addAction(act_shortcut)
+                    
+                    # Playnite integration (Windows only)
+                    if platform.system() == 'Windows':
+                        act_playnite = QAction("Playnite Script", self)
+                        act_playnite.setToolTip("Generate a script to auto-backup this group when games close in Playnite")
+                        try:
+                            controller_icon_path = resource_path("icons/controller.png")
+                            if os.path.exists(controller_icon_path):
+                                act_playnite.setIcon(QIcon(controller_icon_path))
+                        except Exception:
+                            pass
+                        act_playnite.triggered.connect(self.handlers.handle_playnite_script)
+                        menu.addAction(act_playnite)
                 else:
                     # --- Regular Profile Context Menu ---
                     act_edit = QAction("Edit Profile", self)
@@ -2308,6 +2321,19 @@ class MainWindow(QMainWindow):
                         menu.addSeparator()
                     
                     menu.addAction(act_shortcut)
+                    
+                    # Playnite integration (Windows only)
+                    if platform.system() == 'Windows':
+                        act_playnite = QAction("Playnite Script", self)
+                        act_playnite.setToolTip("Generate a script to auto-backup when this game closes in Playnite")
+                        try:
+                            controller_icon_path = resource_path("icons/controller.png")
+                            if os.path.exists(controller_icon_path):
+                                act_playnite.setIcon(QIcon(controller_icon_path))
+                        except Exception:
+                            pass
+                        act_playnite.triggered.connect(self.handlers.handle_playnite_script)
+                        menu.addAction(act_playnite)
                 
                 global_pos = self.profile_table_widget.viewport().mapToGlobal(pos)
                 menu.exec(global_pos)
