@@ -3239,17 +3239,61 @@ class MainWindow(QMainWindow):
     def _ctrl_show_exit_dialog(self):
         """Show a controller-friendly exit confirmation dialog.
         Only shown when the main UI is visible and no panels, popups or other
-        dialogs are open.  A (Yes) closes the app; B (No/Cancel) dismisses."""
+        dialogs are open.  A (Yes) closes the app; B (No/Cancel) dismisses.
+        The same dark semi-transparent overlay used by drag-and-drop / multi-
+        profile ops is shown behind the dialog so the UI dims naturally."""
         # Safety: if any dialog or popup is already open, do nothing
         if self._ctrl_active_dialog() is not None or self._ctrl_active_popup() is not None:
             return
+
+        # ── Show dimming overlay instantly (bypass animation state machine) ──
+        # lock_overlay / unlock_overlay have a known issue: after the first
+        # fade-out completes the QGraphicsOpacityEffect stays at 0.0, so the
+        # next lock_overlay call shows the widget but at zero opacity. We also
+        # avoid unlock_overlay/_hide_overlay here because they reset opacity to
+        # 1.0 before fading, causing a flash even when we want an instant hide.
+        _overlay_shown = False
+
+        def _stop_anims():
+            for _anim_name in ('fade_in_animation', 'fade_out_animation'):
+                _anim = getattr(self, _anim_name, None)
+                if _anim is not None:
+                    try:
+                        from PySide6.QtCore import QAbstractAnimation
+                        if _anim.state() == QAbstractAnimation.State.Running:
+                            _anim.stop()
+                    except Exception:
+                        pass
+
+        if hasattr(self, 'overlay_widget') and self.overlay_widget:
+            try:
+                _stop_anims()
+                # Force full opacity right now — no fade-in
+                if hasattr(self, 'overlay_opacity_effect') and self.overlay_opacity_effect:
+                    self.overlay_opacity_effect.setOpacity(1.0)
+                if self.centralWidget():
+                    self.overlay_widget.setGeometry(self.centralWidget().rect())
+                else:
+                    self.overlay_widget.setGeometry(self.rect())
+                self.overlay_widget.setStyleSheet(
+                    "QWidget#BusyOverlay { background-color: rgba(0, 0, 0, 200); }"
+                )
+                self.overlay_widget.raise_()
+                if hasattr(self, 'loading_label') and self.loading_label:
+                    self.loading_label.hide()   # dimming only, no text
+                self.overlay_widget.show()
+                self._overlay_locked = True
+                self.overlay_active  = True
+                _overlay_shown = True
+            except Exception:
+                pass
 
         msg = QMessageBox(self)
         msg.setWindowTitle("SaveState")
         msg.setText("Close SaveState?")
         msg.setIcon(QMessageBox.Icon.Question)
         yes_btn = msg.addButton("Close",   QMessageBox.ButtonRole.AcceptRole)  # A
-        no_btn  = msg.addButton("cancel",  QMessageBox.ButtonRole.RejectRole)  # B
+        no_btn  = msg.addButton("Cancel",  QMessageBox.ButtonRole.RejectRole)  # B
         msg.setDefaultButton(no_btn)
 
         # Tag with references so _ctrl_dialog_dispatch can click specific buttons
@@ -3260,9 +3304,27 @@ class MainWindow(QMainWindow):
             self._allow_close = True
             self.close()
 
+        def _dismiss():
+            """Hide overlay instantly when the dialog closes (cancel / close path)."""
+            if not _overlay_shown:
+                return
+            try:
+                _stop_anims()
+                self._overlay_locked = False
+                self.overlay_active  = False
+                # Force opacity to 0 right now — no fade-out flash
+                if hasattr(self, 'overlay_opacity_effect') and self.overlay_opacity_effect:
+                    self.overlay_opacity_effect.setOpacity(0.0)
+                if hasattr(self, 'overlay_widget') and self.overlay_widget:
+                    self.overlay_widget.hide()
+            except Exception:
+                pass
+
         # Use signal-based closing so the action fires whether the button is
         # clicked physically or triggered programmatically via controller dispatch
         yes_btn.clicked.connect(_do_exit)
+        # finished fires for both Accept and Reject; _do_exit handles close itself
+        msg.finished.connect(lambda _: _dismiss())
 
         msg.exec()
 
