@@ -158,6 +158,11 @@ class _ControllerDialogBadger(_QObject):
 
         # ── QMessageBox ────────────────────────────────────────────────
         if isinstance(dialog, QMessageBox):
+            # ── Exit-confirmation dialog (tagged by _ctrl_show_exit_dialog) ──
+            if hasattr(dialog, '_ctrl_exit_confirm_btn') and hasattr(dialog, '_ctrl_exit_cancel_btn'):
+                _set(dialog._ctrl_exit_confirm_btn, "backup", "A", "#1E8449")
+                _set(dialog._ctrl_exit_cancel_btn,  "back",   "B", "#922B21")
+                return
             for sb in (QMessageBox.StandardButton.Yes, QMessageBox.StandardButton.Ok,
                        QMessageBox.StandardButton.Open, QMessageBox.StandardButton.Save):
                 btn = dialog.button(sb)
@@ -3214,7 +3219,9 @@ class MainWindow(QMainWindow):
             self.manage_backups_button.click()
 
     def _ctrl_do_back(self):
-        """Navigate back from an inline panel (dialogs are handled in _ctrl_dispatch)."""
+        """Navigate back from an inline panel (dialogs are handled in _ctrl_dispatch).
+        When already on the bare main UI (no panels, no dialogs, no popups open),
+        shows an exit-confirmation dialog so the user can close the app via controller."""
         if getattr(self, '_controller_mode_active', False):
             self.exit_controller_panel()
         elif getattr(self, '_settings_mode_active', False):
@@ -3225,6 +3232,39 @@ class MainWindow(QMainWindow):
             self.profile_editor_group.setVisible(False)
             self.profile_group.setVisible(True)
             self.exit_profile_edit_mode()
+        else:
+            # Main UI is active and no other context is open — offer to close the app
+            self._ctrl_show_exit_dialog()
+
+    def _ctrl_show_exit_dialog(self):
+        """Show a controller-friendly exit confirmation dialog.
+        Only shown when the main UI is visible and no panels, popups or other
+        dialogs are open.  A (Yes) closes the app; B (No/Cancel) dismisses."""
+        # Safety: if any dialog or popup is already open, do nothing
+        if self._ctrl_active_dialog() is not None or self._ctrl_active_popup() is not None:
+            return
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("SaveState")
+        msg.setText("Close SaveState?")
+        msg.setIcon(QMessageBox.Icon.Question)
+        yes_btn = msg.addButton("Close",   QMessageBox.ButtonRole.AcceptRole)  # A
+        no_btn  = msg.addButton("cancel",  QMessageBox.ButtonRole.RejectRole)  # B
+        msg.setDefaultButton(no_btn)
+
+        # Tag with references so _ctrl_dialog_dispatch can click specific buttons
+        msg._ctrl_exit_confirm_btn = yes_btn
+        msg._ctrl_exit_cancel_btn  = no_btn
+
+        def _do_exit():
+            self._allow_close = True
+            self.close()
+
+        # Use signal-based closing so the action fires whether the button is
+        # clicked physically or triggered programmatically via controller dispatch
+        yes_btn.clicked.connect(_do_exit)
+
+        msg.exec()
 
     def _ctrl_do_backup_all(self, skip_confirmation: bool = False):
         """Backup all profiles — only available when ≥3 profiles exist."""
@@ -3457,6 +3497,13 @@ class MainWindow(QMainWindow):
 
         # ── QMessageBox ────────────────────────────────────────────────
         if isinstance(dialog, QMessageBox):
+            # ── Exit-confirmation dialog (tagged by _ctrl_show_exit_dialog) ──
+            if hasattr(dialog, '_ctrl_exit_confirm_btn') and hasattr(dialog, '_ctrl_exit_cancel_btn'):
+                if action in _REJECT:
+                    _click(dialog._ctrl_exit_cancel_btn)
+                else:
+                    _click(dialog._ctrl_exit_confirm_btn)
+                return
             if action in _REJECT:
                 for sb in (QMessageBox.StandardButton.No,
                            QMessageBox.StandardButton.Cancel,
