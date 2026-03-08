@@ -2262,9 +2262,9 @@ class MainWindow(QMainWindow):
                         act_playnite = QAction("Playnite Script", self)
                         act_playnite.setToolTip("Generate a script to auto-backup this group when games close in Playnite")
                         try:
-                            controller_icon_path = resource_path("icons/controller.png")
-                            if os.path.exists(controller_icon_path):
-                                act_playnite.setIcon(QIcon(controller_icon_path))
+                            playnite_icon_path = resource_path("icons/playnite.svg")
+                            if os.path.exists(playnite_icon_path):
+                                act_playnite.setIcon(QIcon(playnite_icon_path))
                         except Exception:
                             pass
                         act_playnite.triggered.connect(self.handlers.handle_playnite_script)
@@ -2274,9 +2274,9 @@ class MainWindow(QMainWindow):
                     act_heroic = QAction("Heroic Script", self)
                     act_heroic.setToolTip("Generate a script file to auto-backup this group when games close in Heroic")
                     try:
-                        controller_icon_path = resource_path("icons/controller.png")
-                        if os.path.exists(controller_icon_path):
-                            act_heroic.setIcon(QIcon(controller_icon_path))
+                        heroic_icon_path = resource_path("icons/heroic.png")
+                        if os.path.exists(heroic_icon_path):
+                            act_heroic.setIcon(QIcon(heroic_icon_path))
                     except Exception:
                         pass
                     act_heroic.triggered.connect(self.handlers.handle_heroic_script)
@@ -2339,9 +2339,9 @@ class MainWindow(QMainWindow):
                         act_playnite = QAction("Playnite Script", self)
                         act_playnite.setToolTip("Generate a script to auto-backup when this game closes in Playnite")
                         try:
-                            controller_icon_path = resource_path("icons/controller.png")
-                            if os.path.exists(controller_icon_path):
-                                act_playnite.setIcon(QIcon(controller_icon_path))
+                            playnite_icon_path = resource_path("icons/playnite.svg")
+                            if os.path.exists(playnite_icon_path):
+                                act_playnite.setIcon(QIcon(playnite_icon_path))
                         except Exception:
                             pass
                         act_playnite.triggered.connect(self.handlers.handle_playnite_script)
@@ -2351,9 +2351,9 @@ class MainWindow(QMainWindow):
                     act_heroic = QAction("Heroic Script", self)
                     act_heroic.setToolTip("Generate a script file to auto-backup when this game closes in Heroic")
                     try:
-                        controller_icon_path = resource_path("icons/controller.png")
-                        if os.path.exists(controller_icon_path):
-                            act_heroic.setIcon(QIcon(controller_icon_path))
+                        heroic_icon_path = resource_path("icons/heroic.png")
+                        if os.path.exists(heroic_icon_path):
+                            act_heroic.setIcon(QIcon(heroic_icon_path))
                     except Exception:
                         pass
                     act_heroic.triggered.connect(self.handlers.handle_heroic_script)
