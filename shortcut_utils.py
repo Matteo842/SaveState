@@ -258,6 +258,101 @@ def generate_playnite_script(profile_name: str) -> str:
     return script
 
 
+def generate_heroic_script(profile_name: str) -> tuple:
+    """
+    Generates and saves a script file for Heroic Games Launcher's per-game exit script.
+    
+    Unlike Playnite (which accepts inline PowerShell), Heroic requires a file path
+    to a .bat (Windows) or .sh (Linux) script.
+    
+    The script is saved in <backup_base_dir>/.savestate/scripts/ to keep it
+    persistent and organized.
+    
+    Args:
+        profile_name: Name of the SaveState profile to backup
+        
+    Returns:
+        Tuple of (success: bool, script_path_or_error: str)
+    """
+    import platform as plat
+    
+    try:
+        # Determine backup base dir for script storage
+        import settings_manager as _sm
+        import config as _cfg
+        settings, _ = _sm.load_settings()
+        backup_base_dir = settings.get("backup_base_dir", getattr(_cfg, "BACKUP_BASE_DIR", ""))
+        
+        if not backup_base_dir:
+            return False, "Backup directory not configured. Please configure it in Settings first."
+        
+        # Create scripts directory
+        scripts_dir = os.path.join(backup_base_dir, ".savestate", "scripts")
+        os.makedirs(scripts_dir, exist_ok=True)
+        
+        # Sanitize profile name for filename
+        safe_name = sanitize_shortcut_filename(profile_name)
+        is_windows = plat.system() == "Windows"
+        
+        if is_windows:
+            script_filename = f"savestate_backup_{safe_name}.bat"
+        else:
+            script_filename = f"savestate_backup_{safe_name}.sh"
+        
+        script_path = os.path.join(scripts_dir, script_filename)
+        
+        # Generate script content
+        if is_packaged():
+            if is_nuitka():
+                target_exe = os.path.abspath(sys.argv[0])
+            else:
+                target_exe = sys.executable
+            
+            if is_windows:
+                # .bat file for Windows
+                script_content = (
+                    '@echo off\r\n'
+                    f'start "" /B "{target_exe}" --backup "{profile_name}"\r\n'
+                )
+            else:
+                # .sh file for Linux
+                script_content = (
+                    '#!/bin/bash\n'
+                    f'"{target_exe}" --backup "{profile_name}" &\n'
+                )
+        else:
+            # Script mode (.py)
+            main_script = resource_path("main.py")
+            python_exe = sys.executable
+            
+            if is_windows:
+                pythonw_path = os.path.join(os.path.dirname(python_exe), 'pythonw.exe')
+                interpreter = pythonw_path if os.path.exists(pythonw_path) else python_exe
+                script_content = (
+                    '@echo off\r\n'
+                    f'start "" /B "{interpreter}" "{main_script}" --backup "{profile_name}"\r\n'
+                )
+            else:
+                script_content = (
+                    '#!/bin/bash\n'
+                    f'"{python_exe}" "{main_script}" --backup "{profile_name}" &\n'
+                )
+        
+        # Write the script file
+        with open(script_path, 'w', newline='' if is_windows else None) as f:
+            f.write(script_content)
+        
+        # Make executable on Linux
+        if not is_windows:
+            os.chmod(script_path, 0o755)
+        
+        logging.info(f"Heroic script created for '{profile_name}': {script_path}")
+        return True, script_path
+        
+    except Exception as e:
+        logging.error(f"Error generating Heroic script for '{profile_name}': {e}", exc_info=True)
+        return False, f"Error creating script: {e}"
+
 def create_backup_shortcut(profile_name):
     """
     Crea un collegamento sul desktop per eseguire il backup di un profilo.

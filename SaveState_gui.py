@@ -2269,6 +2269,18 @@ class MainWindow(QMainWindow):
                             pass
                         act_playnite.triggered.connect(self.handlers.handle_playnite_script)
                         menu.addAction(act_playnite)
+                    
+                    # Heroic Games Launcher integration (Windows + Linux)
+                    act_heroic = QAction("Heroic Script", self)
+                    act_heroic.setToolTip("Generate a script file to auto-backup this group when games close in Heroic")
+                    try:
+                        controller_icon_path = resource_path("icons/controller.png")
+                        if os.path.exists(controller_icon_path):
+                            act_heroic.setIcon(QIcon(controller_icon_path))
+                    except Exception:
+                        pass
+                    act_heroic.triggered.connect(self.handlers.handle_heroic_script)
+                    menu.addAction(act_heroic)
                 else:
                     # --- Regular Profile Context Menu ---
                     act_edit = QAction("Edit Profile", self)
@@ -2334,6 +2346,18 @@ class MainWindow(QMainWindow):
                             pass
                         act_playnite.triggered.connect(self.handlers.handle_playnite_script)
                         menu.addAction(act_playnite)
+                    
+                    # Heroic Games Launcher integration (Windows + Linux)
+                    act_heroic = QAction("Heroic Script", self)
+                    act_heroic.setToolTip("Generate a script file to auto-backup when this game closes in Heroic")
+                    try:
+                        controller_icon_path = resource_path("icons/controller.png")
+                        if os.path.exists(controller_icon_path):
+                            act_heroic.setIcon(QIcon(controller_icon_path))
+                    except Exception:
+                        pass
+                    act_heroic.triggered.connect(self.handlers.handle_heroic_script)
+                    menu.addAction(act_heroic)
                 
                 global_pos = self.profile_table_widget.viewport().mapToGlobal(pos)
                 menu.exec(global_pos)

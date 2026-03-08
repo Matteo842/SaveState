@@ -2367,6 +2367,248 @@ class MainWindowHandlers:
 
         dialog.exec()
 
+    @Slot()
+    def handle_heroic_script(self):
+        """Generate a script file for Heroic Games Launcher and show instructions."""
+        profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
+        if not profile_name:
+            logging.warning("handle_heroic_script called without selected profile.")
+            QMessageBox.warning(self.main_window, "No Selection", "No profile selected.")
+            return
+
+        logging.info(f"Generating Heroic script for profile: '{profile_name}'")
+
+        success, result = shortcut_utils.generate_heroic_script(profile_name)
+        if not success:
+            QMessageBox.critical(self.main_window, "Error", result)
+            return
+
+        script_path = result
+
+        # --- Build the dialog ---
+        from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QTextEdit,
+                                        QPushButton, QHBoxLayout, QFrame)
+        from PySide6.QtCore import Qt
+
+        dialog = QDialog(self.main_window)
+        dialog.setWindowTitle(f"Heroic Integration — {profile_name}")
+        dialog.setMinimumWidth(600)
+        dialog.setMaximumWidth(800)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #1e1e1e;
+            }
+            QLabel {
+                color: #e0e0e0;
+            }
+            QLabel#titleLabel {
+                font-size: 14pt;
+                font-weight: bold;
+                color: #ffffff;
+                padding-bottom: 4px;
+            }
+            QLabel#subtitleLabel {
+                font-size: 9pt;
+                color: #aaaaaa;
+                padding-bottom: 8px;
+            }
+            QLabel#stepLabel {
+                font-size: 10pt;
+                color: #d0d0d0;
+                padding: 2px 0px;
+            }
+            QLabel#stepNumber {
+                font-size: 10pt;
+                font-weight: bold;
+                color: #e5a00d;
+                min-width: 24px;
+            }
+            QTextEdit {
+                background-color: #2d2d2d;
+                color: #e5a00d;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                padding: 8px;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 9pt;
+                selection-background-color: #4a4a3a;
+            }
+            QPushButton#copyButton {
+                background-color: #8B0000;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 20px;
+                font-size: 10pt;
+                font-weight: bold;
+            }
+            QPushButton#copyButton:hover {
+                background-color: #a00000;
+            }
+            QPushButton#copyButton:pressed {
+                background-color: #6a0000;
+            }
+            QPushButton#openButton {
+                background-color: #4a3800;
+                color: #e5a00d;
+                border: 1px solid #e5a00d;
+                border-radius: 4px;
+                padding: 8px 20px;
+                font-size: 10pt;
+            }
+            QPushButton#openButton:hover {
+                background-color: #5a4800;
+            }
+            QPushButton#closeButton {
+                background-color: #3d3d3d;
+                color: #cccccc;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                padding: 8px 20px;
+                font-size: 10pt;
+            }
+            QPushButton#closeButton:hover {
+                background-color: #4d4d4d;
+            }
+            QFrame#separator {
+                background-color: #444444;
+                max-height: 1px;
+            }
+        """)
+
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(6)
+        layout.setContentsMargins(20, 16, 20, 16)
+
+        # Title
+        title_label = QLabel("🎮  Heroic Games Launcher — Auto Backup")
+        title_label.setObjectName("titleLabel")
+        layout.addWidget(title_label)
+
+        subtitle = QLabel(f"Profile: {profile_name}")
+        subtitle.setObjectName("subtitleLabel")
+        layout.addWidget(subtitle)
+
+        # Separator
+        sep1 = QFrame()
+        sep1.setObjectName("separator")
+        sep1.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(sep1)
+
+        # Success message
+        success_label = QLabel("✅  Script file created successfully!")
+        success_label.setStyleSheet("color: #78c878; font-size: 10pt; font-weight: bold; padding: 4px 0px;")
+        layout.addWidget(success_label)
+
+        # Instructions
+        instructions_title = QLabel("📋  How to use:")
+        instructions_title.setObjectName("stepLabel")
+        instructions_title.setStyleSheet("font-weight: bold; padding-top: 4px; font-size: 10pt; color: #ffffff;")
+        layout.addWidget(instructions_title)
+
+        steps = [
+            "In Heroic, click the <b>settings icon</b> on the game",
+            "Go to the <b>Advanced</b> tab",
+            'In <b>"Select a script to run when game exits"</b>, click the <b>folder icon</b>',
+            "Navigate to the script path shown below and <b>select the file</b>",
+            "The setting is saved automatically",
+        ]
+
+        for i, step_text in enumerate(steps, 1):
+            step_row = QHBoxLayout()
+            step_row.setSpacing(6)
+
+            num_label = QLabel(f"{i}.")
+            num_label.setObjectName("stepNumber")
+            num_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
+            num_label.setFixedWidth(20)
+            step_row.addWidget(num_label)
+
+            text_label = QLabel(step_text)
+            text_label.setObjectName("stepLabel")
+            text_label.setWordWrap(True)
+            step_row.addWidget(text_label, 1)
+
+            layout.addLayout(step_row)
+
+        layout.addSpacing(4)
+
+        # Separator
+        sep2 = QFrame()
+        sep2.setObjectName("separator")
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(sep2)
+
+        layout.addSpacing(4)
+
+        # Script path label
+        path_label = QLabel("Script file path:")
+        path_label.setStyleSheet("font-weight: bold; font-size: 10pt; color: #ffffff;")
+        layout.addWidget(path_label)
+
+        # Script path text area
+        path_edit = QTextEdit()
+        path_edit.setPlainText(script_path)
+        path_edit.setReadOnly(True)
+        path_edit.setFixedHeight(50)
+        path_edit.selectAll()
+        layout.addWidget(path_edit)
+
+        # Info note
+        note_label = QLabel(
+            "ℹ️  The backup will run silently when you close the game. "
+            "A notification popup will confirm the result."
+        )
+        note_label.setWordWrap(True)
+        note_label.setStyleSheet("color: #888888; font-size: 8pt; padding: 2px 0px;")
+        layout.addWidget(note_label)
+
+        layout.addSpacing(8)
+
+        # Buttons row
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)
+
+        copy_button = QPushButton("📋  Copy Path")
+        copy_button.setObjectName("copyButton")
+        copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        open_button = QPushButton("📂  Open Folder")
+        open_button.setObjectName("openButton")
+        open_button.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        close_button = QPushButton("Close")
+        close_button.setObjectName("closeButton")
+        close_button.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        def on_copy():
+            clipboard = QApplication.clipboard()
+            clipboard.setText(script_path)
+            copy_button.setText("✅  Copied!")
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(2000, lambda: copy_button.setText("📋  Copy Path"))
+            logging.info(f"Heroic script path for '{profile_name}' copied to clipboard.")
+
+        def on_open_folder():
+            try:
+                folder = os.path.dirname(script_path)
+                from gui_utils import open_folder_in_file_manager
+                open_folder_in_file_manager(folder)
+            except Exception as e:
+                logging.error(f"Error opening script folder: {e}")
+
+        copy_button.clicked.connect(on_copy)
+        open_button.clicked.connect(on_open_folder)
+        close_button.clicked.connect(dialog.accept)
+
+        button_layout.addStretch()
+        button_layout.addWidget(open_button)
+        button_layout.addWidget(copy_button)
+        button_layout.addWidget(close_button)
+        layout.addLayout(button_layout)
+
+        dialog.exec()
+
     # --- Profile Group Handlers ---
     @Slot()
     def handle_create_group_from_selection(self):
