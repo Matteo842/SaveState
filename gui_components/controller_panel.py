@@ -328,11 +328,34 @@ class ControllerPanel(QGroupBox):
 
         main_layout.addSpacing(6)
 
-        # ── Exit / Save buttons ────────────────────────────────────────
+        # ── Reset / Exit / Save buttons ───────────────────────────────
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
+        self.reset_button = QPushButton("Reset defaults")
+        self.reset_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.reset_button.setToolTip("Reset all button mappings to their default values")
+        self.reset_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2a2a;
+                color: #e08040;
+                border: 1px solid #e08040;
+                border-radius: 6px;
+                padding: 6px 14px;
+                font-size: 9pt;
+            }
+            QPushButton:hover {
+                background-color: #3a2a1a;
+                color: #ffaa66;
+                border-color: #ffaa66;
+            }
+            QPushButton:pressed {
+                background-color: #4a3020;
+            }
+        """)
+        self.reset_button.clicked.connect(self._reset_to_defaults)
         self.exit_button = QPushButton("Exit")
         self.save_button = QPushButton("Save")
+        btn_row.addWidget(self.reset_button)
         btn_row.addStretch(1)
         btn_row.addWidget(self.exit_button)
         btn_row.addWidget(self.save_button)
@@ -382,3 +405,10 @@ class ControllerPanel(QGroupBox):
     def cancel_shortcut_capture(self):
         """Cancel any ongoing capture."""
         self.shortcuts_panel.cancel_all_captures()
+
+    def _reset_to_defaults(self):
+        """Reset all button mappings to their default values."""
+        for btn_name, combo in self.ctrl_mapping_combos.items():
+            default_action = CTRL_DEFAULT_MAPPINGS.get(btn_name, "")
+            idx = combo.findData(default_action)
+            combo.setCurrentIndex(idx if idx >= 0 else 0)

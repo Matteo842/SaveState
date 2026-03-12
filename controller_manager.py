@@ -547,6 +547,8 @@ class ControllerManager:
         p  = self._poller
         p.nav_up.connect(mw._ctrl_nav_up)
         p.nav_down.connect(mw._ctrl_nav_down)
+        p.nav_left.connect(mw._ctrl_nav_left)
+        p.nav_right.connect(mw._ctrl_nav_right)
         p.btn_a.connect(mw._ctrl_btn_a)
         p.btn_b.connect(mw._ctrl_btn_b)
         p.btn_x.connect(mw._ctrl_btn_x)

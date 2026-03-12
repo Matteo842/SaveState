@@ -2713,10 +2713,25 @@ class MainWindow(QMainWindow):
             return True
         return False
 
+    def _ctrl_try_shortcut_capture(self, dpad_label: str) -> bool:
+        """If a shortcut row is capturing, deliver this D-pad label and return True."""
+        if getattr(self, '_controller_mode_active', False):
+            try:
+                panel = self.controller_panel_group
+                capturing_row = panel.shortcuts_panel.get_capturing_row()
+                if capturing_row is not None:
+                    panel.deliver_captured_button(dpad_label)
+                    return True
+            except Exception:
+                pass
+        return False
+
     @Slot()
     def _ctrl_nav_up(self):
         """Move selection up — QMenu → dialog → profile list."""
         if not self._ctrl_should_accept_input():
+            return
+        if self._ctrl_try_shortcut_capture("D-Up"):
             return
         menu = self._ctrl_active_popup()
         if menu is not None:
@@ -2752,6 +2767,8 @@ class MainWindow(QMainWindow):
         """Move selection down — QMenu → dialog → profile list."""
         if not self._ctrl_should_accept_input():
             return
+        if self._ctrl_try_shortcut_capture("D-Down"):
+            return
         menu = self._ctrl_active_popup()
         if menu is not None:
             self._ctrl_send_key(menu, Qt.Key.Key_Down)
@@ -2780,6 +2797,20 @@ class MainWindow(QMainWindow):
                 row = current  # Already at bottom; keep selection
         table.selectRow(row)
         table.scrollTo(table.model().index(row, 0))
+
+    @Slot()
+    def _ctrl_nav_left(self):
+        """D-pad left — only used for shortcut capture."""
+        if not self._ctrl_should_accept_input():
+            return
+        self._ctrl_try_shortcut_capture("D-Left")
+
+    @Slot()
+    def _ctrl_nav_right(self):
+        """D-pad right — only used for shortcut capture."""
+        if not self._ctrl_should_accept_input():
+            return
+        self._ctrl_try_shortcut_capture("D-Right")
 
     # --- Controller physical-button slots (call dispatcher) ---
 
