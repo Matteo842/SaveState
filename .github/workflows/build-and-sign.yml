@@ -74,7 +74,7 @@ jobs:
         python -m nuitka --onefile --standalone `
           --enable-plugin=pyside6 `
           --windows-console-mode=disable `
-          --windows-onefile-tempdir-spec="%TEMP%\SaveState" `
+          --onefile-tempdir-spec="%TEMP%\SaveState" `
           --onefile-no-compression `
           --company-name="SaveState[OSS]" `
           --product-name="SaveState" `
