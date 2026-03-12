@@ -1179,6 +1179,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(100, self._position_backup_toggle)
 
         # Initialize controller manager (start only if enabled in settings)
+        self._ctrl_ever_deactivated = False
         self.controller_manager = ControllerManager(self)
         if self.current_settings.get("controller_support_enabled", True):
             self.controller_manager.start()
@@ -1647,10 +1648,12 @@ class MainWindow(QMainWindow):
     # Handles application-level events
     def changeEvent(self, event):
         """Intercetta eventi di cambio stato."""
-        if event.type() == QEvent.Type.LanguageChange:
+        if event.type() == QEvent.Type.WindowDeactivate:
+            self._ctrl_ever_deactivated = True
+        elif event.type() == QEvent.Type.LanguageChange:
             logging.debug("MainWindow.changeEvent(LanguageChange) detected")
             pass
-        super().changeEvent(event) # Chiama l'implementazione base
+        super().changeEvent(event)
 
     # Retrieves the name of the currently selected profile from the table manager.
     def get_selected_profile_name(self):
@@ -2694,11 +2697,26 @@ class MainWindow(QMainWindow):
 
     # --- Controller input slots ---
 
+    def _ctrl_should_accept_input(self) -> bool:
+        """Return True if controller input should be processed.
+        On startup the window may be visible but not yet OS-active (no click
+        received yet).  In that case we auto-activate it so the controller
+        works immediately — important on portable consoles / Steam Deck.
+        Once the user has switched away at least once, we require the window
+        to be the active window before accepting input (safety: don't trigger
+        backup/restore while a game is in the foreground)."""
+        from PySide6.QtWidgets import QApplication
+        if QApplication.activeWindow() is not None:
+            return True
+        if not self._ctrl_ever_deactivated and self.isVisible() and not self.isMinimized():
+            self.activateWindow()
+            return True
+        return False
+
     @Slot()
     def _ctrl_nav_up(self):
         """Move selection up — QMenu → dialog → profile list."""
-        from PySide6.QtWidgets import QApplication
-        if QApplication.activeWindow() is None:
+        if not self._ctrl_should_accept_input():
             return
         menu = self._ctrl_active_popup()
         if menu is not None:
@@ -2732,8 +2750,7 @@ class MainWindow(QMainWindow):
     @Slot()
     def _ctrl_nav_down(self):
         """Move selection down — QMenu → dialog → profile list."""
-        from PySide6.QtWidgets import QApplication
-        if QApplication.activeWindow() is None:
+        if not self._ctrl_should_accept_input():
             return
         menu = self._ctrl_active_popup()
         if menu is not None:
@@ -2805,8 +2822,7 @@ class MainWindow(QMainWindow):
     @Slot()
     def _ctrl_on_lt_hold(self):
         """LT pressed (alone) — switch focus to General section."""
-        from PySide6.QtWidgets import QApplication
-        if QApplication.activeWindow() is None:
+        if not self._ctrl_should_accept_input():
             return
         if (getattr(self, '_settings_mode_active', False) or
                 getattr(self, '_controller_mode_active', False) or
@@ -2818,8 +2834,7 @@ class MainWindow(QMainWindow):
     @Slot()
     def _ctrl_on_lt_release(self):
         """LT released — switch focus back to Actions section."""
-        from PySide6.QtWidgets import QApplication
-        if QApplication.activeWindow() is None:
+        if not self._ctrl_should_accept_input():
             return
         if (getattr(self, '_settings_mode_active', False) or
                 getattr(self, '_controller_mode_active', False) or
@@ -2832,8 +2847,7 @@ class MainWindow(QMainWindow):
     @Slot()
     def _ctrl_on_any_input(self):
         """Called on any controller button/nav press. Enters controller-focus mode."""
-        from PySide6.QtWidgets import QApplication
-        if QApplication.activeWindow() is None:
+        if not self._ctrl_should_accept_input():
             return
         # Intercept for Cloud panel
         if getattr(self, '_cloud_mode_active', False):
@@ -3094,8 +3108,7 @@ class MainWindow(QMainWindow):
         """Resolve the action assigned to a physical button and execute it.
         Falls back to CTRL_DEFAULT_MAPPINGS for any button not found in saved
         settings (handles renames across app versions gracefully)."""
-        from PySide6.QtWidgets import QApplication
-        if QApplication.activeWindow() is None:
+        if not self._ctrl_should_accept_input():
             return
         
         # ── Shortcut capture intercept ─────────────────────────────────
