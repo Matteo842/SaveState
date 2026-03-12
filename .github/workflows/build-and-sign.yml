@@ -74,6 +74,7 @@ jobs:
         python -m nuitka --onefile --standalone `
           --enable-plugin=pyside6 `
           --windows-console-mode=disable `
+          --windows-onefile-tempdir-spec="%TEMP%\SaveState" `
           --onefile-no-compression `
           --company-name="SaveState[OSS]" `
           --product-name="SaveState" `
@@ -95,7 +96,7 @@ jobs:
           --include-module=xml.etree.ElementTree `
           --include-module=configparser `
           --include-data-dir=icons=icons `
-          --include-data-file=splash.png=splash.png `
+          #--include-data-file=splash.png=splash.png `
           --include-data-file=icon.png=icon.png `
           --include-data-file=backup_runner.py=backup_runner.py `
           --include-data-file=emulator_utils/citra_titles_map.pkl=emulator_utils/citra_titles_map.pkl `
