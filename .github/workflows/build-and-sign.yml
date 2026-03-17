@@ -95,6 +95,7 @@ jobs:
           --include-module=psutil `
           --include-module=xml.etree.ElementTree `
           --include-module=configparser `
+          --include-package-data=googleapiclient `
           --include-data-dir=icons=icons `
           --include-data-file=icon.png=icon.png `
           --include-data-file=backup_runner.py=backup_runner.py `

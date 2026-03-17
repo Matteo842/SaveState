@@ -211,7 +211,14 @@ class GoogleDriveManager:
             
             # Build the service
             try:
-                self.service = build('drive', 'v3', credentials=creds)
+                # static_discovery=False forces fetching the API discovery
+                # document from the network instead of looking for bundled
+                # static JSON files.  Nuitka does not package the data files
+                # from googleapiclient/discovery_cache/documents/ so the
+                # default static_discovery=True fails with
+                # UnknownApiNameOrVersion in compiled builds.
+                self.service = build('drive', 'v3', credentials=creds,
+                                     static_discovery=False)
                 self.credentials = creds
                 logging.info("Google Drive service initialized successfully")
                 
