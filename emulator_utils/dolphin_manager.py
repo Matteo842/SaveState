@@ -35,8 +35,21 @@ def get_dolphin_save_dirs(executable_path: str | None = None) -> list[str]:
     standard_user_data_dir = None # This is the directory expected to contain GC, Wii, etc.
 
     if system == "Windows":
-        # Typically C:\Users\<user>\Documents\Dolphin Emulator
-        standard_user_data_dir = os.path.join(user_home, "Documents", "Dolphin Emulator")
+        # Dolphin on Windows can store user data in multiple locations:
+        #   - AppData\Roaming\Dolphin Emulator  (newer versions / default)
+        #   - Documents\Dolphin Emulator         (older versions / some configs)
+        # Check both and add all existing ones directly to potential_bases.
+        appdata = os.environ.get('APPDATA', os.path.join(user_home, "AppData", "Roaming"))
+        windows_standard_paths = [
+            os.path.join(appdata, "Dolphin Emulator"),
+            os.path.join(user_home, "Documents", "Dolphin Emulator"),
+        ]
+        for wp in windows_standard_paths:
+            if os.path.isdir(wp) and wp not in potential_bases:
+                log.info(f"Found standard Dolphin directory on Windows: {wp}")
+                potential_bases.append(wp)
+            else:
+                log.debug(f"Windows Dolphin path not found or already added: {wp}")
     elif system == "Linux":
         # Paths that are expected to BE the "Global User Directory" containing GC, Wii, etc.
         # Order: Standard XDG Data, Flatpak Data, Legacy home directory.
