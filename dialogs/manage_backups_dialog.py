@@ -3,16 +3,19 @@ import os
 from PySide6.QtWidgets import (
     QDialog, QListWidget, QPushButton, QLabel, QHBoxLayout, QVBoxLayout,
     QMessageBox, QApplication, QStyle, QListWidgetItem, QWidget, QCheckBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QStyledItemDelegate, QStyleOptionViewItem
+    QTableWidget, QTableWidgetItem, QHeaderView, QStyledItemDelegate, QStyleOptionViewItem,
+    QMenu
 )
-from PySide6.QtCore import Slot, Qt, QLocale, QCoreApplication, QSize
-from PySide6.QtGui import QIcon, QColor, QPalette
+from PySide6.QtCore import Slot, Qt, QLocale, QCoreApplication, QSize, QPoint
+from PySide6.QtGui import QIcon, QColor, QPalette, QAction
 
 # Import necessary logic
 import core_logic
 import config
 import logging
 from gui_components import lock_backup_manager
+from gui_components import backup_notes_manager
+from gui_components.profile_list_manager import NotePopupWidget, NoteOverlayButton
 from utils import resource_path
 
 
@@ -106,7 +109,7 @@ class ManageBackupsDialog(QDialog):
         # --- Load lock icon path for stylesheet ---
         self.lock_icon_path = None
         try:
-            icon_path = resource_path("icons/Lock.png")
+            icon_path = resource_path("icons/lock.png")
             if os.path.exists(icon_path):
                 # Convert to forward slashes for CSS url()
                 self.lock_icon_path = icon_path.replace("\\", "/")
@@ -114,7 +117,22 @@ class ManageBackupsDialog(QDialog):
         except Exception as e:
             logging.debug(f"Lock icon not found: {e}")
         # --- End load lock icon ---
-        
+
+        # --- Load note icon for overlay buttons ---
+        self.note_icon_path = None
+        try:
+            note_path = resource_path("icons/note.png")
+            if os.path.exists(note_path):
+                self.note_icon_path = note_path
+        except Exception as e:
+            logging.debug(f"Note icon not found: {e}")
+        # --- End note icon ---
+
+        # Theme detection (used by popup + overlays)
+        self._is_dark_mode = True
+        if parent is not None and hasattr(parent, 'current_settings'):
+            self._is_dark_mode = parent.current_settings.get('theme', 'dark') == 'dark'
+
         # Widget - Use QTableWidget for better control over columns
         self.backup_table = QTableWidget()
         self.backup_table.setColumnCount(2)  # Backup name, Lock toggle
@@ -130,6 +148,23 @@ class ManageBackupsDialog(QDialog):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)  # Lock column fixed width
         self.backup_table.setColumnWidth(1, 50)  # Lock column width
         self.backup_table.verticalHeader().setDefaultSectionSize(36)
+
+        # --- Note overlay system (matches profile table pattern) ---
+        # Floating buttons drawn on top of the Backup column (only for rows
+        # whose backup has a note attached). Adding/removing notes is done via
+        # the right-click context menu, like in the profile table.
+        self._note_overlay_buttons = []
+        self.note_popup = NotePopupWidget(parent=self, is_dark_mode=self._is_dark_mode)
+        self.note_popup.note_saved.connect(self._on_backup_note_saved)
+        # Reposition overlays on scroll / resize
+        self.backup_table.verticalScrollBar().valueChanged.connect(self._reposition_note_overlays)
+        self.backup_table.verticalScrollBar().valueChanged.connect(self._dismiss_note_popup_if_preview)
+        self.backup_table.horizontalHeader().sectionResized.connect(self._reposition_note_overlays)
+
+        # Right-click context menu for Add/Edit/Remove note
+        self.backup_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.backup_table.customContextMenuRequested.connect(self._show_backup_context_menu)
+        # --- End note overlay system ---
         
         # Apply custom selection delegate (matches profile table style)
         self.backup_delegate = BackupSelectionDelegate(self.backup_table)
@@ -175,11 +210,239 @@ class ManageBackupsDialog(QDialog):
         selected_rows = self.backup_table.selectionModel().selectedRows()
         if selected_rows:
             row = selected_rows[0].row()
-            name_item = self.backup_table.item(row, 0)  # Column 0 is now the backup name
+            name_item = self.backup_table.item(row, 0)  # Column 0 is the backup name
             has_valid_path = name_item is not None and name_item.data(Qt.ItemDataRole.UserRole) is not None
             self.delete_button.setEnabled(has_valid_path)
         else:
             self.delete_button.setEnabled(False)
+
+     # --- Note overlay system (matches profile table pattern) ---
+     def _clear_note_overlays(self):
+        """Remove all existing note overlay buttons from the viewport."""
+        for btn in self._note_overlay_buttons:
+            try:
+                btn.hover_entered.disconnect()
+                btn.hover_left.disconnect()
+                btn.clicked.disconnect()
+                btn.deleteLater()
+            except Exception:
+                pass
+        self._note_overlay_buttons.clear()
+
+     def _create_note_overlays(self):
+        """Create floating note buttons for backup rows that have a note attached.
+        Buttons are children of the table viewport and float over column 0.
+        """
+        self._clear_note_overlays()
+
+        viewport = self.backup_table.viewport()
+        if viewport is None:
+            return
+
+        hover_bg = "#353535" if self._is_dark_mode else "#D0D0D0"
+
+        for row in range(self.backup_table.rowCount()):
+            name_item = self.backup_table.item(row, 0)
+            if not name_item:
+                continue
+            backup_path = name_item.data(Qt.ItemDataRole.UserRole)
+            if not backup_path:
+                continue
+            if not backup_notes_manager.has_note(backup_path):
+                continue
+
+            # NoteOverlayButton uses the first arg as identifier (here: backup_path)
+            btn = NoteOverlayButton(backup_path, parent=viewport)
+            btn.setFlat(True)
+
+            if self.note_icon_path and os.path.exists(self.note_icon_path):
+                btn.setIcon(QIcon(self.note_icon_path))
+                btn.setIconSize(QSize(18, 18))
+            else:
+                btn.setText("\U0001f4dd")
+
+            btn.setFixedSize(26, 26)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    width: 26px;
+                    height: 26px;
+                    min-width: 26px;
+                    min-height: 26px;
+                    max-width: 26px;
+                    max-height: 26px;
+                    border-radius: 4px;
+                    border: none;
+                    background-color: transparent;
+                    padding: 0px;
+                    margin: 0px;
+                }}
+                QPushButton:hover {{
+                    background-color: {hover_bg};
+                }}
+            """)
+
+            btn.hover_entered.connect(self._on_note_hover_enter)
+            btn.hover_left.connect(self._on_note_hover_leave)
+            btn.clicked.connect(lambda _checked=False, p=backup_path: self._on_note_button_clicked(p))
+
+            btn.setProperty("row_index", row)
+            self._note_overlay_buttons.append(btn)
+            btn.show()
+
+        self._reposition_note_overlays()
+
+     def _reposition_note_overlays(self):
+        """Reposition all note overlay buttons at the far right of the Backup column."""
+        viewport = self.backup_table.viewport()
+        if not viewport:
+            return
+        viewport_rect = viewport.rect()
+
+        for btn in self._note_overlay_buttons:
+            row = btn.property("row_index")
+            if row is None:
+                btn.hide()
+                continue
+            name_item = self.backup_table.item(row, 0)
+            if not name_item:
+                btn.hide()
+                continue
+            item_rect = self.backup_table.visualItemRect(name_item)
+            if not viewport_rect.intersects(item_rect):
+                btn.hide()
+                continue
+            btn_x = item_rect.right() - btn.width() - 4
+            btn_y = item_rect.top() + (item_rect.height() - btn.height()) // 2
+            btn.move(btn_x, btn_y)
+            btn.show()
+            btn.raise_()
+
+     def _get_note_popup_position(self, backup_path: str) -> QPoint:
+        """Return a position (in dialog coordinates) below the overlay button for
+        the given backup path. Falls back to a safe default."""
+        for btn in self._note_overlay_buttons:
+            if btn.profile_name == backup_path:
+                btn_bottom_left = btn.mapTo(self, QPoint(0, btn.height()))
+                return QPoint(max(8, btn_bottom_left.x() - 280), btn_bottom_left.y() + 4)
+        # Fallback: top-left area of dialog
+        return QPoint(20, 60)
+
+     def _display_title_for_backup(self, backup_path: str) -> str:
+        """Return the row text used as popup header for a given backup path."""
+        for row in range(self.backup_table.rowCount()):
+            item = self.backup_table.item(row, 0)
+            if item and item.data(Qt.ItemDataRole.UserRole) == backup_path:
+                return item.text()
+        return os.path.basename(backup_path) if backup_path else ""
+
+     # Hover preview (read-only) ------------------------------------------------
+     def _on_note_hover_enter(self, backup_path: str):
+        if self.note_popup.isVisible() and self.note_popup.is_edit_mode:
+            return
+        self.note_popup.cancel_hide()
+        note_text = backup_notes_manager.get_note(backup_path)
+        if note_text:
+            pos = self._get_note_popup_position(backup_path)
+            display_title = self._display_title_for_backup(backup_path)
+            self.note_popup.show_for_key(backup_path, note_text, pos, edit=False, display_title=display_title)
+
+     def _on_note_hover_leave(self):
+        if not self.note_popup.is_edit_mode:
+            self.note_popup.schedule_hide()
+
+     def _on_note_button_clicked(self, backup_path: str):
+        """Click on overlay: toggle between edit and close (mirrors profiles)."""
+        if self.note_popup.isVisible() and self.note_popup.current_key == backup_path:
+            if self.note_popup.is_edit_mode:
+                self.note_popup.save_and_close()
+            else:
+                self.note_popup.switch_to_edit_mode()
+        else:
+            if self.note_popup.isVisible():
+                self.note_popup.save_and_close()
+            note_text = backup_notes_manager.get_note(backup_path)
+            pos = self._get_note_popup_position(backup_path)
+            display_title = self._display_title_for_backup(backup_path)
+            self.note_popup.show_for_key(backup_path, note_text, pos, edit=True, display_title=display_title)
+
+     def _dismiss_note_popup_if_preview(self):
+        if self.note_popup.isVisible() and not self.note_popup.is_edit_mode:
+            self.note_popup.hide()
+
+     def _open_note_editor_for_backup(self, backup_path: str):
+        """Open the popup in edit mode for an arbitrary backup (used by context menu)."""
+        if self.note_popup.isVisible():
+            self.note_popup.save_and_close()
+        note_text = backup_notes_manager.get_note(backup_path)
+        # Resolve a sensible position: prefer overlay button (note exists),
+        # otherwise center on the selected row.
+        pos = self._get_note_popup_position(backup_path)
+        if pos == QPoint(20, 60):
+            for row in range(self.backup_table.rowCount()):
+                item = self.backup_table.item(row, 0)
+                if item and item.data(Qt.ItemDataRole.UserRole) == backup_path:
+                    rect = self.backup_table.visualItemRect(item)
+                    btm_left = self.backup_table.viewport().mapTo(
+                        self, QPoint(rect.right() - 30, rect.bottom()))
+                    pos = QPoint(max(8, btm_left.x() - 280), btm_left.y() + 4)
+                    break
+        display_title = self._display_title_for_backup(backup_path)
+        self.note_popup.show_for_key(backup_path, note_text, pos, edit=True, display_title=display_title)
+
+     @Slot(str, str)
+     def _on_backup_note_saved(self, backup_path: str, note_text: str):
+        """Persist the note and rebuild overlays so the icon appears/disappears."""
+        backup_notes_manager.set_note(backup_path, note_text)
+        self._create_note_overlays()
+
+     # Context menu -------------------------------------------------------------
+     def _show_backup_context_menu(self, position: QPoint):
+        """Show a right-click menu offering Add/Edit/Remove note for the row."""
+        item = self.backup_table.itemAt(position)
+        if not item:
+            return
+        row = item.row()
+        name_item = self.backup_table.item(row, 0)
+        if not name_item:
+            return
+        backup_path = name_item.data(Qt.ItemDataRole.UserRole)
+        if not backup_path:
+            return
+
+        menu = QMenu(self)
+        has_note = backup_notes_manager.has_note(backup_path)
+
+        note_action = QAction("Edit Note" if has_note else "Add Note", self)
+        if self.note_icon_path and os.path.exists(self.note_icon_path):
+            note_action.setIcon(QIcon(self.note_icon_path))
+        note_action.triggered.connect(lambda: self._open_note_editor_for_backup(backup_path))
+        menu.addAction(note_action)
+
+        if has_note:
+            remove_action = QAction("Remove Note", self)
+            remove_action.triggered.connect(lambda: self._remove_note_for_backup(backup_path))
+            menu.addAction(remove_action)
+
+        menu.exec(self.backup_table.viewport().mapToGlobal(position))
+
+     def _remove_note_for_backup(self, backup_path: str):
+        try:
+            backup_notes_manager.remove_note(backup_path)
+        except Exception as e:
+            logging.warning(f"Failed to remove backup note: {e}")
+        self._create_note_overlays()
+
+     # Qt event hooks: keep overlays aligned on resize / show -------------------
+     def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._reposition_note_overlays()
+
+     def showEvent(self, event):
+        super().showEvent(event)
+        # Use a single-shot to ensure visualItemRect returns valid geometry
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._create_note_overlays)
+     # --- End note overlay system ---
      
      def _create_lock_checkbox(self, backup_path: str, is_locked: bool) -> QWidget:
         """Create a styled lock checkbox widget for the backup."""
@@ -268,7 +531,7 @@ class ManageBackupsDialog(QDialog):
      def _update_lock_tooltip_for_path(self, backup_path: str, is_locked: bool):
         """Update the tooltip for a specific lock checkbox."""
         for row in range(self.backup_table.rowCount()):
-            checkbox_widget = self.backup_table.cellWidget(row, 1)  # Column 1 is now the lock checkbox
+            checkbox_widget = self.backup_table.cellWidget(row, 1)  # Column 1 is the lock checkbox
             if checkbox_widget:
                 checkbox = checkbox_widget.findChild(QCheckBox)
                 if checkbox and checkbox.property("backup_path") == backup_path:
@@ -351,12 +614,15 @@ class ManageBackupsDialog(QDialog):
                 name_item = QTableWidgetItem(item_text)
                 name_item.setData(Qt.ItemDataRole.UserRole, path)
                 self.backup_table.setItem(row_idx, 0, name_item)
-                
+
                 # Column 1: Lock checkbox
                 lock_widget = self._create_lock_checkbox(path, is_locked)
                 self.backup_table.setCellWidget(row_idx, 1, lock_widget)
             # End loop for backups
         # End if/else not backups
+
+        # Re-create floating note overlays (they belong to the viewport, not cells)
+        self._create_note_overlays()
     # --- End populate_backup_list ---
      
      @Slot()
@@ -402,6 +668,11 @@ class ManageBackupsDialog(QDialog):
             success, message = core_logic.delete_single_backup_file(backup_path)
             self.setEnabled(True)
             if success:
+                # Clean up any note attached to the deleted backup
+                try:
+                    backup_notes_manager.remove_note(backup_path)
+                except Exception as e_note:
+                    logging.warning(f"Failed to remove note for deleted backup: {e_note}")
                 QMessageBox.information(self, "Success", message)
                 self.populate_backup_list()
             else:
@@ -470,6 +741,10 @@ class ManageBackupsDialog(QDialog):
                 success, message = core_logic.delete_single_backup_file(backup_path)
                 if success:
                     success_count += 1
+                    try:
+                        backup_notes_manager.remove_note(backup_path)
+                    except Exception as e_note:
+                        logging.warning(f"Failed to remove note for deleted backup: {e_note}")
                 else:
                     failed_count += 1
                     logging.error(f"Failed to delete backup: {message}")

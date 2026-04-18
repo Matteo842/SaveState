@@ -2014,6 +2014,14 @@ def delete_single_backup_file(file_path):
 
     try:
         os.remove(file_path)
+        # Best-effort: drop any per-backup note attached to this file.
+        try:
+            from gui_components import backup_notes_manager
+            backup_notes_manager.remove_note(file_path)
+        except ImportError:
+            pass
+        except Exception as e_note:
+            logging.warning(f"Failed to remove backup note for '{backup_name}': {e_note}")
         msg = f"File '{backup_name}' deleted successfully."
         logging.info(msg)
         return True, msg

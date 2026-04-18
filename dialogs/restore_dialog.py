@@ -12,6 +12,7 @@ import config
 import logging
 import os
 from gui_components import lock_backup_manager
+from gui_components import backup_notes_manager
 from utils import resource_path
 
 
@@ -175,19 +176,45 @@ class RestoreDialog(QDialog):
 
                 # Clean the file name (use the function from core_logic)
                 display_name = core_logic.get_display_name_from_backup_filename(name)
-                item_text = f"{display_name} ({date_str_formatted})" # Use clean name and formatted date
+                base_text = f"{display_name} ({date_str_formatted})"
+
+                # Append the first line of the per-backup note (if any) to make
+                # the right backup easy to identify when restoring.
+                note_text = ""
+                try:
+                    note_text = backup_notes_manager.get_note(path)
+                except Exception as e_note:
+                    logging.debug(f"Failed to read backup note for '{path}': {e_note}")
+
+                if note_text:
+                    first_line = note_text.splitlines()[0].strip() if note_text else ""
+                    if first_line:
+                        snippet = first_line if len(first_line) <= 60 else first_line[:60] + "…"
+                        item_text = f"{base_text}  —  \U0001f4dd {snippet}"
+                    else:
+                        item_text = base_text
+                else:
+                    item_text = base_text
 
                 # Create and add the item to the list
                 item = QListWidgetItem(item_text)
                 item.setData(Qt.ItemDataRole.UserRole, path) # Save the full path
-                
+
                 # Check if this backup is locked and add lock icon
+                tooltip_parts = []
                 if locked_backup_path:
                     is_locked = os.path.normcase(os.path.normpath(path)) == os.path.normcase(os.path.normpath(locked_backup_path))
                     if is_locked and self.lock_icon:
                         item.setIcon(self.lock_icon)
-                        item.setToolTip("This backup is locked (protected from deletion)")
-                
+                        tooltip_parts.append("This backup is locked (protected from deletion)")
+
+                if note_text:
+                    note_preview = note_text if len(note_text) <= 400 else note_text[:400] + "…"
+                    tooltip_parts.append(f"Note:\n{note_preview}")
+
+                if tooltip_parts:
+                    item.setToolTip("\n\n".join(tooltip_parts))
+
                 self.backup_list_widget.addItem(item)
                 self._profile_items.append(item)
             # --- End list population loop ---

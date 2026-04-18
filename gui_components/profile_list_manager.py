@@ -40,17 +40,24 @@ class NoteOverlayButton(QPushButton):
 
 
 class NotePopupWidget(QWidget):
-    """Speech-bubble style popup for displaying and editing profile notes.
+    """Speech-bubble style popup for displaying and editing notes.
+
+    Generic — works for both profiles and individual backups. The popup is
+    parameterized by an opaque ``key`` (used as identifier in the saved signal)
+    and an optional ``display_title`` (shown in the header). When the title
+    isn't provided the key itself is shown.
+
     Two modes:
     - Preview: semi-transparent with visible background, completely non-interactive
               (mouse events pass through via WA_TransparentForMouseEvents)
     - Edit: solid/opaque, editable text with Save/Cancel buttons
     """
-    note_saved = Signal(str, str)  # profile_name, note_text
+    note_saved = Signal(str, str)  # key, note_text
 
     def __init__(self, parent=None, is_dark_mode=True):
         super().__init__(parent)
-        self._profile_name = ""
+        self._key = ""
+        self._display_title = ""
         self._original_text = ""  # For cancel/discard
         self._edit_mode = False
         self._is_dark_mode = is_dark_mode
@@ -270,12 +277,13 @@ class NotePopupWidget(QWidget):
                 }
             """)
 
-    def show_for_profile(self, profile_name, note_text, pos, edit=False):
-        """Show the popup for a given profile at the specified position."""
+    def show_for_key(self, key, note_text, pos, edit=False, display_title=None):
+        """Show the popup for a given key (profile name or backup path)."""
         self._hide_timer.stop()
-        self._profile_name = profile_name
+        self._key = key
+        self._display_title = display_title if display_title else str(key)
         self._original_text = note_text  # Store original for cancel
-        self.header_label.setText(f"\U0001f4dd {profile_name}")
+        self.header_label.setText(f"\U0001f4dd {self._display_title}")
         self.text_edit.setPlainText(note_text)
         if edit:
             self._apply_edit_style()
@@ -297,6 +305,10 @@ class NotePopupWidget(QWidget):
         # Install event filter to catch clicks outside the popup
         if edit:
             self._install_click_outside_filter()
+
+    def show_for_profile(self, profile_name, note_text, pos, edit=False):
+        """Backward-compatible wrapper used by the profile table."""
+        self.show_for_key(profile_name, note_text, pos, edit=edit, display_title=profile_name)
 
     def _install_click_outside_filter(self):
         """Install event filter on the application to detect clicks outside."""
@@ -354,9 +366,9 @@ class NotePopupWidget(QWidget):
     def save_and_close(self):
         """Save the current note text and close the popup."""
         self._remove_click_outside_filter()
-        if self._profile_name:
+        if self._key:
             new_text = self.text_edit.toPlainText()
-            self.note_saved.emit(self._profile_name, new_text)
+            self.note_saved.emit(self._key, new_text)
         self._edit_mode = False
         self._hide_timer.stop()
         self.button_row.hide()
@@ -377,8 +389,13 @@ class NotePopupWidget(QWidget):
         return self._edit_mode
 
     @property
+    def current_key(self):
+        return self._key
+
+    @property
     def current_profile(self):
-        return self._profile_name
+        # Backward-compatible alias used by profile table code paths.
+        return self._key
 
     def keyPressEvent(self, event):
         """Handle Escape to cancel the popup."""
