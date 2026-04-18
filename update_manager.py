@@ -232,6 +232,102 @@ def _pick_release_asset(release: dict, install_type: str) -> Optional[dict]:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Tag comparison
+# ---------------------------------------------------------------------------
+
+def _parse_tag(tag: str) -> list:
+    """Parse a tag like 'v2.6c' into a comparable list of (number, letter)
+    tuples. Handles all of the variants this project has used historically:
+
+        v2.6    -> [(2, ''), (6, '')]
+        v2.6.0  -> [(2, ''), (6, ''), (0, '')]
+        v2.6c   -> [(2, ''), (6, 'c')]
+        v2.6.b  -> [(2, ''), (6, ''), (0, 'b')]
+        v2.7    -> [(2, ''), (7, '')]
+
+    Empty / unparseable input returns an empty list, which the caller
+    treats as "I don't know how to compare this".
+    """
+    if not tag:
+        return []
+    s = tag.strip().lstrip("vV").strip()
+    if not s:
+        return []
+    parts = []
+    for component in s.split("."):
+        m = re.match(r"(\d*)([A-Za-z]*)", component)
+        if not m:
+            return []
+        num_str, letters = m.groups()
+        if num_str == "" and letters == "":
+            return []
+        num = int(num_str) if num_str else 0
+        parts.append((num, letters.lower()))
+    return parts
+
+
+def _all_default(parts: list, start: int) -> bool:
+    """Return True if every component from index `start` is (0, '')."""
+    return all(n == 0 and l == "" for n, l in parts[start:])
+
+
+def _compare_tags(a: str, b: str) -> Optional[int]:
+    """Return -1, 0, +1 like cmp(a, b), or None if either tag can't be parsed.
+
+    SaveState versioning convention (per project author):
+        - X.Y                    base release
+        - X.Y[letter]            small hotfix on top of X.Y (b, c, d, ...)
+        - X.Y.Z                  MAJOR fix that comes AFTER all X.Y[letter]
+        - X.Y.Z[letter]          small hotfix on top of X.Y.Z
+
+    Resulting ordering example for the 2.6 family:
+        2.6 < 2.6b < 2.6c < 2.6.1 < 2.6.1b < 2.6.2 < 2.7
+
+    Implementation:
+      - Numeric components compared as integers, position by position.
+      - When two components have equal numbers but DIFFERENT letter
+        suffixes, we look at whether the side without the letter has
+        deeper components after it. If yes, that side wins (".1 beats c").
+        If no, the side with the letter wins ("c beats nothing").
+      - Trailing (0, '') components are treated as absent so 2.6 == 2.6.0.
+    """
+    pa = _parse_tag(a)
+    pb = _parse_tag(b)
+    if not pa or not pb:
+        return None
+    return _compare_at(pa, pb, 0)
+
+
+def _compare_at(pa: list, pb: list, i: int) -> int:
+    if i >= len(pa) and i >= len(pb):
+        return 0
+    if i >= len(pa):
+        return 0 if _all_default(pb, i) else -1
+    if i >= len(pb):
+        return 0 if _all_default(pa, i) else 1
+
+    na, la = pa[i]
+    nb, lb = pb[i]
+    if na != nb:
+        return -1 if na < nb else 1
+    if la == lb:
+        return _compare_at(pa, pb, i + 1)
+
+    # Numbers equal at this position, letters differ.
+    if la == "":
+        # pa has no letter here. Does it have a meaningful deeper component?
+        if i + 1 < len(pa) and not _all_default(pa, i + 1):
+            return 1   # deeper component beats a letter hotfix
+        return -1      # base release < hotfix release at same level
+    if lb == "":
+        if i + 1 < len(pb) and not _all_default(pb, i + 1):
+            return -1
+        return 1
+    # Both have letters but they differ — compare alphabetically.
+    return -1 if la < lb else 1
+
+
 def _asset_kind(asset: dict) -> str:
     """Classify an asset: 'source', 'exe', 'zip', 'appimage', 'tar.gz' or 'unknown'."""
     if asset.get("_is_source_zipball"):
@@ -516,9 +612,30 @@ class UpdateManager(QObject):
                 self._set_state(STATE_ERROR)
                 self.error.emit(self._last_error)
                 return
+            # Decide whether the GitHub release is actually newer.
+            # Exact match -> up to date, fast path.
+            # Otherwise try a structured numeric comparison; only consider
+            # the release "newer" when we can prove it. If parsing fails
+            # for either tag, fall back to "different = update available"
+            # so the user is at least notified.
             if tag == current_tag:
                 self._set_state(STATE_UP_TO_DATE)
                 return
+            cmp = _compare_tags(current_tag, tag)
+            if cmp is not None:
+                if cmp >= 0:
+                    logging.info(
+                        f"UpdateManager: current tag {current_tag!r} >= "
+                        f"latest {tag!r}, treating as up to date."
+                    )
+                    self._set_state(STATE_UP_TO_DATE)
+                    return
+            else:
+                logging.warning(
+                    f"UpdateManager: could not parse tags for comparison "
+                    f"(current={current_tag!r}, latest={tag!r}); falling "
+                    "back to 'different means update'."
+                )
             asset = _pick_release_asset(release, self._install_type)
             if not asset:
                 self._last_error = f"No compatible asset in release {tag}"
