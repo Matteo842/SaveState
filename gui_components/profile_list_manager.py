@@ -67,14 +67,14 @@ class NotePopupWidget(QWidget):
         self._hide_timer.timeout.connect(self._do_hide)
         self._event_filter_installed = False
 
-        # Setup UI
-        self.setFixedWidth(380)
-        self.setMinimumHeight(80)
-        self.setMaximumHeight(320)
+        # Setup UI (sized ~15% smaller than the previous design)
+        self.setFixedWidth(320)
+        self.setMinimumHeight(68)
+        self.setMaximumHeight(272)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(4)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(3)
 
         # Header label
         self.header_label = QLabel()
@@ -83,8 +83,8 @@ class NotePopupWidget(QWidget):
         # Text area for note content
         self.text_edit = QTextEdit()
         self.text_edit.setPlaceholderText("Write your note here...")
-        self.text_edit.setMinimumHeight(50)
-        self.text_edit.setMaximumHeight(220)
+        self.text_edit.setMinimumHeight(42)
+        self.text_edit.setMaximumHeight(188)
         self.text_edit.setAcceptRichText(False)  # Plain text only
         layout.addWidget(self.text_edit)
 

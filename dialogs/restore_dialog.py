@@ -2,10 +2,10 @@
 from PySide6.QtWidgets import (
     QDialog, QListWidget, QLabel, QDialogButtonBox, QVBoxLayout,
     QListWidgetItem, QPushButton, QFileDialog, QHBoxLayout, QMessageBox,
-    QStyledItemDelegate, QStyleOptionViewItem, QStyle
+    QStyledItemDelegate, QStyleOptionViewItem, QStyle, QMenu
 )
-from PySide6.QtCore import Qt, QLocale, QCoreApplication
-from PySide6.QtGui import QBrush, QColor, QIcon, QPalette
+from PySide6.QtCore import Qt, QLocale, QCoreApplication, QPoint, QSize, QTimer, Slot
+from PySide6.QtGui import QBrush, QColor, QIcon, QPalette, QAction
 
 import core_logic
 import config
@@ -13,6 +13,7 @@ import logging
 import os
 from gui_components import lock_backup_manager
 from gui_components import backup_notes_manager
+from gui_components.profile_list_manager import NotePopupWidget, NoteOverlayButton
 from utils import resource_path
 
 
@@ -115,6 +116,21 @@ class RestoreDialog(QDialog):
         except Exception as e:
             logging.debug(f"Lock icon not found for RestoreDialog: {e}")
         # --- End load lock icon ---
+
+        # --- Load note icon for overlay buttons ---
+        self.note_icon_path = None
+        try:
+            note_path = resource_path("icons/note.png")
+            if os.path.exists(note_path):
+                self.note_icon_path = note_path
+        except Exception as e:
+            logging.debug(f"Note icon not found for RestoreDialog: {e}")
+        # --- End note icon ---
+
+        # Theme detection (used by popup + overlays)
+        self._is_dark_mode = True
+        if parent is not None and hasattr(parent, 'current_settings'):
+            self._is_dark_mode = parent.current_settings.get('theme', 'dark') == 'dark'
         
         # Set title based on whether we have a profile
         if profile_name:
@@ -129,7 +145,22 @@ class RestoreDialog(QDialog):
         # Apply custom selection delegate (matches profile/backup table style)
         self.restore_delegate = RestoreSelectionDelegate(self.backup_list_widget)
         self.backup_list_widget.setItemDelegate(self.restore_delegate)
-        
+
+        # --- Note overlay system (matches profile/manage backup pattern) ---
+        # Floating note buttons drawn on top of list rows that already have a
+        # note attached. Add/Edit/Remove notes is done via the right-click
+        # context menu, so here we only need read-only-then-editable behaviour.
+        self._note_overlay_buttons = []
+        self.note_popup = NotePopupWidget(parent=self, is_dark_mode=self._is_dark_mode)
+        self.note_popup.note_saved.connect(self._on_backup_note_saved)
+        self.backup_list_widget.verticalScrollBar().valueChanged.connect(self._reposition_note_overlays)
+        self.backup_list_widget.verticalScrollBar().valueChanged.connect(self._dismiss_note_popup_if_preview)
+
+        # Right-click context menu for Add/Edit/Remove note
+        self.backup_list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.backup_list_widget.customContextMenuRequested.connect(self._show_backup_context_menu)
+        # --- End overlay system ---
+
         no_backup_label = None
 
         # --- Retrieve the CURRENT base path from the parent's settings ---
@@ -176,44 +207,18 @@ class RestoreDialog(QDialog):
 
                 # Clean the file name (use the function from core_logic)
                 display_name = core_logic.get_display_name_from_backup_filename(name)
-                base_text = f"{display_name} ({date_str_formatted})"
-
-                # Append the first line of the per-backup note (if any) to make
-                # the right backup easy to identify when restoring.
-                note_text = ""
-                try:
-                    note_text = backup_notes_manager.get_note(path)
-                except Exception as e_note:
-                    logging.debug(f"Failed to read backup note for '{path}': {e_note}")
-
-                if note_text:
-                    first_line = note_text.splitlines()[0].strip() if note_text else ""
-                    if first_line:
-                        snippet = first_line if len(first_line) <= 60 else first_line[:60] + "…"
-                        item_text = f"{base_text}  —  \U0001f4dd {snippet}"
-                    else:
-                        item_text = base_text
-                else:
-                    item_text = base_text
+                item_text = f"{display_name} ({date_str_formatted})"
 
                 # Create and add the item to the list
                 item = QListWidgetItem(item_text)
                 item.setData(Qt.ItemDataRole.UserRole, path) # Save the full path
 
                 # Check if this backup is locked and add lock icon
-                tooltip_parts = []
                 if locked_backup_path:
                     is_locked = os.path.normcase(os.path.normpath(path)) == os.path.normcase(os.path.normpath(locked_backup_path))
                     if is_locked and self.lock_icon:
                         item.setIcon(self.lock_icon)
-                        tooltip_parts.append("This backup is locked (protected from deletion)")
-
-                if note_text:
-                    note_preview = note_text if len(note_text) <= 400 else note_text[:400] + "…"
-                    tooltip_parts.append(f"Note:\n{note_preview}")
-
-                if tooltip_parts:
-                    item.setToolTip("\n\n".join(tooltip_parts))
+                        item.setToolTip("This backup is locked (protected from deletion)")
 
                 self.backup_list_widget.addItem(item)
                 self._profile_items.append(item)
@@ -299,6 +304,229 @@ class RestoreDialog(QDialog):
         self.button_box = buttons
         self.ok_button = ok_button
     # --- End of __init__ method ---
+
+    # --- Note overlay system ---------------------------------------------------
+    def _clear_note_overlays(self):
+        """Remove all existing note overlay buttons."""
+        for btn in self._note_overlay_buttons:
+            try:
+                btn.hover_entered.disconnect()
+                btn.hover_left.disconnect()
+                btn.clicked.disconnect()
+                btn.deleteLater()
+            except Exception:
+                pass
+        self._note_overlay_buttons.clear()
+
+    def _create_note_overlays(self):
+        """Create floating note buttons for list rows whose backup has a note.
+        Buttons are children of the list viewport and float over the row."""
+        self._clear_note_overlays()
+
+        viewport = self.backup_list_widget.viewport()
+        if viewport is None:
+            return
+
+        hover_bg = "#353535" if self._is_dark_mode else "#D0D0D0"
+
+        for row in range(self.backup_list_widget.count()):
+            item = self.backup_list_widget.item(row)
+            if not item:
+                continue
+            # Skip the synthetic "From ZIP" item (notes only apply to real backups)
+            if item is self._zip_list_item:
+                continue
+            backup_path = item.data(Qt.ItemDataRole.UserRole)
+            if not backup_path:
+                continue
+            if not backup_notes_manager.has_note(backup_path):
+                continue
+
+            btn = NoteOverlayButton(backup_path, parent=viewport)
+            btn.setFlat(True)
+
+            if self.note_icon_path and os.path.exists(self.note_icon_path):
+                btn.setIcon(QIcon(self.note_icon_path))
+                btn.setIconSize(QSize(18, 18))
+            else:
+                btn.setText("\U0001f4dd")
+
+            btn.setFixedSize(26, 26)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    width: 26px;
+                    height: 26px;
+                    min-width: 26px;
+                    min-height: 26px;
+                    max-width: 26px;
+                    max-height: 26px;
+                    border-radius: 4px;
+                    border: none;
+                    background-color: transparent;
+                    padding: 0px;
+                    margin: 0px;
+                }}
+                QPushButton:hover {{
+                    background-color: {hover_bg};
+                }}
+            """)
+
+            btn.hover_entered.connect(self._on_note_hover_enter)
+            btn.hover_left.connect(self._on_note_hover_leave)
+            btn.clicked.connect(lambda _checked=False, p=backup_path: self._on_note_button_clicked(p))
+
+            btn.setProperty("row_index", row)
+            self._note_overlay_buttons.append(btn)
+            btn.show()
+
+        self._reposition_note_overlays()
+
+    def _reposition_note_overlays(self):
+        """Reposition all note overlay buttons at the far right of each row."""
+        viewport = self.backup_list_widget.viewport()
+        if not viewport:
+            return
+        viewport_rect = viewport.rect()
+
+        for btn in self._note_overlay_buttons:
+            row = btn.property("row_index")
+            if row is None:
+                btn.hide()
+                continue
+            item = self.backup_list_widget.item(row)
+            if not item:
+                btn.hide()
+                continue
+            item_rect = self.backup_list_widget.visualItemRect(item)
+            if not viewport_rect.intersects(item_rect):
+                btn.hide()
+                continue
+            btn_x = item_rect.right() - btn.width() - 8
+            btn_y = item_rect.top() + (item_rect.height() - btn.height()) // 2
+            btn.move(btn_x, btn_y)
+            btn.show()
+            btn.raise_()
+
+    def _get_note_popup_position(self, backup_path: str) -> QPoint:
+        """Return a position (in dialog coordinates) below the overlay button
+        for the given backup path. Falls back to a position relative to the row."""
+        for btn in self._note_overlay_buttons:
+            if btn.profile_name == backup_path:
+                btn_bottom_left = btn.mapTo(self, QPoint(0, btn.height()))
+                return QPoint(max(8, btn_bottom_left.x() - 280), btn_bottom_left.y() + 4)
+        # Fallback for rows without an overlay (no note yet): position by row rect
+        for row in range(self.backup_list_widget.count()):
+            it = self.backup_list_widget.item(row)
+            if it and it.data(Qt.ItemDataRole.UserRole) == backup_path:
+                rect = self.backup_list_widget.visualItemRect(it)
+                btm_left = self.backup_list_widget.viewport().mapTo(
+                    self, QPoint(rect.right() - 30, rect.bottom()))
+                return QPoint(max(8, btm_left.x() - 280), btm_left.y() + 4)
+        return QPoint(20, 60)
+
+    def _display_title_for_backup(self, backup_path: str) -> str:
+        """Return the row text used as popup header for a given backup path."""
+        for row in range(self.backup_list_widget.count()):
+            it = self.backup_list_widget.item(row)
+            if it and it.data(Qt.ItemDataRole.UserRole) == backup_path:
+                return it.text()
+        return os.path.basename(backup_path) if backup_path else ""
+
+    # Hover preview (read-only) ------------------------------------------------
+    def _on_note_hover_enter(self, backup_path: str):
+        if self.note_popup.isVisible() and self.note_popup.is_edit_mode:
+            return
+        self.note_popup.cancel_hide()
+        note_text = backup_notes_manager.get_note(backup_path)
+        if note_text:
+            pos = self._get_note_popup_position(backup_path)
+            display_title = self._display_title_for_backup(backup_path)
+            self.note_popup.show_for_key(backup_path, note_text, pos, edit=False, display_title=display_title)
+
+    def _on_note_hover_leave(self):
+        if not self.note_popup.is_edit_mode:
+            self.note_popup.schedule_hide()
+
+    def _on_note_button_clicked(self, backup_path: str):
+        """Click on overlay: toggle between edit and close (mirrors profiles)."""
+        if self.note_popup.isVisible() and self.note_popup.current_key == backup_path:
+            if self.note_popup.is_edit_mode:
+                self.note_popup.save_and_close()
+            else:
+                self.note_popup.switch_to_edit_mode()
+        else:
+            if self.note_popup.isVisible():
+                self.note_popup.save_and_close()
+            note_text = backup_notes_manager.get_note(backup_path)
+            pos = self._get_note_popup_position(backup_path)
+            display_title = self._display_title_for_backup(backup_path)
+            self.note_popup.show_for_key(backup_path, note_text, pos, edit=True, display_title=display_title)
+
+    def _dismiss_note_popup_if_preview(self):
+        if self.note_popup.isVisible() and not self.note_popup.is_edit_mode:
+            self.note_popup.hide()
+
+    def _open_note_editor_for_backup(self, backup_path: str):
+        """Open the popup in edit mode (used by context menu)."""
+        if self.note_popup.isVisible():
+            self.note_popup.save_and_close()
+        note_text = backup_notes_manager.get_note(backup_path)
+        pos = self._get_note_popup_position(backup_path)
+        display_title = self._display_title_for_backup(backup_path)
+        self.note_popup.show_for_key(backup_path, note_text, pos, edit=True, display_title=display_title)
+
+    @Slot(str, str)
+    def _on_backup_note_saved(self, backup_path: str, note_text: str):
+        """Persist the note and rebuild overlays so the icon appears/disappears."""
+        backup_notes_manager.set_note(backup_path, note_text)
+        self._create_note_overlays()
+
+    # Context menu -------------------------------------------------------------
+    def _show_backup_context_menu(self, position: QPoint):
+        """Show a right-click menu offering Add/Edit/Remove note for the row."""
+        item = self.backup_list_widget.itemAt(position)
+        if not item:
+            return
+        # Don't offer notes on the synthetic "From ZIP" item
+        if item is self._zip_list_item:
+            return
+        backup_path = item.data(Qt.ItemDataRole.UserRole)
+        if not backup_path:
+            return
+
+        menu = QMenu(self)
+        has_note = backup_notes_manager.has_note(backup_path)
+
+        note_action = QAction("Edit Note" if has_note else "Add Note", self)
+        if self.note_icon_path and os.path.exists(self.note_icon_path):
+            note_action.setIcon(QIcon(self.note_icon_path))
+        note_action.triggered.connect(lambda: self._open_note_editor_for_backup(backup_path))
+        menu.addAction(note_action)
+
+        if has_note:
+            remove_action = QAction("Remove Note", self)
+            remove_action.triggered.connect(lambda: self._remove_note_for_backup(backup_path))
+            menu.addAction(remove_action)
+
+        menu.exec(self.backup_list_widget.viewport().mapToGlobal(position))
+
+    def _remove_note_for_backup(self, backup_path: str):
+        try:
+            backup_notes_manager.remove_note(backup_path)
+        except Exception as e:
+            logging.warning(f"Failed to remove backup note: {e}")
+        self._create_note_overlays()
+
+    # Qt event hooks: keep overlays aligned ------------------------------------
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._reposition_note_overlays()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Use a single-shot to ensure visualItemRect returns valid geometry
+        QTimer.singleShot(0, self._create_note_overlays)
+    # --- End note overlay system ----------------------------------------------
     
     def handle_load_from_zip(self):
         """Handle the 'Load from ZIP' button click."""
@@ -379,6 +607,10 @@ class RestoreDialog(QDialog):
         except Exception:
             pass
 
+        # Hide note overlays: profile items are not visible anymore, and the
+        # ZIP item never has notes attached.
+        self._clear_note_overlays()
+
         # Show the clear button (to remove the loaded ZIP entry)
         self.clear_zip_button.show()
 
@@ -433,7 +665,10 @@ class RestoreDialog(QDialog):
         else:
             if self.ok_button:
                 self.ok_button.setEnabled(False)
-        
+
+        # Restore note overlays for the visible profile items
+        self._create_note_overlays()
+
         logging.info("Cleared loaded ZIP selection")
     
     def on_selection_change(self, current_item, previous_item):
