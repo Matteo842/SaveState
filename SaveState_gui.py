@@ -888,13 +888,17 @@ class MainWindow(QMainWindow):
         compression_group.setLayout(compression_layout)
         settings_grid.addWidget(compression_group, 2, 1)
         
-        # ROW 3, COL 0: Free Disk Space Check
-        space_check_group = QGroupBox("Free Disk Space Check")
+        # ROW 3, COL 0: Space check / update
+        space_check_group = QGroupBox("Space check/update")
         space_check_layout = QVBoxLayout()
         space_check_layout.setContentsMargins(8, 8, 8, 8)
         space_check_layout.setSpacing(6)
-        self.settings_space_check_checkbox = QCheckBox("Enable space check before backup (minimum 2 GB)")
+        self.settings_space_check_checkbox = QCheckBox("Enable space check before backup (2gb)")
         space_check_layout.addWidget(self.settings_space_check_checkbox)
+        # Opt-in auto-update check. No network requests happen unless this is
+        # enabled OR the user clicks the update indicator manually.
+        self.settings_check_updates_checkbox = QCheckBox("Check for updates on startup (via GitHub Releases)")
+        space_check_layout.addWidget(self.settings_check_updates_checkbox)
         space_check_group.setLayout(space_check_layout)
         settings_grid.addWidget(space_check_group, 3, 0)
         
@@ -905,12 +909,8 @@ class MainWindow(QMainWindow):
         ui_settings_layout.setSpacing(6)
         self.settings_global_drag_checkbox = QCheckBox("Enable global mouse drag-to-show effect")
         self.settings_shorten_paths_checkbox = QCheckBox("Shorten save paths in selection dialogs")
-        # Opt-in auto-update check. No network requests happen unless this is
-        # enabled OR the user clicks the update indicator manually.
-        self.settings_check_updates_checkbox = QCheckBox("Check for updates on startup (via GitHub Releases)")
         ui_settings_layout.addWidget(self.settings_global_drag_checkbox)
         ui_settings_layout.addWidget(self.settings_shorten_paths_checkbox)
-        ui_settings_layout.addWidget(self.settings_check_updates_checkbox)
         ui_settings_group.setLayout(ui_settings_layout)
         settings_grid.addWidget(ui_settings_group, 3, 1)
         

@@ -217,7 +217,7 @@ class SettingsDialog(QDialog):
         self.max_src_group.setTitle("Maximum Source Size for Backup")
         self.max_group.setTitle("Maximum Number of Backups per Profile")
         self.comp_group.setTitle("Backup Compression (.zip)")
-        self.space_check_group.setTitle("Free Disk Space Check")
+        self.space_check_group.setTitle("Space check/update")
         self.space_check_checkbox.setText(f"Enable space check before backup (minimum {config.MIN_FREE_SPACE_GB} GB)")
 
         # UI Settings Texts
