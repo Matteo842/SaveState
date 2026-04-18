@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QStyledItemDelegate, QStyleOptionViewItem,
     QMenu
 )
-from PySide6.QtCore import Slot, Qt, QLocale, QCoreApplication, QSize, QPoint
+from PySide6.QtCore import Slot, Qt, QLocale, QCoreApplication, QSize, QPoint, QObject, QEvent, QTimer
 from PySide6.QtGui import QIcon, QColor, QPalette, QAction
 
 # Import necessary logic
@@ -96,6 +96,18 @@ class BackupSelectionDelegate(QStyledItemDelegate):
         painter.restore()
 
 
+class _ManageBackupsNoteViewportFilter(QObject):
+    """Repositions backup note overlays once the table viewport has final geometry."""
+    def __init__(self, dialog: "ManageBackupsDialog"):
+        super().__init__(dialog.backup_table.viewport())
+        self._dlg = dialog
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
+            self._dlg._reposition_note_overlays()
+        return False
+
+
 class ManageBackupsDialog(QDialog):
 
      def __init__(self, profile_name, parent=None):
@@ -160,6 +172,9 @@ class ManageBackupsDialog(QDialog):
         self.backup_table.verticalScrollBar().valueChanged.connect(self._reposition_note_overlays)
         self.backup_table.verticalScrollBar().valueChanged.connect(self._dismiss_note_popup_if_preview)
         self.backup_table.horizontalHeader().sectionResized.connect(self._reposition_note_overlays)
+        self.backup_table.horizontalHeader().geometriesChanged.connect(self._reposition_note_overlays)
+        self._note_overlay_viewport_filter = _ManageBackupsNoteViewportFilter(self)
+        self.backup_table.viewport().installEventFilter(self._note_overlay_viewport_filter)
 
         # Right-click context menu for Add/Edit/Remove note
         self.backup_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -290,6 +305,7 @@ class ManageBackupsDialog(QDialog):
             btn.show()
 
         self._reposition_note_overlays()
+        QTimer.singleShot(0, self._reposition_note_overlays)
 
      def _reposition_note_overlays(self):
         """Reposition all note overlay buttons at the far right of the Backup column."""
@@ -440,8 +456,8 @@ class ManageBackupsDialog(QDialog):
      def showEvent(self, event):
         super().showEvent(event)
         # Use a single-shot to ensure visualItemRect returns valid geometry
-        from PySide6.QtCore import QTimer
         QTimer.singleShot(0, self._create_note_overlays)
+        QTimer.singleShot(0, self._reposition_note_overlays)
      # --- End note overlay system ---
      
      def _create_lock_checkbox(self, backup_path: str, is_locked: bool) -> QWidget:

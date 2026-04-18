@@ -5,7 +5,7 @@ import os
 from PySide6.QtWidgets import (QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, 
                                QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QStyledItemDelegate,
                                QStyleOptionViewItem, QStyle, QTextEdit, QLabel, QApplication)
-from PySide6.QtCore import Qt, QLocale, Slot, QSize, Signal, QTimer, QPoint, QEvent
+from PySide6.QtCore import Qt, QLocale, Slot, QSize, Signal, QTimer, QPoint, QEvent, QObject
 from PySide6.QtGui import QIcon, QColor, QPalette, QPainter
 import core_logic
 import config
@@ -67,14 +67,14 @@ class NotePopupWidget(QWidget):
         self._hide_timer.timeout.connect(self._do_hide)
         self._event_filter_installed = False
 
-        # Setup UI (narrower than original; width reduced a further ~10% from 320)
+        # Setup UI (narrower than original; width reduced ~10% from 320; heights ~10% shorter vertically)
         self.setFixedWidth(288)
-        self.setMinimumHeight(68)
-        self.setMaximumHeight(272)
+        self.setMinimumHeight(61)
+        self.setMaximumHeight(245)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(7, 6, 7, 6)
-        layout.setSpacing(3)
+        layout.setContentsMargins(7, 5, 7, 5)
+        layout.setSpacing(2)
 
         # Header label
         self.header_label = QLabel()
@@ -83,26 +83,26 @@ class NotePopupWidget(QWidget):
         # Text area for note content
         self.text_edit = QTextEdit()
         self.text_edit.setPlaceholderText("Write your note here...")
-        self.text_edit.setMinimumHeight(42)
-        self.text_edit.setMaximumHeight(188)
+        self.text_edit.setMinimumHeight(38)
+        self.text_edit.setMaximumHeight(169)
         self.text_edit.setAcceptRichText(False)  # Plain text only
         layout.addWidget(self.text_edit)
 
         # Save & Cancel button row (visible only in edit mode) - INSIDE the popup box
         self.button_row = QWidget()
         btn_layout = QHBoxLayout(self.button_row)
-        btn_layout.setContentsMargins(0, 6, 0, 2)
+        btn_layout.setContentsMargins(0, 5, 0, 2)
         btn_layout.setSpacing(8)
         btn_layout.addStretch(1)
 
         self.cancel_button = QPushButton("Cancel \u2717")
-        self.cancel_button.setFixedHeight(28)
+        self.cancel_button.setFixedHeight(25)
         self.cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_button.clicked.connect(self.cancel_and_close)
         btn_layout.addWidget(self.cancel_button)
 
         self.save_close_button = QPushButton("Save \u2713")
-        self.save_close_button.setFixedHeight(28)
+        self.save_close_button.setFixedHeight(25)
         self.save_close_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.save_close_button.clicked.connect(self.save_and_close)
         btn_layout.addWidget(self.save_close_button)
@@ -510,6 +510,23 @@ class ProfileSelectionDelegate(QStyledItemDelegate):
         painter.restore()
 
 
+class _NoteOverlayViewportFilter(QObject):
+    """Repositions profile note overlays after the viewport is shown or resized.
+
+    On first paint, ``visualItemRect`` can still reflect a stale column width until
+    layout completes; Resize/Show on the viewport plus deferred reposition fixes the
+    few-pixel left offset until the user interacts with the UI.
+    """
+    def __init__(self, profile_list_manager):
+        super().__init__(profile_list_manager.table_widget.viewport())
+        self._plm = profile_list_manager
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
+            self._plm._reposition_note_overlays()
+        return False
+
+
 class ProfileListManager:
     """Handles the QTableWidget of profiles and related action buttons."""
 
@@ -598,6 +615,10 @@ class ProfileListManager:
         self.table_widget.verticalScrollBar().valueChanged.connect(lambda: self._dismiss_note_popup_if_preview())
         # Resize: reposition buttons when columns are resized
         self.table_widget.horizontalHeader().sectionResized.connect(self._reposition_note_overlays)
+        # Fires when header geometry settles (e.g. after stretch column gets final width at startup)
+        self.table_widget.horizontalHeader().geometriesChanged.connect(self._reposition_note_overlays)
+        self._note_overlay_viewport_filter = _NoteOverlayViewportFilter(self)
+        self.table_widget.viewport().installEventFilter(self._note_overlay_viewport_filter)
 
         # Set Custom Delegate with current theme and table reference for multi-selection
         is_dark = (current_theme == 'dark')
@@ -1202,6 +1223,8 @@ class ProfileListManager:
 
         # Position all buttons correctly
         self._reposition_note_overlays()
+        # Defer once: at startup ``visualItemRect`` may still be wrong until the event loop runs
+        QTimer.singleShot(0, self._reposition_note_overlays)
 
     def _reposition_note_overlays(self):
         """Reposition all note overlay buttons at the far right of the name column."""

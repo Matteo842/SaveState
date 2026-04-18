@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QPushButton, QFileDialog, QHBoxLayout, QMessageBox,
     QStyledItemDelegate, QStyleOptionViewItem, QStyle, QMenu
 )
-from PySide6.QtCore import Qt, QLocale, QCoreApplication, QPoint, QSize, QTimer, Slot
+from PySide6.QtCore import Qt, QLocale, QCoreApplication, QPoint, QSize, QTimer, Slot, QObject, QEvent
 from PySide6.QtGui import QBrush, QColor, QIcon, QPalette, QAction
 
 import core_logic
@@ -92,6 +92,18 @@ class RestoreSelectionDelegate(QStyledItemDelegate):
         painter.restore()
 
 
+class _RestoreNoteViewportFilter(QObject):
+    """Repositions restore note overlays once the list viewport has final geometry."""
+    def __init__(self, dialog: "RestoreDialog"):
+        super().__init__(dialog.backup_list_widget.viewport())
+        self._dlg = dialog
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
+            self._dlg._reposition_note_overlays()
+        return False
+
+
 class RestoreDialog(QDialog):
     def __init__(self, profile_name=None, parent=None):
         super().__init__(parent)
@@ -155,6 +167,8 @@ class RestoreDialog(QDialog):
         self.note_popup.note_saved.connect(self._on_backup_note_saved)
         self.backup_list_widget.verticalScrollBar().valueChanged.connect(self._reposition_note_overlays)
         self.backup_list_widget.verticalScrollBar().valueChanged.connect(self._dismiss_note_popup_if_preview)
+        self._note_overlay_viewport_filter = _RestoreNoteViewportFilter(self)
+        self.backup_list_widget.viewport().installEventFilter(self._note_overlay_viewport_filter)
 
         # Right-click context menu for Add/Edit/Remove note
         self.backup_list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -380,6 +394,7 @@ class RestoreDialog(QDialog):
             btn.show()
 
         self._reposition_note_overlays()
+        QTimer.singleShot(0, self._reposition_note_overlays)
 
     def _reposition_note_overlays(self):
         """Reposition all note overlay buttons at the far right of each row."""
@@ -526,6 +541,7 @@ class RestoreDialog(QDialog):
         super().showEvent(event)
         # Use a single-shot to ensure visualItemRect returns valid geometry
         QTimer.singleShot(0, self._create_note_overlays)
+        QTimer.singleShot(0, self._reposition_note_overlays)
     # --- End note overlay system ----------------------------------------------
     
     def handle_load_from_zip(self):
