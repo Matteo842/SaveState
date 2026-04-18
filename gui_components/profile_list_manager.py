@@ -67,13 +67,13 @@ class NotePopupWidget(QWidget):
         self._hide_timer.timeout.connect(self._do_hide)
         self._event_filter_installed = False
 
-        # Setup UI (sized ~15% smaller than the previous design)
-        self.setFixedWidth(320)
+        # Setup UI (narrower than original; width reduced a further ~10% from 320)
+        self.setFixedWidth(288)
         self.setMinimumHeight(68)
         self.setMaximumHeight(272)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setContentsMargins(7, 6, 7, 6)
         layout.setSpacing(3)
 
         # Header label
