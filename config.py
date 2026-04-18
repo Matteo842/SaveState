@@ -6,7 +6,16 @@ import platform # Aggiunto per system detection
 
 # --- Nome Applicazione (per cartella AppData) ---
 APP_NAME = "SaveState"
-APP_VERSION = "2.6.0" # Restored APP_VERSION
+APP_VERSION = "2.7.0" # Restored APP_VERSION
+
+# --- Auto-update info ---
+# Exact GitHub release tag of the CURRENT build. Must match the tag_name
+# published on GitHub Releases. Bump this on every release.
+# The updater compares this string against the latest release's tag_name.
+APP_RELEASE_TAG = "v2.7"
+# GitHub repository in "owner/name" form. Used only when the user opts in
+# to startup update checks. No network requests are made otherwise.
+GITHUB_REPO = "Matteo842/SaveState"
 
 # --- SINGLE INSTANCE CONSTANTS (defined here for early access before heavy imports) ---
 import re  # Needed for sanitize_server_name

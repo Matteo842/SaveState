@@ -318,6 +318,12 @@ def load_settings():
         "shorten_paths_enabled": True,
         # UI: show game icons next to profile names
         "show_profile_icons": True,
+        # Auto-update: check for new GitHub releases on startup.
+        # Disabled by default to respect "no internet unless user asks".
+        "check_updates_on_startup": False,
+        # Auto-update: remember a release tag the user chose to skip.
+        # Empty string means no skip. Set automatically by the update dialog.
+        "skip_update_tag": "",
         # Portable mode default follows AppData pointer if present
         "portable_config_only": bool(is_portable_mode()),
         "ini_whitelist": [ # Files to check for paths

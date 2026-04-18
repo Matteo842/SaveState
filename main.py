@@ -679,6 +679,13 @@ if __name__ == "__main__":
                     from PySide6.QtCore import QTimer
                     QTimer.singleShot(500, window.cloud_panel.perform_startup_actions)
 
+                    # Startup update check (opt-in). Delayed slightly so the main
+                    # window is painted before any potential dialog activity and
+                    # so cloud startup isn't competing for the network at the same
+                    # exact moment.
+                    if hasattr(window, "maybe_check_updates_on_startup"):
+                        QTimer.singleShot(1500, window.maybe_check_updates_on_startup)
+
                     # Log system locale information for date formatting
                     from PySide6.QtCore import QLocale, QDateTime
                     system_locale = QLocale.system()

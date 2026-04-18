@@ -439,6 +439,7 @@ class MainWindowHandlers:
             new_portable_mode = self.main_window.settings_portable_checkbox.isChecked()
             new_global_drag = self.main_window.settings_global_drag_checkbox.isChecked()
             new_shorten_paths = self.main_window.settings_shorten_paths_checkbox.isChecked()
+            new_check_updates = self.main_window.settings_check_updates_checkbox.isChecked()
             new_show_icons = self.main_window.settings_show_icons_checkbox.isChecked()
             new_minimize_to_tray = self.main_window.settings_minimize_to_tray_checkbox.isChecked()
             
@@ -495,6 +496,7 @@ class MainWindowHandlers:
             new_settings["check_free_space_enabled"] = new_check_free_space
             new_settings["enable_global_drag_effect"] = new_global_drag
             new_settings["shorten_paths_enabled"] = new_shorten_paths
+            new_settings["check_updates_on_startup"] = new_check_updates
             new_settings["show_profile_icons"] = new_show_icons
             new_settings["minimize_to_tray_on_close"] = new_minimize_to_tray
             new_settings["portable_config_only"] = new_portable_mode

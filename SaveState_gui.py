@@ -364,6 +364,11 @@ class MainWindow(QMainWindow):
         
         self.settings_button = QPushButton()
         self.controller_button = QPushButton()
+        # Small circular indicator shown in the title bar when an update is
+        # available / being downloaded / ready to install. Wiring is done
+        # later in __init__ once the UpdateManager is constructed.
+        from gui_components.update_indicator import UpdateIndicator
+        self.update_indicator = UpdateIndicator()
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
         self.new_profile_button = QPushButton()
@@ -665,6 +670,10 @@ class MainWindow(QMainWindow):
         self.title_label = QLabel("SaveState - 2.6.0")
         self.title_label.setObjectName("TitleLabel")
         title_layout.addWidget(self.title_label)
+        # Update indicator sits immediately to the right of the version text,
+        # is invisible by default and only appears when there is something
+        # actionable (update available / downloading / restart pending).
+        title_layout.addWidget(self.update_indicator)
         title_layout.addStretch(1)
         # Right-side icon buttons: Controller, then Theme, then spacer, then Settings
         self.controller_button.setObjectName("ControllerButton")
@@ -896,8 +905,12 @@ class MainWindow(QMainWindow):
         ui_settings_layout.setSpacing(6)
         self.settings_global_drag_checkbox = QCheckBox("Enable global mouse drag-to-show effect")
         self.settings_shorten_paths_checkbox = QCheckBox("Shorten save paths in selection dialogs")
+        # Opt-in auto-update check. No network requests happen unless this is
+        # enabled OR the user clicks the update indicator manually.
+        self.settings_check_updates_checkbox = QCheckBox("Check for updates on startup (via GitHub Releases)")
         ui_settings_layout.addWidget(self.settings_global_drag_checkbox)
         ui_settings_layout.addWidget(self.settings_shorten_paths_checkbox)
+        ui_settings_layout.addWidget(self.settings_check_updates_checkbox)
         ui_settings_group.setLayout(ui_settings_layout)
         settings_grid.addWidget(ui_settings_group, 3, 1)
         
@@ -1183,7 +1196,71 @@ class MainWindow(QMainWindow):
         self.controller_manager = ControllerManager(self)
         if self.current_settings.get("controller_support_enabled", True):
             self.controller_manager.start()
-    
+
+        # --- In-app updater -------------------------------------------------
+        # The UpdateManager itself makes zero network calls until explicitly
+        # asked (either by user click on the indicator / dialog, or by the
+        # startup check below when the corresponding setting is enabled).
+        from update_manager import UpdateManager as _UpdateManager
+        self.update_manager = _UpdateManager(parent=self)
+        self.update_manager.state_changed.connect(self._on_update_state_changed)
+        self.update_manager.progress.connect(self.update_indicator.set_progress)
+        self.update_indicator.clicked_indicator.connect(self.show_update_dialog)
+        self._update_dialog = None
+
+    def _on_update_state_changed(self, state: str):
+        """Reflect UpdateManager state in the title-bar indicator."""
+        try:
+            self.update_indicator.set_state(state)
+        except Exception:
+            logging.exception("Failed to update UpdateIndicator state")
+
+    def show_update_dialog(self):
+        """Open (or re-focus) the update dialog. Safe to call repeatedly."""
+        try:
+            from dialogs.update_dialog import UpdateDialog
+            if self._update_dialog is not None:
+                try:
+                    if self._update_dialog.isVisible():
+                        self._update_dialog.raise_()
+                        self._update_dialog.activateWindow()
+                        return
+                except Exception:
+                    self._update_dialog = None
+            self._update_dialog = UpdateDialog(
+                self.update_manager, self.settings_manager, parent=self
+            )
+            self._update_dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+            self._update_dialog.destroyed.connect(lambda *_: setattr(self, "_update_dialog", None))
+            self._update_dialog.show()
+        except Exception:
+            logging.exception("Failed to open UpdateDialog")
+
+    def maybe_check_updates_on_startup(self):
+        """Called once after the main window is shown. Honors the opt-in."""
+        try:
+            if not self.update_manager.is_supported():
+                return
+            if not self.current_settings.get("check_updates_on_startup", False):
+                return
+            skip_tag = self.current_settings.get("skip_update_tag", "")
+            # Trigger the check. If a release with the skipped tag comes back,
+            # we still show the indicator but the dialog will honor the skip.
+            logging.info("Startup update check enabled -> querying GitHub Releases")
+            self.update_manager.check_async()
+            # Hide the indicator for a release the user explicitly skipped.
+            if skip_tag:
+                def _filter_skipped(state: str, _skip=skip_tag):
+                    try:
+                        release = self.update_manager.release or {}
+                        if release.get("tag_name") == _skip and state == "update_available":
+                            self.update_indicator.setVisible(False)
+                    except Exception:
+                        pass
+                self.update_manager.state_changed.connect(_filter_skipped)
+        except Exception:
+            logging.exception("maybe_check_updates_on_startup failed")
+
     def reset_internal_state(self):
         """Resetta lo stato interno per le operazioni di drag & drop."""
         # Resetta le liste dei thread
@@ -2514,6 +2591,7 @@ class MainWindow(QMainWindow):
             # UI settings
             self.settings_global_drag_checkbox.setChecked(self.current_settings.get("enable_global_drag_effect", True))
             self.settings_shorten_paths_checkbox.setChecked(self.current_settings.get("shorten_paths_enabled", True))
+            self.settings_check_updates_checkbox.setChecked(self.current_settings.get("check_updates_on_startup", False))
             self.settings_show_icons_checkbox.setChecked(self.current_settings.get("show_profile_icons", True))
             
             # Minimize to tray: check if periodic sync forces this behavior
