@@ -544,33 +544,10 @@ class MainWindow(QMainWindow):
         # Install event filter to handle manual positioning
         self.backup_button.installEventFilter(self)
 
-        # Standard stylesheet (no extra padding needed now that we overlay)
-        self.backup_button.setStyleSheet("""
-            QPushButton#BackupButton {
-                background-color: #222222;
-                border: 1px solid #6b6b6b;
-                color: #2980B9;
-                border-radius: 5px;
-                padding: 8px 12px;
-                font-weight: bold;
-                font-size: 12pt;
-            }
-            QPushButton#BackupButton:hover {
-                background-color: #3a3a3a;
-                border-color: #8b8b8b;
-            }
-            QPushButton#BackupButton:pressed {
-                background-color: #454545;
-                border-color: #8b8b8b;
-            }
-            QPushButton#BackupButton:disabled {
-                border-color: #444444;
-                color: #555555;
-            }
-        """)
+        # Style is now provided by the global theme QSS (DARK_THEME_QSS / LIGHT_THEME_QSS)
+        # via the #BackupButton / #RestoreButton / #ManageButton object names so the
+        # action buttons follow the active theme automatically.
 
-
-        
         self.restore_button = QPushButton("Restore")
         self.restore_button.setObjectName("RestoreButton")
         restore_icon_path = resource_path("icons/restore.png")
@@ -582,57 +559,11 @@ class MainWindow(QMainWindow):
             # Fallback to standard icon if custom icon is not found
             restore_icon = style.standardIcon(QStyle.StandardPixmap.SP_ArrowDown)
             self.restore_button.setIcon(restore_icon)
-        self.restore_button.setStyleSheet("""
-            QPushButton#RestoreButton {
-                background-color: #222222;
-                border: 1px solid #6b6b6b;
-                color: #27AE60;
-                border-radius: 5px;
-                padding: 8px 12px;
-                font-weight: bold;
-                font-size: 12pt;
-            }
-            QPushButton#RestoreButton:hover {
-                background-color: #3a3a3a;
-                border-color: #8b8b8b;
-            }
-            QPushButton#RestoreButton:pressed {
-                background-color: #454545;
-                border-color: #8b8b8b;
-            }
-            QPushButton#RestoreButton:disabled {
-                border-color: #444444;
-                color: #555555;
-            }
-        """)
-        
+
         self.manage_backups_button = QPushButton("Manage Backups")
         self.manage_backups_button.setObjectName("ManageButton")
         manage_icon = style.standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView) # Icona Vista Dettagliata?
         self.manage_backups_button.setIcon(manage_icon)
-        self.manage_backups_button.setStyleSheet("""
-            QPushButton#ManageButton {
-                background-color: #222222;
-                border: 1px solid #6b6b6b;
-                color: #e0e0e0;
-                border-radius: 5px;
-                padding: 8px 12px;
-                font-weight: bold;
-                font-size: 11pt;
-            }
-            QPushButton#ManageButton:hover {
-                background-color: #3a3a3a;
-                border-color: #8b8b8b;
-            }
-            QPushButton#ManageButton:pressed {
-                background-color: #454545;
-                border-color: #8b8b8b;
-            }
-            QPushButton#ManageButton:disabled {
-                border-color: #444444;
-                color: #555555;
-            }
-        """)
         
         self.open_backup_dir_button = QPushButton("Open Backup Folder")
         open_folder_icon = style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon) # Icona Apri Cartella
