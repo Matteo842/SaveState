@@ -2534,14 +2534,19 @@ class MainWindow(QMainWindow):
 
     def _set_main_controls_enabled_during_edit(self, enabled):
         try:
+            # Hide the bottom button panels entirely while editing, to free
+            # up vertical space for the Edit Profile section. They are
+            # restored when leaving edit mode.
             if hasattr(self, 'actions_group') and self.actions_group:
+                self.actions_group.setVisible(enabled)
                 self.actions_group.setEnabled(enabled)
+            if hasattr(self, 'general_cloud_row') and self.general_cloud_row:
+                self.general_cloud_row.setVisible(enabled)
+                self.general_cloud_row.setEnabled(enabled)
             if hasattr(self, 'general_group') and self.general_group:
                 self.general_group.setEnabled(enabled)
             if hasattr(self, 'cloud_group') and self.cloud_group:
                 self.cloud_group.setEnabled(enabled)
-            if hasattr(self, 'general_cloud_row') and self.general_cloud_row:
-                self.general_cloud_row.setEnabled(enabled)
             if hasattr(self, 'search_bar') and self.search_bar:
                 self.search_bar.setEnabled(enabled)
             if hasattr(self, 'profile_table_widget') and self.profile_table_widget:
