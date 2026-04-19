@@ -2634,6 +2634,7 @@ class MainWindowHandlers:
             
             if dialog.exec() == GroupDialog.DialogCode.Accepted:
                 group_name, profile_names, group_settings = dialog.get_result()
+                custom_icon_decision = dialog.get_custom_icon_result()
                 if group_name and profile_names:
                     success, error = core_logic.create_group_profile(
                         group_name, profile_names, self.main_window.profiles,
@@ -2641,6 +2642,11 @@ class MainWindowHandlers:
                     )
                     
                     if success:
+                        # Persist the group's custom icon choice (only "set"
+                        # makes sense at creation; "clear" is a no-op here).
+                        if isinstance(custom_icon_decision, str) and custom_icon_decision \
+                                and group_name in self.main_window.profiles:
+                            self.main_window.profiles[group_name]['custom_icon_path'] = custom_icon_decision
                         core_logic.save_profiles(self.main_window.profiles)
                         self.main_window.profile_table_manager.update_profile_table()
                         settings_info = " (with custom settings)" if group_settings and group_settings.get('enabled') else ""
@@ -2680,6 +2686,7 @@ class MainWindowHandlers:
             
             if dialog.exec() == GroupDialog.DialogCode.Accepted:
                 new_name, profile_names, group_settings = dialog.get_result()
+                custom_icon_decision = dialog.get_custom_icon_result()
                 if new_name and profile_names:
                     success, error = core_logic.update_group_profile(
                         profile_name, profile_names, self.main_window.profiles,
@@ -2688,6 +2695,27 @@ class MainWindowHandlers:
                     )
                     
                     if success:
+                        # Apply icon decision to the (possibly renamed) group.
+                        try:
+                            from gui_components import icon_extractor as _ie
+                            target_name = new_name
+                            target_data = self.main_window.profiles.get(target_name)
+                            if isinstance(target_data, dict) and custom_icon_decision is not None:
+                                old_custom = target_data.get('custom_icon_path') or target_data.get('icon')
+                                if custom_icon_decision == '':
+                                    if old_custom:
+                                        _ie.delete_custom_icon_file(old_custom)
+                                    target_data.pop('custom_icon_path', None)
+                                    target_data.pop('icon', None)
+                                elif isinstance(custom_icon_decision, str) and custom_icon_decision:
+                                    if old_custom and os.path.normpath(old_custom) != os.path.normpath(custom_icon_decision):
+                                        _ie.delete_custom_icon_file(old_custom)
+                                    target_data['custom_icon_path'] = custom_icon_decision
+                                    if 'icon' in target_data and target_data.get('icon') != custom_icon_decision:
+                                        target_data.pop('icon', None)
+                        except Exception as e_icon:
+                            logging.warning(f"Failed applying group custom icon: {e_icon}")
+
                         core_logic.save_profiles(self.main_window.profiles)
                         self.main_window.profile_table_manager.update_profile_table()
                         settings_info = " (settings updated)" if group_settings and group_settings.get('enabled') else ""
@@ -2794,6 +2822,107 @@ class MainWindowHandlers:
             logging.error(f"Error in browse for profile editor: {e}")
 
     @Slot()
+    def handle_profile_edit_change_icon(self):
+        """Open a file picker to choose a custom icon for the profile being edited.
+
+        The selected image is converted to PNG and copied into the managed
+        custom icons folder. The previously pending in-session file (if any)
+        is removed to avoid leaving orphans.
+        """
+        try:
+            from gui_components import icon_extractor
+            mw = self.main_window
+            if not getattr(mw, '_editing_profile_original_name', None):
+                return
+            profile_name = mw._editing_profile_original_name
+
+            # Allow either a regular image file or an executable/shortcut to
+            # "steal" its icon (mirrors Windows' Change Icon picker behavior).
+            import platform as _plat
+            if _plat.system() == "Windows":
+                exe_pattern = "*.exe *.dll *.lnk *.ico"
+            else:
+                exe_pattern = "*.AppImage *.desktop *.exe *.ico"
+            file_filter = (
+                "Icon sources (*.png *.jpg *.jpeg *.bmp *.webp *.ico *.svg "
+                f"{exe_pattern});;"
+                "Images (*.png *.jpg *.jpeg *.bmp *.webp *.ico *.svg);;"
+                f"Programs / shortcuts ({exe_pattern});;"
+                "All files (*)"
+            )
+            source_path, _ = QFileDialog.getOpenFileName(
+                mw, "Select Profile Icon", "", file_filter
+            )
+            if not source_path:
+                return
+
+            saved_path = icon_extractor.save_custom_icon(source_path, profile_name)
+            if not saved_path:
+                QMessageBox.warning(
+                    mw,
+                    "Icon Error",
+                    "Could not load the selected image.\n"
+                    "Make sure the file is a valid image (PNG, JPG, BMP, ICO, WEBP, SVG)."
+                )
+                return
+
+            # Discard the previous pending file from THIS session, if it was
+            # itself a freshly created one we'll never commit.
+            previous_pending = getattr(mw, '_editing_pending_icon_action', None)
+            session = getattr(mw, '_editing_session_temp_icons', [])
+            if isinstance(previous_pending, str) and previous_pending and previous_pending != 'clear' \
+                    and previous_pending in session and previous_pending != saved_path:
+                icon_extractor.delete_custom_icon_file(previous_pending)
+                try:
+                    session.remove(previous_pending)
+                except ValueError:
+                    pass
+
+            if saved_path not in session:
+                session.append(saved_path)
+            mw._editing_session_temp_icons = session
+            mw._editing_pending_icon_action = saved_path
+
+            data = mw.profiles.get(profile_name, {}) if hasattr(mw, 'profiles') else {}
+            mw._update_edit_icon_preview(profile_name, data)
+        except Exception as e:
+            logging.error(f"Error choosing custom icon: {e}", exc_info=True)
+            QMessageBox.critical(self.main_window, "Icon Error", f"An error occurred: {e}")
+
+    @Slot()
+    def handle_profile_edit_reset_icon(self):
+        """Mark the current edit session to clear the profile's custom icon.
+
+        Doesn't touch disk yet: actual deletion of the persisted file happens
+        on Save (see ``handle_profile_edit_save``). Any pending in-session
+        file is discarded.
+        """
+        try:
+            from gui_components import icon_extractor
+            mw = self.main_window
+            if not getattr(mw, '_editing_profile_original_name', None):
+                return
+            profile_name = mw._editing_profile_original_name
+
+            # Drop any pending in-session file (it was never committed).
+            previous_pending = getattr(mw, '_editing_pending_icon_action', None)
+            session = getattr(mw, '_editing_session_temp_icons', [])
+            if isinstance(previous_pending, str) and previous_pending and previous_pending != 'clear' \
+                    and previous_pending in session:
+                icon_extractor.delete_custom_icon_file(previous_pending)
+                try:
+                    session.remove(previous_pending)
+                except ValueError:
+                    pass
+            mw._editing_session_temp_icons = session
+            mw._editing_pending_icon_action = 'clear'
+
+            data = mw.profiles.get(profile_name, {}) if hasattr(mw, 'profiles') else {}
+            mw._update_edit_icon_preview(profile_name, data)
+        except Exception as e:
+            logging.error(f"Error resetting custom icon: {e}", exc_info=True)
+
+    @Slot()
     def handle_profile_edit_save(self):
         try:
             mw = self.main_window
@@ -2868,6 +2997,34 @@ class MainWindowHandlers:
             overrides_dict['check_free_space_enabled'] = bool(mw.override_check_space_checkbox.isChecked())
             new_data['overrides'] = overrides_dict
 
+            # --- Apply pending custom icon change ---
+            try:
+                from gui_components import icon_extractor as _ie
+                pending_icon = getattr(mw, '_editing_pending_icon_action', None)
+                session_files = getattr(mw, '_editing_session_temp_icons', []) or []
+                old_custom = old_data.get('custom_icon_path') or old_data.get('icon')
+                if pending_icon == 'clear':
+                    # User explicitly removed the custom icon
+                    if old_custom:
+                        _ie.delete_custom_icon_file(old_custom)
+                    new_data.pop('custom_icon_path', None)
+                    new_data.pop('icon', None)
+                elif isinstance(pending_icon, str) and pending_icon:
+                    # User picked a new custom icon
+                    if old_custom and os.path.normpath(old_custom) != os.path.normpath(pending_icon):
+                        _ie.delete_custom_icon_file(old_custom)
+                    new_data['custom_icon_path'] = pending_icon
+                    # Drop the legacy key to avoid stale references
+                    if 'icon' in new_data and new_data.get('icon') != pending_icon:
+                        new_data.pop('icon', None)
+                    # Keep only the committed file from the session
+                    for f in session_files:
+                        if f != pending_icon:
+                            _ie.delete_custom_icon_file(f)
+                # If no pending change, leave existing custom_icon_path alone.
+            except Exception as e_icon:
+                logging.warning(f"Failed applying custom icon change: {e_icon}")
+
             # Apply rename if needed
             if new_name != original_name:
                 # Ensure backup_folder_name is preserved (or set from original name)
@@ -2921,6 +3078,8 @@ class MainWindowHandlers:
                 QMessageBox.information(mw, "Profile Updated", f"Profile '{new_name}' saved successfully.")
                 # Clear edit state
                 mw._editing_profile_original_name = None
+                mw._editing_pending_icon_action = None
+                mw._editing_session_temp_icons = []
             else:
                 QMessageBox.critical(mw, "Save Error", "Unable to save the profiles file.")
         except Exception as e:
@@ -2931,6 +3090,17 @@ class MainWindowHandlers:
     def handle_profile_edit_cancel(self):
         try:
             mw = self.main_window
+            # Discard any uncommitted custom icon files created during this
+            # editing session so they don't leak on disk.
+            try:
+                from gui_components import icon_extractor as _ie
+                for f in getattr(mw, '_editing_session_temp_icons', []) or []:
+                    _ie.delete_custom_icon_file(f)
+            except Exception as e_clean:
+                logging.debug(f"Edit-cancel icon cleanup failed: {e_clean}")
+            mw._editing_pending_icon_action = None
+            mw._editing_session_temp_icons = []
+
             if hasattr(mw, 'profile_editor_group'):
                 mw.profile_editor_group.setVisible(False)
             if hasattr(mw, 'profile_group'):

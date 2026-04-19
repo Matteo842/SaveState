@@ -843,22 +843,28 @@ class ProfileListManager:
                 name_item = QTableWidgetItem(profile_name)
                 name_item.setData(Qt.ItemDataRole.UserRole, profile_name) # Save name for row selection
                 
-                # --- Add Icon (Game icon for profiles, folder icon for groups) ---
+                # --- Add Icon (custom icon > game icon > folder icon for groups) ---
                 show_icons = self.main_window.current_settings.get("show_profile_icons", True)
                 if is_group:
-                    # Use folder icon for groups
-                    from PySide6.QtWidgets import QApplication, QStyle
-                    style = QApplication.instance().style()
-                    if style:
-                        folder_icon = style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-                        name_item.setIcon(folder_icon)
                     # Store group flag for context menu handling
                     name_item.setData(Qt.ItemDataRole.UserRole + 1, "group")
+                    # Try custom icon first (works also when show_icons is on)
+                    group_icon = None
+                    if show_icons:
+                        group_icon = icon_extractor.get_profile_icon(profile_data, profile_name)
+                    if group_icon and not group_icon.isNull():
+                        name_item.setIcon(group_icon)
+                    else:
+                        # Default: folder icon for groups
+                        from PySide6.QtWidgets import QApplication, QStyle
+                        style = QApplication.instance().style()
+                        if style:
+                            folder_icon = style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+                            name_item.setIcon(folder_icon)
                 elif show_icons:
                     game_icon = icon_extractor.get_profile_icon(profile_data, profile_name)
                     if game_icon and not game_icon.isNull():
                         name_item.setIcon(game_icon)
-                        # logging.debug(f"Game icon set for profile '{profile_name}'")
                 # --- End Game Icon ---
 
                 # --- Create Info Item (Column 2) ---

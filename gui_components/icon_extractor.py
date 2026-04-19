@@ -10,8 +10,11 @@ import os
 import hashlib
 import platform
 import re
+import struct
 import subprocess
 import shutil
+import warnings
+from contextlib import contextmanager
 from typing import Optional
 
 from PySide6.QtGui import QIcon, QPixmap, QImage
@@ -23,7 +26,9 @@ logger = logging.getLogger(__name__)
 
 # --- Constants ---
 ICON_CACHE_FOLDER = ".icon_cache"
+CUSTOM_ICON_FOLDER = "custom_icons"  # User-chosen icons (persisted in app data)
 DEFAULT_ICON_SIZE = 32  # Size for icons in profile list
+CUSTOM_ICON_STORE_SIZE = 128  # Max dimension at which custom icons are stored
 
 # Linux icon search paths (in order of preference)
 LINUX_ICON_DIRS = [
@@ -67,6 +72,52 @@ LINUX_ICON_CATEGORIES = ["apps", "applications", "mimetypes", "places", "devices
 _cached_icon_cache_dir = None
 
 
+def _pick_best_frame_index(frame_max_dims, target_size: int) -> int:
+    """Return the index of the most appropriate frame for a given target size.
+
+    Selection rules (matching Win32 ``LoadImage`` / ``PrivateExtractIcons``
+    behaviour):
+
+    1. Among frames whose larger side is ``>= target_size``, pick the
+       *smallest* such frame. This avoids upscaling artefacts while not
+       wasting memory on a 256x256 PNG when 32x32 is what we'll display.
+    2. If every available frame is smaller than ``target_size``, fall back
+       to the largest one (we'll have to upscale, but that's the best we
+       can do).
+
+    ``frame_max_dims`` is a list of integers (one per frame, in source
+    order), each being ``max(width, height)`` for that frame.
+    """
+    if not frame_max_dims:
+        return 0
+    eligible = [(d, i) for i, d in enumerate(frame_max_dims) if d >= target_size]
+    if eligible:
+        eligible.sort()  # smallest qualifying frame first
+        return eligible[0][1]
+    # No frame matches the target — pick the largest available
+    return max(range(len(frame_max_dims)), key=lambda i: frame_max_dims[i])
+
+
+@contextmanager
+def _suppress_pil_ico_warnings():
+    """Silence PIL/IcoImagePlugin's "Image was not the expected size" UserWarning.
+
+    PIL emits this warning when an embedded ICO frame's bitmap dimensions
+    differ from the directory entry. Some compilers emit perfectly usable
+    ICOs that still trigger it (and for our PE-extracted icons we always
+    rebuild the directory entry from the inner bitmap, but PIL re-checks).
+    The warning is purely cosmetic, so we suppress it locally rather than
+    globally to keep the rest of the logs unaffected.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"Image was not the expected size",
+            category=UserWarning,
+        )
+        yield
+
+
 def get_icon_cache_dir() -> str:
     """Get the directory for cached icons. Caches the result to avoid repeated settings lookups."""
     global _cached_icon_cache_dir
@@ -89,6 +140,236 @@ def get_icon_cache_dir() -> str:
     
     _cached_icon_cache_dir = cache_dir
     return cache_dir
+
+
+def get_custom_icons_dir() -> str:
+    """Return (and create) the directory used to persist user-chosen custom icons.
+
+    Stored in the application data folder so the icons survive across runs and
+    are independent from the (movable) backup directory or source image path.
+    Cross-platform: uses ``config.get_app_data_folder()``.
+    """
+    try:
+        app_data = config.get_app_data_folder()
+    except Exception:
+        # Last-resort fallback: cache dir if app data unavailable
+        app_data = os.path.dirname(get_icon_cache_dir())
+
+    custom_dir = os.path.join(app_data, CUSTOM_ICON_FOLDER)
+    try:
+        os.makedirs(custom_dir, exist_ok=True)
+    except OSError as e:
+        logger.error(f"Unable to create custom icons folder '{custom_dir}': {e}")
+    return custom_dir
+
+
+def _safe_filename_component(name: str, max_len: int = 30) -> str:
+    """Return a filesystem-safe slug from an arbitrary string."""
+    if not name:
+        return "icon"
+    slug = "".join(c if c.isalnum() or c in '-_' else '_' for c in name)
+    slug = slug.strip('_') or "icon"
+    return slug[:max_len]
+
+
+# Extensions whose icons we extract via the executable/shortcut pipeline
+# rather than treating as raw image files.
+_EXECUTABLE_LIKE_EXTS = (
+    '.exe', '.dll',          # Windows PE binaries (icon resources inside)
+    '.lnk',                  # Windows shortcut
+    '.desktop',              # Linux .desktop launcher
+    '.appimage',             # Linux self-contained app bundle
+)
+
+
+def _is_executable_like(path: str) -> bool:
+    """Return True if ``path`` should be treated as an icon source via the
+    executable / shortcut extractor (not as a regular image file)."""
+    if not path:
+        return False
+    return path.lower().endswith(_EXECUTABLE_LIKE_EXTS)
+
+
+def _custom_icon_output_path(source_path: str, profile_name: str) -> str:
+    """Build the destination path inside the custom icons folder.
+
+    The filename embeds the profile slug and a content-derived hash so the
+    file stays unique even when the user repeatedly picks the same source
+    after replacing it on disk.
+    """
+    custom_dir = get_custom_icons_dir()
+    safe_name = _safe_filename_component(profile_name)
+    try:
+        stat = os.stat(source_path)
+        hash_input = f"{source_path}|{stat.st_size}|{stat.st_mtime_ns}"
+    except OSError:
+        hash_input = source_path
+    file_hash = hashlib.md5(hash_input.encode('utf-8')).hexdigest()[:10]
+    return os.path.join(custom_dir, f"{safe_name}_{file_hash}.png")
+
+
+def _extract_executable_icon_to(output_path: str, exe_path: str,
+                                size: int = CUSTOM_ICON_STORE_SIZE) -> bool:
+    """Run the platform-appropriate icon extractors directly into
+    ``output_path``, bypassing the normal cache. Returns True on success.
+
+    Handles: Windows .exe / .dll / .ico, Windows .lnk shortcuts (resolved
+    to their target), Linux .desktop files (icon name resolved), AppImage
+    bundles, and Windows executables running under Wine/Proton.
+    """
+    if not exe_path or not os.path.exists(exe_path):
+        return False
+
+    # Resolve Windows shortcuts to their underlying target before extracting
+    if exe_path.lower().endswith('.lnk'):
+        resolved = _resolve_shortcut_target(exe_path)
+        if not resolved:
+            logger.debug(f"_extract_executable_icon_to: cannot resolve .lnk {exe_path}")
+            return False
+        exe_path = resolved
+
+    # .desktop files: resolve to the icon path and convert directly
+    if exe_path.lower().endswith('.desktop'):
+        icon_path = _resolve_desktop_file_icon(exe_path)
+        if icon_path and _convert_icon_to_png(icon_path, output_path, size):
+            return True
+        # Fall back to extracting from the executable referenced by the .desktop
+        target = _resolve_shortcut_target(exe_path)
+        if target:
+            exe_path = target
+        else:
+            return False
+
+    # AppImage: dedicated extractor
+    if exe_path.lower().endswith('.appimage'):
+        return _extract_icon_from_appimage(exe_path, output_path, size)
+
+    # PE binaries (.exe / .dll) and .ico files
+    if platform.system() == "Windows":
+        if _extract_icon_windows(exe_path, output_path, size):
+            return True
+        if _extract_icon_icoextract(exe_path, output_path, size):
+            return True
+        if _extract_icon_exe_pe(exe_path, output_path, size):
+            return True
+        if _extract_icon_pillow_ico(exe_path, output_path, size):
+            return True
+    else:
+        # On Linux, prefer .desktop / theme-based methods first
+        if _extract_icon_linux(exe_path, output_path, size):
+            return True
+        if _extract_icon_icoextract(exe_path, output_path, size):
+            return True
+        if _extract_icon_exe_pe(exe_path, output_path, size):
+            return True
+        if _extract_icon_pillow_ico(exe_path, output_path, size):
+            return True
+
+    return False
+
+
+def save_custom_icon(source_path: str, profile_name: str,
+                     store_size: int = CUSTOM_ICON_STORE_SIZE) -> Optional[str]:
+    """Persist a user-picked icon source into the custom icons folder.
+
+    The ``source_path`` may be either:
+    - a regular image file (PNG, JPG, JPEG, BMP, WEBP, ICO, SVG): the image
+      is converted to PNG, scaled to fit within ``store_size`` x
+      ``store_size`` while preserving aspect ratio.
+    - an executable, library or shortcut (``.exe``, ``.dll``, ``.lnk``,
+      ``.desktop``, ``.AppImage``): the icon is extracted from the binary /
+      shortcut using the same pipeline that produces the auto-detected
+      profile icons (Windows: shell32 + icoextract + pefile + Pillow ICO;
+      Linux: .desktop / icon-theme / AppImage).
+
+    Returns the absolute path of the saved PNG, or ``None`` on failure.
+    """
+    if not source_path or not os.path.isfile(source_path):
+        logger.debug(f"save_custom_icon: source does not exist: {source_path}")
+        return None
+
+    custom_dir = get_custom_icons_dir()
+    if not os.path.isdir(custom_dir):
+        return None
+
+    output_path = _custom_icon_output_path(source_path, profile_name)
+
+    # --- Executables / shortcuts: use the extraction pipeline ---------------
+    if _is_executable_like(source_path):
+        if _extract_executable_icon_to(output_path, source_path, store_size):
+            return output_path
+        logger.warning(f"save_custom_icon: no icon could be extracted from {source_path}")
+        return None
+
+    # --- SVGs need the dedicated converter ----------------------------------
+    if source_path.lower().endswith('.svg'):
+        if _convert_icon_to_png(source_path, output_path, store_size):
+            return output_path
+        return None
+
+    # --- Regular image formats handled by Pillow ----------------------------
+    try:
+        from PIL import Image
+        with Image.open(source_path) as img:
+            # For multi-frame ICOs pick the smallest frame >= store_size
+            # (LoadImage-style); thumbnail() still scales it down to the
+            # exact ``store_size`` while preserving aspect ratio.
+            if hasattr(img, 'n_frames') and img.n_frames > 1:
+                frame_dims = []
+                for frame_idx in range(img.n_frames):
+                    img.seek(frame_idx)
+                    frame_dims.append(max(img.size))
+                img.seek(_pick_best_frame_index(frame_dims, store_size))
+
+            img = img.convert('RGBA')
+            img.thumbnail((store_size, store_size), Image.Resampling.LANCZOS)
+            img.save(output_path, 'PNG')
+            return output_path
+    except ImportError:
+        logger.error("save_custom_icon: PIL/Pillow is not installed")
+    except Exception as e:
+        logger.error(f"save_custom_icon: failed to convert '{source_path}': {e}")
+
+    return None
+
+
+def delete_custom_icon_file(icon_path: Optional[str]) -> bool:
+    """Delete a custom icon file from disk.
+
+    Only deletes files that live inside the custom icons folder, to avoid
+    accidentally removing arbitrary user files referenced by older profile
+    data. Returns True if a file was removed.
+    """
+    if not icon_path or not isinstance(icon_path, str):
+        return False
+    try:
+        abs_path = os.path.abspath(icon_path)
+        custom_dir = os.path.abspath(get_custom_icons_dir())
+        # Safety: only touch files inside our managed folder
+        if not abs_path.startswith(custom_dir + os.sep) and abs_path != custom_dir:
+            logger.debug(f"delete_custom_icon_file: refusing to delete outside store: {abs_path}")
+            return False
+        if os.path.isfile(abs_path):
+            os.remove(abs_path)
+            logger.info(f"Deleted custom icon: {abs_path}")
+            return True
+    except Exception as e:
+        logger.debug(f"delete_custom_icon_file: error removing '{icon_path}': {e}")
+    return False
+
+
+def get_custom_icon_path(profile_data: dict) -> Optional[str]:
+    """Return the stored custom icon path for a profile/group, if valid.
+
+    Reads ``custom_icon_path`` first; for backward compatibility groups may
+    also have an ``icon`` field (older convention used by ``core_logic``).
+    """
+    if not isinstance(profile_data, dict):
+        return None
+    path = profile_data.get('custom_icon_path') or profile_data.get('icon')
+    if isinstance(path, str) and os.path.isfile(path):
+        return path
+    return None
 
 
 def _get_cache_filename(exe_path: str) -> str:
@@ -169,40 +450,76 @@ def _resolve_shortcut_target(shortcut_path: str) -> Optional[str]:
 
 
 def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_ICON_SIZE) -> bool:
-    """Extract icon from Windows executable using shell32 and convert with ctypes/PIL."""
+    """Extract icon from a Windows executable / shortcut via the Win32 API.
+
+    Strategy:
+      1. Try ``PrivateExtractIconsW`` requesting a HiDPI size
+         (``max(size, 128)``, capped at 256). Vista+ exposes the full set
+         of icon resources at any size through this call, so we get the
+         actual 128/256 frame instead of the 32x32 "system large" icon.
+      2. If that fails, fall back to the legacy ``ExtractIconExW`` (which
+         only returns the 16/32 px system small/large icons).
+
+    The resulting HICON is then drawn into a 32-bit RGBA bitmap and saved
+    as PNG.
+    """
     try:
         from PIL import Image
         import ctypes
         from ctypes import wintypes
-        
-        # Use ExtractIconExW to get the icon handle
+
         shell32 = ctypes.windll.shell32
-        
-        # First, get the number of icons
-        num_icons = shell32.ExtractIconExW(exe_path, -1, None, None, 0)
-        
-        if num_icons <= 0:
-            logger.debug(f"No icons found in '{exe_path}'")
-            return False
-        
-        # Extract the first large icon
-        large_icon = ctypes.c_void_p()
-        small_icon = ctypes.c_void_p()
-        
-        result = shell32.ExtractIconExW(
-            exe_path, 
-            0,  # Index of first icon
-            ctypes.byref(large_icon), 
-            ctypes.byref(small_icon), 
-            1
-        )
-        
-        if result == 0 or not large_icon.value:
-            logger.debug(f"Failed to extract icon from '{exe_path}'")
-            return False
-        
-        hicon = large_icon.value
         user32 = ctypes.windll.user32
+
+        # --- Pass 1: PrivateExtractIconsW @ the exact requested size ----
+        # Windows itself selects the smallest icon resource >= cx/cy from
+        # the PE (matching LoadImage's well-known "best-fit" behaviour),
+        # so we just pass ``size`` directly. Cap at 256 because that's the
+        # largest standard ICO frame; clamp to 16 to satisfy the API.
+        request_px = max(16, min(size, 256))
+
+        hicon = 0
+        try:
+            phicon = wintypes.HICON()
+            piconid = wintypes.UINT()
+            # PrivateExtractIconsW(LPCWSTR, int nIconIndex, int cx, int cy,
+            #                      HICON*, UINT*, UINT nIcons, UINT flags)
+            user32.PrivateExtractIconsW.argtypes = [
+                wintypes.LPCWSTR, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                ctypes.POINTER(wintypes.HICON), ctypes.POINTER(wintypes.UINT),
+                wintypes.UINT, wintypes.UINT,
+            ]
+            user32.PrivateExtractIconsW.restype = wintypes.UINT
+            extracted = user32.PrivateExtractIconsW(
+                exe_path, 0, request_px, request_px,
+                ctypes.byref(phicon), ctypes.byref(piconid), 1, 0,
+            )
+            if extracted and phicon.value:
+                hicon = phicon.value
+        except Exception as e_priv:
+            logger.debug(f"PrivateExtractIconsW failed for '{exe_path}': {e_priv}")
+
+        # --- Pass 2: legacy ExtractIconExW fallback ---------------------
+        small_icon = ctypes.c_void_p()
+        if not hicon:
+            num_icons = shell32.ExtractIconExW(exe_path, -1, None, None, 0)
+            if num_icons <= 0:
+                logger.debug(f"No icons found in '{exe_path}'")
+                return False
+
+            large_icon = ctypes.c_void_p()
+            result = shell32.ExtractIconExW(
+                exe_path,
+                0,
+                ctypes.byref(large_icon),
+                ctypes.byref(small_icon),
+                1,
+            )
+            if result == 0 or not large_icon.value:
+                logger.debug(f"Failed to extract icon from '{exe_path}'")
+                return False
+            hicon = large_icon.value
+
         gdi32 = ctypes.windll.gdi32
         
         try:
@@ -309,9 +626,11 @@ def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_I
             
             # Create PIL Image
             image = Image.frombuffer('RGBA', (width, height), bytes(buffer), 'raw', 'BGRA', 0, 1)
-            
-            # Resize to target size
-            image = image.resize((size, size), Image.Resampling.LANCZOS)
+
+            # Only resample when needed; PrivateExtractIconsW frequently
+            # already returns the exact requested size.
+            if (width, height) != (size, size):
+                image = image.resize((size, size), Image.Resampling.LANCZOS)
             image.save(output_path, 'PNG')
             
             # Cleanup
@@ -355,24 +674,21 @@ def _extract_icon_icoextract(exe_path: str, output_path: str, size: int = DEFAUL
         icon_data = extractor.get_icon()
         
         if icon_data:
-            # Load with PIL and save as PNG
-            image = Image.open(io.BytesIO(icon_data))
-            # Get the largest frame if it's an ICO with multiple sizes
-            if hasattr(image, 'n_frames') and image.n_frames > 1:
-                # ICO files can have multiple images, find the largest
-                best_size = 0
-                best_frame = 0
-                for frame_idx in range(image.n_frames):
-                    image.seek(frame_idx)
-                    current_size = max(image.size)
-                    if current_size > best_size:
-                        best_size = current_size
-                        best_frame = frame_idx
-                image.seek(best_frame)
-            
-            # Resize to target size
+            with _suppress_pil_ico_warnings():
+                image = Image.open(io.BytesIO(icon_data))
+                # Choose the frame that best fits the requested ``size``
+                # (smallest >= size, fall back to the largest available).
+                if hasattr(image, 'n_frames') and image.n_frames > 1:
+                    frame_dims = []
+                    for frame_idx in range(image.n_frames):
+                        image.seek(frame_idx)
+                        frame_dims.append(max(image.size))
+                    image.seek(_pick_best_frame_index(frame_dims, size))
+                image.load()
+
             image = image.convert('RGBA')
-            image = image.resize((size, size), Image.Resampling.LANCZOS)
+            if image.size != (size, size):
+                image = image.resize((size, size), Image.Resampling.LANCZOS)
             image.save(output_path, 'PNG')
             return True
             
@@ -385,19 +701,36 @@ def _extract_icon_icoextract(exe_path: str, output_path: str, size: int = DEFAUL
 
 
 def _extract_icon_pillow_ico(exe_path: str, output_path: str, size: int = DEFAULT_ICON_SIZE) -> bool:
-    """Try to extract icon directly if it's an .ico file."""
+    """Load an icon directly from a ``.ico`` file.
+
+    From multi-image ICOs, picks the smallest frame whose larger side is
+    ``>= size`` (Win32 ``LoadImage`` semantics), falling back to the
+    largest available frame when none qualify.
+    """
     try:
         from PIL import Image
-        
-        if exe_path.lower().endswith('.ico'):
+
+        if not exe_path.lower().endswith('.ico'):
+            return False
+
+        with _suppress_pil_ico_warnings():
             image = Image.open(exe_path)
-            image = image.convert('RGBA')
+            if hasattr(image, 'n_frames') and image.n_frames > 1:
+                frame_dims = []
+                for frame_idx in range(image.n_frames):
+                    image.seek(frame_idx)
+                    frame_dims.append(max(image.size))
+                image.seek(_pick_best_frame_index(frame_dims, size))
+            image.load()
+
+        image = image.convert('RGBA')
+        if image.size != (size, size):
             image = image.resize((size, size), Image.Resampling.LANCZOS)
-            image.save(output_path, 'PNG')
-            return True
+        image.save(output_path, 'PNG')
+        return True
     except Exception as e:
         logger.debug(f"PIL ICO loading failed for '{exe_path}': {e}")
-    
+
     return False
 
 
@@ -983,63 +1316,128 @@ def _extract_icon_linux(exe_path: str, output_path: str, size: int = DEFAULT_ICO
     return False
 
 
+def _probe_pe_icon_dimensions(data: bytes):
+    """Inspect a raw RT_ICON payload and return ``(width, height, bpp)``.
+
+    The payload is either a PNG (modern HiDPI icons, typically 256x256) or a
+    classic DIB starting with a ``BITMAPINFOHEADER``. Returns ``None`` if the
+    blob can't be recognised.
+    """
+    if not data or len(data) < 16:
+        return None
+    # PNG signature (used for 256x256+ icons since Vista)
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        try:
+            w = struct.unpack('>I', data[16:20])[0]
+            h = struct.unpack('>I', data[20:24])[0]
+            return (w, h, 32)
+        except struct.error:
+            return None
+    # Classic DIB: BITMAPINFOHEADER (40 bytes), height is doubled
+    # because it includes the AND (mask) bitmap appended below the XOR data.
+    try:
+        bi_size = struct.unpack('<I', data[:4])[0]
+        if bi_size != 40:
+            return None
+        w = struct.unpack('<i', data[4:8])[0]
+        h_doubled = struct.unpack('<i', data[8:12])[0]
+        bpp = struct.unpack('<H', data[14:16])[0]
+        h = abs(h_doubled) // 2
+        if w <= 0 or h <= 0:
+            return None
+        return (w, h, bpp)
+    except struct.error:
+        return None
+
+
 def _extract_icon_exe_pe(exe_path: str, output_path: str, size: int = DEFAULT_ICON_SIZE) -> bool:
-    """Extract icon from PE executable using pefile library."""
+    """Extract the largest available icon from a PE executable using pefile.
+
+    Iterates every ``RT_ICON`` resource, probes its real dimensions from the
+    embedded bitmap header, and assembles a single-image ICO file with a
+    *correct* directory entry (the previous implementation hardcoded 32x32
+    which both produced small icons and triggered PIL's
+    "Image was not the expected size" warning).
+    """
     try:
         import pefile
         from PIL import Image
         import io
-        
+
         pe = pefile.PE(exe_path, fast_load=True)
         pe.parse_data_directories(directories=[
             pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_RESOURCE']
         ])
-        
+
         if not hasattr(pe, 'DIRECTORY_ENTRY_RESOURCE'):
-            return False
-        
-        # Look for RT_GROUP_ICON resources
-        RT_ICON = 3
-        RT_GROUP_ICON = 14
-        
-        icon_data = None
-        for entry in pe.DIRECTORY_ENTRY_RESOURCE.entries:
-            if entry.id == RT_ICON:
-                for icon_entry in entry.directory.entries:
-                    for icon_lang in icon_entry.directory.entries:
-                        data_rva = icon_lang.data.struct.OffsetToData
-                        data_size = icon_lang.data.struct.Size
-                        icon_data = pe.get_memory_mapped_image()[data_rva:data_rva + data_size]
-                        break
-                    if icon_data:
-                        break
-            if icon_data:
-                break
-        
-        if icon_data:
-            # Create a simple ICO header
-            ico_header = bytearray([0, 0, 1, 0, 1, 0])  # ICO magic, type, count
-            # Icon entry: width, height, colors, reserved, planes, bpp, size, offset
-            ico_entry = bytearray([32, 32, 0, 0, 1, 0, 32, 0])
-            ico_entry.extend(len(icon_data).to_bytes(4, 'little'))
-            ico_entry.extend((22).to_bytes(4, 'little'))  # Offset after header
-            
-            full_ico = bytes(ico_header) + bytes(ico_entry) + icon_data
-            
-            image = Image.open(io.BytesIO(full_ico))
-            image = image.convert('RGBA')
-            image = image.resize((size, size), Image.Resampling.LANCZOS)
-            image.save(output_path, 'PNG')
             pe.close()
-            return True
-        
+            return False
+
+        RT_ICON = 3
+
+        # Collect every RT_ICON variant with its true dimensions, then pick
+        # the best fit for the requested ``size`` (smallest frame >= size,
+        # falling back to the largest available if none qualify).
+        candidates = []  # (width, height, bpp, raw_data)
+        mapped_image = pe.get_memory_mapped_image()
+        for entry in pe.DIRECTORY_ENTRY_RESOURCE.entries:
+            if entry.id != RT_ICON:
+                continue
+            for icon_entry in entry.directory.entries:
+                for icon_lang in icon_entry.directory.entries:
+                    rva = icon_lang.data.struct.OffsetToData
+                    sz = icon_lang.data.struct.Size
+                    raw = mapped_image[rva:rva + sz]
+                    probe = _probe_pe_icon_dimensions(raw)
+                    if probe is None:
+                        continue
+                    w, h, bpp = probe
+                    candidates.append((w, h, bpp, raw))
+
+        if not candidates:
+            pe.close()
+            return False
+
+        # Sort ascending by max-dim, ties broken by highest bpp first so
+        # that the size selector picks the deeper colour variant on ties.
+        candidates.sort(key=lambda c: (max(c[0], c[1]), -c[2]))
+        frame_dims = [max(c[0], c[1]) for c in candidates]
+        chosen_idx = _pick_best_frame_index(frame_dims, size)
+        w, h, bpp, icon_data = candidates[chosen_idx]
+
+        # Assemble a valid one-entry ICO file.
+        # ICONDIR:    reserved=0, type=1 (icon), count=1
+        # ICONDIRENTRY: width(B), height(B), colors(B), reserved(B),
+        #               planes(W), bitcount(W), bytes_in_res(I), image_offset(I)
+        # NOTE: width/height of 0 means 256 in the ICO spec.
+        w_field = 0 if w >= 256 else w
+        h_field = 0 if h >= 256 else h
+        ico_header = struct.pack('<HHH', 0, 1, 1)
+        ico_entry = struct.pack(
+            '<BBBBHHII',
+            w_field, h_field, 0, 0,
+            1, bpp,
+            len(icon_data),
+            6 + 16,  # offset = sizeof(ICONDIR) + sizeof(ICONDIRENTRY)
+        )
+        full_ico = ico_header + ico_entry + icon_data
+
+        with _suppress_pil_ico_warnings():
+            image = Image.open(io.BytesIO(full_ico))
+            image.load()
+
+        image = image.convert('RGBA')
+        if image.size != (size, size):
+            image = image.resize((size, size), Image.Resampling.LANCZOS)
+        image.save(output_path, 'PNG')
         pe.close()
-        
+        return True
+
     except ImportError:
         logger.debug("pefile library not available")
     except Exception as e:
         logger.debug(f"pefile extraction failed for '{exe_path}': {e}")
-    
+
     return False
 
 
@@ -1402,7 +1800,17 @@ def get_profile_icon(profile_data: dict, profile_name: str, size: int = DEFAULT_
     """
     if not isinstance(profile_data, dict):
         return None
-    
+
+    # --- User-chosen custom icon takes priority over auto-detection ---
+    custom_icon = get_custom_icon_path(profile_data)
+    if custom_icon:
+        try:
+            icon = QIcon(custom_icon)
+            if not icon.isNull():
+                return icon
+        except Exception as e:
+            logger.debug(f"Failed to load custom icon '{custom_icon}' for '{profile_name}': {e}")
+
     # --- Check for Minecraft profiles ---
     # Minecraft profiles have paths containing .minecraft/saves or minecraft/saves (Prism Launcher)
     profile_path = profile_data.get('path', '')

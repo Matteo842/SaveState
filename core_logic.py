@@ -911,8 +911,15 @@ def delete_profile(profiles, profile_name):
         
         # Delete cached icon for this profile (only if no other profile uses the same icon)
         try:
-            from gui_components.icon_extractor import delete_profile_icon
+            from gui_components.icon_extractor import delete_profile_icon, delete_custom_icon_file
             delete_profile_icon(profile_data, profiles, profile_name)
+            # Also remove the user-chosen custom icon, if any. Safe-guarded:
+            # delete_custom_icon_file only removes files inside the managed
+            # custom_icons folder.
+            if isinstance(profile_data, dict):
+                custom = profile_data.get('custom_icon_path') or profile_data.get('icon')
+                if custom:
+                    delete_custom_icon_file(custom)
         except Exception as e:
             logging.debug(f"Could not delete profile icon: {e}")
         

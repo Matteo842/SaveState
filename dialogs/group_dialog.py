@@ -12,13 +12,15 @@ settings (and global settings) for all member profiles.
 """
 
 import logging
+import os
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QDialogButtonBox, QAbstractItemView, QListWidgetItem, QMessageBox,
     QFrame, QSizePolicy, QGroupBox, QCheckBox, QSpinBox, QComboBox,
-    QPushButton, QFormLayout
+    QPushButton, QFormLayout, QFileDialog, QStyle, QWidget
 )
 from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QPixmap
 
 import core_logic
 
@@ -81,6 +83,13 @@ class GroupDialog(QDialog):
         self.result_group_name = None
         self.result_profile_names = None
         self.result_settings = None  # Group settings result
+        # Custom icon edit state, mirroring the inline profile editor.
+        # Values: None (no change), 'clear' (remove icon), str path (set new).
+        self._pending_icon_action = None
+        # Files saved into the custom-icons folder during this dialog session,
+        # tracked for cleanup on cancel / replacement.
+        self._session_temp_icons = []
+        self.result_custom_icon_path = None  # set on accept(): None/'' (clear)/path
         
         # Store global settings for defaults
         self.global_settings = global_settings or {}
@@ -105,7 +114,41 @@ class GroupDialog(QDialog):
         """Setup the dialog UI."""
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
-        
+
+        # --- Custom Icon Picker (hidden when icons are disabled globally) ---
+        self.icon_row = QWidget()
+        icon_row_layout = QHBoxLayout(self.icon_row)
+        icon_row_layout.setContentsMargins(0, 0, 0, 0)
+        icon_row_layout.setSpacing(8)
+        icon_row_layout.addWidget(QLabel("Icon:"))
+        self.icon_preview = QLabel()
+        self.icon_preview.setFixedSize(48, 48)
+        self.icon_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.icon_preview.setStyleSheet(
+            "QLabel { border: 1px solid #555; border-radius: 4px; "
+            "background-color: rgba(0, 0, 0, 30); }"
+        )
+        icon_row_layout.addWidget(self.icon_preview)
+        self.icon_change_button = QPushButton("Change Icon...")
+        self.icon_change_button.setToolTip(
+            "Pick a custom image (PNG, JPG, ICO, BMP, WEBP, SVG) or steal "
+            "the icon from a program / shortcut (.exe, .dll, .lnk, "
+            ".desktop, .AppImage)"
+        )
+        self.icon_change_button.clicked.connect(self._on_change_icon)
+        self.icon_reset_button = QPushButton("Reset")
+        self.icon_reset_button.setToolTip(
+            "Remove the custom icon and use the default folder icon"
+        )
+        self.icon_reset_button.clicked.connect(self._on_reset_icon)
+        icon_row_layout.addWidget(self.icon_change_button)
+        icon_row_layout.addWidget(self.icon_reset_button)
+        icon_row_layout.addStretch(1)
+        layout.addWidget(self.icon_row)
+        if not self.global_settings.get("show_profile_icons", True):
+            self.icon_row.setVisible(False)
+        self._refresh_icon_preview()
+
         # --- Group Name Section ---
         name_label = QLabel("Group Name:")
         self.name_edit = QLineEdit()
@@ -490,6 +533,148 @@ class GroupDialog(QDialog):
         if ok_button:
             ok_button.setEnabled(can_accept)
     
+    def _get_existing_custom_icon(self):
+        """Return the persisted custom icon path of the group (if editing)."""
+        if not self.edit_mode or not self.original_group_name:
+            return None
+        data = self.profiles_dict.get(self.original_group_name, {})
+        if not isinstance(data, dict):
+            return None
+        path = data.get('custom_icon_path') or data.get('icon')
+        if isinstance(path, str) and os.path.isfile(path):
+            return path
+        return None
+
+    def _refresh_icon_preview(self):
+        """Update the icon preview based on pending action / persisted state."""
+        if not hasattr(self, 'icon_preview'):
+            return
+        pending = self._pending_icon_action
+        icon_path = None
+        if isinstance(pending, str) and pending and pending != 'clear':
+            icon_path = pending
+        elif pending != 'clear':
+            icon_path = self._get_existing_custom_icon()
+
+        pixmap = None
+        if icon_path and os.path.isfile(icon_path):
+            try:
+                pm = QPixmap(icon_path)
+                if not pm.isNull():
+                    pixmap = pm
+            except Exception:
+                pixmap = None
+
+        if pixmap is None:
+            try:
+                style = self.style()
+                pixmap = style.standardIcon(QStyle.StandardPixmap.SP_DirIcon).pixmap(48, 48)
+            except Exception:
+                pixmap = QPixmap(48, 48)
+                pixmap.fill(Qt.GlobalColor.transparent)
+
+        scaled = pixmap.scaled(
+            48, 48,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.icon_preview.setPixmap(scaled)
+
+        # Reset button enabled only when there's something to clear
+        has_custom = bool(
+            (isinstance(pending, str) and pending and pending != 'clear') or
+            (pending is None and self._get_existing_custom_icon())
+        )
+        self.icon_reset_button.setEnabled(has_custom)
+
+    @Slot()
+    def _on_change_icon(self):
+        """Open a file picker and stage a new custom icon for this group."""
+        try:
+            from gui_components import icon_extractor
+        except Exception as e:
+            log.error(f"Failed to import icon_extractor: {e}")
+            return
+
+        # Allow regular image files OR executables/shortcuts to "steal"
+        # the icon from another program (Windows-style behavior).
+        import platform as _plat
+        if _plat.system() == "Windows":
+            exe_pattern = "*.exe *.dll *.lnk *.ico"
+        else:
+            exe_pattern = "*.AppImage *.desktop *.exe *.ico"
+        file_filter = (
+            "Icon sources (*.png *.jpg *.jpeg *.bmp *.webp *.ico *.svg "
+            f"{exe_pattern});;"
+            "Images (*.png *.jpg *.jpeg *.bmp *.webp *.ico *.svg);;"
+            f"Programs / shortcuts ({exe_pattern});;"
+            "All files (*)"
+        )
+        source_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Group Icon", "", file_filter
+        )
+        if not source_path:
+            return
+
+        # Use a stable name for new groups before they have one
+        name_for_file = (self.name_edit.text().strip()
+                         or self.original_group_name
+                         or "group")
+        saved_path = icon_extractor.save_custom_icon(source_path, name_for_file)
+        if not saved_path:
+            QMessageBox.warning(
+                self,
+                "Icon Error",
+                "Could not load the selected image.\n"
+                "Make sure the file is a valid image (PNG, JPG, BMP, ICO, WEBP, SVG)."
+            )
+            return
+
+        # Drop the previous in-session pending file so we don't leak it
+        prev = self._pending_icon_action
+        if isinstance(prev, str) and prev and prev != 'clear' \
+                and prev in self._session_temp_icons and prev != saved_path:
+            icon_extractor.delete_custom_icon_file(prev)
+            try:
+                self._session_temp_icons.remove(prev)
+            except ValueError:
+                pass
+
+        if saved_path not in self._session_temp_icons:
+            self._session_temp_icons.append(saved_path)
+        self._pending_icon_action = saved_path
+        self._refresh_icon_preview()
+
+    @Slot()
+    def _on_reset_icon(self):
+        """Mark the dialog session to clear the persisted custom icon."""
+        try:
+            from gui_components import icon_extractor
+            prev = self._pending_icon_action
+            if isinstance(prev, str) and prev and prev != 'clear' \
+                    and prev in self._session_temp_icons:
+                icon_extractor.delete_custom_icon_file(prev)
+                try:
+                    self._session_temp_icons.remove(prev)
+                except ValueError:
+                    pass
+        except Exception:
+            pass
+        self._pending_icon_action = 'clear'
+        self._refresh_icon_preview()
+
+    def reject(self):
+        """Discard any uncommitted custom icon files before closing."""
+        try:
+            from gui_components import icon_extractor
+            for f in list(self._session_temp_icons):
+                icon_extractor.delete_custom_icon_file(f)
+            self._session_temp_icons.clear()
+        except Exception:
+            pass
+        self._pending_icon_action = None
+        super().reject()
+
     def accept(self):
         """Validate and accept the dialog."""
         name = self.name_edit.text().strip()
@@ -515,8 +700,17 @@ class GroupDialog(QDialog):
         self.result_group_name = name
         self.result_profile_names = checked_profiles
         self.result_settings = self._get_current_settings()
+        # Translate the pending icon action into the result the caller will
+        # apply to the group profile data.
+        pending = self._pending_icon_action
+        if pending == 'clear':
+            self.result_custom_icon_path = ''  # explicit removal
+        elif isinstance(pending, str) and pending:
+            self.result_custom_icon_path = pending
+        else:
+            self.result_custom_icon_path = None  # no change
         
-        log.info(f"Group dialog accepted: name='{name}', profiles={checked_profiles}, settings={self.result_settings}")
+        log.info(f"Group dialog accepted: name='{name}', profiles={checked_profiles}, settings={self.result_settings}, icon={self.result_custom_icon_path!r}")
         super().accept()
     
     def get_result(self) -> tuple:
@@ -528,6 +722,16 @@ class GroupDialog(QDialog):
             or (None, None, None) if cancelled
         """
         return self.result_group_name, self.result_profile_names, self.result_settings
+
+    def get_custom_icon_result(self):
+        """Return the icon decision from this dialog session.
+
+        - ``None``: no change requested (preserve the existing icon, if any).
+        - ``''`` (empty string): clear the persisted custom icon.
+        - non-empty ``str``: absolute path to the new custom icon (already
+          stored inside the managed custom-icons folder).
+        """
+        return self.result_custom_icon_path
 
 
 class GroupMemberSelectionDialog(QDialog):

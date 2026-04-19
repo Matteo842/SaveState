@@ -750,6 +750,34 @@ class MainWindow(QMainWindow):
         # Inline Profile Editor (hidden by default)
         self.profile_editor_group = QGroupBox("Edit Profile")
         editor_layout = QVBoxLayout()
+        # --- Icon picker row (custom profile icon) ---
+        # Hidden when "show_profile_icons" is disabled in Settings.
+        self.edit_icon_row = QWidget()
+        icon_row_layout = QHBoxLayout(self.edit_icon_row)
+        icon_row_layout.setContentsMargins(0, 0, 0, 0)
+        icon_row_layout.setSpacing(8)
+        icon_row_layout.addWidget(QLabel("Icon:"))
+        self.edit_icon_preview = QLabel()
+        self.edit_icon_preview.setFixedSize(48, 48)
+        self.edit_icon_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.edit_icon_preview.setStyleSheet(
+            "QLabel { border: 1px solid #555; border-radius: 4px; background-color: rgba(0, 0, 0, 30); }"
+        )
+        icon_row_layout.addWidget(self.edit_icon_preview)
+        self.edit_icon_change_button = QPushButton("Change Icon...")
+        self.edit_icon_change_button.setToolTip(
+            "Pick a custom image (PNG, JPG, ICO, BMP, WEBP, SVG) or steal "
+            "the icon from a program / shortcut (.exe, .dll, .lnk, "
+            ".desktop, .AppImage)"
+        )
+        self.edit_icon_reset_button = QPushButton("Reset")
+        self.edit_icon_reset_button.setToolTip(
+            "Remove the custom icon and use the automatically detected one"
+        )
+        icon_row_layout.addWidget(self.edit_icon_change_button)
+        icon_row_layout.addWidget(self.edit_icon_reset_button)
+        icon_row_layout.addStretch(1)
+        editor_layout.addWidget(self.edit_icon_row)
         # Name field
         name_row = QHBoxLayout()
         name_row.addWidget(QLabel("Name:"))
@@ -1179,6 +1207,8 @@ class MainWindow(QMainWindow):
         self.edit_browse_button.clicked.connect(self.handlers.handle_profile_edit_browse)
         self.edit_save_button.clicked.connect(self.handlers.handle_profile_edit_save)
         self.edit_cancel_button.clicked.connect(self.handlers.handle_profile_edit_cancel)
+        self.edit_icon_change_button.clicked.connect(self.handlers.handle_profile_edit_change_icon)
+        self.edit_icon_reset_button.clicked.connect(self.handlers.handle_profile_edit_reset_icon)
         # Overrides toggle action
         self.overrides_enable_checkbox.toggled.connect(self.handlers.handle_profile_overrides_toggled)
 
@@ -2462,6 +2492,19 @@ class MainWindow(QMainWindow):
             
             self._editing_profile_original_name = profile_name
             data = self.profiles.get(profile_name, {})
+            # --- Reset icon-edit session state ---
+            # ``_editing_pending_icon_action`` describes the user's pending
+            # change for the custom icon: ``None`` (no change), ``'clear'``
+            # (remove custom icon), or a string path (set new custom icon).
+            self._editing_pending_icon_action = None
+            # Files newly created in the custom-icons folder during this
+            # editing session, tracked so we can clean up on cancel/replace.
+            self._editing_session_temp_icons = []
+            # Populate icon row visibility based on the global setting.
+            show_icons = self.current_settings.get("show_profile_icons", True)
+            if hasattr(self, 'edit_icon_row'):
+                self.edit_icon_row.setVisible(bool(show_icons))
+            self._update_edit_icon_preview(profile_name, data)
             # Populate fields
             self.edit_name_edit.setText(profile_name)
             path_value = ""
@@ -2531,6 +2574,81 @@ class MainWindow(QMainWindow):
             self.enter_profile_edit_mode()
         except Exception as e:
             logging.error(f"Error showing profile editor: {e}")
+
+    def _update_edit_icon_preview(self, profile_name, profile_data):
+        """Refresh the small icon preview shown in the Edit Profile section.
+
+        Order of preference:
+        1. Pending in-session change (``_editing_pending_icon_action``).
+        2. Persisted custom icon on the profile.
+        3. Auto-extracted game icon.
+        4. Generic placeholder (folder for groups, app icon otherwise).
+        """
+        if not hasattr(self, 'edit_icon_preview'):
+            return
+        from PySide6.QtGui import QPixmap
+        from gui_components import icon_extractor as _ie
+
+        pending = getattr(self, '_editing_pending_icon_action', None)
+        icon_path = None
+        use_auto = False
+        if isinstance(pending, str) and pending and pending != 'clear':
+            icon_path = pending
+        elif pending == 'clear':
+            use_auto = True
+        else:
+            # No pending change: use stored custom icon if present
+            stored = _ie.get_custom_icon_path(profile_data) if isinstance(profile_data, dict) else None
+            if stored:
+                icon_path = stored
+            else:
+                use_auto = True
+
+        pixmap = None
+        if icon_path and os.path.isfile(icon_path):
+            try:
+                pm = QPixmap(icon_path)
+                if not pm.isNull():
+                    pixmap = pm
+            except Exception:
+                pixmap = None
+
+        if pixmap is None and use_auto:
+            try:
+                qicon = _ie.get_profile_icon(profile_data or {}, profile_name)
+                if qicon is not None and not qicon.isNull():
+                    pixmap = qicon.pixmap(48, 48)
+            except Exception:
+                pixmap = None
+
+        if pixmap is None:
+            # Final fallback: standard icon
+            try:
+                from PySide6.QtWidgets import QStyle as _QStyle
+                style = self.style()
+                is_group = isinstance(profile_data, dict) and profile_data.get('type') == 'group'
+                std = _QStyle.StandardPixmap.SP_DirIcon if is_group else _QStyle.StandardPixmap.SP_FileIcon
+                pixmap = style.standardIcon(std).pixmap(48, 48)
+            except Exception:
+                pixmap = QPixmap(48, 48)
+                pixmap.fill(Qt.GlobalColor.transparent)
+
+        if pixmap is not None:
+            scaled = pixmap.scaled(
+                48, 48,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            self.edit_icon_preview.setPixmap(scaled)
+
+        # Reset button only enabled when there is something to clear
+        if hasattr(self, 'edit_icon_reset_button'):
+            has_custom = bool(
+                (isinstance(pending, str) and pending and pending != 'clear') or
+                (pending is None and isinstance(profile_data, dict)
+                 and _ie.get_custom_icon_path(profile_data))
+            )
+            self.edit_icon_reset_button.setEnabled(has_custom)
 
     def _set_main_controls_enabled_during_edit(self, enabled):
         try:
