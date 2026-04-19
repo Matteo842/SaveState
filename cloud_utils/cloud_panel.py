@@ -32,9 +32,9 @@ class CloudSelectionDelegate(QStyledItemDelegate):
                 accent_color = QColor("#A10808")   
                 text_color = QColor(Qt.GlobalColor.white)
             else:
-                bg_color = QColor("#C8E6E3")       
-                accent_color = QColor("#007c8e")   
-                text_color = QColor("#1E1E1E")     
+                bg_color = QColor("#E0E4FF")       
+                accent_color = QColor("#4F46E5")   
+                text_color = QColor("#1F2024")     
             
             painter.fillRect(option.rect, bg_color)
             

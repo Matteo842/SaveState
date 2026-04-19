@@ -233,24 +233,24 @@ class NotePopupWidget(QWidget):
             self.setStyleSheet("""
                 NotePopupWidget {
                     background-color: rgba(255, 255, 255, 255);
-                    border: 2px solid #007c8e;
+                    border: 2px solid #4F46E5;
                     border-radius: 8px;
                 }
             """)
             self.text_edit.setStyleSheet("""
                 QTextEdit {
                     background-color: rgba(250, 250, 250, 255);
-                    color: #1E1E1E;
-                    border: 1px solid #ccc;
+                    color: #1F2024;
+                    border: 1px solid #C9CCD3;
                     border-radius: 4px;
                     font-size: 10pt;
                     padding: 4px;
                 }
             """)
-            self.header_label.setStyleSheet("color: #333; font-weight: bold; font-size: 9pt;")
+            self.header_label.setStyleSheet("color: #1F2024; font-weight: bold; font-size: 9pt;")
             self.save_close_button.setStyleSheet("""
                 QPushButton {
-                    background-color: #007c8e;
+                    background-color: #4F46E5;
                     color: white;
                     border: none;
                     border-radius: 4px;
@@ -259,7 +259,7 @@ class NotePopupWidget(QWidget):
                     font-weight: bold;
                 }
                 QPushButton:hover {
-                    background-color: #009aad;
+                    background-color: #4338CA;
                 }
             """)
             self.cancel_button.setStyleSheet("""
@@ -422,7 +422,7 @@ class ProfileSelectionDelegate(QStyledItemDelegate):
     
     Theme colors:
     - Dark Theme: Dark grey background (#2A2A2A) with red accent (#A10808), white text
-    - Light Theme: Light teal background (#C8E6E3) with teal accent (#007c8e), dark text
+    - Light Theme: Light indigo background (#E0E4FF) with indigo accent (#4F46E5), deep indigo text
     """
     
     def __init__(self, parent=None, is_dark_mode=True, table_widget=None):
@@ -455,9 +455,9 @@ class ProfileSelectionDelegate(QStyledItemDelegate):
                 accent_color = QColor("#A10808")   # Red accent line
                 text_color = QColor(Qt.GlobalColor.white)
             else:
-                bg_color = QColor("#C8E6E3")       # Light teal-tinted background for selection
-                accent_color = QColor("#007c8e")   # Teal accent line
-                text_color = QColor("#1E1E1E")     # Dark text for readability
+                bg_color = QColor("#E0E4FF")       # Light indigo-tinted background for selection
+                accent_color = QColor("#4F46E5")   # Indigo accent line
+                text_color = QColor("#1F2024")     # Dark text for readability
             
             # 1. Custom Background
             painter.fillRect(option.rect, bg_color)

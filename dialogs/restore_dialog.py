@@ -21,7 +21,7 @@ class RestoreSelectionDelegate(QStyledItemDelegate):
     """
     Custom Delegate for restore list selection with theme support:
     - Dark Theme: Dark grey background (#2A2A2A) with red accent line (#A10808), white text
-    - Light Theme: Light teal background (#C8E6E3) with teal accent line (#007c8e), dark text
+    - Light Theme: Light indigo background (#E0E4FF) with indigo accent line (#4F46E5), dark text
     """
     def _is_dark_mode(self, option):
         """Detect dark mode from the widget's window settings."""
@@ -54,9 +54,9 @@ class RestoreSelectionDelegate(QStyledItemDelegate):
                 accent_color = QColor("#A10808")   # Red accent line
                 text_color = QColor(Qt.GlobalColor.white)
             else:
-                bg_color = QColor("#C8E6E3")       # Light teal background
-                accent_color = QColor("#007c8e")   # Teal accent line
-                text_color = QColor("#1E1E1E")     # Dark text
+                bg_color = QColor("#E0E4FF")       # Light indigo background
+                accent_color = QColor("#4F46E5")   # Indigo accent line
+                text_color = QColor("#1F2024")     # Dark text
             
             # 1. Custom Background
             painter.fillRect(option.rect, bg_color)
