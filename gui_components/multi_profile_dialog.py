@@ -9,7 +9,8 @@ import re
 import platform
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
                               QPushButton, QListWidget, QListWidgetItem,
-                              QWidget, QMessageBox, QProgressBar, QCheckBox, QLineEdit, QStyle)
+                              QWidget, QMessageBox, QProgressBar, QCheckBox, QLineEdit, QStyle,
+                              QApplication)
 from PySide6.QtCore import Qt, Signal, QTimer, QRect, QSize, QEvent
 from PySide6.QtGui import QIcon, QFont, QCursor, QPainter, QPen, QColor
 
@@ -142,31 +143,40 @@ class ProfileListItem(QWidget):
         # Add the info layout to the main layout
         layout.addLayout(info_layout, 1)  # Stretch factor 1 to give more space
         
-        # Delete button with Unicode trash can icon, larger and easier to click
-        self.delete_button = QPushButton("🗑️")
+        # Delete button — icons/trash.png (same asset as main profile list)
+        self.delete_button = QPushButton()
         self.delete_button.setObjectName("MinecraftButton")  # Use same style as Minecraft button
         self.delete_button.setToolTip("Remove this profile")
         self.delete_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        # Increase button size while keeping a small border within the item row
-        self.delete_button.setFixedSize(46, 46)
-        self.delete_button.setIconSize(QSize(36, 36))
+        # Hit target ~40px; icon smaller than inner area so it isn’t clipped or “zoomed” (cf. profile table 16×16 in 24×24)
+        self.delete_button.setFixedSize(40, 40)
+        self.delete_button.setIconSize(QSize(22, 22))
+        trash_path = resource_path("icons/trash.png")
+        icon_set = False
+        if os.path.exists(trash_path):
+            trash_icon = QIcon(trash_path)
+            if not trash_icon.isNull():
+                self.delete_button.setIcon(trash_icon)
+                icon_set = True
+        if not icon_set:
+            style = QApplication.instance()
+            style = style.style() if style else None
+            if style:
+                self.delete_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
         self.delete_button.setStyleSheet("""
             QPushButton#MinecraftButton {
                 border: none;
-                padding: 0;
+                padding: 6px;
                 background-color: transparent;
-                font-size: 22px;  /* Larger glyph for better visibility */
-                color: #888;
-                border-radius: 0px;  /* Ensure square shape */
+                border-radius: 0px;
             }
             QPushButton#MinecraftButton:hover {
                 background-color: rgba(255, 0, 0, 0.1);
-                border-radius: 0px;  /* Ensure square shape */
-                color: #f00;
+                border-radius: 0px;
             }
             QPushButton#MinecraftButton:pressed {
                 background-color: rgba(255, 0, 0, 0.2);
-                border-radius: 0px;  /* Ensure square shape */
+                border-radius: 0px;
             }
         """)
         
