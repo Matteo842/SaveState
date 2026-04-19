@@ -1409,26 +1409,13 @@ QTabBar::tab:hover:!selected {
     color: #1F2024;
 }
 
-/* ---- CheckBox / RadioButton ---- */
+/* ---- CheckBox / RadioButton ----
+   Only label styling here. Indicator rendering is left to Qt's native style
+   (same approach as the dark theme) so the system check mark works correctly. */
 QCheckBox, QRadioButton {
     background-color: transparent;
     color: #1F2024;
     spacing: 6px;
-}
-QCheckBox::indicator, QRadioButton::indicator {
-    width: 16px;
-    height: 16px;
-    border: 1px solid #B0B4BD;
-    background-color: #FFFFFF;
-}
-QCheckBox::indicator { border-radius: 3px; }
-QRadioButton::indicator { border-radius: 8px; }
-QCheckBox::indicator:hover, QRadioButton::indicator:hover {
-    border-color: #4F46E5;
-}
-QCheckBox::indicator:checked, QRadioButton::indicator:checked {
-    background-color: #4F46E5;
-    border-color: #4F46E5;
 }
 
 /* ---- Status bar / Progress ---- */
