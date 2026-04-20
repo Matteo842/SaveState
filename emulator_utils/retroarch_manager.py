@@ -96,11 +96,34 @@ def _read_retroarch_cfg(cfg_path: Optional[str]) -> Dict[str, str]:
     return cfg
 
 
-def _expand(path_str: Optional[str], base: Optional[str]) -> Optional[str]:
+def _expand(path_str: Optional[str], base: Optional[str], cfg_dir: Optional[str] = None) -> Optional[str]:
+    """Expand user, env vars and RetroArch's ':' path macro.
+
+    RetroArch writes relative paths in retroarch.cfg using a leading ':' to mean
+    "the directory containing retroarch.cfg" (or the binary directory on portable
+    installs). Examples seen in the wild:
+        savefile_directory = ":\\saves"      (Windows)
+        savefile_directory = ":/saves"       (Linux/macOS)
+        savefile_directory = ":"              (the config dir itself)
+
+    Without special handling, these produce invalid paths on disk and
+    auto-detection silently fails.
+    """
     if not path_str:
         return None
     try:
-        expanded = os.path.expandvars(os.path.expanduser(path_str))
+        s = path_str.strip().strip('"').strip("'")
+        if not s:
+            return None
+
+        if s == ':' or s.startswith(':/') or s.startswith(':\\'):
+            anchor = cfg_dir or base
+            if anchor:
+                remainder = s[1:]
+                remainder = remainder.lstrip('/\\')
+                s = os.path.join(anchor, remainder) if remainder else anchor
+
+        expanded = os.path.expandvars(os.path.expanduser(s))
         if not os.path.isabs(expanded) and base:
             expanded = os.path.join(base, expanded)
         return os.path.abspath(expanded)
@@ -128,10 +151,20 @@ def _resolve_ra_paths(executable_path_or_dir: Optional[str]) -> Dict[str, Option
         # Portable/packaged layouts
         cfg_candidates.append(os.path.join(ra_root, 'config', 'retroarch.cfg'))
         cfg_candidates.append(os.path.join(ra_root, 'config', 'retroarch', 'retroarch.cfg'))
+        # Some packaged builds ship the config one level up from the binary
+        parent = os.path.dirname(ra_root)
+        if parent and parent != ra_root:
+            cfg_candidates.append(os.path.join(parent, 'retroarch.cfg'))
+            cfg_candidates.append(os.path.join(parent, 'config', 'retroarch.cfg'))
     if platform.system() == 'Windows':
         appdata = os.getenv('APPDATA')
         if appdata:
             cfg_candidates.append(os.path.join(appdata, 'RetroArch', 'retroarch.cfg'))
+        # RetroArch from the Microsoft Store / other packaged installs
+        local_appdata = os.getenv('LOCALAPPDATA')
+        if local_appdata:
+            cfg_candidates.append(os.path.join(local_appdata, 'RetroArch', 'retroarch.cfg'))
+            cfg_candidates.append(os.path.join(local_appdata, 'Packages', 'RetroArch', 'LocalState', 'retroarch.cfg'))
     elif platform.system() == 'Linux':
         home = os.path.expanduser('~')
         # XDG_CONFIG_HOME
@@ -150,6 +183,12 @@ def _resolve_ra_paths(executable_path_or_dir: Optional[str]) -> Dict[str, Option
 
     cfg_path = next((p for p in cfg_candidates if p and os.path.isfile(p)), None)
     cfg = _read_retroarch_cfg(cfg_path)
+    cfg_dir = os.path.dirname(cfg_path) if cfg_path else None
+
+    if cfg_path:
+        log.info(f"RetroArch: using config file '{cfg_path}'")
+    else:
+        log.info(f"RetroArch: no retroarch.cfg found. Searched: {cfg_candidates}")
 
     # Resolve directories
     def _is_unset_dir_value(v: Optional[str]) -> bool:
@@ -158,23 +197,33 @@ def _resolve_ra_paths(executable_path_or_dir: Optional[str]) -> Dict[str, Option
         v_stripped = v.strip().strip('"')
         return v_stripped == '' or v_stripped.lower() == 'default'
 
-    explicit_saves = None
-    explicit_system = None
+    explicit_saves: Optional[str] = None
+    explicit_system: Optional[str] = None
+    explicit_states: Optional[str] = None
     if cfg:
         saves_val = cfg.get('savefile_directory')
         system_val = cfg.get('system_directory')
+        states_val = cfg.get('savestate_directory')
         if not _is_unset_dir_value(saves_val):
-            explicit_saves = _expand(saves_val, ra_root)
+            explicit_saves = _expand(saves_val, ra_root, cfg_dir)
         if not _is_unset_dir_value(system_val):
-            explicit_system = _expand(system_val, ra_root)
+            explicit_system = _expand(system_val, ra_root, cfg_dir)
+        if not _is_unset_dir_value(states_val):
+            explicit_states = _expand(states_val, ra_root, cfg_dir)
+        log.debug(
+            "RetroArch cfg paths: savefile=%s system=%s savestate=%s",
+            explicit_saves, explicit_system, explicit_states
+        )
 
     # Default directories by platform
     default_saves: Optional[str] = None
     default_system: Optional[str] = None
+    default_states: Optional[str] = None
     sysname = platform.system()
     if sysname == 'Windows':
         default_saves = _get_saves_dir(ra_root)
         default_system = os.path.join(ra_root, 'system') if ra_root and os.path.isdir(os.path.join(ra_root, 'system')) else None
+        default_states = os.path.join(ra_root, 'states') if ra_root and os.path.isdir(os.path.join(ra_root, 'states')) else None
     elif sysname == 'Linux':
         home = os.path.expanduser('~')
         xdg_config = os.getenv('XDG_CONFIG_HOME') or os.path.join(home, '.config')
@@ -199,6 +248,16 @@ def _resolve_ra_paths(executable_path_or_dir: Optional[str]) -> Dict[str, Option
             os.path.join(home, '.var', 'app', 'org.libretro.RetroArch', 'data', 'retroarch', 'system'),
             os.path.join(home, 'snap', 'retroarch', 'current', '.config', 'retroarch', 'system'),
         ])
+        default_states = _first_existing_dir([
+            os.path.join(ra_root, 'states') if ra_root else None,
+            os.path.join(xdg_config, 'retroarch', 'states'),
+            os.path.join(home, '.config', 'retroarch', 'states'),
+            os.path.join(xdg_data, 'retroarch', 'states'),
+            os.path.join(home, '.local', 'share', 'retroarch', 'states'),
+            os.path.join(home, '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'states'),
+            os.path.join(home, '.var', 'app', 'org.libretro.RetroArch', 'data', 'retroarch', 'states'),
+            os.path.join(home, 'snap', 'retroarch', 'current', '.config', 'retroarch', 'states'),
+        ])
     elif sysname == 'Darwin':
         home = os.path.expanduser('~')
         default_saves = _first_existing_dir([
@@ -209,15 +268,26 @@ def _resolve_ra_paths(executable_path_or_dir: Optional[str]) -> Dict[str, Option
             os.path.join(ra_root, 'system') if ra_root else None,
             os.path.join(home, 'Library', 'Application Support', 'RetroArch', 'system'),
         ])
+        default_states = _first_existing_dir([
+            os.path.join(ra_root, 'states') if ra_root else None,
+            os.path.join(home, 'Library', 'Application Support', 'RetroArch', 'states'),
+        ])
 
     saves_dir = explicit_saves if (explicit_saves and os.path.isdir(explicit_saves)) else default_saves
     system_dir = explicit_system if (explicit_system and os.path.isdir(explicit_system)) else default_system
+    states_dir = explicit_states if (explicit_states and os.path.isdir(explicit_states)) else default_states
+
+    log.info(
+        "RetroArch resolved paths: ra_root=%s saves_dir=%s system_dir=%s states_dir=%s",
+        ra_root, saves_dir, system_dir, states_dir
+    )
 
     return {
         'ra_root': ra_root,
         'cfg_path': cfg_path,
         'saves_dir': saves_dir,
         'system_dir': system_dir,
+        'states_dir': states_dir,
     }
 
 
@@ -286,28 +356,56 @@ def _count_files_with_extensions(root_dir: Optional[str], extensions: List[str])
 
 def list_retroarch_cores(executable_path_or_dir: Optional[str] = None) -> List[CoreEntry]:
     """
-    Return cores from RetroArch root 'saves' directory.
-    Structure expected:
-      <RA_ROOT>/saves/<CoreName>/<GameName>.<ext>
-    We only care about saves (no savestates/system).
+    Return cores from RetroArch 'saves' directory (and, as a supplement, 'states').
+
+    Structure expected (default RetroArch layout, also used with custom paths):
+      <saves_dir>/<CoreName>/<GameName>.<ext>
+      <states_dir>/<CoreName>/<GameName>.state*
+
+    When a user has configured custom save/savestate directories (e.g., on a
+    microSD card shared across OSes), those directories are honored via
+    retroarch.cfg. When per-core subfolders exist only under states (e.g.,
+    'sort savestates by core' is enabled but 'sort savefiles by core' isn't),
+    we still surface those cores so users can locate them.
     """
     paths = _resolve_ra_paths(executable_path_or_dir)
     saves_dir = paths.get('saves_dir')
     system_dir = paths.get('system_dir')
+    states_dir = paths.get('states_dir')
     cores: List[CoreEntry] = []
-    if not saves_dir:
-        log.info("RetroArch saves directory not found under the provided root.")
+    if not saves_dir and not states_dir:
+        log.warning(
+            "RetroArch: no saves/states directories found. "
+            "Checked cfg '%s'. Consider setting 'savefile_directory' in retroarch.cfg "
+            "to an absolute path (useful when saves live on a microSD or external drive).",
+            paths.get('cfg_path')
+        )
         return cores
 
     try:
-        # normal cores from saves/<CoreName>
-        for entry in os.listdir(saves_dir):
-            core_path = os.path.join(saves_dir, entry)
-            if not os.path.isdir(core_path):
-                continue
-            count = len(_iter_files_shallow(core_path))
-            if count > 0:
-                cores.append({'id': entry, 'name': entry, 'count': count})
+        # Normal cores from saves/<CoreName>
+        seen_ids: Dict[str, int] = {}
+        if saves_dir and os.path.isdir(saves_dir):
+            for entry in os.listdir(saves_dir):
+                core_path = os.path.join(saves_dir, entry)
+                if not os.path.isdir(core_path):
+                    continue
+                count = len(_iter_files_shallow(core_path))
+                if count > 0:
+                    seen_ids[entry] = seen_ids.get(entry, 0) + count
+
+        # Supplement with cores found under states/<CoreName> (if per-core sorted)
+        if states_dir and os.path.isdir(states_dir):
+            for entry in os.listdir(states_dir):
+                states_core_path = os.path.join(states_dir, entry)
+                if not os.path.isdir(states_core_path):
+                    continue
+                count = len(_iter_files_shallow(states_core_path))
+                if count > 0:
+                    seen_ids[entry] = seen_ids.get(entry, 0) + count
+
+        for core_id, count in seen_ids.items():
+            cores.append({'id': core_id, 'name': core_id, 'count': count})
 
         # PS2: any directory containing .ps2 under system or saves
         ps2_dir, ps2_count = _find_dir_with_ext([system_dir, saves_dir], '.ps2', max_depth=3)
@@ -330,10 +428,16 @@ def list_retroarch_cores(executable_path_or_dir: Optional[str] = None) -> List[C
         if flycast_count_total > 0 and not any(c.get('id', '').lower() == 'flycast' for c in cores):
             cores.append({'id': 'Flycast', 'name': 'Flycast', 'count': flycast_count_total})
     except Exception as e:
-        log.error(f"Error listing cores in saves directory '{saves_dir}': {e}")
+        log.error(f"Error listing cores (saves='{saves_dir}', states='{states_dir}'): {e}")
         return []
 
     cores.sort(key=lambda c: (c.get("name", "").lower()))
+    if not cores:
+        log.info(
+            "RetroArch: cores listing is empty. saves_dir='%s' states_dir='%s'. "
+            "Check that the directory contains per-core subfolders with save files.",
+            saves_dir, states_dir
+        )
     return cores
 
 
@@ -349,7 +453,8 @@ def find_retroarch_profiles(selected_core: str, executable_path_or_dir: Optional
     ra_root = paths.get('ra_root')
     saves_dir = paths.get('saves_dir')
     system_dir = paths.get('system_dir')
-    if not saves_dir:
+    states_dir = paths.get('states_dir')
+    if not saves_dir and not states_dir:
         return []
 
     # Special handling for PCSX2: find any dir with .ps2 and reuse PCSX2 manager
@@ -403,20 +508,37 @@ def find_retroarch_profiles(selected_core: str, executable_path_or_dir: Optional
                 profiles.append({'id': base, 'name': display, 'paths': [f]})
             return profiles
 
-    core_dir = os.path.join(saves_dir, core_name)
-    if not os.path.isdir(core_dir):
+    core_dirs: List[str] = []
+    if saves_dir:
+        candidate = os.path.join(saves_dir, core_name)
+        if os.path.isdir(candidate):
+            core_dirs.append(candidate)
+    if states_dir:
+        candidate = os.path.join(states_dir, core_name)
+        if os.path.isdir(candidate):
+            core_dirs.append(candidate)
+
+    if not core_dirs:
         return []
 
     profiles: List[ProfileEntry] = []
+    seen: Dict[str, ProfileEntry] = {}
 
     try:
-        for full in _iter_files_shallow(core_dir):
-            entry = os.path.basename(full)
-            base = os.path.splitext(entry)[0]
-            display = re.sub(r"\s*\([A-Za-z]{2}(?:,[A-Za-z]{2})+\)$", "", base).strip() or base
-            profiles.append({'id': base, 'name': display, 'paths': [full]})
+        for core_dir in core_dirs:
+            for full in _iter_files_shallow(core_dir):
+                entry = os.path.basename(full)
+                base = os.path.splitext(entry)[0]
+                display = re.sub(r"\s*\([A-Za-z]{2}(?:,[A-Za-z]{2})+\)$", "", base).strip() or base
+                key = base.lower()
+                if key in seen:
+                    if full not in seen[key]['paths']:
+                        seen[key]['paths'].append(full)
+                else:
+                    seen[key] = {'id': base, 'name': display, 'paths': [full]}
+        profiles = list(seen.values())
     except Exception as e:
-        log.error(f"Error scanning core directory '{core_dir}': {e}")
+        log.error(f"Error scanning core directories {core_dirs}: {e}")
         return []
 
     return profiles
