@@ -1970,12 +1970,27 @@ class CloudSavePanel(QWidget):
     
     def _on_smb_config_saved(self, config):
         """Handle SMB configuration saved."""
-        logging.info(f"SMB configuration saved: {config}")
-        
-        # Update cloud settings
+        # The password is transient: never persist it, never log it. Pull it
+        # out of the config dict before anything touches the filesystem.
+        config = dict(config)
+        password = config.pop('smb_password', '') or ''
+
+        # Build a redacted copy for logging (keeps secrets out of log files).
+        log_cfg = dict(config)
+        if password:
+            log_cfg['smb_password'] = '***'
+        logging.info(f"SMB configuration saved: {log_cfg}")
+
+        # Update cloud settings (no password inside)
         self.cloud_settings.update(config)
+        # Extra safety: strip any stale password field from prior versions.
+        self.cloud_settings.pop('smb_password', None)
         cloud_settings_manager.save_cloud_settings(self.cloud_settings)
-        
+
+        # Remember the password in memory (session only) on the SMB provider
+        # so that connect()/auto-connect has it available without re-prompting.
+        self._smb_session_password = password
+
         # If auto-connect is enabled and we have a path, try to connect
         if config.get('smb_auto_connect') and config.get('smb_path'):
             self._connect_to_smb()
@@ -1985,6 +2000,7 @@ class CloudSavePanel(QWidget):
         try:
             from cloud_utils.smb_provider import SMBProvider
             from cloud_utils.provider_factory import ProviderFactory, ProviderType
+            from PySide6.QtWidgets import QInputDialog, QLineEdit
             
             smb_path = self.cloud_settings.get('smb_path', '')
             if not smb_path:
@@ -2002,12 +2018,31 @@ class CloudSavePanel(QWidget):
                     "SMB provider is not available."
                 )
                 return
-            
+
+            use_credentials = self.cloud_settings.get('smb_use_credentials', False)
+            username = self.cloud_settings.get('smb_username', '')
+
+            # If we need credentials but no password is cached in this session,
+            # prompt the user for it. The password is kept only in memory.
+            password = getattr(self, '_smb_session_password', None) or ''
+            if use_credentials and not password:
+                password, ok = QInputDialog.getText(
+                    self,
+                    "SMB Password",
+                    f"Enter password for {username or smb_path}:",
+                    QLineEdit.Password,
+                )
+                if not ok:
+                    logging.info("SMB connect cancelled by user (no password)")
+                    return
+                self._smb_session_password = password
+
             # Connect
             success = smb_provider.connect(
                 path=smb_path,
-                use_credentials=self.cloud_settings.get('smb_use_credentials', False),
-                username=self.cloud_settings.get('smb_username', '')
+                use_credentials=use_credentials,
+                username=username,
+                password=password,
             )
             
             if success:

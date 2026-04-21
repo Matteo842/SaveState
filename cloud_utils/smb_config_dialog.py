@@ -18,12 +18,13 @@ class ConnectionTestWorker(QObject):
     """Worker thread for testing SMB connection."""
     finished = Signal(dict)  # Result dict from test_connection
     
-    def __init__(self, provider, path, use_credentials, username):
+    def __init__(self, provider, path, use_credentials, username, password=""):
         super().__init__()
         self.provider = provider
         self.path = path
         self.use_credentials = use_credentials
         self.username = username
+        self.password = password
     
     def run(self):
         """Test the connection in background."""
@@ -32,7 +33,8 @@ class ConnectionTestWorker(QObject):
             success = self.provider.connect(
                 path=self.path,
                 use_credentials=self.use_credentials,
-                username=self.username
+                username=self.username,
+                password=self.password,
             )
             
             if success:
@@ -105,8 +107,8 @@ class SMBConfigDialog(QDialog):
         
         description = QLabel(
             "Sync your save backups to a network share or local folder.\n"
-            "Supports Windows shares (\\\\server\\share), mapped drives, "
-            "and local folders."
+            "Supports smb:// URIs, Windows shares (\\\\server\\share), "
+            "mapped drives, and local folders."
         )
         description.setWordWrap(True)
         description.setProperty("class", "description")
@@ -119,7 +121,10 @@ class SMBConfigDialog(QDialog):
         # Path input with browse button
         path_row = QHBoxLayout()
         self.path_edit = QLineEdit()
-        self.path_edit.setPlaceholderText("\\\\server\\share\\folder or Z:\\Backups")
+        self.path_edit.setPlaceholderText(
+            "smb://server/share/folder, \\\\server\\share\\folder, "
+            "or /mnt/nas/folder"
+        )
         path_row.addWidget(self.path_edit, 1)
         
         self.browse_btn = QPushButton("Browse...")
@@ -146,10 +151,16 @@ class SMBConfigDialog(QDialog):
         self.username_edit = QLineEdit()
         self.username_edit.setPlaceholderText("domain\\username or username@domain")
         cred_form_layout.addRow("Username:", self.username_edit)
-        
+
+        self.password_edit = QLineEdit()
+        self.password_edit.setEchoMode(QLineEdit.Password)
+        self.password_edit.setPlaceholderText("Leave empty to be prompted on connect")
+        cred_form_layout.addRow("Password:", self.password_edit)
+
         cred_note = QLabel(
-            "Note: Password will be requested when connecting.\n"
-            "For permanent access, use Windows Credential Manager."
+            "Note: The password is kept only in memory for this session and is "
+            "never written to disk. For permanent access, use your system "
+            "credential manager (Windows Credential Manager / GNOME Keyring / KWallet)."
         )
         cred_note.setProperty("class", "help-text")
         cred_note.setWordWrap(True)
@@ -297,7 +308,8 @@ class SMBConfigDialog(QDialog):
             provider,
             path,
             self.use_credentials_cb.isChecked(),
-            self.username_edit.text().strip()
+            self.username_edit.text().strip(),
+            self.password_edit.text(),
         )
         self._test_worker.moveToThread(self._test_thread)
         
@@ -331,12 +343,15 @@ class SMBConfigDialog(QDialog):
             )
             return
         
-        # Build configuration dictionary
+        # Build configuration dictionary.
+        # NOTE: 'smb_password' is transient — cloud_panel consumes it for the
+        # current session and strips it before persisting to disk.
         config = {
             'smb_enabled': True,
             'smb_path': path,
             'smb_use_credentials': self.use_credentials_cb.isChecked(),
             'smb_username': self.username_edit.text().strip(),
+            'smb_password': self.password_edit.text(),
             'smb_auto_connect': self.auto_connect_cb.isChecked()
         }
         
@@ -350,5 +365,6 @@ class SMBConfigDialog(QDialog):
             'smb_path': self.path_edit.text().strip(),
             'smb_use_credentials': self.use_credentials_cb.isChecked(),
             'smb_username': self.username_edit.text().strip(),
+            'smb_password': self.password_edit.text(),
             'smb_auto_connect': self.auto_connect_cb.isChecked()
         }

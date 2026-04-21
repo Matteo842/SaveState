@@ -8,19 +8,96 @@ This provider works with:
 - Mapped network drives (Z:\\backups)
 - Local folders (for testing)
 - Linux/macOS mounted shares (/mnt/nas/backups)
+- smb:// URIs on both platforms
 
-No external dependencies required - uses native filesystem operations.
+On Linux the provider resolves SMB URIs (smb://...) and UNC-style paths
+(\\\\server\\share) to their GVFS mount point at
+``/run/user/<UID>/gvfs/smb-share:server=<srv>,share=<share>``.  If the share
+is not already mounted, it will try to mount it via ``gio mount``, feeding
+any supplied credentials on stdin.
+
+No third-party Python dependencies required - the provider uses only the
+standard library plus the ``gio`` binary on Linux.
 """
 
 import os
+import re
+import sys
 import shutil
 import logging
 import hashlib
+import posixpath
+import subprocess
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 from cloud_utils.storage_provider import StorageProvider, ProviderType
+
+
+# ---------------------------------------------------------------------------
+# Path parsing helpers
+# ---------------------------------------------------------------------------
+
+# Matches smb://[user[:pass]@]server[:port]/share/subpath
+_SMB_URI_RE = re.compile(
+    r'^smb://(?:[^/@]+@)?([^/:]+)(?::\d+)?/([^/]+)(?:/(.*))?$',
+    re.IGNORECASE,
+)
+
+# Matches \\server\share\subpath or //server/share/subpath (after backslash→slash)
+_UNC_RE = re.compile(r'^//([^/]+)/([^/]+)(?:/(.*))?$')
+
+
+def _parse_share_path(raw_path: str) -> Optional[Dict[str, str]]:
+    """Parse an SMB/UNC path into its components.
+
+    Returns a dict with keys 'server', 'share', 'subpath' (may be empty string),
+    or None if the path is not a recognizable SMB/UNC path (e.g. local path,
+    mapped drive).
+    """
+    if not raw_path:
+        return None
+
+    path = raw_path.strip()
+
+    # smb://server/share/subpath
+    m = _SMB_URI_RE.match(path)
+    if m:
+        server, share, subpath = m.group(1), m.group(2), m.group(3) or ''
+        return {
+            'server': server,
+            'share': share,
+            'subpath': subpath.strip('/').strip('\\'),
+        }
+
+    # \\server\share\subpath  OR  //server/share/subpath
+    # Only treat as UNC if the path clearly starts with a double
+    # separator (\\ or //) — we must NOT rewrite normal Linux paths like
+    # "/mnt/nas/backups" into UNC form.
+    is_unc_like = path.startswith('\\\\') or path.startswith('//')
+    if is_unc_like:
+        normalized = path.replace('\\', '/')
+        # Collapse any extra leading slashes down to exactly two
+        normalized = '//' + normalized.lstrip('/')
+        m = _UNC_RE.match(normalized)
+        if m:
+            server, share, subpath = m.group(1), m.group(2), m.group(3) or ''
+            return {
+                'server': server,
+                'share': share,
+                'subpath': subpath.strip('/'),
+            }
+
+    return None
+
+
+def _to_windows_unc(info: Dict[str, str]) -> str:
+    """Build a Windows-style UNC path from parsed components."""
+    base = f"\\\\{info['server']}\\{info['share']}"
+    if info.get('subpath'):
+        base += '\\' + info['subpath'].replace('/', '\\')
+    return base
 
 
 class SMBProvider(StorageProvider):
@@ -41,17 +118,19 @@ class SMBProvider(StorageProvider):
         super().__init__()
         
         # Configuration
-        self._base_path: Optional[str] = None  # Root network path
+        self._base_path: Optional[str] = None  # Raw user-entered path (e.g. smb://... or \\server\share)
+        self._resolved_base_path: Optional[str] = None  # Platform-resolved local path (e.g. GVFS mount)
         self._app_folder_path: Optional[str] = None  # Full path to SaveState folder
         
         # Connection state
         self._connected = False
         
-        # Optional credentials (for Windows net use)
+        # Optional credentials
         self._use_credentials = False
         self._username: Optional[str] = None
         self._domain: Optional[str] = None
-        # Password is NOT stored - should use Windows Credential Manager
+        # Password kept only in memory for current session (never persisted)
+        self._password: Optional[str] = None
     
     @property
     def provider_type(self) -> ProviderType:
@@ -79,8 +158,16 @@ class SMBProvider(StorageProvider):
     
     @property
     def base_path(self) -> Optional[str]:
-        """Get the configured base network path."""
+        """Get the configured base network path (as user entered it)."""
         return self._base_path
+
+    def set_password(self, password: Optional[str]) -> None:
+        """Set the in-memory password used for credentialed SMB connections.
+
+        The password is NEVER written to disk. It lives only for the current
+        process session so that auto-connect can succeed without re-prompting.
+        """
+        self._password = password
     
     # -------------------------------------------------------------------------
     # Connection Management
@@ -90,15 +177,19 @@ class SMBProvider(StorageProvider):
                 use_credentials: bool = False,
                 username: str = None,
                 domain: str = None,
+                password: str = None,
                 **kwargs) -> bool:
         """
         Connect to the network folder.
         
         Args:
-            path: Network path (UNC or mapped drive)
+            path: Network path (UNC, smb://, mapped drive, or local folder)
             use_credentials: Whether to use explicit credentials
             username: Username for authentication
             domain: Domain for authentication
+            password: Password for authentication (kept in memory only).
+                If not provided, any password previously set via set_password()
+                or stored on the instance will be reused.
             
         Returns:
             bool: True if connection successful
@@ -108,23 +199,32 @@ class SMBProvider(StorageProvider):
         
         if not self._base_path:
             logging.error("SMB Provider: No path configured")
+            self._connected = False
             return False
         
         self._use_credentials = use_credentials
         self._username = username
         self._domain = domain
+        if password is not None:
+            self._password = password
         
         try:
-            # Normalize the path
-            base_path = os.path.normpath(self._base_path)
-            
-            # Check if base path exists
-            if not os.path.isdir(base_path):
-                logging.error(f"SMB Provider: Path not accessible: {base_path}")
+            resolved, err = self._resolve_base_path(self._base_path)
+            if resolved is None:
+                # Log the path as the user entered it, not the mangled form.
+                logging.error(
+                    f"SMB Provider: Path not accessible: {self._base_path}"
+                    + (f" ({err})" if err else "")
+                )
+                self._connected = False
+                self._resolved_base_path = None
+                self._app_folder_path = None
                 return False
-            
+
+            self._resolved_base_path = resolved
+
             # Create or verify SaveState folder
-            self._app_folder_path = os.path.join(base_path, self.APP_FOLDER_NAME)
+            self._app_folder_path = os.path.join(resolved, self.APP_FOLDER_NAME)
             
             if not os.path.exists(self._app_folder_path):
                 try:
@@ -132,6 +232,8 @@ class SMBProvider(StorageProvider):
                     logging.info(f"Created SaveState folder: {self._app_folder_path}")
                 except PermissionError as e:
                     logging.error(f"Cannot create folder (permission denied): {e}")
+                    self._connected = False
+                    self._app_folder_path = None
                     return False
             
             self._connected = True
@@ -141,6 +243,8 @@ class SMBProvider(StorageProvider):
         except Exception as e:
             logging.error(f"SMB Provider connection failed: {e}")
             self._connected = False
+            self._resolved_base_path = None
+            self._app_folder_path = None
             return False
     
     def disconnect(self) -> bool:
@@ -156,6 +260,7 @@ class SMBProvider(StorageProvider):
             'message': '',
             'details': {
                 'path': self._base_path,
+                'resolved_path': self._resolved_base_path,
                 'app_folder': self._app_folder_path,
                 'writable': False
             }
@@ -166,13 +271,18 @@ class SMBProvider(StorageProvider):
             return result
         
         try:
-            # Check if path exists
-            if not os.path.isdir(self._base_path):
-                result['message'] = f'Path not accessible: {self._base_path}'
-                return result
-            
+            resolved = self._resolved_base_path
+            if not resolved:
+                # Resolve on-demand if not yet connected.
+                resolved, err = self._resolve_base_path(self._base_path)
+                if resolved is None:
+                    result['message'] = err or f'Path not accessible: {self._base_path}'
+                    return result
+                self._resolved_base_path = resolved
+                result['details']['resolved_path'] = resolved
+
             # Check if we can write
-            test_file = os.path.join(self._app_folder_path or self._base_path, 
+            test_file = os.path.join(self._app_folder_path or resolved,
                                      '.savestate_test_write')
             try:
                 with open(test_file, 'w') as f:
@@ -190,6 +300,199 @@ class SMBProvider(StorageProvider):
         except Exception as e:
             result['message'] = str(e)
             return result
+
+    # -------------------------------------------------------------------------
+    # Path resolution (cross-platform)
+    # -------------------------------------------------------------------------
+
+    def _resolve_base_path(self, raw_path: str) -> Tuple[Optional[str], Optional[str]]:
+        """Resolve a user-supplied network path to a local filesystem path.
+
+        Handles:
+          - smb:// URIs          -> UNC on Windows, GVFS mount on Linux
+          - \\\\server\\share      -> native UNC on Windows, GVFS mount on Linux
+          - Z:\\ mapped drives    -> Windows only
+          - /mnt/... local paths -> Linux/macOS
+
+        Returns (resolved_path, error_message).  On success error_message is None.
+        """
+        share_info = _parse_share_path(raw_path)
+
+        # --- Windows path handling -------------------------------------------------
+        if sys.platform.startswith('win'):
+            if share_info is not None:
+                candidate = _to_windows_unc(share_info)
+            else:
+                # Local or mapped-drive path. Use normpath safely (Windows-native).
+                candidate = os.path.normpath(raw_path)
+
+            if os.path.isdir(candidate):
+                return candidate, None
+            return None, f"Path not accessible: {candidate}"
+
+        # --- Linux / macOS path handling ------------------------------------------
+        # If it's a plain local path (no server/share), just check it directly.
+        if share_info is None:
+            # Never run normpath on something that starts with backslashes on
+            # Linux; normpath would mangle it. raw_path here is a local path.
+            if os.path.isdir(raw_path):
+                return raw_path, None
+            return None, f"Path not accessible: {raw_path}"
+
+        # SMB share on Linux: resolve via GVFS.
+        return self._resolve_linux_gvfs(share_info)
+
+    def _resolve_linux_gvfs(self, info: Dict[str, str]) -> Tuple[Optional[str], Optional[str]]:
+        """Find (or create) a GVFS mount for an SMB share on Linux.
+
+        GVFS mounts for SMB shares live at:
+            /run/user/<UID>/gvfs/smb-share:server=<srv>,share=<share>[,user=<user>][,domain=<dom>]
+        """
+        try:
+            uid = os.getuid()  # type: ignore[attr-defined]
+        except AttributeError:
+            return None, "GVFS is only available on Linux"
+
+        gvfs_root = f"/run/user/{uid}/gvfs"
+        server = info['server']
+        share = info['share']
+        subpath = info['subpath']
+
+        # 1) Look for an existing mount first (cheap and works with no credentials
+        # if the user already mounted the share via their file manager).
+        # NOTE: GVFS paths are always POSIX, so use posixpath.join explicitly
+        # rather than os.path.join (which follows the host's convention).
+        existing = self._find_gvfs_mount(gvfs_root, server, share)
+        if existing:
+            candidate = posixpath.join(existing, subpath) if subpath else existing
+            if os.path.isdir(candidate):
+                return candidate, None
+
+        # 2) Try to mount via `gio mount`.
+        gio = shutil.which('gio')
+        if not gio:
+            return None, (
+                "SMB share is not mounted and the 'gio' command is not available. "
+                "Install gvfs or mount the share in your file manager first."
+            )
+
+        smb_uri = f"smb://{server}/{share}"
+        logging.info(f"SMB Provider: mounting {smb_uri} via gio")
+        mount_err = self._gio_mount(gio, smb_uri)
+        if mount_err:
+            return None, mount_err
+
+        # 3) Re-scan for the freshly-created mount (GVFS can take a brief
+        # moment to expose the mount in the FUSE tree).
+        import time
+        existing = None
+        for _ in range(10):  # up to ~2 seconds total
+            existing = self._find_gvfs_mount(gvfs_root, server, share)
+            if existing:
+                candidate = posixpath.join(existing, subpath) if subpath else existing
+                if os.path.isdir(candidate):
+                    return candidate, None
+                # Mount is there but subpath isn't visible yet — keep waiting.
+            time.sleep(0.2)
+
+        if existing:
+            return None, f"Mounted share but subfolder not found: {subpath or '/'}"
+        return None, "Mount reported success but no GVFS mount was found"
+
+    @staticmethod
+    def _find_gvfs_mount(gvfs_root: str, server: str, share: str) -> Optional[str]:
+        """Locate the GVFS mount directory for a given server/share, if any.
+
+        GVFS entries look like:
+            smb-share:server=<srv>,share=<share>[,user=<user>][,domain=<dom>]
+        We parse the comma-separated key=value pairs and require an EXACT
+        match on both ``server`` and ``share`` so that e.g. "nas" does not
+        accidentally match a mount named "nas2".
+        """
+        if not os.path.isdir(gvfs_root):
+            return None
+
+        server_l = server.lower()
+        share_l = share.lower()
+        try:
+            for entry in os.listdir(gvfs_root):
+                if not entry.startswith('smb-share:'):
+                    continue
+                # Strip the "smb-share:" prefix and split key=value pairs.
+                payload = entry[len('smb-share:'):]
+                kv = {}
+                for part in payload.split(','):
+                    if '=' not in part:
+                        continue
+                    key, _, value = part.partition('=')
+                    kv[key.strip().lower()] = value.strip().lower()
+                if kv.get('server') == server_l and kv.get('share') == share_l:
+                    candidate = posixpath.join(gvfs_root, entry)
+                    if os.path.isdir(candidate):
+                        return candidate
+        except OSError:
+            return None
+        return None
+
+    def _gio_mount(self, gio_bin: str, smb_uri: str) -> Optional[str]:
+        """Invoke `gio mount <smb_uri>`, feeding credentials on stdin.
+
+        `gio mount` prompts interactively for (in order): username, domain,
+        password.  We feed whatever we have; empty lines keep defaults
+        (e.g. anonymous user).
+
+        Returns None on success, or an error string on failure.
+        """
+        # Build stdin payload. We always provide 3 lines so gio doesn't block
+        # waiting for further input.
+        if self._use_credentials:
+            # Accept domain in "DOMAIN\\user" or "user@domain" forms.
+            user = self._username or ''
+            domain = self._domain or ''
+            if user and '\\' in user and not domain:
+                domain, _, user = user.partition('\\')
+            elif user and '@' in user and not domain:
+                user, _, domain = user.partition('@')
+            password = self._password or ''
+        else:
+            user = ''
+            domain = ''
+            password = ''
+
+        stdin_data = f"{user}\n{domain}\n{password}\n"
+
+        try:
+            proc = subprocess.run(
+                [gio_bin, 'mount', smb_uri],
+                input=stdin_data,
+                text=True,
+                capture_output=True,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired:
+            return "Mount operation timed out"
+        except OSError as e:
+            return f"Failed to run gio: {e}"
+
+        if proc.returncode == 0:
+            return None
+
+        # Friendly error extraction.
+        err_out = (proc.stderr or proc.stdout or '').strip()
+        if not err_out:
+            err_out = f"gio mount exited with code {proc.returncode}"
+
+        # Already-mounted is not an error for our purposes.
+        if 'already mounted' in err_out.lower():
+            return None
+
+        # Detect auth failures to give a clearer message.
+        low = err_out.lower()
+        if any(tok in low for tok in ('permission denied', 'password', 'authentication', 'logon failure')):
+            return "Authentication failed. Check username and password."
+        if 'failed to resolve' in low or 'host is down' in low or 'no route' in low:
+            return f"Cannot reach server '{smb_uri}'. Check the hostname and network."
+        return err_out
     
     # -------------------------------------------------------------------------
     # Backup Operations
