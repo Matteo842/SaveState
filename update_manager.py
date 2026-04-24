@@ -86,6 +86,38 @@ def _is_frozen() -> bool:
     return "__compiled__" in globals()
 
 
+def _get_nuitka_compiled_attr(name: str) -> Optional[str]:
+    """Return a Nuitka ``__compiled__`` attribute when available."""
+    compiled = globals().get("__compiled__")
+    if compiled is None:
+        try:
+            import builtins  # noqa: WPS433
+            compiled = getattr(builtins, "__compiled__", None)
+        except Exception:
+            compiled = None
+    value = getattr(compiled, name, None) if compiled is not None else None
+    return value if isinstance(value, str) and value else None
+
+
+def _normalise_exe_candidate(path: Optional[str]) -> Optional[str]:
+    """Expand and validate an executable path candidate."""
+    if not path:
+        return None
+    cleaned = os.path.expandvars(os.path.expanduser(str(path).strip().strip('"')))
+    if not cleaned:
+        return None
+    return os.path.abspath(cleaned)
+
+
+def _is_temp_path(path: str) -> bool:
+    """Best-effort check for paths inside the current user's temp folder."""
+    try:
+        temp_root = os.path.abspath(tempfile.gettempdir())
+        return os.path.commonpath([temp_root, os.path.abspath(path)]) == temp_root
+    except Exception:
+        return False
+
+
 def _get_executable_path() -> str:
     """Path of the on-disk executable for frozen builds.
 
@@ -94,23 +126,43 @@ def _get_executable_path() -> str:
     - Linux AppImage: ``APPIMAGE`` env var points to the outer .AppImage
       the user launched. ``sys.executable`` would point inside the mounted
       AppImage filesystem, which is read-only.
-    - Nuitka one-file: at runtime Nuitka extracts the program into a
-      ``%TEMP%\\onefile_xxxxx\\`` directory and ``sys.executable`` /
-      ``sys.argv[0]`` point INTO that temp dir (which gets wiped when the
-      process exits). Replacing files there is useless because the user's
-      actual .exe lives elsewhere. Nuitka exposes the real path through
-      the ``NUITKA_ONEFILE_BINARY`` env var.
+    - Nuitka one-file: at runtime Nuitka extracts the program into a temp
+      directory and ``sys.executable`` may point there. The real exe is
+      exposed through newer ``__compiled__.onefile_argv0`` /
+      ``NUITKA_ONEFILE_ARGV0`` builds, and in older builds ``sys.argv[0]``
+      is the most reliable fallback.
     - PyInstaller: ``sys.executable`` already points to the real exe (the
       extraction dir is in ``sys._MEIPASS`` and is separate), so the
       fallback works as-is.
     """
-    appimage = os.environ.get("APPIMAGE")
-    if appimage and os.path.isfile(appimage):
-        return appimage
-    nuitka_binary = os.environ.get("NUITKA_ONEFILE_BINARY")
-    if nuitka_binary and os.path.isfile(nuitka_binary):
-        return nuitka_binary
-    return os.path.abspath(sys.executable)
+    candidates = [
+        os.environ.get("APPIMAGE"),
+        os.environ.get("NUITKA_ONEFILE_BINARY"),
+        _get_nuitka_compiled_attr("onefile_argv0"),
+        os.environ.get("NUITKA_ONEFILE_ARGV0"),
+    ]
+
+    # Nuitka onefile needs argv[0] before sys.executable because the latter
+    # can be the unpacked temporary launcher.
+    if not hasattr(sys, "_MEIPASS"):
+        candidates.extend([
+            _ORIGINAL_ARGV[0] if _ORIGINAL_ARGV else None,
+            sys.argv[0] if sys.argv else None,
+        ])
+
+    candidates.append(sys.executable)
+
+    valid: list[str] = []
+    for raw in candidates:
+        candidate = _normalise_exe_candidate(raw)
+        if candidate and os.path.isfile(candidate) and candidate not in valid:
+            valid.append(candidate)
+
+    for candidate in valid:
+        if not _is_temp_path(candidate):
+            return candidate
+
+    return valid[0] if valid else ""
 
 
 def _get_source_project_root() -> str:
