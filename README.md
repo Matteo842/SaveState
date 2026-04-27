@@ -8,6 +8,8 @@
 
 A user-friendly GUI application for **Windows** and **Linux** to easily back up and restore video game save files. Perfect for games without cloud saves, managing multiple save locations, or syncing your progress across devices.
 
+🖥️ **Looking for the Android/Mobile version?** Check out [SaveState for Android](https://github.com/Matteo842/SaveState-App)
+
 > **Zero Configuration Required** — Download, run, and start backing up. No config files to edit, no setup wizard, no account needed. If a guide tells you to configure SaveState before using it, that guide is wrong.
 >
 > **No Admin Rights Needed** — This app does NOT require administrator privileges. If Windows asks you to run it as admin, **don't** — something is wrong.
