@@ -302,7 +302,8 @@ class WebDAVConfigDialog(QDialog):
         
         self.url_edit.setText(self.current_config.get('webdav_url', ''))
         self.username_edit.setText(self.current_config.get('webdav_username', ''))
-        # Note: password is not loaded for security reasons
+        if self.current_config.get('webdav_has_password', False):
+            self.password_edit.setPlaceholderText("Saved password will be used if left blank")
         self.verify_ssl_checkbox.setChecked(self.current_config.get('webdav_verify_ssl', True))
         self.digest_auth_checkbox.setChecked(self.current_config.get('webdav_use_digest', False))
         self.auto_connect_checkbox.setChecked(self.current_config.get('webdav_auto_connect', False))
@@ -311,7 +312,7 @@ class WebDAVConfigDialog(QDialog):
         """Test the connection with current settings."""
         url = self.url_edit.text().strip()
         username = self.username_edit.text().strip()
-        password = self.password_edit.text()
+        password = self.password_edit.text() or self.current_config.get('webdav_saved_password', '')
         
         if not url:
             QMessageBox.warning(
@@ -381,6 +382,14 @@ class WebDAVConfigDialog(QDialog):
                 self,
                 "Missing Information",
                 "Please enter a username."
+            )
+            return
+
+        if not self.password_edit.text() and not self.current_config.get('webdav_has_password', False):
+            QMessageBox.warning(
+                self,
+                "Missing Information",
+                "Please enter a password."
             )
             return
         

@@ -2182,6 +2182,8 @@ class CloudSavePanel(QWidget):
             current_config = {
                 'webdav_url': self.cloud_settings.get('webdav_url', ''),
                 'webdav_username': self.cloud_settings.get('webdav_username', ''),
+                'webdav_has_password': bool(self.cloud_settings.get('webdav_password', '')),
+                'webdav_saved_password': self.cloud_settings.get('webdav_password', ''),
                 'webdav_verify_ssl': self.cloud_settings.get('webdav_verify_ssl', True),
                 'webdav_use_digest': self.cloud_settings.get('webdav_use_digest', False),
                 'webdav_auto_connect': self.cloud_settings.get('webdav_auto_connect', False)
@@ -2201,7 +2203,16 @@ class CloudSavePanel(QWidget):
     
     def _on_webdav_config_saved(self, config):
         """Handle WebDAV configuration saved."""
-        logging.info(f"WebDAV configuration saved: {config}")
+        config = dict(config)
+        password = config.get('webdav_password', '') or ''
+        if not password and self.cloud_settings.get('webdav_password'):
+            # Keep the saved password when the edit field is left blank.
+            config['webdav_password'] = self.cloud_settings.get('webdav_password', '')
+
+        log_cfg = dict(config)
+        if log_cfg.get('webdav_password'):
+            log_cfg['webdav_password'] = '***'
+        logging.info(f"WebDAV configuration saved: {log_cfg}")
         
         # Update cloud settings
         self.cloud_settings.update(config)
@@ -2222,7 +2233,7 @@ class CloudSavePanel(QWidget):
                 # WebDAV is not configured, open config dialog automatically
                 logging.info("WebDAV not configured, opening config dialog")
                 self._show_webdav_config_dialog()
-                return
+                return False
             
             # Get or create WebDAV provider
             webdav_provider = ProviderFactory.get_provider(ProviderType.WEBDAV)
@@ -2232,7 +2243,7 @@ class CloudSavePanel(QWidget):
                     "Error",
                     "WebDAV provider is not available."
                 )
-                return
+                return False
             
             # Connect
             success = webdav_provider.connect(
@@ -2254,6 +2265,7 @@ class CloudSavePanel(QWidget):
                 self._refresh_cloud_status()
                 
                 logging.info(f"Connected to WebDAV: {webdav_url}")
+                return True
             else:
                 QMessageBox.warning(
                     self,
@@ -2261,6 +2273,7 @@ class CloudSavePanel(QWidget):
                     f"Could not connect to:\n{webdav_url}\n\n"
                     "Please check your settings and try again."
                 )
+                return False
                 
         except Exception as e:
             logging.error(f"Error connecting to WebDAV: {e}")
@@ -2269,6 +2282,7 @@ class CloudSavePanel(QWidget):
                 "Connection Error",
                 f"Error connecting to WebDAV server:\n{str(e)}"
             )
+            return False
     
     def _show_git_config_dialog(self):
         """Show the Git configuration dialog."""
@@ -3873,20 +3887,73 @@ class CloudSavePanel(QWidget):
         except Exception as e:
             logging.error(f"Error during cloud panel cleanup: {e}")
 
+    def _select_provider_in_combo(self, provider_type):
+        """Select the active provider in the dropdown without rewriting settings."""
+        try:
+            if not hasattr(self, 'provider_combo') or not self.provider_combo:
+                return
+
+            for i in range(self.provider_combo.count()):
+                if self.provider_combo.itemData(i) == provider_type:
+                    self.provider_combo.blockSignals(True)
+                    self.provider_combo.setCurrentIndex(i)
+                    self.provider_combo.blockSignals(False)
+                    self._update_connect_button_for_provider(provider_type)
+                    self._update_connection_status_for_provider(provider_type)
+                    self._update_configure_button_state(provider_type)
+                    return
+        except Exception as e:
+            logging.debug(f"Error selecting provider {provider_type}: {e}")
+
+    def _provider_auto_connect_enabled(self, provider_type):
+        """Return whether the selected provider has its own auto-connect flag enabled."""
+        provider_flags = {
+            'smb': 'smb_auto_connect',
+            'ftp': 'ftp_auto_connect',
+            'webdav': 'webdav_auto_connect',
+            'git': 'git_auto_connect',
+        }
+        flag_name = provider_flags.get(provider_type)
+        return bool(flag_name and self.cloud_settings.get(flag_name, False))
+
+    def _connect_to_provider_type(self, provider_type):
+        """Connect the configured provider and return whether it is connected."""
+        self._select_provider_in_combo(provider_type)
+
+        if provider_type == 'google_drive':
+            return bool(self.drive_manager and self.drive_manager.is_connected)
+        if provider_type == 'ftp':
+            self._connect_to_ftp()
+        elif provider_type == 'smb':
+            self._connect_to_smb()
+        elif provider_type == 'webdav':
+            self._connect_to_webdav()
+        elif provider_type == 'git':
+            self._connect_to_git()
+        else:
+            logging.warning(f"Cannot connect unknown provider: {provider_type}")
+            return False
+
+        provider = self._get_active_provider()
+        return bool(provider and provider.is_connected)
+
     
     def perform_startup_actions(self):
         """Perform startup actions (auto-connect and/or auto-sync) if enabled in settings."""
         auto_connect = self.cloud_settings.get('auto_connect_on_startup', False)
         auto_sync_on_startup = self.cloud_settings.get('auto_sync_on_startup', False)
         active_provider = self.cloud_settings.get('active_provider', 'google_drive')
+        provider_auto_connect = self._provider_auto_connect_enabled(active_provider)
+        self._select_provider_in_combo(active_provider)
 
-        if auto_connect:
+        if auto_connect or provider_auto_connect:
             # Check which provider should auto-connect based on the active_provider setting
             if active_provider == 'google_drive':
                 logging.info("Auto-connect on startup enabled, connecting to Google Drive...")
                 # Disable Cloud button in main window while connecting
                 self._set_main_cloud_button_connecting(True)
                 self._perform_auto_connect_google_drive()
+                return
             elif active_provider == 'ftp':
                 ftp_host = self.cloud_settings.get('ftp_host', '')
                 if ftp_host:
@@ -3917,13 +3984,15 @@ class CloudSavePanel(QWidget):
                     logging.warning("Auto-connect enabled but Git repo path not configured")
             else:
                 logging.debug(f"Auto-connect enabled but unknown provider: {active_provider}")
+
+            if auto_sync_on_startup:
+                self._perform_startup_sync()
             return
 
         # If auto-connect is off but auto-sync-on-startup is enabled, do a one-off connect->sync->disconnect
-        # Note: auto-sync currently only works with Google Drive
-        if auto_sync_on_startup and active_provider == 'google_drive':
+        if auto_sync_on_startup:
             logging.info("Auto-sync on startup enabled (one-off). Connecting for startup sync...")
-            self._ensure_connected_then(self._perform_startup_sync, disconnect_after=True)
+            self._ensure_active_provider_connected_then(self._perform_startup_sync, disconnect_after=True)
         else:
             logging.debug("Startup auto connect/sync disabled or not applicable for current provider")
     
@@ -3986,8 +4055,10 @@ class CloudSavePanel(QWidget):
         if not self.cloud_settings.get('auto_sync_on_startup', False):
             return
         
-        if not self.drive_manager.is_connected:
-            logging.info("Startup sync skipped: not connected to Google Drive")
+        active_provider = self._get_active_provider()
+        if not active_provider or not active_provider.is_connected:
+            provider_name = self.cloud_settings.get('active_provider', 'cloud')
+            logging.info(f"Startup sync skipped: not connected to {provider_name}")
             return
         
         logging.info("Performing startup sync...")
@@ -4172,10 +4243,16 @@ class CloudSavePanel(QWidget):
 
             self._auto_sync_profiles(profiles_to_sync)
 
+        active_provider = self._get_active_provider()
+
         # If not connected, connect, run, and optionally disconnect
-        if not self.drive_manager.is_connected:
-            temp_disconnect = not self.cloud_settings.get('auto_connect_on_startup', False)
-            self._ensure_connected_then(start_sync, disconnect_after=temp_disconnect)
+        if not active_provider or not active_provider.is_connected:
+            active_provider_type = self.cloud_settings.get('active_provider', 'google_drive')
+            temp_disconnect = not (
+                self.cloud_settings.get('auto_connect_on_startup', False)
+                or self._provider_auto_connect_enabled(active_provider_type)
+            )
+            self._ensure_active_provider_connected_then(start_sync, disconnect_after=temp_disconnect)
             return
         
         # Already connected
@@ -4250,7 +4327,11 @@ class CloudSavePanel(QWidget):
                 active_provider = self._get_active_provider()
                 if active_provider and active_provider.is_connected:
                     active_provider.disconnect()
-                self._set_connected(False)
+                provider_type = self.provider_combo.currentData()
+                if provider_type == "google_drive":
+                    self._set_connected(False)
+                else:
+                    self._update_connection_status_for_provider(provider_type)
             self._disconnect_after_current_sync = False
         except Exception:
             self._disconnect_after_current_sync = False
@@ -4280,7 +4361,11 @@ class CloudSavePanel(QWidget):
             if self._disconnect_after_current_sync:
                 if active_provider and active_provider.is_connected:
                     active_provider.disconnect()
-                self._set_connected(False)
+                provider_type = self.provider_combo.currentData()
+                if provider_type == "google_drive":
+                    self._set_connected(False)
+                else:
+                    self._update_connection_status_for_provider(provider_type)
             self._disconnect_after_current_sync = False
         except Exception:
             self._disconnect_after_current_sync = False
@@ -4308,6 +4393,27 @@ class CloudSavePanel(QWidget):
                 # Thread object was already deleted by Qt
                 pass
         self._active_auth_threads = cleaned_threads
+
+    def _ensure_active_provider_connected_then(self, on_connected_callable, disconnect_after: bool = False):
+        """Ensure the selected provider is connected before running a callback."""
+        active_provider_type = self.cloud_settings.get('active_provider', 'google_drive')
+        self._select_provider_in_combo(active_provider_type)
+
+        provider = self._get_active_provider()
+        if provider and provider.is_connected:
+            on_connected_callable()
+            return
+
+        if active_provider_type == 'google_drive':
+            self._ensure_connected_then(on_connected_callable, disconnect_after=disconnect_after)
+            return
+
+        self._disconnect_after_current_sync = bool(disconnect_after)
+        if self._connect_to_provider_type(active_provider_type):
+            on_connected_callable()
+        else:
+            logging.warning(f"Connection attempt failed for {active_provider_type}")
+            self._disconnect_after_current_sync = False
     
     def _ensure_connected_then(self, on_connected_callable, disconnect_after: bool = False):
         """Ensure we're connected, then call the provided function. Optionally disconnect after sync ends."""
