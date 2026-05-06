@@ -87,8 +87,19 @@ class ThemeManager:
             # Apply the style to the entire application
             app_instance = QApplication.instance()
             if app_instance:
-                app_instance.setStyleSheet(qss_to_apply)
-                self._current_applied_theme = theme_name  # Track what we applied
+                updates_were_enabled = None
+                try:
+                    if hasattr(self.main_window, "updatesEnabled") and hasattr(self.main_window, "setUpdatesEnabled"):
+                        updates_were_enabled = self.main_window.updatesEnabled()
+                        self.main_window.setUpdatesEnabled(False)
+
+                    app_instance.setStyleSheet(qss_to_apply)
+                    self._current_applied_theme = theme_name  # Track what we applied
+                finally:
+                    if updates_were_enabled is not None:
+                        self.main_window.setUpdatesEnabled(updates_were_enabled)
+                        if updates_were_enabled:
+                            self.main_window.update()
                 logging.info(f"ThemeManager: Theme '{theme_name}' applied via QSS.")
             else:
                 # This shouldn't happen if the app is running, but for safety
@@ -144,24 +155,24 @@ class ThemeManager:
         #    This is important because other parts of the code might read it.
         self.main_window.current_settings['theme'] = new_theme
 
-        # 2. Save the updated settings to file
+        # 2. Apply the theme immediately so disk I/O from saving settings does not delay the UI switch.
+        logging.info(f"ThemeManager: Applying '{new_theme}' theme before saving the setting.")
+        self.update_theme()
+
+        # 3. Notify components that need to update their theme-aware delegates
+        self._notify_theme_change()
+
+        # 4. Persist the updated setting. If saving fails, revert both setting and UI.
         if not settings_manager.save_settings(self.main_window.current_settings):
-            # Error in saving
             logging.error(f"ThemeManager: Failed to save theme setting '{new_theme}' to file.")
+            self.main_window.current_settings['theme'] = current_theme
+            self.update_theme()
+            self._notify_theme_change()
             QMessageBox.warning(self.main_window, # Use main_window as parent for the dialog
                                 "Error",
                                 "Unable to save theme setting.")
-            # Restore the previous value in the main_window settings for consistency
-            self.main_window.current_settings['theme'] = current_theme
-            # Don't call update_theme() here because the theme hasn't actually changed
         else:
-            # 3. Saving successful, apply the new theme by calling update_theme()
-            #    which will read the new value from main_window.current_settings
-            logging.info(f"ThemeManager: Theme setting saved successfully. Applying '{new_theme}' theme now.")
-            self.update_theme()
-            
-            # 4. Notify components that need to update their theme-aware delegates
-            self._notify_theme_change()
+            logging.info(f"ThemeManager: Theme setting '{new_theme}' saved successfully.")
     
     def _notify_theme_change(self):
         """Notify all theme-aware components to update their appearance."""
