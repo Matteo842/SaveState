@@ -47,9 +47,21 @@ def _read_appdata_settings() -> dict | None:
 def _get_executable_dir() -> str:
     """Return the directory containing the running executable or script.
 
-    Supports PyInstaller (sys.frozen) and normal Python execution.
+    Supports PyInstaller (sys.frozen), Linux AppImage, and normal Python execution.
+
+    On Linux AppImage, sys.executable points inside the read-only mounted
+    filesystem (/tmp/.mount_XXX/usr/bin/...). The APPIMAGE environment
+    variable contains the path of the real .AppImage file on disk, which
+    is the correct location for the portable pointer file.
     """
     try:
+        # Linux AppImage: APPIMAGE env var points to the real .AppImage file
+        # on disk (writable), while sys.executable points inside the
+        # read-only mounted squashfs. Use the real file's directory.
+        appimage_path = os.environ.get("APPIMAGE")
+        if appimage_path and os.path.isfile(appimage_path):
+            return os.path.dirname(os.path.abspath(appimage_path))
+
         if getattr(sys, "frozen", False) and hasattr(sys, "executable"):
             return os.path.dirname(os.path.abspath(sys.executable))
         # Best-effort fallback to the script path
