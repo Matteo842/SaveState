@@ -20,12 +20,33 @@ from typing import Optional, List, Dict, Callable, Any
 from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
-from googleapiclient.errors import HttpError
+# Lazy loading helpers for Google APIs to optimize startup time
+Request = None
+Credentials = None
+InstalledAppFlow = None
+build = None
+MediaFileUpload = None
+MediaIoBaseDownload = None
+HttpError = None
+
+def _lazy_init():
+    global Request, Credentials, InstalledAppFlow, build, MediaFileUpload, MediaIoBaseDownload, HttpError
+    if build is not None:
+        return
+    from google.auth.transport.requests import Request as _Request
+    from google.oauth2.credentials import Credentials as _Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow as _InstalledAppFlow
+    from googleapiclient.discovery import build as _build
+    from googleapiclient.http import MediaFileUpload as _MediaFileUpload, MediaIoBaseDownload as _MediaIoBaseDownload
+    from googleapiclient.errors import HttpError as _HttpError
+    
+    Request = _Request
+    Credentials = _Credentials
+    InstalledAppFlow = _InstalledAppFlow
+    build = _build
+    MediaFileUpload = _MediaFileUpload
+    MediaIoBaseDownload = _MediaIoBaseDownload
+    HttpError = _HttpError
 
 import hashlib
 
@@ -44,6 +65,7 @@ class GoogleDriveManager:
     
     def __init__(self):
         """Initialize the Google Drive manager."""
+        _lazy_init()
         self.service = None
         self.credentials = None
         self.is_connected = False

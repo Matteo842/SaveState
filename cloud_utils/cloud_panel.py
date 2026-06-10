@@ -65,7 +65,6 @@ class CloudSelectionDelegate(QStyledItemDelegate):
         painter.restore()
 
 from cloud_utils.cloud_settings_panel import CloudSettingsPanel
-from cloud_utils.google_drive_manager import get_drive_manager, StorageCheckWorker
 import cloud_settings_manager
 from utils import resource_path
 from gui_components import favorites_manager
@@ -513,7 +512,7 @@ class CloudSavePanel(QWidget):
         self.local_backups = []
         
         # Google Drive manager
-        self.drive_manager = get_drive_manager()
+        self._drive_manager_lazy = None
         
         # Register all storage providers
         from cloud_utils.provider_factory import register_all_providers
@@ -590,6 +589,14 @@ class CloudSavePanel(QWidget):
         
         # Load cloud settings from disk
         self._load_cloud_settings_from_disk()
+        
+    @property
+    def drive_manager(self):
+        if hasattr(self, '_drive_manager_lazy') and self._drive_manager_lazy is not None:
+            return self._drive_manager_lazy
+        from cloud_utils.google_drive_manager import get_drive_manager
+        self._drive_manager_lazy = get_drive_manager()
+        return self._drive_manager_lazy
         
     def _preload_icons(self):
         """Pre-load and cache all icons used in the backup table to avoid per-row disk I/O."""
@@ -3078,6 +3085,7 @@ class CloudSavePanel(QWidget):
                 self._storage_check_cancelled = False # Reset cancel flag
                 
                 self._storage_check_thread = QThread()
+                from cloud_utils.google_drive_manager import StorageCheckWorker
                 self._storage_check_worker = StorageCheckWorker(active_provider, max_storage_gb)
                 self._storage_check_worker.moveToThread(self._storage_check_thread)
                 self._storage_check_thread.started.connect(self._storage_check_worker.run)

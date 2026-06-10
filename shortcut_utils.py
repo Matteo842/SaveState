@@ -14,15 +14,17 @@ from core_logic import sanitize_foldername
 IS_WINDOWS = platform.system() == 'Windows'
 IS_LINUX = platform.system() == 'Linux'
 
-# Importa winshell SOLO se su Windows
+# Check winshell and pywin32 availability without importing them globally
 WINSHELL_AVAILABLE = False
 if IS_WINDOWS:
     try:
-        import winshell
-        from win32com.client import Dispatch # Necessario per alcuni metodi winshell
-        WINSHELL_AVAILABLE = True
-    except ImportError:
-        logging.warning("Library 'winshell' or 'pywin32' not found. Shortcut creation disabled on Windows.")
+        import importlib.util
+        WINSHELL_AVAILABLE = (
+            importlib.util.find_spec("winshell") is not None and 
+            importlib.util.find_spec("win32com") is not None
+        )
+    except Exception:
+        WINSHELL_AVAILABLE = False
 
 # Supporto per desktop file su Linux
 LINUX_DESKTOP_SUPPORT = False
@@ -189,6 +191,7 @@ def get_desktop_path():
     Restituisce il percorso della directory del desktop in modo cross-platform.
     """
     if IS_WINDOWS and WINSHELL_AVAILABLE:
+        import winshell
         return winshell.desktop()
     elif IS_LINUX:
         # Su Linux, il desktop è tipicamente in ~/Desktop o nella versione localizzata
@@ -448,6 +451,7 @@ def create_backup_shortcut(profile_name):
         # --- 4. Crea e configura il collegamento in base al sistema operativo ---
         if IS_WINDOWS:
             logging.debug("Phase 4: Creating WScript.Shell object...")
+            from win32com.client import Dispatch
             shell = Dispatch('WScript.Shell')
             shortcut = shell.CreateShortCut(link_filepath)
             logging.debug("Phase 4: Setting shortcut properties...")

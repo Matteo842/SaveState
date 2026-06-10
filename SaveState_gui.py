@@ -1441,9 +1441,9 @@ class MainWindow(QMainWindow):
     def updateUiText(self):
         """Updates the UI text"""
         logging.debug(">>> updateUiText: START <<<")
-        self.setWindowTitle("SaveState - 2.7")
+        self.setWindowTitle("SaveState - 2.7.1")
         if hasattr(self, 'title_label'):
-            self.title_label.setText("SaveState - 2.7")
+            self.title_label.setText("SaveState - 2.7.1")
         self.profile_table_manager.retranslate_headers()
         # Keep Settings as icon-only in the title bar
         self.settings_button.setText("")

@@ -39,7 +39,6 @@ import tempfile
 import zipfile
 from typing import Optional
 
-import requests
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
 import config
@@ -467,6 +466,7 @@ class _CheckWorker(QThread):
         self._repo = repo
 
     def run(self):
+        import requests
         url = f"https://api.github.com/repos/{self._repo}/releases/latest"
         try:
             headers = {
@@ -508,6 +508,7 @@ class _DownloadWorker(QThread):
         self._cancel = True
 
     def run(self):
+        import requests
         tmp_dest = self._dest + ".part"
         try:
             os.makedirs(os.path.dirname(self._dest), exist_ok=True)

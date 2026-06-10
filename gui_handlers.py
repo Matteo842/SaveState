@@ -13,17 +13,9 @@ from PySide6.QtWidgets import QMessageBox, QDialog, QInputDialog, QApplication, 
 from PySide6.QtCore import Slot, QUrl, QPropertyAnimation, QTimer, Qt
 from PySide6.QtGui import QDesktopServices, QIcon
 
-# Import dialogs
-from dialogs.settings_dialog import SettingsDialog
-from dialogs.restore_dialog import RestoreDialog
-from dialogs.manage_backups_dialog import ManageBackupsDialog
-from dialogs.steam_dialog import SteamDialog
-
 # Import core logic, utils, managers
 import core_logic
-from emulator_utils.pcsx2_manager import backup_pcsx2_save, restore_pcsx2_save
 import settings_manager
-import shortcut_utils
 import config
 from gui_utils import WorkerThread, SteamSearchWorkerThread, open_folder_in_file_manager, NotificationPopup
 from utils import sanitize_filename, resource_path
@@ -229,6 +221,7 @@ class MainWindowHandlers:
         """
         if is_initial_setup:
             # Use popup dialog for initial setup
+            from dialogs.settings_dialog import SettingsDialog
             dialog = SettingsDialog(self.main_window.current_settings.copy(), self.main_window, is_initial_setup=True)
             try:
                 logging.debug("Updating dialog UI text before showing...")
@@ -1508,6 +1501,7 @@ class MainWindowHandlers:
                     
                     logging.debug(f"pcsx2_backup_task: Calling backup_pcsx2_save with: profile='{p_name_worker}', mc_path='{mc_path_worker}', save_dir='{mc_save_dir_worker}', backup_base_dir='{backup_dir}', max_backups={max_bks}, max_source_size_mb={max_size_mb}, compression_mode='{compress_mode}'")
 
+                    from emulator_utils.pcsx2_manager import backup_pcsx2_save
                     success_worker, result_message_worker = backup_pcsx2_save(
                         p_name_worker, 
                         mc_path_worker, 
@@ -1729,6 +1723,7 @@ class MainWindowHandlers:
             self._restore_profile_data = None
 
         # Create and show dialog (can be with or without profile_name)
+        from dialogs.restore_dialog import RestoreDialog
         dialog = RestoreDialog(profile_name, self.main_window)
         dialog.finished.connect(lambda result, d=dialog: self.on_restore_dialog_finished(result, d))
         dialog.show()
@@ -1978,6 +1973,7 @@ class MainWindowHandlers:
                                 else:
                                     logging.info(f"Found expected save data folder: {local_save_data_root}")
                                 
+                                from emulator_utils.pcsx2_manager import restore_pcsx2_save
                                 return restore_pcsx2_save(p_name_worker, mc_path_worker, local_save_data_root, mc_save_dir_worker)
                             except Exception as e_worker:
                                 error_message = f"Error in PCSX2 restore worker for '{p_name_worker}': {e_worker}"
@@ -2129,6 +2125,7 @@ class MainWindowHandlers:
     def handle_manage_backups(self):
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
         if not profile_name: QMessageBox.warning(self.main_window, "Error", "No profile selected."); return
+        from dialogs.manage_backups_dialog import ManageBackupsDialog
         dialog = ManageBackupsDialog(profile_name, self.main_window) # Pass main_window as parent
         dialog.finished.connect(self.on_manage_backups_finished)
         dialog.show()
@@ -2149,6 +2146,7 @@ class MainWindowHandlers:
 
         logging.info(f"Request to create shortcut for profile: '{profile_name}'")
         # Call utility function
+        import shortcut_utils
         success, message = shortcut_utils.create_backup_shortcut(profile_name=profile_name)
         if success:
             QMessageBox.information(self.main_window, "Shortcut Creation", message)
@@ -2167,6 +2165,7 @@ class MainWindowHandlers:
         logging.info(f"Generating Playnite script for profile: '{profile_name}'")
 
         try:
+            import shortcut_utils
             script_text = shortcut_utils.generate_playnite_script(profile_name)
         except Exception as e:
             logging.error(f"Error generating Playnite script: {e}", exc_info=True)
@@ -2380,6 +2379,7 @@ class MainWindowHandlers:
 
         logging.info(f"Generating Heroic script for profile: '{profile_name}'")
 
+        import shortcut_utils
         success, result = shortcut_utils.generate_heroic_script(profile_name)
         if not success:
             QMessageBox.critical(self.main_window, "Error", result)
@@ -2931,6 +2931,7 @@ class MainWindowHandlers:
                 return
             original_name = mw._editing_profile_original_name
             new_name_input = mw.edit_name_edit.text().strip()
+            import shortcut_utils
             new_name = shortcut_utils.sanitize_profile_name(new_name_input)
             if not new_name:
                 QMessageBox.warning(mw, "Name Error", f"Invalid or empty profile name: '{new_name_input}'.")
@@ -3162,6 +3163,7 @@ class MainWindowHandlers:
             return
 
         # Pass main_window reference and parent
+        from dialogs.steam_dialog import SteamDialog
         dialog = SteamDialog(main_window_ref=self.main_window, parent=self.main_window)
         # Connect dialog signal to the handler method in this class
         dialog.game_selected_for_config.connect(self.start_steam_configuration)
