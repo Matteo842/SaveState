@@ -711,6 +711,12 @@ class MainWindowHandlers:
             if save_to_disk:
                 if not core_logic.save_profiles(self.main_window.profiles):
                     return False, "save_failed"
+                # Drop the deleted profile from auto-backup monitoring
+                try:
+                    if hasattr(self.main_window, 'auto_backup_manager') and self.main_window.auto_backup_manager:
+                        self.main_window.auto_backup_manager.reload()
+                except Exception as e_abm:
+                    logging.warning(f"Failed to reload auto-backup manager after delete: {e_abm}")
             
             # Try to delete the backup folder if it's empty
             try:
@@ -2998,6 +3004,43 @@ class MainWindowHandlers:
             overrides_dict['check_free_space_enabled'] = bool(mw.override_check_space_checkbox.isChecked())
             new_data['overrides'] = overrides_dict
 
+            # --- Capture Auto Backup configuration ---
+            try:
+                ab_enabled = bool(mw.auto_backup_enable_checkbox.isChecked())
+                mode_index = mw.auto_backup_mode_combo.currentIndex()
+                ab_mode = "process_close"
+                if 0 <= mode_index < len(mw.auto_backup_mode_options):
+                    ab_mode = mw.auto_backup_mode_options[mode_index][1]
+                # Interval in minutes = value * unit multiplier
+                unit_index = mw.auto_backup_interval_unit_combo.currentIndex()
+                unit_mult = 1
+                if 0 <= unit_index < len(mw.auto_backup_interval_units):
+                    unit_mult = mw.auto_backup_interval_units[unit_index][1]
+                ab_interval_minutes = max(1, int(mw.auto_backup_interval_spin.value()) * int(unit_mult))
+                # Process names (only relevant for the game-close mode). The combo
+                # is pre-filled with the auto-detected executable, but the user
+                # may pick another running program or type one.
+                ab_process_names = []
+                if ab_mode == 'process_close':
+                    raw_processes = mw.auto_backup_process_combo.currentText() or ""
+                    for token in raw_processes.split(','):
+                        token = token.strip()
+                        if token:
+                            ab_process_names.append(token)
+                    # Fall back to auto-detection if the field was left empty.
+                    if not ab_process_names:
+                        detected = mw._detect_profile_process_name(new_data)
+                        if detected:
+                            ab_process_names = [detected]
+                new_data['auto_backup'] = {
+                    'enabled': ab_enabled,
+                    'mode': ab_mode,
+                    'interval_minutes': ab_interval_minutes,
+                    'process_names': ab_process_names,
+                }
+            except Exception as e_ab:
+                logging.warning(f"Failed capturing auto-backup config: {e_ab}")
+
             # --- Apply pending custom icon change ---
             try:
                 from gui_components import icon_extractor as _ie
@@ -3073,6 +3116,12 @@ class MainWindowHandlers:
                 if hasattr(mw, 'exit_profile_edit_mode'):
                     mw.exit_profile_edit_mode()
                 mw.status_label.setText(f"Profile '{new_name}' updated.")
+                # Reload the automatic backup engine with the new configuration
+                try:
+                    if hasattr(mw, 'auto_backup_manager') and mw.auto_backup_manager:
+                        mw.auto_backup_manager.reload()
+                except Exception as e_abm:
+                    logging.warning(f"Failed to reload auto-backup manager: {e_abm}")
                 if hasattr(mw, 'profile_table_manager'):
                     mw.profile_table_manager.update_profile_table()
                     mw.profile_table_manager.select_profile_in_table(new_name)
@@ -3111,6 +3160,57 @@ class MainWindowHandlers:
             mw._editing_profile_original_name = None
         except Exception as e:
             logging.error(f"Error cancelling profile edit: {e}")
+
+    @Slot(bool)
+    def handle_auto_backup_enabled_toggled(self, enabled):
+        """Enable/disable the auto-backup options group with a dimmed style."""
+        try:
+            mw = self.main_window
+            if not hasattr(mw, 'auto_backup_group'):
+                return
+            mw.auto_backup_group.setEnabled(bool(enabled))
+            if enabled:
+                mw.auto_backup_group.setStyleSheet("")
+            else:
+                disabled_style = (
+                    "QGroupBox { color: #666666; } "
+                    "QGroupBox::title { color: #666666; } "
+                    "QCheckBox { color: #666666; } "
+                    "QComboBox { color: #666666; background-color: #2a2a2a; } "
+                    "QSpinBox { color: #666666; background-color: #2a2a2a; } "
+                    "QLabel { color: #666666; }"
+                )
+                mw.auto_backup_group.setStyleSheet(disabled_style)
+        except Exception as e:
+            logging.error(f"Error toggling auto-backup group: {e}")
+
+    @Slot()
+    def handle_auto_backup_mode_changed(self, *args):
+        """Show only the fields relevant to the selected auto-backup mode."""
+        try:
+            mw = self.main_window
+            if not hasattr(mw, 'auto_backup_mode_combo'):
+                return
+            idx = mw.auto_backup_mode_combo.currentIndex()
+            mode = "process_close"
+            if 0 <= idx < len(mw.auto_backup_mode_options):
+                mode = mw.auto_backup_mode_options[idx][1]
+            is_process = (mode == "process_close")
+            # Interval fields for schedule modes; process fields for game-close mode.
+            mw.auto_backup_interval_label.setVisible(not is_process)
+            mw.auto_backup_interval_row.setVisible(not is_process)
+            mw.auto_backup_process_label.setVisible(is_process)
+            mw.auto_backup_process_row.setVisible(is_process)
+            # Clarify the interval meaning per mode.
+            if mode == "interval_changed":
+                mw.auto_backup_interval_label.setText("Check every:")
+            else:
+                mw.auto_backup_interval_label.setText("Back up every:")
+            if is_process:
+                # Fill the list and highlight the auto-detected process in green.
+                mw._populate_running_processes(preserve_text=True)
+        except Exception as e:
+            logging.error(f"Error updating auto-backup mode UI: {e}")
 
     @Slot(bool)
     def handle_profile_overrides_toggled(self, enabled):

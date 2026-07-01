@@ -41,14 +41,36 @@ except ImportError as e_mod:
 
 
 # --- Notification Function ---
-def show_notification(success, message):
+# When False, show_notification() only logs the result instead of creating Qt
+# popups. The GUI process sets this off while running automatic backups on a
+# worker thread (Qt widgets must not be created off the GUI thread). It does not
+# affect the standalone --backup CLI, which runs in a separate process.
+_gui_notifications_enabled = True
+
+
+def set_gui_notifications_enabled(enabled):
+    """Enable/disable GUI popup notifications produced by show_notification()."""
+    global _gui_notifications_enabled
+    _gui_notifications_enabled = bool(enabled)
+
+
+def show_notification(success, message, force=False):
     """
     Shows a custom popup notification. Uses native Linux notifications if available,
     otherwise falls back to Qt.
+
+    If GUI notifications are disabled (see set_gui_notifications_enabled) and
+    ``force`` is False, the result is only logged. Callers on the GUI thread can
+    pass ``force=True`` to display the popup regardless.
     """
     logging.debug(">>> Entered show_notification <<<")
     title = "Backup Complete" if success else "Backup Error"
     clean_message = re.sub(r'\n+', '\n', message).strip()
+
+    if not _gui_notifications_enabled and not force:
+        log_level = logging.INFO if success else logging.ERROR
+        logging.log(log_level, f"BACKUP RESULT (GUI notifications suppressed): {title} - {clean_message}")
+        return
 
     # Attempt Linux native notification first
     if sys.platform.startswith('linux') and NATIVE_NOTIFY_AVAILABLE:

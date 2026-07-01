@@ -67,6 +67,7 @@ import cloud_settings_manager
 import core_logic # Mantenuto per load_profiles
 from gui_handlers import MainWindowHandlers
 from controller_manager import ControllerManager
+from auto_backup_manager import AutoBackupManager
 from gui_components.controller_panel import (
     ControllerPanel,
     CTRL_BUTTONS, CTRL_ACTIONS, CTRL_DEFAULT_MAPPINGS, CTRL_BADGE_COLOR,
@@ -681,6 +682,8 @@ class MainWindow(QMainWindow):
         # Inline Profile Editor (hidden by default)
         self.profile_editor_group = QGroupBox("Edit Profile")
         editor_layout = QVBoxLayout()
+        editor_layout.setContentsMargins(8, 6, 8, 6)
+        editor_layout.setSpacing(6)
         # --- Icon picker row (custom profile icon) ---
         # Hidden when "show_profile_icons" is disabled in Settings.
         self.edit_icon_row = QWidget()
@@ -729,6 +732,8 @@ class MainWindow(QMainWindow):
         editor_layout.addWidget(self.overrides_enable_checkbox)
         self.overrides_group = QGroupBox("Overrides")
         overrides_form = QFormLayout()
+        overrides_form.setContentsMargins(8, 6, 8, 6)
+        overrides_form.setVerticalSpacing(4)
         # Max backups
         self.override_max_backups_spin = QSpinBox()
         self.override_max_backups_spin.setRange(1, 999)
@@ -752,6 +757,77 @@ class MainWindow(QMainWindow):
         overrides_form.addRow(self.override_check_space_checkbox)
         self.overrides_group.setLayout(overrides_form)
         editor_layout.addWidget(self.overrides_group)
+
+        # --- Auto Backup section ---
+        self.auto_backup_enable_checkbox = QCheckBox("Enable automatic backup")
+        editor_layout.addWidget(self.auto_backup_enable_checkbox)
+        self.auto_backup_group = QGroupBox("Automatic Backup")
+        auto_backup_form = QFormLayout()
+        auto_backup_form.setContentsMargins(8, 6, 8, 6)
+        auto_backup_form.setVerticalSpacing(4)
+        # Trigger mode
+        self.auto_backup_mode_combo = QComboBox()
+        # (display text, internal mode value)
+        self.auto_backup_mode_options = [
+            ("When the game is closed", "process_close"),
+            ("When save files change", "interval_changed"),
+            ("On a fixed schedule", "interval_fixed"),
+        ]
+        for display_text, _ in self.auto_backup_mode_options:
+            self.auto_backup_mode_combo.addItem(display_text)
+        auto_backup_form.addRow("Trigger:", self.auto_backup_mode_combo)
+        # Interval (value + unit) - used by the two schedule modes
+        self.auto_backup_interval_row = QWidget()
+        interval_row_layout = QHBoxLayout(self.auto_backup_interval_row)
+        interval_row_layout.setContentsMargins(0, 0, 0, 0)
+        interval_row_layout.setSpacing(6)
+        self.auto_backup_interval_spin = QSpinBox()
+        self.auto_backup_interval_spin.setRange(1, 9999)
+        self.auto_backup_interval_spin.setValue(1)
+        self.auto_backup_interval_unit_combo = QComboBox()
+        # (display text, minutes multiplier)
+        self.auto_backup_interval_units = [("Minutes", 1), ("Hours", 60), ("Days", 1440)]
+        for display_text, _ in self.auto_backup_interval_units:
+            self.auto_backup_interval_unit_combo.addItem(display_text)
+        self.auto_backup_interval_unit_combo.setCurrentIndex(1)  # default: Hours
+        interval_row_layout.addWidget(self.auto_backup_interval_spin)
+        interval_row_layout.addWidget(self.auto_backup_interval_unit_combo)
+        interval_row_layout.addStretch(1)
+        self.auto_backup_interval_label = QLabel("Check every:")
+        auto_backup_form.addRow(self.auto_backup_interval_label, self.auto_backup_interval_row)
+
+        # --- Process detection (used by the "when the game is closed" mode) ---
+        # The process is detected automatically from the profile's executable;
+        # the user normally does not have to choose anything.
+        self.auto_backup_process_row = QWidget()
+        process_row_layout = QHBoxLayout(self.auto_backup_process_row)
+        process_row_layout.setContentsMargins(0, 0, 0, 0)
+        process_row_layout.setSpacing(6)
+        self.auto_backup_process_combo = QComboBox()
+        self.auto_backup_process_combo.setEditable(True)
+        self.auto_backup_process_combo.setToolTip(
+            "Name of the game's process/executable (e.g. Game.exe). "
+            "The entry auto-detected from this profile is shown in green; "
+            "you can also pick any running program or type a name."
+        )
+        self.auto_backup_process_refresh_button = QPushButton("Refresh")
+        self.auto_backup_process_refresh_button.setToolTip("Reload the list of currently running programs")
+        process_row_layout.addWidget(self.auto_backup_process_combo, stretch=1)
+        process_row_layout.addWidget(self.auto_backup_process_refresh_button)
+        self.auto_backup_process_label = QLabel("Game process:")
+        auto_backup_form.addRow(self.auto_backup_process_label, self.auto_backup_process_row)
+        self.auto_backup_group.setLayout(auto_backup_form)
+        editor_layout.addWidget(self.auto_backup_group)
+
+        # Keep the editor controls anchored to the top at their natural size; any
+        # extra vertical space collapses here instead of squeezing the groups.
+        editor_layout.addStretch(1)
+
+        # Prevent the option groups from shrinking below their natural height
+        # (which previously caused the rows to overlap when space was tight).
+        self.overrides_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.auto_backup_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+
         # Save/Cancel buttons
         buttons_row = QHBoxLayout()
         self.edit_save_button = QPushButton("Save")
@@ -1142,6 +1218,10 @@ class MainWindow(QMainWindow):
         self.edit_icon_reset_button.clicked.connect(self.handlers.handle_profile_edit_reset_icon)
         # Overrides toggle action
         self.overrides_enable_checkbox.toggled.connect(self.handlers.handle_profile_overrides_toggled)
+        # Auto-backup section actions
+        self.auto_backup_enable_checkbox.toggled.connect(self.handlers.handle_auto_backup_enabled_toggled)
+        self.auto_backup_mode_combo.currentIndexChanged.connect(self.handlers.handle_auto_backup_mode_changed)
+        self.auto_backup_process_refresh_button.clicked.connect(self._populate_running_processes)
 
         # Stato Iniziale e Tema
         self.update_action_button_states()
@@ -1157,6 +1237,10 @@ class MainWindow(QMainWindow):
         self.controller_manager = ControllerManager(self)
         if self.current_settings.get("controller_support_enabled", True):
             self.controller_manager.start()
+
+        # Automatic local backup engine (in-process, tray-dependent like cloud sync)
+        self.auto_backup_manager = AutoBackupManager(self)
+        self.auto_backup_manager.start()
 
         # --- In-app updater -------------------------------------------------
         # The UpdateManager itself makes zero network calls until explicitly
@@ -2109,8 +2193,14 @@ class MainWindow(QMainWindow):
                 minimize_to_tray = self.current_settings.get('minimize_to_tray_on_close', False)
                 cloud_settings = cloud_settings_manager.load_cloud_settings()
                 periodic_sync_enabled = bool(cloud_settings.get('auto_sync_enabled'))
-                
-                if minimize_to_tray or periodic_sync_enabled:
+                auto_backup_enabled = False
+                try:
+                    abm = getattr(self, 'auto_backup_manager', None)
+                    auto_backup_enabled = bool(abm and abm.is_any_enabled())
+                except Exception:
+                    auto_backup_enabled = False
+
+                if minimize_to_tray or periodic_sync_enabled or auto_backup_enabled:
                     if hasattr(self, 'tray_icon') and self.tray_icon and QSystemTrayIcon.isSystemTrayAvailable():
                         event.ignore()
                         self.hide()
@@ -2118,11 +2208,13 @@ class MainWindow(QMainWindow):
                             self.tray_icon.show()
                             if periodic_sync_enabled:
                                 self.tray_icon.showMessage("SaveState", "Running in background for periodic sync.", QSystemTrayIcon.MessageIcon.Information, 3000)
+                            elif auto_backup_enabled:
+                                self.tray_icon.showMessage("SaveState", "Running in background for automatic backups.", QSystemTrayIcon.MessageIcon.Information, 3000)
                             else:
                                 self.tray_icon.showMessage("SaveState", "Minimized to system tray.", QSystemTrayIcon.MessageIcon.Information, 2000)
                         except Exception:
                             pass
-                        logging.info(f"SaveState hidden to system tray (minimize_to_tray={minimize_to_tray}, periodic_sync={periodic_sync_enabled}).")
+                        logging.info(f"SaveState hidden to system tray (minimize_to_tray={minimize_to_tray}, periodic_sync={periodic_sync_enabled}, auto_backup={auto_backup_enabled}).")
                         return
         except Exception:
             pass
@@ -2143,6 +2235,13 @@ class MainWindow(QMainWindow):
                 self.cloud_panel.cleanup_on_close()
             except Exception as e:
                 logging.error(f"Error cleaning up cloud panel: {e}")
+
+        # Stop the automatic backup engine
+        if hasattr(self, 'auto_backup_manager') and self.auto_backup_manager:
+            try:
+                self.auto_backup_manager.stop()
+            except Exception as e:
+                logging.error(f"Error stopping auto-backup manager: {e}")
         
         # Chiama il closeEvent della classe base
         super().closeEvent(event)
@@ -2498,6 +2597,9 @@ class MainWindow(QMainWindow):
             # Enable/disable group according to checkbox (with visual style)
             self.handlers.handle_profile_overrides_toggled(use_overrides)
 
+            # Populate Auto Backup UI from profile data
+            self._load_auto_backup_into_editor(data)
+
             # Toggle UI visibility
             self.profile_group.setVisible(False)
             self.profile_editor_group.setVisible(True)
@@ -2505,6 +2607,147 @@ class MainWindow(QMainWindow):
             self.enter_profile_edit_mode()
         except Exception as e:
             logging.error(f"Error showing profile editor: {e}")
+
+    def _load_auto_backup_into_editor(self, profile_data):
+        """Populate the Auto Backup editor fields from the profile's config."""
+        try:
+            cfg = {}
+            if isinstance(profile_data, dict) and isinstance(profile_data.get('auto_backup'), dict):
+                cfg = profile_data['auto_backup']
+            enabled = bool(cfg.get('enabled', False))
+            mode = cfg.get('mode', 'process_close')
+            interval_minutes = cfg.get('interval_minutes', 60)
+            try:
+                interval_minutes = max(1, int(interval_minutes))
+            except (TypeError, ValueError):
+                interval_minutes = 60
+            process_names = cfg.get('process_names') or []
+            if not isinstance(process_names, list):
+                process_names = []
+
+            # Mode combo
+            mode_index = next(
+                (i for i, (_, v) in enumerate(self.auto_backup_mode_options) if v == mode), 0
+            )
+            self.auto_backup_mode_combo.setCurrentIndex(mode_index)
+
+            # Interval: pick the largest whole unit that fits
+            if interval_minutes % 1440 == 0:
+                unit_index, value = 2, interval_minutes // 1440
+            elif interval_minutes % 60 == 0:
+                unit_index, value = 1, interval_minutes // 60
+            else:
+                unit_index, value = 0, interval_minutes
+            self.auto_backup_interval_unit_combo.setCurrentIndex(unit_index)
+            self.auto_backup_interval_spin.setValue(int(value))
+
+            # Pre-set the process field from the stored value (if any). The list
+            # itself (with the green auto-detected entry) is filled by
+            # handle_auto_backup_mode_changed() -> _populate_running_processes().
+            if process_names:
+                self.auto_backup_process_combo.setEditText(", ".join(process_names))
+            else:
+                self.auto_backup_process_combo.setEditText("")
+
+            # Enable checkbox + dependent group state + relevant fields
+            self.auto_backup_enable_checkbox.setChecked(enabled)
+            self.handlers.handle_auto_backup_enabled_toggled(enabled)
+            self.handlers.handle_auto_backup_mode_changed()
+        except Exception as e:
+            logging.error(f"Error loading auto-backup config into editor: {e}")
+
+    def _detect_profile_process_name(self, profile_data):
+        """Derive the game's process/executable name from the profile data.
+
+        Uses the same executable info the app already stores for icon
+        extraction (game_executable, then the install dir, then
+        emulator_executable), resolving Windows .lnk / Linux .desktop
+        shortcuts. Returns the executable basename (e.g. "Game.exe") or None.
+        """
+        if not isinstance(profile_data, dict):
+            return None
+        try:
+            from gui_components import icon_extractor as _ie
+        except Exception:
+            _ie = None
+
+        exe = profile_data.get('game_executable')
+        if not exe:
+            install_dir = profile_data.get('game_install_dir')
+            if install_dir and _ie is not None and hasattr(_ie, '_find_main_executable_in_dir'):
+                try:
+                    exe = _ie._find_main_executable_in_dir(install_dir)
+                except Exception:
+                    exe = None
+        if not exe:
+            exe = profile_data.get('emulator_executable')
+        if not exe or not isinstance(exe, str):
+            return None
+
+        low = exe.lower()
+        if (low.endswith('.lnk') or low.endswith('.desktop')) and _ie is not None and hasattr(_ie, '_resolve_shortcut_target'):
+            try:
+                resolved = _ie._resolve_shortcut_target(exe)
+                if resolved:
+                    exe = resolved
+            except Exception:
+                pass
+
+        base = os.path.basename(exe).strip()
+        if not base or base.lower().endswith(('.lnk', '.desktop')):
+            return None
+        return base
+
+    def _populate_running_processes(self, preserve_text=True):
+        """Fill the process combo with running programs, highlighting the
+        executable auto-detected from the current profile in green so it is
+        easy to recognize among the others. The combo stays freely selectable.
+        """
+        try:
+            import process_watch_utils
+            from PySide6.QtGui import QColor, QFont
+
+            # Detect this profile's executable name.
+            profile_data = {}
+            name = getattr(self, '_editing_profile_original_name', None)
+            if name and name in self.profiles and isinstance(self.profiles[name], dict):
+                profile_data = self.profiles[name]
+            detected = self._detect_profile_process_name(profile_data)
+
+            current_text = self.auto_backup_process_combo.currentText() if preserve_text else ""
+
+            running = sorted(process_watch_utils.list_running_process_names())
+            # Build the item list: detected entry first (even if not running now),
+            # then the running programs (avoiding a duplicate of the detected one).
+            items = []
+            detected_lower = detected.lower() if detected else None
+            if detected:
+                items.append(detected)
+            for n in running:
+                if detected_lower and n.lower() == detected_lower:
+                    continue
+                items.append(n)
+
+            self.auto_backup_process_combo.blockSignals(True)
+            self.auto_backup_process_combo.clear()
+            self.auto_backup_process_combo.addItems(items)
+            # Colour the auto-detected entry green + bold to make it stand out.
+            if detected:
+                green = QColor("#4CAF50")
+                bold = QFont()
+                bold.setBold(True)
+                self.auto_backup_process_combo.setItemData(0, green, Qt.ItemDataRole.ForegroundRole)
+                self.auto_backup_process_combo.setItemData(0, bold, Qt.ItemDataRole.FontRole)
+            # Restore selection: keep prior text, otherwise default to detected.
+            self.auto_backup_process_combo.setEditText(current_text or (detected or ""))
+            self.auto_backup_process_combo.blockSignals(False)
+
+            if not process_watch_utils.is_process_watching_supported():
+                self.auto_backup_process_combo.setToolTip(
+                    "Process detection is not supported on this platform."
+                )
+        except Exception as e:
+            logging.error(f"Error populating process list: {e}")
 
     def _update_edit_icon_preview(self, profile_name, profile_data):
         """Refresh the small icon preview shown in the Edit Profile section.
@@ -2592,6 +2835,9 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'general_cloud_row') and self.general_cloud_row:
                 self.general_cloud_row.setVisible(enabled)
                 self.general_cloud_row.setEnabled(enabled)
+            # Hide the bottom search/log bar while editing to free its fixed height
+            if hasattr(self, 'bottom_controls_widget') and self.bottom_controls_widget:
+                self.bottom_controls_widget.setVisible(enabled)
             if hasattr(self, 'general_group') and self.general_group:
                 self.general_group.setEnabled(enabled)
             if hasattr(self, 'cloud_group') and self.cloud_group:
@@ -2648,18 +2894,26 @@ class MainWindow(QMainWindow):
             self.settings_check_updates_checkbox.setChecked(self.current_settings.get("check_updates_on_startup", False))
             self.settings_show_icons_checkbox.setChecked(self.current_settings.get("show_profile_icons", True))
             
-            # Minimize to tray: check if periodic sync forces this behavior
+            # Minimize to tray: check if periodic sync or auto-backup forces this behavior
             try:
                 cloud_settings = cloud_settings_manager.load_cloud_settings()
                 periodic_sync_enabled = bool(cloud_settings.get('auto_sync_enabled', False))
             except Exception:
                 periodic_sync_enabled = False
-            
-            if periodic_sync_enabled:
-                # Periodic sync forces minimize to tray - show as checked and disabled
+            try:
+                abm = getattr(self, 'auto_backup_manager', None)
+                auto_backup_enabled = bool(abm and abm.is_any_enabled())
+            except Exception:
+                auto_backup_enabled = False
+
+            if periodic_sync_enabled or auto_backup_enabled:
+                # A background feature forces minimize to tray - show as checked and disabled
                 self.settings_minimize_to_tray_checkbox.setChecked(True)
                 self.settings_minimize_to_tray_checkbox.setEnabled(False)
-                self.settings_minimize_to_tray_checkbox.setToolTip("Forced ON because Periodic Sync is enabled in Cloud settings")
+                if periodic_sync_enabled:
+                    self.settings_minimize_to_tray_checkbox.setToolTip("Forced ON because Periodic Sync is enabled in Cloud settings")
+                else:
+                    self.settings_minimize_to_tray_checkbox.setToolTip("Forced ON because Automatic Backup is enabled on one or more profiles")
             else:
                 # Normal behavior - use the saved setting
                 self.settings_minimize_to_tray_checkbox.setChecked(self.current_settings.get("minimize_to_tray_on_close", False))
