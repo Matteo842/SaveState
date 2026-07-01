@@ -162,7 +162,7 @@ Get SaveState up and running on your system.
 
 * **Operating System:** Windows (tested on Windows 10/11). Relies on Windows-specific libraries for shortcut handling.
 * **Operating System:** Linux (tested on Ubuntu 24.x LTS)
-* **Python:** Version 3.10 or higher recommended. (3.13 work fine)
+* **Python:** Version 3.10 or higher recommended. (3.13 works fine)
 * **Pip:** Python package installer (usually included with Python).
 
 ### Installation
@@ -186,7 +186,7 @@ Get SaveState up and running on your system.
 1.  Ensure you have Python 3.10+ and Git installed.
 2.  Clone the repository:
     ```bash
-    git clone [https://github.com/Matteo842/SaveState.git](https://github.com/Matteo842/SaveState.git)
+    git clone https://github.com/Matteo842/SaveState.git
     ```
 3.  Navigate into the project directory:
     ```bash
