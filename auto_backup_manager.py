@@ -40,6 +40,7 @@ from PySide6.QtCore import QTimer
 
 import core_logic
 import backup_runner
+import backup_safety
 import process_watch_utils
 from gui_utils import WorkerThread
 
@@ -47,6 +48,10 @@ from gui_utils import WorkerThread
 # --- Configuration constants ---------------------------------------------
 CHECK_INTERVAL_MS = 15000          # How often the timer ticks (15 s).
 MIN_BACKUP_COOLDOWN_SEC = 60       # Never auto-back up the same profile more often than this.
+
+# Sentinel prefix used by the worker to report that a backup was intentionally
+# skipped because the save was in use (not an error, and not a real backup).
+SKIPPED_IN_USE_PREFIX = "SKIPPED_IN_USE:"
 
 MODE_INTERVAL_CHANGED = "interval_changed"
 MODE_INTERVAL_FIXED = "interval_fixed"
@@ -66,9 +71,28 @@ def _default_auto_backup_config() -> dict:
     }
 
 
-def _do_silent_backup(profile_name):
-    """Worker entry point. Returns (success, message) for WorkerThread."""
+def _do_silent_backup(profile_name, paths=None):
+    """Worker entry point. Returns (success, message) for WorkerThread.
+
+    Runs on a WorkerThread (never the GUI thread), so the blocking quiescence
+    check below is safe. If the save is being actively written, the backup is
+    skipped instead of capturing a corrupt, half-written save.
+    """
     try:
+        # Safety gate: never archive a save while an app is writing it.
+        try:
+            safe = backup_safety.wait_for_quiescence(paths, profile_name=profile_name)
+        except Exception as e_safe:
+            # A failure in the safety check itself must not silently allow an
+            # unsafe backup: be conservative and skip.
+            logging.error(
+                f"Auto-backup safety check errored for '{profile_name}': {e_safe}",
+                exc_info=True,
+            )
+            return False, f"{SKIPPED_IN_USE_PREFIX}{profile_name}"
+        if not safe:
+            return False, f"{SKIPPED_IN_USE_PREFIX}{profile_name}"
+
         ok = backup_runner.run_silent_backup(profile_name)
         if ok:
             return True, f"Auto-backup completed: {profile_name}"
@@ -281,11 +305,26 @@ class AutoBackupManager:
 
                 elif mode == MODE_INTERVAL_FIXED:
                     if now - st["last_trigger"] >= interval_sec:
-                        logging.info(
-                            "[AutoBackup] '%s' fixed interval elapsed (%d min) "
-                            "-> requesting backup.", name, cfg["interval_minutes"],
-                        )
-                        should_backup = True
+                        # Even on a fixed schedule, never create a byte-identical
+                        # duplicate: it would only evict an older (possibly more
+                        # valuable) backup via rotation. Back up only if the save
+                        # actually changed since the last backup.
+                        if self._save_changed_since_last_backup(name, cfg, backup_base_dir):
+                            logging.info(
+                                "[AutoBackup] '%s' fixed interval elapsed (%d min) "
+                                "and save changed -> requesting backup.",
+                                name, cfg["interval_minutes"],
+                            )
+                            should_backup = True
+                        else:
+                            # Nothing changed: re-arm the clock so we wait a full
+                            # interval before checking again (instead of every tick).
+                            st["last_trigger"] = now
+                            logging.info(
+                                "[AutoBackup] '%s' fixed interval elapsed but save "
+                                "unchanged since last backup -> skipping duplicate.",
+                                name,
+                            )
 
                 elif mode == MODE_INTERVAL_CHANGED:
                     if now - st["last_check"] >= interval_sec:
@@ -378,7 +417,11 @@ class AutoBackupManager:
         self._active_profile = profile_name
         logging.info(f"AutoBackupManager: triggering automatic backup for '{profile_name}'.")
         try:
-            self._worker = WorkerThread(_do_silent_backup, profile_name)
+            # Pass the resolved save paths so the worker can run the in-use
+            # safety check before archiving anything.
+            cfg = self._enabled.get(profile_name) or {}
+            paths = list(cfg.get("paths") or [])
+            self._worker = WorkerThread(_do_silent_backup, profile_name, paths)
             self._worker.finished.connect(self._on_backup_finished)
             self._worker.start()
         except Exception as e:
@@ -388,8 +431,13 @@ class AutoBackupManager:
 
     def _on_backup_finished(self, success, message):
         name = self._active_profile
-        # Update trigger time and reset the change-detection clock.
-        if name and name in self._state:
+        skipped = isinstance(message, str) and message.startswith(SKIPPED_IN_USE_PREFIX)
+
+        # Update trigger time and reset the change-detection clock only when a
+        # real backup ran. A skip (save in use) must NOT advance these, so the
+        # engine keeps trying on the next tick/interval instead of waiting a
+        # full cycle after having produced nothing.
+        if not skipped and name and name in self._state:
             self._state[name]["last_trigger"] = time.monotonic()
             self._state[name]["last_check"] = time.monotonic()
 
@@ -401,6 +449,17 @@ class AutoBackupManager:
             except Exception:
                 pass
             self._worker = None
+
+        # A skipped backup produced nothing: don't refresh "Last backup" and
+        # don't raise an error popup (it is not a failure). The safety module
+        # has already logged why it was skipped; keep it quiet so it does not
+        # interrupt gameplay.
+        if skipped:
+            logging.info(
+                "[AutoBackup] '%s' backup skipped (save in use); will retry.",
+                name,
+            )
+            return
 
         # Refresh the profile table so "Last backup" updates.
         try:
