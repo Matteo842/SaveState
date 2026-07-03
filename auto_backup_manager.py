@@ -193,6 +193,23 @@ class AutoBackupManager:
                         "[AutoBackup] Profile '%s' uses process_close but has NO "
                         "process names configured; it will never trigger.", name,
                     )
+            else:
+                # Interval-based modes: the timer only *evaluates* these every
+                # ``interval_minutes``, not every tick. Make that explicit so it
+                # is obvious why nothing happens right after enabling the profile.
+                mode_label = (
+                    "on save change" if cfg["mode"] == MODE_INTERVAL_CHANGED
+                    else "fixed schedule"
+                )
+                next_check_min = max(
+                    0.0,
+                    (cfg["interval_minutes"] * 60 - (now - st["last_check"])) / 60.0,
+                )
+                logging.info(
+                    "[AutoBackup] Watching '%s' (%s): interval=%d min, "
+                    "next check in ~%.1f min.",
+                    name, mode_label, cfg["interval_minutes"], next_check_min,
+                )
             new_state[name] = st
         self._state = new_state
 
@@ -264,13 +281,29 @@ class AutoBackupManager:
 
                 elif mode == MODE_INTERVAL_FIXED:
                     if now - st["last_trigger"] >= interval_sec:
+                        logging.info(
+                            "[AutoBackup] '%s' fixed interval elapsed (%d min) "
+                            "-> requesting backup.", name, cfg["interval_minutes"],
+                        )
                         should_backup = True
 
                 elif mode == MODE_INTERVAL_CHANGED:
                     if now - st["last_check"] >= interval_sec:
                         st["last_check"] = now
-                        if self._save_changed_since_last_backup(name, cfg, backup_base_dir):
+                        changed = self._save_changed_since_last_backup(name, cfg, backup_base_dir)
+                        logging.info(
+                            "[AutoBackup] '%s' change check (every %d min): "
+                            "save folder changed since last backup = %s.",
+                            name, cfg["interval_minutes"], changed,
+                        )
+                        if changed:
                             should_backup = True
+                    else:
+                        remaining_min = (interval_sec - (now - st["last_check"])) / 60.0
+                        logging.debug(
+                            "[AutoBackup] '%s' next change check in %.1f min.",
+                            name, remaining_min,
+                        )
 
                 if not should_backup:
                     continue
@@ -298,9 +331,16 @@ class AutoBackupManager:
         """True if the save folder is newer than the most recent backup."""
         paths = cfg.get("paths") or []
         if not paths:
+            logging.warning(
+                "[AutoBackup] '%s' change check: no save paths configured.", name,
+            )
             return False
         latest_mtime = self._latest_mtime(paths)
         if latest_mtime <= 0:
+            logging.warning(
+                "[AutoBackup] '%s' change check: could not read save mtime "
+                "(paths missing?). paths=%s", name, paths,
+            )
             return False
         try:
             _count, last_dt = core_logic.get_profile_backup_summary(
@@ -312,9 +352,19 @@ class AutoBackupManager:
 
         if last_dt is None:
             # No backup yet -> consider it changed so the first backup is taken.
+            logging.info(
+                "[AutoBackup] '%s' change check: no previous backup found -> "
+                "treating as changed.", name,
+            )
             return True
         try:
-            return datetime.fromtimestamp(latest_mtime) > last_dt
+            save_dt = datetime.fromtimestamp(latest_mtime)
+            logging.info(
+                "[AutoBackup] '%s' change check: save mtime=%s, last backup=%s.",
+                name, save_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                last_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            return save_dt > last_dt
         except Exception:
             return False
 
