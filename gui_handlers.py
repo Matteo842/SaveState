@@ -3032,11 +3032,25 @@ class MainWindowHandlers:
                         detected = mw._detect_profile_process_name(new_data)
                         if detected:
                             ab_process_names = [detected]
+                ab_sync_online = False
+                try:
+                    cb_sync = mw.auto_backup_sync_online_checkbox
+                    ab_sync_online = bool(cb_sync.isChecked())
+                    # Safety: never persist a newly enabled sync flag unless the
+                    # cloud gate passes. If the checkbox is disabled but checked,
+                    # keep sync_online=True (user intent while cloud is offline).
+                    if ab_sync_online and hasattr(mw, 'cloud_panel') and mw.cloud_panel:
+                        avail, _reason = mw.cloud_panel.is_online_sync_available()
+                        if not avail and cb_sync.isEnabled():
+                            ab_sync_online = False
+                except Exception:
+                    ab_sync_online = False
                 new_data['auto_backup'] = {
                     'enabled': ab_enabled,
                     'mode': ab_mode,
                     'interval_minutes': ab_interval_minutes,
                     'process_names': ab_process_names,
+                    'sync_online': ab_sync_online,
                 }
             except Exception as e_ab:
                 logging.warning(f"Failed capturing auto-backup config: {e_ab}")
@@ -3171,6 +3185,11 @@ class MainWindowHandlers:
             mw.auto_backup_group.setEnabled(bool(enabled))
             if enabled:
                 mw.auto_backup_group.setStyleSheet("")
+                # Enabling the group re-enables every child; re-apply the
+                # cloud-availability gate so online sync stays locked when the
+                # cloud is not connected.
+                if hasattr(mw, '_apply_online_sync_availability'):
+                    mw._apply_online_sync_availability()
             else:
                 disabled_style = (
                     "QGroupBox { color: #666666; } "
@@ -3819,11 +3838,13 @@ class MainWindowHandlers:
         # Always update the table to reflect changes (e.g., backup info)
         self.main_window.profile_table_manager.update_profile_table()
 
-    def _show_controller_shortcut_notification(self, success: bool, title: str, message: str):
+    def _show_controller_shortcut_notification(self, success: bool, title: str, message: str,
+                                               duration_ms=None):
         """Show a NotificationPopup for controller shortcut actions triggered while app is in system tray.
         Uses the same NotificationPopup widget as desktop shortcut notifications."""
         try:
             import re
+            from gui_utils import NotificationPopup, elevate_notification_window
             clean_message = re.sub(r'\n+', '\n', message).strip()
 
             icon_path = None
@@ -3833,10 +3854,13 @@ class MainWindowHandlers:
                     icon_path = icon_path_candidate
 
             # No parent so the popup is independent from the (hidden) main window
-            popup = NotificationPopup(title, clean_message, success, parent=None, icon_path=icon_path)
+            popup = NotificationPopup(
+                title, clean_message, success, parent=None, icon_path=icon_path,
+                duration_ms=duration_ms,
+            )
 
             # Keep a reference so the popup is not garbage-collected before the
-            # auto-close timer fires (6 seconds).  Clear it when the widget is destroyed.
+            # auto-close timer fires. Clear it when the widget is destroyed.
             self._active_notification_popup = popup
             popup.destroyed.connect(lambda: setattr(self, '_active_notification_popup', None))
 
@@ -3860,6 +3884,7 @@ class MainWindowHandlers:
                 popup.move(popup_x, popup_y)
 
             popup.show()
+            elevate_notification_window(popup)
             logging.info(f"Controller shortcut notification shown: {title} - {clean_message}")
         except Exception as e:
             logging.error(f"Error showing controller shortcut notification: {e}", exc_info=True)

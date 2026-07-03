@@ -68,6 +68,7 @@ def _default_auto_backup_config() -> dict:
         "mode": MODE_PROCESS_CLOSE,
         "interval_minutes": DEFAULT_INTERVAL_MINUTES,
         "process_names": [],
+        "sync_online": False,
     }
 
 
@@ -187,6 +188,7 @@ class AutoBackupManager:
                 "mode": mode,
                 "interval_minutes": interval_minutes,
                 "process_names": process_names,
+                "sync_online": bool(cfg.get("sync_online", False)),
                 "paths": self._paths_for(data),
                 "data": data,
             }
@@ -469,12 +471,90 @@ class AutoBackupManager:
         except Exception:
             pass
 
-        # Show a notification from the GUI thread (safe here).
+        # User-visible toast (same popup style as desktop/controller shortcuts).
         try:
-            backup_runner.show_notification(bool(success), message, force=True)
+            self._show_auto_backup_notification(name, bool(success), message)
         except Exception:
             log_level = logging.INFO if success else logging.ERROR
             logging.log(log_level, f"Auto-backup result: {message}")
+
+        # Event-driven cloud upload: if this profile opted into online sync,
+        # push the freshly created backup to the cloud now (upload-only).
+        if success:
+            cfg = self._enabled.get(name) or {}
+            if cfg.get("sync_online"):
+                self._request_cloud_upload(name)
+
+    def _request_cloud_upload(self, profile_name):
+        """Ask the cloud panel to upload this profile's backups (upload-only).
+
+        Runs on the GUI thread (called from the worker's finished handler); the
+        cloud panel performs the actual transfer on its own background threads.
+
+        If online sync is not currently possible (no provider configured/
+        connected), the backup still exists locally, but we must NOT let the
+        user believe it was synced: we warn clearly in the log and via a
+        notification.
+        """
+        try:
+            panel = getattr(self.main_window, "cloud_panel", None)
+            if panel is None or not hasattr(panel, "request_profile_auto_upload"):
+                logging.warning(
+                    "[AutoBackup] '%s': online sync enabled but cloud panel is "
+                    "unavailable; backup kept LOCAL only.", profile_name,
+                )
+                return
+
+            # Check availability up-front so we can tell the user why a sync did
+            # not happen (rather than failing silently deep in the worker).
+            if hasattr(panel, "is_online_sync_available"):
+                available, reason = panel.is_online_sync_available()
+                if not available:
+                    logging.warning(
+                        "[AutoBackup] '%s': backup created locally but NOT synced "
+                        "online (%s).", profile_name, reason,
+                    )
+                    try:
+                        self._show_auto_backup_notification(
+                            profile_name,
+                            False,
+                            f"Backup saved locally, but NOT uploaded to cloud:\n{reason}",
+                        )
+                    except Exception:
+                        pass
+                    return
+
+            logging.info(
+                "[AutoBackup] '%s': uploading latest backup to cloud...",
+                profile_name,
+            )
+            panel.request_profile_auto_upload([profile_name])
+        except Exception as e:
+            logging.error(
+                f"[AutoBackup] cloud upload request failed for '{profile_name}': {e}",
+                exc_info=True,
+            )
+
+    def _show_auto_backup_notification(self, profile_name, success, message):
+        """Show the same bottom-right popup used by desktop/controller shortcuts."""
+        from gui_utils import AUTO_BACKUP_NOTIFICATION_DURATION_MS
+
+        handlers = getattr(self.main_window, "handlers", None)
+        if handlers is not None and hasattr(handlers, "_show_controller_shortcut_notification"):
+            title = "Automatic Backup Complete" if success else "Automatic Backup Failed"
+            if success and profile_name:
+                clean = f"Backup completed for '{profile_name}'."
+            else:
+                clean = message or f"Automatic backup failed for '{profile_name}'."
+            handlers._show_controller_shortcut_notification(
+                bool(success), title, clean,
+                duration_ms=AUTO_BACKUP_NOTIFICATION_DURATION_MS,
+            )
+            return
+        try:
+            backup_runner.show_notification(bool(success), message, force=True)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Helpers

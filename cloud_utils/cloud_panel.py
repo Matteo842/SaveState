@@ -531,6 +531,7 @@ class CloudSavePanel(QWidget):
         self.sync_timer = None
         self._sync_in_progress = False
         self._disconnect_after_current_sync = False
+        self._auto_sync_quiet_notification = False
         
         # Track current operation for cancellation
         self._current_worker = None
@@ -1910,6 +1911,7 @@ class CloudSavePanel(QWidget):
             self.connection_status_label.setStyleSheet("color: #FF5555;")
             self.disconnect_button.setEnabled(False)
             self.disconnect_button.setText("Disconnect")
+        self._refresh_online_sync_ui_state()
     
     def _update_configure_button_state(self, provider_type):
         """Enable/disable the Configure button based on the selected provider.
@@ -3013,7 +3015,8 @@ class CloudSavePanel(QWidget):
         
         # Reapply fixed width to maintain button size
         self.connect_button.setFixedWidth(self._connect_button_fixed_width)
-    
+        self._refresh_online_sync_ui_state()
+
     def _disable_buttons_during_operation(self):
         """Disable buttons during cloud operations."""
         self.upload_button.setEnabled(False)
@@ -4170,7 +4173,8 @@ class CloudSavePanel(QWidget):
         
         # Apply periodic sync setting
         self._setup_periodic_sync()
-    
+        self._refresh_online_sync_ui_state()
+
     def _apply_settings_to_drive_manager(self):
         """Apply current settings to the Google Drive manager."""
         # Bandwidth limit
@@ -4179,7 +4183,7 @@ class CloudSavePanel(QWidget):
             self.drive_manager.set_bandwidth_limit(limit)
         else:
             self.drive_manager.set_bandwidth_limit(None)
-    
+
     def _show_notification(self, title, message):
         """Show a system notification if enabled in settings."""
         if not self.cloud_settings.get('show_sync_notifications', True):
@@ -4265,43 +4269,135 @@ class CloudSavePanel(QWidget):
         
         # Already connected
         start_sync()
-    
-    def _auto_sync_profiles(self, profile_names):
-        """Automatically sync specified profiles in background."""
+
+    def is_online_sync_available(self):
+        """Return ``(available, reason)`` describing whether online sync can run.
+
+        Strict gate: provider must be configured, internet reachable, and
+        connected *right now*. The ``reason`` is a short user-facing message.
+        """
+        try:
+            from cloud_utils.cloud_sync_availability import evaluate_online_sync_availability
+
+            provider_type = self.cloud_settings.get("active_provider", "google_drive")
+            provider = self._get_active_provider()
+            drive_manager = self.drive_manager if provider_type == "google_drive" else None
+            return evaluate_online_sync_availability(
+                provider_type=provider_type,
+                cloud_settings=self.cloud_settings,
+                provider=provider,
+                drive_manager=drive_manager,
+                require_connection=True,
+                check_network=True,
+            )
+        except Exception as e:
+            logging.error(f"is_online_sync_available check failed: {e}")
+            return False, "the cloud provider is unavailable"
+
+    def _refresh_online_sync_ui_state(self):
+        """Notify the main window that cloud availability changed (connect/disconnect)."""
+        try:
+            mw = self.main_window
+            if mw is not None and hasattr(mw, "on_cloud_sync_availability_changed"):
+                mw.on_cloud_sync_availability_changed()
+        except Exception as e:
+            logging.debug(f"Could not refresh online sync UI state: {e}")
+
+    def request_profile_auto_upload(self, profile_names):
+        """Public entry point: upload the given profiles' backups to the cloud now.
+
+        Called by the AutoBackupManager right after a local automatic backup
+        completes, so a freshly created backup is pushed online immediately
+        (event-driven), independently of the hourly periodic sync.
+
+        This is strictly UPLOAD-ONLY (it reuses ``_auto_sync_profiles`` /
+        ``UploadWorker``): it never downloads or overwrites local save files.
+
+        Safety: it requires a provider to be ALREADY connected. It never opens a
+        temporary connection here, because a connect/disconnect around a single
+        upload races with background cloud-status refreshes and can corrupt the
+        provider session. If nothing is connected, the upload is skipped and the
+        caller is expected to warn the user (the backup exists locally but was
+        NOT synced).
+
+        Returns
+        -------
+        bool
+            ``True`` if an upload was started, ``False`` if it was skipped.
+        """
+        try:
+            names = [n for n in (profile_names or []) if isinstance(n, str) and n]
+            if not names:
+                return False
+            # The caller (AutoBackupManager) already validated these against the
+            # live profiles, so don't drop names just because this panel's cached
+            # ``self.profiles`` may be a stale reference; the upload works off the
+            # backups present on disk. Just note any unknown ones.
+            unknown = [n for n in names if n not in self.profiles]
+            if unknown:
+                logging.debug(f"Auto-upload: profiles not in cached list (proceeding): {unknown}")
+            if self._sync_in_progress:
+                logging.debug("Auto-upload skipped: a sync is already in progress")
+                return False
+
+            available, reason = self.is_online_sync_available()
+            if not available:
+                logging.warning(
+                    "[Cloud] Auto-upload skipped for %s: %s. The local backup "
+                    "was created but NOT synced online.", names, reason,
+                )
+                return False
+
+            self._auto_sync_profiles(names, quiet_notification=True)
+            return True
+        except Exception as e:
+            logging.error(f"Auto-upload request failed: {e}", exc_info=True)
+            return False
+
+    def _auto_sync_profiles(self, profile_names, *, quiet_notification: bool = False):
+        """Automatically sync specified profiles in background.
+
+        quiet_notification: when True, suppress the generic "Periodic Sync
+        Complete" toast (used for event-driven uploads after auto-backup, which
+        show their own notification).
+        """
         if self._sync_in_progress:
             logging.debug("Auto sync request ignored: another sync is running")
             return
-            
+
+        self._auto_sync_quiet_notification = bool(quiet_notification)
+
         # Get active provider
         active_provider = self._get_active_provider()
         if not active_provider or not active_provider.is_connected:
             logging.debug("Auto sync skipped: no active provider connected")
+            self._auto_sync_quiet_notification = False
             return
-            
+
         self._sync_in_progress = True
-        
+
         # Reset cancellation flag in provider before starting
         if hasattr(active_provider, 'reset_cancellation'):
             active_provider.reset_cancellation()
-        
+
         # Get max backups setting
         max_backups = None
         if self.cloud_settings.get('max_cloud_backups_enabled', False):
             max_backups = self.cloud_settings.get('max_cloud_backups_count', 5)
-        
+
         # Create worker for background sync
         self.auto_sync_thread = QThread()
         self.auto_sync_worker = UploadWorker(
-            active_provider, 
-            profile_names, 
-            self.backup_base_dir, 
+            active_provider,
+            profile_names,
+            self.backup_base_dir,
             max_backups
         )
         self.auto_sync_worker.moveToThread(self.auto_sync_thread)
-        
+
         # NOTE: Auto-sync does NOT show cancel button, but we still support cancellation internally
         # if we add a way to cancel background operations in the future
-        
+
         # Connect signals
         self.auto_sync_thread.started.connect(self.auto_sync_worker.run)
         self.auto_sync_worker.cancelled.connect(self._on_auto_sync_cancelled)
@@ -4309,7 +4405,7 @@ class CloudSavePanel(QWidget):
         self.auto_sync_worker.finished.connect(self.auto_sync_thread.quit)
         self.auto_sync_worker.finished.connect(self.auto_sync_worker.deleteLater)
         self.auto_sync_thread.finished.connect(self.auto_sync_thread.deleteLater)
-        
+
         # Start sync
         self.auto_sync_thread.start()
     
@@ -4349,17 +4445,22 @@ class CloudSavePanel(QWidget):
     def _on_auto_sync_finished(self, success_count, total_count):
         """Handle automatic sync completion."""
         logging.info(f"Periodic sync completed: {success_count}/{total_count} profiles synced")
-        
-        # Show notification
-        provider_name = "Cloud"
+
+        quiet = bool(getattr(self, "_auto_sync_quiet_notification", False))
+        self._auto_sync_quiet_notification = False
+
         active_provider = self._get_active_provider()
-        if active_provider and hasattr(active_provider, 'name'):
-            provider_name = active_provider.name
-            
-        self._show_notification(
-            "Periodic Sync Complete",
-            f"Synced {success_count} of {total_count} profiles to {provider_name}."
-        )
+
+        # Show notification (skip for quiet event-driven uploads after auto-backup)
+        if not quiet:
+            provider_name = "Cloud"
+            if active_provider and hasattr(active_provider, 'name'):
+                provider_name = active_provider.name
+
+            self._show_notification(
+                "Periodic Sync Complete",
+                f"Synced {success_count} of {total_count} profiles to {provider_name}."
+            )
         
         # Refresh cloud status
         self._refresh_cloud_status()

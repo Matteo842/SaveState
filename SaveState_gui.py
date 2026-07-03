@@ -816,6 +816,19 @@ class MainWindow(QMainWindow):
         process_row_layout.addWidget(self.auto_backup_process_refresh_button)
         self.auto_backup_process_label = QLabel("Game process:")
         auto_backup_form.addRow(self.auto_backup_process_label, self.auto_backup_process_row)
+
+        # --- Online sync (upload each automatic backup to the cloud) ---
+        # Upload-only: after every automatic backup, the new archive is pushed
+        # to the configured cloud provider. It never downloads/overwrites local
+        # saves. The provider itself is configured in the Cloud panel.
+        self.auto_backup_sync_online_checkbox = QCheckBox("Sync backups online (upload to cloud)")
+        self.auto_backup_sync_online_checkbox.setToolTip(
+            "After each automatic backup, upload it to your configured cloud "
+            "provider. Upload only: it never overwrites your local saves. "
+            "Set up the provider in the Cloud panel."
+        )
+        auto_backup_form.addRow(self.auto_backup_sync_online_checkbox)
+
         self.auto_backup_group.setLayout(auto_backup_form)
         editor_layout.addWidget(self.auto_backup_group)
 
@@ -1222,6 +1235,7 @@ class MainWindow(QMainWindow):
         self.auto_backup_enable_checkbox.toggled.connect(self.handlers.handle_auto_backup_enabled_toggled)
         self.auto_backup_mode_combo.currentIndexChanged.connect(self.handlers.handle_auto_backup_mode_changed)
         self.auto_backup_process_refresh_button.clicked.connect(self._populate_running_processes)
+        self.auto_backup_sync_online_checkbox.toggled.connect(self._on_sync_online_checkbox_toggled)
 
         # Stato Iniziale e Tema
         self.update_action_button_states()
@@ -1241,6 +1255,8 @@ class MainWindow(QMainWindow):
         # Automatic local backup engine (in-process, tray-dependent like cloud sync)
         self.auto_backup_manager = AutoBackupManager(self)
         self.auto_backup_manager.start()
+        # Refresh cloud-sync UI gates once the cloud panel has finished loading settings.
+        QTimer.singleShot(400, self.on_cloud_sync_availability_changed)
 
         # --- In-app updater -------------------------------------------------
         # The UpdateManager itself makes zero network calls until explicitly
@@ -2649,12 +2665,104 @@ class MainWindow(QMainWindow):
             else:
                 self.auto_backup_process_combo.setEditText("")
 
+            # Online sync flag (upload each backup to the cloud)
+            self.auto_backup_sync_online_checkbox.setChecked(bool(cfg.get('sync_online', False)))
+
             # Enable checkbox + dependent group state + relevant fields
             self.auto_backup_enable_checkbox.setChecked(enabled)
             self.handlers.handle_auto_backup_enabled_toggled(enabled)
             self.handlers.handle_auto_backup_mode_changed()
+            # Gate the online-sync checkbox on cloud availability (must be applied
+            # last, after the group has been (re)enabled).
+            self._apply_online_sync_availability()
         except Exception as e:
             logging.error(f"Error loading auto-backup config into editor: {e}")
+
+    def _apply_online_sync_availability(self):
+        """Enable/disable the 'Sync backups online' checkbox based on whether a
+        cloud provider is actually connected.
+
+        Rationale (safety/clarity): the user must never be able to turn on online
+        sync while the cloud is unusable, nor believe a save is synced when it is
+        not. So the checkbox can only be *enabled* when a provider is connected.
+        An already-configured (checked) profile stays visibly checked but
+        disabled with an explanatory tooltip when the cloud is offline, instead
+        of silently pretending everything is fine.
+        """
+        try:
+            cb = getattr(self, 'auto_backup_sync_online_checkbox', None)
+            if cb is None:
+                return
+
+            available, reason = True, ""
+            panel = getattr(self, 'cloud_panel', None)
+            if panel is not None and hasattr(panel, 'is_online_sync_available'):
+                available, reason = panel.is_online_sync_available()
+
+            if available:
+                cb.setEnabled(True)
+                cb.setToolTip(
+                    "After each automatic backup, upload it to your configured "
+                    "cloud provider. Upload only: it never overwrites your local "
+                    "saves. Requires an active cloud connection."
+                )
+            else:
+                # Cannot *turn on* online sync while the cloud is unavailable.
+                cb.setEnabled(False)
+                if cb.isChecked():
+                    cb.setToolTip(
+                        f"Online sync is ON for this profile but paused: {reason}. "
+                        f"Local automatic backups still run. Connect in the Cloud "
+                        f"panel to resume uploading."
+                    )
+                else:
+                    cb.setChecked(False)
+                    cb.setToolTip(
+                        f"Online sync unavailable: {reason}. Connect and configure "
+                        f"a cloud provider in the Cloud panel to enable it."
+                    )
+        except Exception as e:
+            logging.error(f"Error applying online sync availability: {e}")
+
+    def on_cloud_sync_availability_changed(self):
+        """Called when cloud connect/disconnect or settings change.
+
+        Refreshes the profile-editor gate and yellow warning dots on profiles
+        that have online sync enabled but the cloud is currently offline.
+        """
+        try:
+            self._apply_online_sync_availability()
+            ptm = getattr(self, 'profile_table_manager', None)
+            if ptm is not None and hasattr(ptm, 'update_profile_table'):
+                ptm.update_profile_table()
+        except Exception as e:
+            logging.debug(f"on_cloud_sync_availability_changed: {e}")
+
+    def _on_sync_online_checkbox_toggled(self, checked):
+        """Block enabling online sync unless the cloud gate passes right now."""
+        if not checked:
+            return
+        try:
+            panel = getattr(self, 'cloud_panel', None)
+            if panel is None or not hasattr(panel, 'is_online_sync_available'):
+                return
+            available, reason = panel.is_online_sync_available()
+            if available:
+                return
+            cb = self.auto_backup_sync_online_checkbox
+            cb.blockSignals(True)
+            cb.setChecked(False)
+            cb.blockSignals(False)
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "Online sync unavailable",
+                f"Cannot enable online sync:\n{reason}\n\n"
+                f"Open the Cloud panel, configure your provider, and connect first.",
+            )
+            self._apply_online_sync_availability()
+        except Exception as e:
+            logging.error(f"Error handling sync-online toggle: {e}")
 
     def _detect_profile_process_name(self, profile_data):
         """Derive the game's process/executable name from the profile data.
@@ -3049,6 +3157,9 @@ class MainWindow(QMainWindow):
         self.bottom_controls_widget.setVisible(True)  # Show search bar and log button again
         self.exit_cloud_mode()
         self._ctrl_reapply_focus_if_connected()
+        # User may have connected while in the Cloud panel — refresh sync gates.
+        if hasattr(self, 'on_cloud_sync_availability_changed'):
+            self.on_cloud_sync_availability_changed()
 
     def enter_cloud_mode(self):
         """Set flag when cloud panel is shown."""

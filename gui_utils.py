@@ -8,8 +8,8 @@ from PySide6.QtGui import QPixmap
 import core_logic
 import logging          # Per loggare eventuali errori interni al thread
 import os               # Per os.walk, os.path, ecc.
+import sys
 import configparser     # Per leggere i file .ini
-#import sys
 #import tempfile
 #from datetime import datetime
 
@@ -504,20 +504,61 @@ class QtLogHandler(logging.Handler, QObject):
 
 # --- FINE NUOVA CLASSE ---
 
+# Default toast duration (ms). Auto-backup uses a longer value — see NotificationPopup.
+DEFAULT_NOTIFICATION_DURATION_MS = 12000
+AUTO_BACKUP_NOTIFICATION_DURATION_MS = 15000
+
+
+def elevate_notification_window(widget) -> None:
+    """Best-effort: keep the toast above fullscreen games and other apps.
+
+    Qt's WindowStaysOnTopHint is not always enough on Windows exclusive/borderless
+    fullscreen; an explicit TOPMOST placement after show() helps (e.g. Binding of Isaac).
+    """
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            hwnd = int(widget.winId())
+            HWND_TOPMOST = -1
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+            ctypes.windll.user32.SetWindowPos(
+                hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            )
+        elif sys.platform.startswith("linux"):
+            pass  # X11BypassWindowManagerHint is set in NotificationPopup.__init__
+    except Exception as e:
+        logging.debug(f"elevate_notification_window: {e}")
+
+
 # --- Widget per Notifiche Personalizzate ---
 class NotificationPopup(QWidget):
-    def __init__(self, title, message, success, parent=None, icon_path=None): 
+    def __init__(self, title, message, success, parent=None, icon_path=None,
+                 duration_ms=None):
         super().__init__(parent)
 
-        # --- Imposta Stile Finestra ---
-        # Rende la finestra senza bordi/titolo, sempre in primo piano, tipo Tooltip
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |    # Niente bordi/titolo
-            Qt.WindowType.Tool |                 # Non appare nella taskbar (di solito)
-            Qt.WindowType.WindowStaysOnTopHint   # Rimane sopra le altre finestre
+        self._duration_ms = max(
+            3000,
+            int(duration_ms if duration_ms is not None else DEFAULT_NOTIFICATION_DURATION_MS),
         )
+
+        # ToolTip + no-focus: overlay fullscreen without stealing input from the game.
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.WindowDoesNotAcceptFocus |
+            Qt.WindowType.ToolTip
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         # Fa sì che il widget venga eliminato alla chiusura
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        if sys.platform.startswith("linux"):
+            self.setWindowFlags(
+                self.windowFlags() | Qt.WindowType.X11BypassWindowManagerHint
+            )
         # Opzionale: abilita trasparenza se lo sfondo nel QSS lo usa
         # self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
@@ -562,7 +603,11 @@ class NotificationPopup(QWidget):
         self.close_timer = QTimer(self)
         self.close_timer.setSingleShot(True)
         self.close_timer.timeout.connect(self.close)
-        self.close_timer.start(6000) # Chiudi dopo 6000 ms = 6 secondi (puoi aggiustare)
+        self.close_timer.start(self._duration_ms)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        elevate_notification_window(self)
 
     def mousePressEvent(self, event):
         """Chiude la notifica se l'utente ci clicca sopra."""
@@ -577,7 +622,7 @@ class NotificationPopup(QWidget):
 
     def leaveEvent(self, event):
         """Opzionale: Ri-avvia il timer se il mouse esce dalla notifica."""
-        self.close_timer.start(6000) # Ri-avvia timer
+        self.close_timer.start(self._duration_ms)
         super().leaveEvent(event)
 
 # --- FINE CLASSE NotificationPopup ---

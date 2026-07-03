@@ -39,6 +39,52 @@ class NoteOverlayButton(QPushButton):
         super().leaveEvent(event)
 
 
+class CloudSyncWarningDot(QLabel):
+    """Blinking amber dot shown when online sync is enabled but cloud is offline.
+
+    Uses the same attention-blink pattern as UpdateIndicator: toggles visible/
+    hidden for a few seconds so the user notices, then stays solid.
+    """
+
+    _STYLE_VISIBLE = (
+        "color: #FFC107; font-size: 13px; font-weight: bold; "
+        "background: transparent; border: none; padding: 0px;"
+    )
+    _STYLE_HIDDEN = (
+        "color: transparent; font-size: 13px; font-weight: bold; "
+        "background: transparent; border: none; padding: 0px;"
+    )
+
+    def __init__(self, parent=None):
+        super().__init__("\u25cf", parent)
+        self.setFixedSize(14, 14)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._blink_visible = True
+        self._blink_timer = QTimer(self)
+        self._blink_timer.setInterval(400)
+        self._blink_timer.timeout.connect(self._tick_blink)
+        self._blink_remaining = max(1, 6000 // self._blink_timer.interval())
+        self._apply_style()
+        self._blink_timer.start()
+
+    def _apply_style(self):
+        self.setStyleSheet(self._STYLE_VISIBLE if self._blink_visible else self._STYLE_HIDDEN)
+
+    def _tick_blink(self):
+        self._blink_visible = not self._blink_visible
+        self._blink_remaining -= 1
+        self._apply_style()
+        if self._blink_remaining <= 0:
+            self._blink_timer.stop()
+            self._blink_visible = True
+            self._apply_style()
+
+    def stop_blink(self):
+        self._blink_timer.stop()
+        self._blink_visible = True
+        self._apply_style()
+
+
 class NotePopupWidget(QWidget):
     """Speech-bubble style popup for displaying and editing notes.
 
@@ -524,6 +570,8 @@ class _NoteOverlayViewportFilter(QObject):
     def eventFilter(self, watched, event):
         if event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
             self._plm._reposition_note_overlays()
+            if hasattr(self._plm, '_reposition_cloud_sync_warning_dots'):
+                self._plm._reposition_cloud_sync_warning_dots()
         return False
 
 
@@ -559,6 +607,7 @@ class ProfileListManager:
 
         # --- Note Overlay System ---
         self._note_overlay_buttons = []  # List of active NoteOverlayButton instances
+        self._cloud_sync_warning_dots = []  # Yellow indicators: sync enabled but cloud offline
         current_theme = self.main_window.current_settings.get('theme', 'dark')
         is_dark = (current_theme == 'dark')
         # Create the shared note popup widget (child of main window for proper positioning)
@@ -612,11 +661,14 @@ class ProfileListManager:
         
         # Scroll: reposition note overlays and hide popup
         self.table_widget.verticalScrollBar().valueChanged.connect(self._reposition_note_overlays)
+        self.table_widget.verticalScrollBar().valueChanged.connect(self._reposition_cloud_sync_warning_dots)
         self.table_widget.verticalScrollBar().valueChanged.connect(lambda: self._dismiss_note_popup_if_preview())
         # Resize: reposition buttons when columns are resized
         self.table_widget.horizontalHeader().sectionResized.connect(self._reposition_note_overlays)
+        self.table_widget.horizontalHeader().sectionResized.connect(self._reposition_cloud_sync_warning_dots)
         # Fires when header geometry settles (e.g. after stretch column gets final width at startup)
         self.table_widget.horizontalHeader().geometriesChanged.connect(self._reposition_note_overlays)
+        self.table_widget.horizontalHeader().geometriesChanged.connect(self._reposition_cloud_sync_warning_dots)
         self._note_overlay_viewport_filter = _NoteOverlayViewportFilter(self)
         self.table_widget.viewport().installEventFilter(self._note_overlay_viewport_filter)
 
@@ -639,6 +691,8 @@ class ProfileListManager:
         # Rebuild note overlays with updated theme
         if hasattr(self, '_note_overlay_buttons'):
             self._create_note_overlays()
+        if hasattr(self, '_cloud_sync_warning_dots'):
+            self._create_cloud_sync_warning_dots()
         # Force a repaint of the table to apply the new colors
         self.table_widget.viewport().update()
 
@@ -897,6 +951,8 @@ class ProfileListManager:
         
         # --- Create note overlay buttons for profiles with notes ---
         self._create_note_overlays()
+        # --- Yellow dots: online sync enabled but cloud currently unavailable ---
+        self._create_cloud_sync_warning_dots()
         # --- End note overlays ---
 
         logging.debug("Profile table update finished.")
@@ -1265,6 +1321,90 @@ class ProfileListManager:
             btn.move(btn_x, btn_y)
             btn.show()
             btn.raise_()
+
+    def _clear_cloud_sync_warning_dots(self):
+        """Remove yellow cloud-sync warning indicators from the viewport."""
+        for dot in getattr(self, "_cloud_sync_warning_dots", []):
+            try:
+                if hasattr(dot, "stop_blink"):
+                    dot.stop_blink()
+                dot.deleteLater()
+            except Exception:
+                pass
+        self._cloud_sync_warning_dots = []
+
+    def _create_cloud_sync_warning_dots(self):
+        """Show a blinking amber dot when online sync is enabled but cloud is offline."""
+        self._clear_cloud_sync_warning_dots()
+
+        try:
+            from cloud_utils.cloud_sync_availability import profile_wants_online_sync
+        except Exception:
+            return
+
+        panel = getattr(self.main_window, "cloud_panel", None)
+        available, reason = True, ""
+        if panel is not None and hasattr(panel, "is_online_sync_available"):
+            available, reason = panel.is_online_sync_available()
+        if available:
+            return
+
+        viewport = self.table_widget.viewport()
+        if viewport is None:
+            return
+
+        all_notes = notes_manager.load_notes()
+        tip_reason = reason or "cloud unavailable"
+        for row in range(self.table_widget.rowCount()):
+            name_item = self.table_widget.item(row, 1)
+            if not name_item:
+                continue
+            profile_name = name_item.data(Qt.ItemDataRole.UserRole)
+            profile_data = self.profiles.get(profile_name, {})
+            if not profile_wants_online_sync(profile_data):
+                continue
+
+            dot = CloudSyncWarningDot(parent=viewport)
+            dot.setToolTip(
+                f"Online sync is enabled for this profile but paused:\n"
+                f"{tip_reason}.\n\n"
+                f"Local automatic backups still run; open the Cloud panel to connect."
+            )
+            dot.setProperty("row_index", row)
+            dot.setProperty("has_note", profile_name in all_notes)
+            self._cloud_sync_warning_dots.append(dot)
+            dot.show()
+
+        self._reposition_cloud_sync_warning_dots()
+        QTimer.singleShot(0, self._reposition_cloud_sync_warning_dots)
+
+    def _reposition_cloud_sync_warning_dots(self):
+        """Place warning dots at the right edge of the profile name cell."""
+        viewport = self.table_widget.viewport()
+        if not viewport:
+            return
+        viewport_rect = viewport.rect()
+
+        for dot in getattr(self, "_cloud_sync_warning_dots", []):
+            row = dot.property("row_index")
+            if row is None:
+                dot.hide()
+                continue
+            name_item = self.table_widget.item(row, 1)
+            if not name_item:
+                dot.hide()
+                continue
+            item_rect = self.table_widget.visualItemRect(name_item)
+            if not viewport_rect.intersects(item_rect):
+                dot.hide()
+                continue
+            # Right side of the name column; leave room for the note button if present.
+            note_pad = 30 if dot.property("has_note") else 0
+            dot_x = item_rect.right() - dot.width() - 4 - note_pad
+            dot_y = item_rect.top() + (item_rect.height() - dot.height()) // 2
+            dot.move(dot_x, dot_y)
+            dot.show()
+            dot.raise_()
 
     def _get_popup_position(self, profile_name):
         """Calculate the popup position in main window coordinates, below the note button."""
