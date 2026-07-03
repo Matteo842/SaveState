@@ -1391,8 +1391,92 @@ class SavePathFinder:
                 logging.debug(f"Reverse abbreviation match: game '{self.context.sanitized_name}' "
                              f"matches folder abbreviation '{folder_abbrev}' of '{folder_name}'")
                 return True
+        
+        # Match "core title": la cartella condivide il nucleo distintivo del nome
+        # del gioco ma diverge solo nella parola finale (edizione/DLC/sottotitolo).
+        # Es: gioco "The Binding of Isaac Rebirth" -> cartella "Binding of Isaac Repentance"
+        # (Repentance è l'ultimo DLC, il gioco base salva in quella cartella).
+        if self._share_core_title(self.context.sanitized_name, folder_name):
+            logging.debug(f"Core-title (edition variant) match: game "
+                         f"'{self.context.sanitized_name}' ~ folder '{folder_name}'")
+            return True
             
         return False
+    
+    def _core_words(self, name: str) -> List[str]:
+        """Estrae le parole 'core' (significative) da un nome, in minuscolo e in ordine.
+        
+        Rimuove simboli, articoli/preposizioni e termini di edizione (ignore_words),
+        mantenendo però i numeri (anche di una cifra) perché distinguono le versioni.
+        """
+        if not name:
+            return []
+        cleaned = re.sub(r"[^a-z0-9\s]", ' ', name.lower())
+        words = []
+        for w in cleaned.split():
+            if w.isdigit():
+                words.append(w)
+            elif len(w) >= 2 and w not in self.context.ignore_words_lower:
+                words.append(w)
+        return words
+    
+    @staticmethod
+    def _version_tokens(words: List[str]) -> Set[str]:
+        """Estrae i token di versione (numeri arabi o romani normalizzati) da una lista di parole."""
+        tokens: Set[str] = set()
+        for w in words:
+            w_upper = w.upper()
+            if w_upper in ROMAN_TO_ARABIC:
+                tokens.add(ROMAN_TO_ARABIC[w_upper])
+            elif w.isdigit():
+                tokens.add(w)
+        return tokens
+    
+    def _share_core_title(self, game_name: str, folder_name: str) -> bool:
+        """Verifica se cartella e gioco condividono lo stesso 'core title'.
+        
+        Cattura i casi in cui una cartella di salvataggio prende il nome da una
+        edizione/DLC diversa dello stesso gioco (es. Rebirth -> Repentance),
+        dove le due stringhe condividono un prefisso di parole significative e
+        divergono solo nell'ultima parola.
+        
+        Protezioni contro i falsi positivi:
+        - il prefisso condiviso deve avere almeno 2 parole significative;
+        - i due nomi devono divergere solo nell'ultima parola (stessa serie, non
+          giochi diversi con sottotitoli lunghi come "Call of Duty ...");
+        - il core condiviso deve essere abbastanza lungo/distintivo (>= 8 caratteri);
+        - versioni numeriche diverse vengono rifiutate (es. "Dark Souls 2" vs "3").
+        """
+        w1 = self._core_words(game_name)
+        w2 = self._core_words(folder_name)
+        if len(w1) < 2 or len(w2) < 2:
+            return False
+        
+        # Lunghezza del prefisso di parole condivise (in ordine)
+        prefix_len = 0
+        for a, b in zip(w1, w2):
+            if a == b:
+                prefix_len += 1
+            else:
+                break
+        
+        if prefix_len < 2:
+            return False
+        
+        # Devono divergere solo nell'ultima parola (edizione/sottotitolo)
+        shorter_len = min(len(w1), len(w2))
+        if prefix_len < shorter_len - 1:
+            return False
+        
+        # Il core condiviso deve essere sufficientemente distintivo
+        if sum(len(w) for w in w1[:prefix_len]) < 8:
+            return False
+        
+        # Non confondere versioni numeriche diverse (es. "Dark Souls 2" vs "Dark Souls 3")
+        if self._version_tokens(w1[prefix_len:]) != self._version_tokens(w2[prefix_len:]):
+            return False
+        
+        return True
     
     def _check_save_subdirs(self, parent_path: str, parent_source: str):
         """Controlla le sottocartelle di salvataggio comuni."""
@@ -1498,6 +1582,12 @@ class SavePathFinder:
         NOTA: Questa ricerca viene saltata se game_install_dir è in cartelle utente
         comuni (Desktop, Documents, Downloads) perché in quel caso probabilmente
         stiamo processando un collegamento, non una vera installazione.
+        
+        NOTA 2: La risalita si ferma anche prima di raggiungere le cartelle del
+        profilo utente (home, C:\\Users, AppData\\Roaming/Local/LocalLow). Molte
+        app (es. WeMod, launcher Electron/Squirrel) sono "installate" in AppData:
+        risalendo si arriverebbe alla home e si raccoglierebbero i salvataggi di
+        TUTTI i giochi (es. la cartella "Saved Games" e i suoi contenuti).
         """
         if not self.context.game_install_dir or not os.path.isdir(self.context.game_install_dir):
             return
@@ -1509,6 +1599,9 @@ class SavePathFinder:
             return
             
         logging.info(f"Searching parent directories of: {self.context.game_install_dir}")
+        
+        # Cartelle "confine" oltre le quali NON si deve risalire (profilo utente / AppData).
+        boundary_dirs = self._get_profile_boundary_dirs()
         
         current_dir = os.path.normpath(self.context.game_install_dir)
         levels_searched = 0
@@ -1523,6 +1616,12 @@ class SavePathFinder:
             # Stop se siamo alla root del disco
             if not parent_dir or parent_dir == current_dir:
                 logging.debug("Reached drive root, stopping parent search")
+                break
+            
+            # Stop se stiamo per entrare in una cartella del profilo utente / AppData.
+            # Enumerarle significherebbe raccogliere i salvataggi di tutti i giochi.
+            if os.path.normpath(parent_dir).lower() in boundary_dirs:
+                logging.debug(f"Skipping parent directory search: reached user profile/AppData boundary: {parent_dir}")
                 break
                 
             # Verifica che non siamo in cartelle di sistema
@@ -1620,6 +1719,37 @@ class SavePathFinder:
                         
         except OSError as e:
             logging.warning(f"Error checking nested save subdirs in '{parent_path}': {e}")
+    
+    def _get_profile_boundary_dirs(self) -> Set[str]:
+        r"""Restituisce le cartelle 'confine' (normalizzate, minuscole) oltre le quali
+        la risalita nelle directory genitore non deve andare.
+        
+        Comprende: la home utente, la root 'C:\\Users', e le cartelle AppData
+        (Roaming, Local, LocalLow) più la loro radice 'AppData'. Entrare in queste
+        cartelle durante la risalita porterebbe a raccogliere i salvataggi di tutti
+        i giochi (es. la cartella condivisa 'Saved Games').
+        """
+        boundaries: Set[str] = set()
+        try:
+            home = os.path.normpath(os.path.expanduser('~'))
+            boundaries.add(home.lower())
+            
+            users_root = os.path.dirname(home)
+            if users_root:
+                boundaries.add(os.path.normpath(users_root).lower())
+            
+            appdata = os.getenv('APPDATA')          # ...\AppData\Roaming
+            localappdata = os.getenv('LOCALAPPDATA')  # ...\AppData\Local
+            for value in (appdata, localappdata):
+                if value:
+                    boundaries.add(os.path.normpath(value).lower())
+                    # Radice comune 'AppData'
+                    boundaries.add(os.path.normpath(os.path.join(value, '..')).lower())
+            if localappdata:
+                boundaries.add(os.path.normpath(os.path.join(localappdata, '..', 'LocalLow')).lower())
+        except Exception as e:
+            logging.warning(f"Error determining profile boundary dirs: {e}")
+        return boundaries
     
     def _is_in_user_shortcuts_folder(self, path: str) -> bool:
         """Verifica se il percorso è in una cartella utente comune (non una vera installazione).
