@@ -181,7 +181,18 @@ class AutoBackupManager:
                 if running_names is None:
                     running_names = process_watch_utils.list_running_process_names()
                 # Initialize so we only fire on a future running -> not-running edge.
-                st["proc_was_running"] = bool(set(cfg["process_names"]) & running_names)
+                matched = set(cfg["process_names"]) & running_names
+                st["proc_was_running"] = bool(matched)
+                logging.info(
+                    "[AutoBackup] Watching '%s' (process_close): processes=%s, "
+                    "currently_running=%s (matched=%s).",
+                    name, cfg["process_names"], bool(matched), sorted(matched),
+                )
+                if not cfg["process_names"]:
+                    logging.warning(
+                        "[AutoBackup] Profile '%s' uses process_close but has NO "
+                        "process names configured; it will never trigger.", name,
+                    )
             new_state[name] = st
         self._state = new_state
 
@@ -232,7 +243,22 @@ class AutoBackupManager:
                     if running_names is None:
                         running_names = process_watch_utils.list_running_process_names()
                     is_running = bool(set(cfg["process_names"]) & running_names)
-                    if st.get("proc_was_running") and not is_running:
+                    was_running = bool(st.get("proc_was_running"))
+                    # Log only on a running-state change to keep the log readable.
+                    if is_running != was_running:
+                        logging.info(
+                            "[AutoBackup] '%s' process state changed: %s -> %s "
+                            "(watching %s).",
+                            name,
+                            "RUNNING" if was_running else "not running",
+                            "RUNNING" if is_running else "not running",
+                            cfg["process_names"],
+                        )
+                    if was_running and not is_running:
+                        logging.info(
+                            "[AutoBackup] '%s' detected game close -> requesting backup.",
+                            name,
+                        )
                         should_backup = True
                     st["proc_was_running"] = is_running
 
@@ -249,9 +275,17 @@ class AutoBackupManager:
                 if not should_backup:
                     continue
 
-                # Cooldown guard to avoid rapid repeated backups.
-                if now - st["last_trigger"] < MIN_BACKUP_COOLDOWN_SEC:
-                    logging.debug(f"AutoBackupManager: cooldown active for '{name}', skipping.")
+                # Cooldown guard to avoid rapid repeated backups. It does not
+                # apply to process_close: a game-close is a discrete edge that
+                # cannot repeat until the game runs again, and the cooldown could
+                # otherwise silently swallow a legitimate backup right after the
+                # app starts or the profile is re-saved (both reset last_trigger).
+                if mode != MODE_PROCESS_CLOSE and now - st["last_trigger"] < MIN_BACKUP_COOLDOWN_SEC:
+                    remaining = MIN_BACKUP_COOLDOWN_SEC - (now - st["last_trigger"])
+                    logging.info(
+                        "[AutoBackup] Backup for '%s' suppressed by cooldown "
+                        "(%.0fs remaining).", name, remaining,
+                    )
                     continue
 
                 self._trigger_backup(name)
