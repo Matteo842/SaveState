@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 import config
-from update_manager import (
+from managers.update_manager import (
     INSTALL_SOURCE,
     STATE_CHECKING,
     STATE_DOWNLOADED,

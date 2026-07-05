@@ -14,7 +14,7 @@ from enum import Enum
 
 
 import config
-import cancellation_utils
+from common import cancellation_utils
 
 # Importa thefuzz se disponibile
 try:

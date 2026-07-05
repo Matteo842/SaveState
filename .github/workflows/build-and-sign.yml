@@ -98,7 +98,7 @@ jobs:
           --include-package-data=googleapiclient `
           --include-data-dir=icons=icons `
           --include-data-file=icon.png=icon.png `
-          --include-data-file=backup_runner.py=backup_runner.py `
+          --include-data-file=backup/backup_runner.py=backup_runner.py `
           --include-data-file=emulator_utils/citra_titles_map.pkl=emulator_utils/citra_titles_map.pkl `
           --include-data-file=emulator_utils/switch_game_map.pkl=emulator_utils/switch_game_map.pkl `
           --include-data-file=emulator_utils/ps4_game_map.pkl=emulator_utils/ps4_game_map.pkl `

@@ -7,14 +7,14 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QLocale, QCoreApplication, QPoint, QSize, QTimer, Slot, QObject, QEvent
 from PySide6.QtGui import QBrush, QColor, QIcon, QPalette, QAction
 
-import core_logic
+from core import core_logic
 import config
 import logging
 import os
 from gui_components import lock_backup_manager
 from gui_components import backup_notes_manager
 from gui_components.profile_list_manager import NotePopupWidget, NoteOverlayButton
-from utils import resource_path
+from common.utils import resource_path
 
 
 class RestoreSelectionDelegate(QStyledItemDelegate):

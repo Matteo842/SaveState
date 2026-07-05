@@ -7,8 +7,8 @@ import logging
 import re
 import platform
 import shutil
-from utils import resource_path
-from core_logic import sanitize_foldername
+from common.utils import resource_path
+from core.core_logic import sanitize_foldername
 
 # Determina il sistema operativo
 IS_WINDOWS = platform.system() == 'Windows'
@@ -147,7 +147,7 @@ def ensure_persistent_icon():
     # PyInstaller OneFile mode: we need to copy the icon to a persistent location
     # Use the backup directory's .savestate folder (works with portable mode too)
     try:
-        import settings_manager
+        from core import settings_manager
         import config
         
         settings, _ = settings_manager.load_settings()
@@ -281,7 +281,7 @@ def generate_heroic_script(profile_name: str) -> tuple:
     
     try:
         # Determine backup base dir for script storage
-        import settings_manager as _sm
+        from core import settings_manager as _sm
         import config as _cfg
         settings, _ = _sm.load_settings()
         backup_base_dir = settings.get("backup_base_dir", getattr(_cfg, "BACKUP_BASE_DIR", ""))

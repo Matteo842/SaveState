@@ -307,7 +307,7 @@ if __name__ == "__main__":
     if args.backup:
         # === Silent Backup Mode ===
         # Import heavy modules only for backup mode
-        import backup_runner
+        from backup import backup_runner
         
         profile_to_backup = args.backup
         logging.info(f"Detected argument --backup '{profile_to_backup}'. Closing splash and starting silent backup...")
@@ -455,9 +455,9 @@ if __name__ == "__main__":
             # --- NOW import heavy modules (only for first instance) ---
             from PySide6.QtWidgets import QApplication, QMessageBox, QDialog, QWidget
             from PySide6.QtGui import QIcon
-            import settings_manager
-            from gui_utils import QtLogHandler
-            from utils import resource_path
+            from core import settings_manager
+            from gui.gui_utils import QtLogHandler
+            from common.utils import resource_path
             from SaveState_gui import MainWindow
 
             # Add Qt log handler now that gui_utils is imported
@@ -559,7 +559,7 @@ if __name__ == "__main__":
                         if backup_dir and not os.path.isdir(backup_dir):
                             logging.warning(f"Backup directory not found: {backup_dir}")
                             try:
-                                from backup_dir_validator import check_and_fix_backup_directory
+                                from backup.backup_dir_validator import check_and_fix_backup_directory
                                 
                                 # Create a temporary parent widget for the dialog
                                 temp_parent = QWidget()
@@ -584,7 +584,7 @@ if __name__ == "__main__":
                                     settings_manager.save_settings(current_settings)
                                     
                             except ImportError as e_import:
-                                logging.error(f"Could not import backup_dir_validator: {e_import}")
+                                logging.error(f"Could not from backup import backup_dir_validator: {e_import}")
                                 # Try to create the directory anyway
                                 try:
                                     os.makedirs(backup_dir, exist_ok=True)
@@ -640,11 +640,11 @@ if __name__ == "__main__":
                                 # Reload profiles from disk and refresh table
                                 try:
                                     import importlib
-                                    import core_logic as _cl
+                                    from core import core_logic as _cl
                                     importlib.reload(_cl)
                                     window.profiles = _cl.load_profiles()
                                 except Exception:
-                                    window.profiles = backup_runner.core_logic.load_profiles() if hasattr(backup_runner, 'core_logic') else __import__('core_logic').load_profiles()
+                                    window.profiles = backup_runner.core_logic.load_profiles() if hasattr(backup_runner, 'core_logic') else __import__('core.core_logic', fromlist=['core_logic']).load_profiles()
                                 window.updateUiText() # Aggiorna UI
                                 window.profile_table_manager.update_profile_table() # Aggiorna tabella
                                 logging.info("Initial settings configured and saved by user.")

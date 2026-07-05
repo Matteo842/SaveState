@@ -7,7 +7,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtCore import QSize
 
 try:
-    from utils import resource_path
+    from common.utils import resource_path
 except ImportError:
     logging.error("ThemeManager: Failed to import resource_path from utils. Using fallback.")
     import sys
@@ -20,7 +20,7 @@ except ImportError:
         return os.path.join(base, relative_path)
 
 import config # To access LIGHT_THEME_QSS and DARK_THEME_QSS
-import settings_manager # To save theme settings
+from core import settings_manager # To save theme settings
 
 class ThemeManager:
     # Manages the light/dark theme and the toggle button.

@@ -817,6 +817,6 @@ LINUX_BANNED_PATH_FRAGMENTS = [
 ]
 
 # --- Theme Styles ---
-from themes import DARK_THEME_QSS, LIGHT_THEME_QSS
+from common.themes import DARK_THEME_QSS, LIGHT_THEME_QSS
 
 # --- FINE CONFIGURAZIONE ---

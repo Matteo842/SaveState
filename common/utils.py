@@ -41,8 +41,9 @@ def resource_path(relative_path):
         else:
             # 3. Development mode: Use the directory containing this script
             # This is more reliable than os.path.abspath(".") which uses CWD
-            base_path = os.path.dirname(os.path.abspath(__file__))
-            logging.debug(f"resource_path: Using development __file__ dir: {base_path}")
+            # common/utils.py lives one level below the project root
+            base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            logging.debug(f"resource_path: Using project root: {base_path}")
     except Exception as e:
         # 4. Fallback to current working directory
         logging.error(f"resource_path: Error determining base path: {e}. Falling back to CWD.")

@@ -20,7 +20,7 @@ from PySide6.QtGui import QFontMetrics, QFont
 from PySide6.QtWidgets import QStyleOptionComboBox
 
 import config
-from utils import shorten_save_path
+from common.utils import shorten_save_path
 
 
 class BoldPrefixDelegate(QStyledItemDelegate):

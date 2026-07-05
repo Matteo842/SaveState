@@ -29,11 +29,11 @@ except ImportError:
 
 # Import our modules
 try:
-    import core_logic
-    import settings_manager
+    from core import core_logic
+    from core import settings_manager
     import config # Needed to load the correct QSS
-    from gui_utils import NotificationPopup 
-    from utils import resource_path
+    from gui.gui_utils import NotificationPopup 
+    from common.utils import resource_path
 except ImportError as e_mod:
     logging.error(f"Error importing modules ({e_mod}).")
     sys.exit(1)
@@ -342,7 +342,7 @@ def run_silent_backup(profile_name):
     if profile_name not in profiles:
         # Try sanitized version (removes special chars like colons)
         try:
-            import shortcut_utils
+            from common import shortcut_utils
             sanitized_name = shortcut_utils.sanitize_profile_name(profile_name)
             if sanitized_name and sanitized_name in profiles:
                 logging.info(f"Profile '{profile_name}' not found, but found sanitized version: '{sanitized_name}'")

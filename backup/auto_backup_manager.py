@@ -38,11 +38,11 @@ from datetime import datetime
 
 from PySide6.QtCore import QTimer
 
-import core_logic
-import backup_runner
-import backup_safety
-import process_watch_utils
-from gui_utils import WorkerThread
+from core import core_logic
+from backup import backup_runner
+from backup import backup_safety
+from common import process_watch_utils
+from gui.gui_utils import WorkerThread
 
 
 # --- Configuration constants ---------------------------------------------
@@ -537,7 +537,7 @@ class AutoBackupManager:
 
     def _show_auto_backup_notification(self, profile_name, success, message):
         """Show the same bottom-right popup used by desktop/controller shortcuts."""
-        from gui_utils import AUTO_BACKUP_NOTIFICATION_DURATION_MS
+        from gui.gui_utils import AUTO_BACKUP_NOTIFICATION_DURATION_MS
 
         handlers = getattr(self.main_window, "handlers", None)
         if handlers is not None and hasattr(handlers, "_show_controller_shortcut_notification"):

@@ -419,7 +419,7 @@ def _collect_profile_banned_dirs() -> list[str]:
     We avoid banning DS-related directories.
     """
     try:
-        import core_logic  # Local import to avoid potential circular issues
+        from core import core_logic  # Local import to avoid potential circular issues
     except Exception as e:
         log.debug(f"Unable to import core_logic for profile-based bans: {e}")
         return []

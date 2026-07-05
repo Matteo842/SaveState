@@ -6,7 +6,7 @@ import logging
 import platform
 import glob
 import re
-from settings_manager import load_settings
+from core.settings_manager import load_settings
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())  # Avoid 'No handler found' warnings

@@ -4,15 +4,15 @@ import platform
 import re
 import configparser
 from pathlib import Path
-import shortcut_utils  # Import shortcut utilities
+from common import shortcut_utils  # Import shortcut utilities
 
 from PySide6.QtWidgets import QMessageBox, QApplication, QDialog  # Import QApplication and QDialog
 from PySide6.QtGui import QDropEvent, QGuiApplication
 from PySide6.QtCore import Qt  # Import Qt
 from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
 from dialogs.retroarch_dialog import RetroArchCoreSelectionDialog
-from gui_utils import DetectionWorkerThread  # Import DetectionWorkerThread
-from shortcut_utils import sanitize_profile_name  # Import sanitize_profile_name
+from gui.gui_utils import DetectionWorkerThread  # Import DetectionWorkerThread
+from common.shortcut_utils import sanitize_profile_name  # Import sanitize_profile_name
 # Note: MultiProfileDialog is imported locally where needed to avoid import issues in Flatpak
 
 # It's assumed that DetectionWorkerThread, shortcut_utils, emulator_manager, 
@@ -1493,7 +1493,7 @@ class DropEventMixin:
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         
         # Create cancellation manager for this search
-        from cancellation_utils import CancellationManager
+        from common.cancellation_utils import CancellationManager
         cancellation_manager = CancellationManager()
         
         # Create thread

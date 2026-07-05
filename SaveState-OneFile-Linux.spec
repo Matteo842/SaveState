@@ -9,7 +9,7 @@ a = Analysis(
          ('icons', 'icons'),              # Copia la cartella 'icons' nella root dell'output [cite: 11]
          ('splash.png', '.'),
 		 ('icon.png', '.'),
-		 ('backup_runner.py', '.'),
+		 ('backup/backup_runner.py', '.'),
          ('emulator_utils/citra_titles_map.pkl', 'emulator_utils'), # Include il DB dei titoli 3ds
          ('emulator_utils/switch_game_map.pkl', 'emulator_utils'), # Include il DB dei titoli swich
          ('emulator_utils/ps4_game_map.pkl', 'emulator_utils'), # Include il DB dei titoli ps4

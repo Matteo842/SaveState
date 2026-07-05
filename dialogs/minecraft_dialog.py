@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox, QMessageBox, QComboBox, QHBoxLayout
 )
 from PySide6.QtCore import Qt, Slot
-import minecraft_utils
+from common import minecraft_utils
 import logging
 
 

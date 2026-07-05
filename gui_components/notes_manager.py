@@ -15,7 +15,7 @@ from datetime import datetime
 # --- Notes File Name and Path (dynamic using settings_manager) ---
 NOTES_FILENAME = "profile_notes.json"
 try:
-    import settings_manager as _sm
+    from core import settings_manager as _sm
     _ACTIVE_CONFIG_DIR = _sm.get_active_config_dir()
 except Exception:
     _ACTIVE_CONFIG_DIR = config.get_app_data_folder()
@@ -36,7 +36,7 @@ _cache_loaded = False  # Flag to know if cache has been loaded
 def _get_existing_profile_names():
     """Return a set with current profile names; empty set if not available."""
     try:
-        import core_logic
+        from core import core_logic
         profiles_dict = core_logic.load_profiles()
         if isinstance(profiles_dict, dict):
             return set(profiles_dict.keys())
@@ -124,7 +124,7 @@ def save_notes(notes_dict):
         try:
             do_mirror = True
             try:
-                import settings_manager as _smirror
+                from core import settings_manager as _smirror
                 if _smirror.is_portable_mode():
                     do_mirror = False
             except Exception:
@@ -132,13 +132,13 @@ def save_notes(notes_dict):
             if do_mirror:
                 rotation = 0
                 try:
-                    import settings_manager as _sm4
+                    from core import settings_manager as _sm4
                     settings, _ = _sm4.load_settings()
                     rotation = int(settings.get("mirror_rotation_keep", 0))
                 except Exception:
                     rotation = 0
                 try:
-                    import core_logic
+                    from core import core_logic
                     core_logic._mirror_json_to_backup_root("profile_notes.json", notes_to_write, rotation=rotation)
                 except Exception as e_core:
                     logging.warning(f"Mirror notes to backup root failed: {e_core}")

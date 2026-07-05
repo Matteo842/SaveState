@@ -5,7 +5,7 @@ import os
 import logging
 import platform
 import re
-from utils import sanitize_profile_display_name
+from common.utils import sanitize_profile_display_name
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler()) # Avoid 'No handler found' warnings

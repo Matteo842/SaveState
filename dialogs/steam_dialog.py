@@ -7,7 +7,7 @@ from PySide6.QtCore import Signal, Slot, Qt, QTimer, QEvent, QSize
 from PySide6.QtGui import QColor
 
 # Import necessary logic
-import core_logic
+from core import core_logic
 import logging
 import os
 
@@ -666,7 +666,7 @@ if __name__ == '__main__':
 
     # Simulate core_logic if not available
     try:
-        import core_logic
+        from core import core_logic
     except ImportError:
         print("WARNING: core_logic not found, using mock functions.")
         class MockCoreLogic:
@@ -696,7 +696,7 @@ if __name__ == '__main__':
 
     # Simulate gui_utils if not available
     try:
-         from gui_utils import SteamSearchWorkerThread
+         from gui.gui_utils import SteamSearchWorkerThread
     except ImportError:
          print("WARNING: gui_utils.SteamSearchWorkerThread not found, using mock thread.")
          from PySide6.QtCore import QThread, Signal, QTimer

@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QPixmap
 
-import core_logic
+from core import core_logic
 
 log = logging.getLogger(__name__)
 

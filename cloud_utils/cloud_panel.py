@@ -65,10 +65,10 @@ class CloudSelectionDelegate(QStyledItemDelegate):
         painter.restore()
 
 from cloud_utils.cloud_settings_panel import CloudSettingsPanel
-import cloud_settings_manager
-from utils import resource_path
+from . import cloud_settings_manager
+from common.utils import resource_path
 from gui_components import favorites_manager
-from core_logic import sanitize_foldername, is_group_profile, get_group_member_profiles
+from core.core_logic import sanitize_foldername, is_group_profile, get_group_member_profiles
 
 
 class AuthWorker(QObject):
@@ -3512,7 +3512,7 @@ class CloudSavePanel(QWidget):
                 self.main_window.profiles[profile_name] = {'path': backup_path}
                 
                 # Save profiles to disk
-                import core_logic
+                from core import core_logic
                 if core_logic.save_profiles(self.main_window.profiles):
                     logging.info(f"Profile '{profile_name}' created and saved successfully")
                     
@@ -3547,7 +3547,7 @@ class CloudSavePanel(QWidget):
             profiles_to_create = stats.get('profiles_to_create', [])
             if profiles_to_create:
                 try:
-                    import core_logic
+                    from core import core_logic
                     for profile_name, backup_path in profiles_to_create:
                         logging.info(f"Creating profile '{profile_name}' with path '{backup_path}'")
                         if self.main_window and hasattr(self.main_window, 'profiles'):

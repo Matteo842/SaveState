@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSizeP
 from PySide6.QtCore import Qt, Signal, QTimer, QRect, QSize, QEvent
 from PySide6.QtGui import QIcon, QFont, QCursor, QPainter, QPen, QColor
 
-from utils import resource_path
+from common.utils import resource_path
 
 # Helper function to sanitize display names
 def _sanitize_display_name(name):

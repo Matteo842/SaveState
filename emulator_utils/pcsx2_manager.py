@@ -299,7 +299,7 @@ def backup_pcsx2_save(profile_name: str, memcard_path: str, save_dir: str, # sav
                       max_source_size_mb: int, compression_mode: str) -> tuple[bool, str]:
     import os
     import tempfile
-    from core_logic import perform_backup
+    from core.core_logic import perform_backup
 
     log.info(f"Starting selective PCSX2 backup for profile '{profile_name}', save_dir '{save_dir}' from '{memcard_path}'")
 

@@ -364,7 +364,7 @@ class SettingsDialog(QDialog):
                     if reply == QMessageBox.StandardButton.Yes:
                         # Save settings to portable FIRST, then delete AppData
                         try:
-                            import settings_manager as _sm_forced
+                            from core import settings_manager as _sm_forced
                             temp_settings = self.settings.copy()
                             temp_settings["portable_config_only"] = True
                             # Ensure delete flag handled by settings_manager after saving portable
@@ -380,7 +380,7 @@ class SettingsDialog(QDialog):
         if new_portable_mode:
             try:
                 # Forza override runtime subito, così gli import usano il nuovo path in questa sessione
-                import settings_manager as _sm
+                from core import settings_manager as _sm
                 target_dir = os.path.join(validated_new_path, ".savestate")
                 if hasattr(_sm, "_RUNTIME_CONFIG_DIR_OVERRIDE"):
                     _sm._RUNTIME_CONFIG_DIR_OVERRIDE = target_dir
@@ -466,10 +466,10 @@ class SettingsDialog(QDialog):
     @Slot()
     def handle_restore_json_backup(self):
         """Handle restoring JSON backups from the backup directory."""
-        import core_logic
+        from core import core_logic
         # Lazy import to avoid potential cycles
         try:
-            import settings_manager as _settings_manager
+            from core import settings_manager as _settings_manager
         except Exception:
             _settings_manager = None
         

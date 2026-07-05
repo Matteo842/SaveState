@@ -10,13 +10,13 @@ from PySide6.QtCore import Slot, Qt, QLocale, QCoreApplication, QSize, QPoint, Q
 from PySide6.QtGui import QIcon, QColor, QPalette, QAction
 
 # Import necessary logic
-import core_logic
+from core import core_logic
 import config
 import logging
 from gui_components import lock_backup_manager
 from gui_components import backup_notes_manager
 from gui_components.profile_list_manager import NotePopupWidget, NoteOverlayButton
-from utils import resource_path
+from common.utils import resource_path
 
 
 class BackupSelectionDelegate(QStyledItemDelegate):

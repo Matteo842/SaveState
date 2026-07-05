@@ -166,11 +166,9 @@ def _get_executable_path() -> str:
 
 def _get_source_project_root() -> str:
     """Best-effort path of the source tree when running `python main.py`."""
-    # The module update_manager.py lives in the project root, so its __file__
-    # is a very reliable anchor (more so than sys.argv[0], which may be
-    # relative or launched from another cwd).
+    # managers/update_manager.py lives one level below the project root.
     try:
-        return os.path.dirname(os.path.abspath(__file__))
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     except Exception:
         if _ORIGINAL_ARGV and _ORIGINAL_ARGV[0]:
             return os.path.dirname(os.path.abspath(_ORIGINAL_ARGV[0]))

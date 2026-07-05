@@ -5,7 +5,7 @@ from PySide6.QtGui import QPixmap
 
 # Importa core_logic e logging SOLO per la gestione delle eccezioni nel blocco 'except'
 # Se non esistessero quel blocco 'except' specifico, questi import non servirebbero qui.
-import core_logic
+from core import core_logic
 import logging          # Per loggare eventuali errori interni al thread
 import os               # Per os.walk, os.path, ecc.
 import sys

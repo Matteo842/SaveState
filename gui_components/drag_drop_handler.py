@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QMessageBox, QApplication
 from PySide6.QtCore import Qt, Slot, QObject, QTimer, QThread
 
 # Importa utility e logica
-from gui_utils import DetectionWorkerThread
+from gui.gui_utils import DetectionWorkerThread
 
 # Setup logging per questo modulo
 logger = logging.getLogger(__name__)

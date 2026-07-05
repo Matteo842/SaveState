@@ -26,7 +26,7 @@ import logging
 import glob
 import re
 from typing import Optional
-from utils import sanitize_profile_display_name
+from common.utils import sanitize_profile_display_name
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())

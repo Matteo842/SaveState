@@ -82,11 +82,11 @@ if __name__ == "__main__":
 
     # 2. Now execute the "heavy" imports
     try:
-        import core_logic
+        from core import core_logic
         import config
-        import settings_manager
-        import minecraft_utils
-        import shortcut_utils
+        from core import settings_manager
+        from common import minecraft_utils
+        from common import shortcut_utils
         import logging # Import logging here if you use it in the functions below
         MODULES_LOADED = True
     except ImportError as e:

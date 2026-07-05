@@ -126,7 +126,7 @@ def get_icon_cache_dir() -> str:
         return _cached_icon_cache_dir
     
     try:
-        import settings_manager
+        from core import settings_manager
         backup_base = settings_manager.load_settings()[0].get("backup_base_dir", config.BACKUP_BASE_DIR)
     except Exception:
         backup_base = getattr(config, "BACKUP_BASE_DIR", None)
@@ -1825,7 +1825,7 @@ def get_profile_icon(profile_data: dict, profile_name: str, size: int = DEFAULT_
         if is_minecraft:
             # Use the bundled minecraft.png icon from the icons folder
             try:
-                from utils import resource_path
+                from common.utils import resource_path
                 minecraft_icon_path = resource_path("icons/minecraft.png")
                 if os.path.exists(minecraft_icon_path):
                     icon = QIcon(minecraft_icon_path)

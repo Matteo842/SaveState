@@ -271,7 +271,7 @@ The artifact is signed by **SignPath.io** using a certificate from the SignPath 
 
 ## Legal
 * [Privacy Policy](https://matteo842.github.io/SaveState/privacy.html)
-* [Terms of Service](https://github.com/Matteo842/SaveState/blob/main/TERMS.md)
+* [Terms of Service](https://github.com/Matteo842/SaveState/blob/main/docs/TERMS.md)
 
 ## License
 

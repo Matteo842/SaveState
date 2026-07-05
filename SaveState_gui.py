@@ -7,7 +7,7 @@ import platform
 import math
 import configparser
 import re  # Per espressioni regolari
-import core_logic # Added import
+from core import core_logic # Added import
 
 # --- PySide6 Imports (misuriamo i moduli principali) ---
 # Importa il modulo base prima, poi gli elementi specifici
@@ -56,18 +56,18 @@ if platform.system() == "Windows":
 else:
     HAS_PYWIN32 = False
 
-from gui_utils import QtLogHandler
-from utils import resource_path
+from gui.gui_utils import QtLogHandler
+from common.utils import resource_path
 from gui_components.profile_list_manager import ProfileListManager
 from gui_components.theme_manager import ThemeManager
 from gui_components.profile_creation_manager import ProfileCreationManager
 from gui_components.drag_drop_handler import DragDropHandler
 from cloud_utils.cloud_panel import CloudSavePanel
-import cloud_settings_manager
-import core_logic # Mantenuto per load_profiles
-from gui_handlers import MainWindowHandlers
-from controller_manager import ControllerManager
-from auto_backup_manager import AutoBackupManager
+from cloud_utils import cloud_settings_manager
+from core import core_logic # Mantenuto per load_profiles
+from gui.gui_handlers import MainWindowHandlers
+from managers.controller_manager import ControllerManager
+from backup.auto_backup_manager import AutoBackupManager
 from gui_components.controller_panel import (
     ControllerPanel,
     CTRL_BUTTONS, CTRL_ACTIONS, CTRL_DEFAULT_MAPPINGS, CTRL_BADGE_COLOR,
@@ -249,7 +249,7 @@ class MainWindow(QMainWindow):
         self._is_linux = platform.system() == "Linux"  # Check if running on Linux
         
         # Inizializza il cancellation manager per i thread di ricerca
-        from cancellation_utils import CancellationManager
+        from common.cancellation_utils import CancellationManager
         self.cancellation_manager = CancellationManager()
         
         # Inizializza le liste per il tracciamento dei thread
@@ -1262,7 +1262,7 @@ class MainWindow(QMainWindow):
         # The UpdateManager itself makes zero network calls until explicitly
         # asked (either by user click on the indicator / dialog, or by the
         # startup check below when the corresponding setting is enabled).
-        from update_manager import UpdateManager as _UpdateManager
+        from managers.update_manager import UpdateManager as _UpdateManager
         self.update_manager = _UpdateManager(parent=self)
         self.update_manager.state_changed.connect(self._on_update_state_changed)
         self.update_manager.progress.connect(self.update_indicator.set_progress)
@@ -2812,7 +2812,7 @@ class MainWindow(QMainWindow):
         easy to recognize among the others. The combo stays freely selectable.
         """
         try:
-            import process_watch_utils
+            from common import process_watch_utils
             from PySide6.QtGui import QColor, QFont
 
             # Detect this profile's executable name.
@@ -3081,7 +3081,7 @@ class MainWindow(QMainWindow):
                     import platform as _plat
                     if _plat.system() == "Windows":
                         import ctypes as _ct
-                        from controller_manager import XINPUT_STATE
+                        from managers.controller_manager import XINPUT_STATE
                         _xi = _ct.windll.xinput1_4
                         for i in range(4):
                             st = XINPUT_STATE()
@@ -4038,7 +4038,7 @@ class MainWindow(QMainWindow):
     def _ctrl_on_disconnected(self, idx: int):
         logging.info(f"Controller {idx} disconnected.")
         # Only restore icons if no other controller is still connected
-        from controller_manager import XINPUT_STATE
+        from managers.controller_manager import XINPUT_STATE
         any_connected = False
         if hasattr(self, 'controller_manager') and self.controller_manager.is_running():
             import platform as _plat

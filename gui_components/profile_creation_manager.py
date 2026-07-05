@@ -16,13 +16,13 @@ from dialogs.minecraft_dialog import MinecraftWorldsDialog
 from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
 
 # Importa utility e logica
-#from gui_utils import DetectionWorkerThread
-import minecraft_utils
-import core_logic
-import shortcut_utils # Importa l'intero modulo
+#from gui.gui_utils import DetectionWorkerThread
+from common import minecraft_utils
+from core import core_logic
+from common import shortcut_utils # Importa l'intero modulo
 #from emulator_utils import emulator_manager # Updated import path
 #import config # Import the config module
-import settings_manager # Importa settings_manager.py dalla root del progetto
+from core import settings_manager # Importa settings_manager.py dalla root del progetto
 #import configparser # For parsing .url files
 
 # Setup logging for this module
@@ -135,7 +135,7 @@ class NewProfileDialog(QDialog):
         
         # --- Minecraft Button ---
         from PySide6.QtGui import QIcon
-        from utils import resource_path
+        from common.utils import resource_path
         
         self.minecraft_button = QPushButton("  Select from Minecraft World...")
         mc_icon_path = resource_path("icons/minecraft.png")

@@ -32,7 +32,7 @@ except ImportError:
 # --- Define profiles file path (dynamic using settings_manager) ---
 PROFILES_FILENAME = "game_save_profiles.json"
 try:
-    import settings_manager as _sm
+    from . import settings_manager as _sm
     _ACTIVE_CONFIG_DIR = _sm.get_active_config_dir()
 except Exception:
     _ACTIVE_CONFIG_DIR = config.get_app_data_folder()
@@ -50,7 +50,7 @@ logging.info(f"Profile file path in use: {PROFILES_FILE_PATH}")
 def _get_backup_root_from_settings() -> str:
     """Best-effort retrieval of backup root directory from settings, with config fallback."""
     try:
-        import settings_manager
+        from . import settings_manager
         settings, _ = settings_manager.load_settings()
         backup_root = settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
     except Exception:
@@ -882,7 +882,7 @@ def save_profiles(profiles):
         try:
             do_mirror = True
             try:
-                import settings_manager as _sm2
+                from . import settings_manager as _sm2
                 if _sm2.is_portable_mode():
                     do_mirror = False
             except Exception:
@@ -890,7 +890,7 @@ def save_profiles(profiles):
             if do_mirror:
                 rotation = 0
                 try:
-                    import settings_manager as _sm3
+                    from . import settings_manager as _sm3
                     settings, _ = _sm3.load_settings()
                     rotation = int(settings.get("mirror_rotation_keep", 0))
                 except Exception:
@@ -1979,7 +1979,7 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path, pr
 # Steam utilities are now in a separate module for better organization.
 # These imports maintain backward compatibility with existing code.
 
-from steam_utils import (
+from common.steam_utils import (
     get_steam_install_path,
     find_steam_libraries,
     find_installed_steam_games,
@@ -2118,7 +2118,7 @@ def restore_json_from_backup_root() -> bool:
             dest_path = PROFILES_FILE_PATH
         elif filename == "settings.json":
             try:
-                import settings_manager as _sm_restore
+                from . import settings_manager as _sm_restore
                 dest_root = _sm_restore.get_active_config_dir()
             except Exception:
                 dest_root = config.get_app_data_folder()
@@ -2130,7 +2130,7 @@ def restore_json_from_backup_root() -> bool:
                 dest_path = _fav.FAVORITES_FILE_PATH
             except Exception:
                 try:
-                    import settings_manager as _sm_restore2
+                    from . import settings_manager as _sm_restore2
                     dest_root = _sm_restore2.get_active_config_dir()
                 except Exception:
                     dest_root = config.get_app_data_folder()

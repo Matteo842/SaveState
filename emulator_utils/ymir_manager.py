@@ -30,7 +30,7 @@ from typing import Optional, List, Dict
 
 # Handle import for both package and standalone execution
 try:
-    from utils import sanitize_profile_display_name
+    from common.utils import sanitize_profile_display_name
 except ImportError:
     # Fallback for standalone execution
     def sanitize_profile_display_name(name: str) -> str:

@@ -19,7 +19,7 @@ from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QPushButton
 
-from update_manager import (
+from managers.update_manager import (
     STATE_DOWNLOADED,
     STATE_DOWNLOADING,
     STATE_ERROR,

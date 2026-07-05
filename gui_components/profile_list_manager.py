@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QTableWidget, QTableWidgetItem, QHeaderView, QMes
                                QStyleOptionViewItem, QStyle, QTextEdit, QLabel, QApplication)
 from PySide6.QtCore import Qt, QLocale, Slot, QSize, Signal, QTimer, QPoint, QEvent, QObject
 from PySide6.QtGui import QIcon, QColor, QPalette, QPainter
-import core_logic
+from core import core_logic
 import config
 
 # Import the new manager and utils
@@ -15,8 +15,8 @@ from gui_components import favorites_manager # Assuming it's in gui_components
 from gui_components import notes_manager  # For profile notes
 from gui_components.empty_state_widget import EmptyStateWidget
 from gui_components import icon_extractor  # For game icon extraction
-from utils import resource_path # <--- Import from utils
-from gui_utils import open_folder_in_file_manager  # For opening folders cross-platform
+from common.utils import resource_path # <--- Import from utils
+from gui.gui_utils import open_folder_in_file_manager  # For opening folders cross-platform
 
 
 class NoteOverlayButton(QPushButton):
@@ -1026,7 +1026,7 @@ class ProfileListManager:
         profile_data = self.profiles.get(profile_name, {})
         
         # Check if this is a group profile - open Edit Group dialog instead
-        import core_logic
+        from core import core_logic
         if core_logic.is_group_profile(profile_data):
             logging.info(f"Double-click on group '{profile_name}': opening Edit Group dialog")
             # Trigger the edit group handler if available

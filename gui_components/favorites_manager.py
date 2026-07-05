@@ -10,7 +10,7 @@ from datetime import datetime
 # --- Favorites File Name and Path (dynamic using settings_manager) ---
 FAVORITES_FILENAME = "favorites_status.json"
 try:
-    import settings_manager as _sm
+    from core import settings_manager as _sm
     _ACTIVE_CONFIG_DIR = _sm.get_active_config_dir()
 except Exception:
     _ACTIVE_CONFIG_DIR = config.get_app_data_folder()
@@ -33,7 +33,7 @@ def _get_existing_profile_names():
     Uses a lazy import of core_logic to avoid import cycles.
     """
     try:
-        import core_logic
+        from core import core_logic
         profiles_dict = core_logic.load_profiles()
         if isinstance(profiles_dict, dict):
             return set(profiles_dict.keys())
@@ -130,7 +130,7 @@ def save_favorites(favorites_dict):
         try:
             do_mirror = True
             try:
-                import settings_manager as _smirror
+                from core import settings_manager as _smirror
                 if _smirror.is_portable_mode():
                     do_mirror = False
             except Exception:
@@ -138,14 +138,14 @@ def save_favorites(favorites_dict):
             if do_mirror:
                 rotation = 0
                 try:
-                    import settings_manager as _sm4
+                    from core import settings_manager as _sm4
                     settings, _ = _sm4.load_settings()
                     rotation = int(settings.get("mirror_rotation_keep", 0))
                 except Exception:
                     rotation = 0
                 # Use core_logic helper to mirror into backup root
                 try:
-                    import core_logic
+                    from core import core_logic
                     core_logic._mirror_json_to_backup_root("favorites_status.json", favorites_to_write, rotation=rotation)
                 except Exception as e_core:
                     logging.warning(f"Mirror favorites to backup root failed: {e_core}")

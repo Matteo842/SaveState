@@ -8,7 +8,7 @@ import re
 import logging
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Any, Tuple, List, Set
-import cancellation_utils
+from common import cancellation_utils
 
 # Importazione robusta di thefuzz
 _fuzz_module = None

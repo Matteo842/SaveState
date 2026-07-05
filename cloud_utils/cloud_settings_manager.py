@@ -7,7 +7,7 @@ Saves/loads cloud_settings.json in the same directory as other settings.
 import json
 import os
 import logging
-import settings_manager
+from core import settings_manager
 
 
 CLOUD_SETTINGS_FILENAME = "cloud_settings.json"

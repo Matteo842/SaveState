@@ -5,7 +5,7 @@ import os
 import re
 import logging
 from typing import Optional, List, Dict
-from utils import sanitize_profile_display_name
+from common.utils import sanitize_profile_display_name
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())

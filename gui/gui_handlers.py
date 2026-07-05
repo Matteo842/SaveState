@@ -14,11 +14,11 @@ from PySide6.QtCore import Slot, QUrl, QPropertyAnimation, QTimer, Qt
 from PySide6.QtGui import QDesktopServices, QIcon
 
 # Import core logic, utils, managers
-import core_logic
-import settings_manager
+from core import core_logic
+from core import settings_manager
 import config
-from gui_utils import WorkerThread, SteamSearchWorkerThread, open_folder_in_file_manager, NotificationPopup
-from utils import sanitize_filename, resource_path
+from gui.gui_utils import WorkerThread, SteamSearchWorkerThread, open_folder_in_file_manager, NotificationPopup
+from common.utils import sanitize_filename, resource_path
 
 
 class MainWindowHandlers:
@@ -303,7 +303,7 @@ class MainWindowHandlers:
 
                     try:
                         import importlib
-                        import core_logic as _cl
+                        from core import core_logic as _cl
                         importlib.reload(_cl)
                         self.main_window.profiles = _cl.load_profiles()
                     except Exception as e_cl:
@@ -565,7 +565,7 @@ class MainWindowHandlers:
                     
                     try:
                         import importlib
-                        import core_logic as _cl
+                        from core import core_logic as _cl
                         importlib.reload(_cl)
                         self.main_window.profiles = _cl.load_profiles()
                     except Exception as e_cl:
@@ -1167,7 +1167,7 @@ class MainWindowHandlers:
             # Refresh the profile table to show updated backup info
             self.main_window.profile_table_manager.update_profile_table()
         
-        from gui_utils import WorkerThread
+        from gui.gui_utils import WorkerThread
         self.main_window.worker_thread = WorkerThread(backup_all_task)
         self.main_window.worker_thread.finished.connect(on_backup_all_finished)
         self.main_window.worker_thread.start()
@@ -1413,7 +1413,7 @@ class MainWindowHandlers:
             
             self.main_window.profile_table_manager.update_profile_table()
         
-        from gui_utils import WorkerThread
+        from gui.gui_utils import WorkerThread
         self.main_window.worker_thread = WorkerThread(backup_selected_task)
         self.main_window.worker_thread.finished.connect(on_backup_selected_finished)
         self.main_window.worker_thread.start()
@@ -1628,7 +1628,7 @@ class MainWindowHandlers:
             # Xemu code is commented out until a working system for extracting/injecting
             # saves from the HDD is implemented. When ready, uncomment this block.
             
-            # import core_logic  # Import here for both xemu and generic backup
+            # from core import core_logic  # Import here for both xemu and generic backup
             # profile_data = self.main_window.profiles.get(profile_name, {})
             # if isinstance(profile_data, dict) and profile_data.get('emulator') == 'xemu':
             #     logging.info(f"Using xemu specialized backup for '{profile_name}'")
@@ -2152,7 +2152,7 @@ class MainWindowHandlers:
 
         logging.info(f"Request to create shortcut for profile: '{profile_name}'")
         # Call utility function
-        import shortcut_utils
+        from common import shortcut_utils
         success, message = shortcut_utils.create_backup_shortcut(profile_name=profile_name)
         if success:
             QMessageBox.information(self.main_window, "Shortcut Creation", message)
@@ -2171,7 +2171,7 @@ class MainWindowHandlers:
         logging.info(f"Generating Playnite script for profile: '{profile_name}'")
 
         try:
-            import shortcut_utils
+            from common import shortcut_utils
             script_text = shortcut_utils.generate_playnite_script(profile_name)
         except Exception as e:
             logging.error(f"Error generating Playnite script: {e}", exc_info=True)
@@ -2385,7 +2385,7 @@ class MainWindowHandlers:
 
         logging.info(f"Generating Heroic script for profile: '{profile_name}'")
 
-        import shortcut_utils
+        from common import shortcut_utils
         success, result = shortcut_utils.generate_heroic_script(profile_name)
         if not success:
             QMessageBox.critical(self.main_window, "Error", result)
@@ -2600,7 +2600,7 @@ class MainWindowHandlers:
         def on_open_folder():
             try:
                 folder = os.path.dirname(script_path)
-                from gui_utils import open_folder_in_file_manager
+                from gui.gui_utils import open_folder_in_file_manager
                 open_folder_in_file_manager(folder)
             except Exception as e:
                 logging.error(f"Error opening script folder: {e}")
@@ -2937,7 +2937,7 @@ class MainWindowHandlers:
                 return
             original_name = mw._editing_profile_original_name
             new_name_input = mw.edit_name_edit.text().strip()
-            import shortcut_utils
+            from common import shortcut_utils
             new_name = shortcut_utils.sanitize_profile_name(new_name_input)
             if not new_name:
                 QMessageBox.warning(mw, "Name Error", f"Invalid or empty profile name: '{new_name_input}'.")
@@ -3844,7 +3844,7 @@ class MainWindowHandlers:
         Uses the same NotificationPopup widget as desktop shortcut notifications."""
         try:
             import re
-            from gui_utils import NotificationPopup, elevate_notification_window
+            from gui.gui_utils import NotificationPopup, elevate_notification_window
             clean_message = re.sub(r'\n+', '\n', message).strip()
 
             icon_path = None
