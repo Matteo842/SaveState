@@ -39,6 +39,7 @@ class ScoreWeight(Enum):
     DEFAULT_LOCATION = 100
     CONTAINS_SAVES = 600
     CONTAINS_SAVES_DEEP = 800  # Bonus per salvataggi trovati in sottocartelle (ricerca profonda)
+    STRONG_SAVE_STRUCTURE = 900  # Bonus per struttura gamedata+savedata (save reali, es. TLOU2)
     COMMON_SAVE_SUBDIR = 400
     SPECIFIC_SAVE_FOLDER = 700  # Bonus per cartelle con nomi molto specifici (Saves, SaveGame, SaveData)
     DIRECT_MATCH = 100
@@ -55,7 +56,14 @@ class ScoreWeight(Enum):
 # Più specifiche di "UserData", "Data", "Profile"
 SPECIFIC_SAVE_FOLDERS = {
     'saves', 'save', 'savegame', 'savegames', 'savedata', 'save_data',
-    'saved', 'gamesave', 'gamesaves', 'saved games'
+    'saved', 'gamesave', 'gamesaves', 'saved games', 'gamedata',
+}
+
+# Estensioni note di file NON-salvataggio: evita falsi positivi su match parziale del nome
+# (es. "user" in user.pso, "settings" in settings.ini)
+NON_SAVE_FILENAME_EXTENSIONS = {
+    '.pso', '.log', '.ini', '.cfg', '.json', '.xml', '.vdf', '.bak', '.tmp',
+    '.txt', '.html', '.htm', '.css', '.js', '.dll', '.exe', '.pak', '.cache',
 }
 
 
@@ -1089,7 +1097,9 @@ class SavePathFinder:
         return clean_for_comparison(name)
     
     def _check_save_content(self, path: str) -> bool:
-        """Verifica se la directory contiene file di salvataggio."""
+        """Verifica se la directory contiene file o sottocartelle indicative di salvataggio."""
+        if self._find_nested_save_subdir_names(path):
+            return True
         try:
             for item in os.listdir(path):
                 item_lower = item.lower()
@@ -1099,6 +1109,8 @@ class SavePathFinder:
                     _, ext = os.path.splitext(item_lower)
                     if ext in self.context.common_save_extensions:
                         return True
+                    if ext in NON_SAVE_FILENAME_EXTENSIONS:
+                        continue
                         
                     for fname_part in self.context.common_save_filenames:
                         if fname_part in item_lower:
@@ -1108,6 +1120,40 @@ class SavePathFinder:
             
         except OSError:
             return False
+    
+    def _find_nested_save_subdir_names(self, path: str, max_depth: int = 3) -> Set[str]:
+        """Cerca sottocartelle con nomi tipici dei salvataggi (es. gamedata, savedata).
+        
+        Molti giochi (es. The Last of Us Part II) salvano in
+        Documents/<Game>/<SteamID>/gamedata|savedata, quindi la struttura non è visibile
+        al livello superiore.
+        """
+        found: Set[str] = set()
+        indicator_names = SPECIFIC_SAVE_FOLDERS
+        try:
+            base_depth = path.rstrip(os.sep).count(os.sep)
+            for root, dirs, _ in os.walk(path, topdown=True):
+                if self._is_cancelled():
+                    break
+                rel_depth = root.rstrip(os.sep).count(os.sep) - base_depth
+                if rel_depth >= max_depth:
+                    dirs[:] = []
+                    continue
+                dirs[:] = [d for d in dirs if d.lower() not in self.context.banned_folder_names_lower]
+                for dir_name in dirs:
+                    dir_lower = dir_name.lower()
+                    if dir_lower in indicator_names:
+                        found.add(dir_lower)
+                        if len(found) >= 3:
+                            return found
+        except OSError as e:
+            logging.debug(f"Error scanning nested save subdirs in '{path}': {e}")
+        return found
+    
+    def _has_strong_save_structure(self, path: str) -> bool:
+        """True se contiene sia 'gamedata' che 'savedata' (struttura save molto affidabile)."""
+        names = self._find_nested_save_subdir_names(path)
+        return 'gamedata' in names and 'savedata' in names
     
     def _deep_check_save_content(self, path: str, max_depth: int = 3) -> Tuple[bool, int]:
         """Cerca file di salvataggio ricorsivamente nelle sottocartelle.
@@ -1814,6 +1860,20 @@ class SavePathFinder:
              candidate.contains_saves)
             for candidate in self.guesses_data.values()
         ]
+        
+        # Bonus per struttura gamedata+savedata annidata (save reali, es. TLOU2 in Documents/<SteamID>/).
+        # Applicato a tutti i candidati prima dell'ordinamento: spesso la cartella corretta non è
+        # in cima alla lista base perché i save sono a 2+ livelli di profondità.
+        boosted_results = []
+        for path, score, contains_saves in results:
+            if self._has_strong_save_structure(path):
+                score += ScoreWeight.STRONG_SAVE_STRUCTURE.value
+                contains_saves = True
+                logging.info(
+                    f"Applied strong save structure bonus (+{ScoreWeight.STRONG_SAVE_STRUCTURE.value}) to: {path}"
+                )
+            boosted_results.append((path, score, contains_saves))
+        results = boosted_results
         
         # Ordina per punteggio decrescente
         results.sort(key=lambda x: (-x[1], x[0].lower()))
