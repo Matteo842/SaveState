@@ -276,6 +276,7 @@ class RestoreDialog(QDialog):
         # --- Dialog Buttons ---
         buttons = QDialogButtonBox()
         ok_button = buttons.addButton("Restore Selected", QDialogButtonBox.ButtonRole.AcceptRole)
+        ok_button.setObjectName("SaveButton")
         cancel_button = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)

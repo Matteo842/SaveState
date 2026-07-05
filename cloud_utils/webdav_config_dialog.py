@@ -210,7 +210,7 @@ class WebDAVConfigDialog(QDialog):
         button_layout.addWidget(self.cancel_button)
         
         self.save_button = QPushButton("Save")
-        self.save_button.setObjectName("PrimaryButton")
+        self.save_button.setObjectName("SaveButton")
         self.save_button.clicked.connect(self._on_save_clicked)
         button_layout.addWidget(self.save_button)
         
@@ -257,13 +257,6 @@ class WebDAVConfigDialog(QDialog):
             }
             QPushButton:pressed {
                 background-color: #3A3A3A;
-            }
-            QPushButton#PrimaryButton {
-                background-color: #0E639C;
-                border-color: #0E639C;
-            }
-            QPushButton#PrimaryButton:hover {
-                background-color: #1177BB;
             }
             QCheckBox {
                 color: #E0E0E0;

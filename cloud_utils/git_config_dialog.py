@@ -179,7 +179,7 @@ class GitConfigDialog(QDialog):
         button_layout.addWidget(self.cancel_button)
         
         self.save_button = QPushButton("Save")
-        self.save_button.setObjectName("PrimaryButton")
+        self.save_button.setObjectName("SaveButton")
         self.save_button.clicked.connect(self._on_save_clicked)
         button_layout.addWidget(self.save_button)
         
@@ -222,13 +222,6 @@ class GitConfigDialog(QDialog):
             }
             QPushButton:hover {
                 background-color: #5A5A5A;
-            }
-            QPushButton#PrimaryButton {
-                background-color: #0E639C;
-                border-color: #0E639C;
-            }
-            QPushButton#PrimaryButton:hover {
-                background-color: #1177BB;
             }
             QCheckBox {
                 color: #E0E0E0;

@@ -183,6 +183,9 @@ class SettingsDialog(QDialog):
 
         # --- Dialog Buttons ---
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel) # Saved reference
+        save_btn = self.buttons.button(QDialogButtonBox.StandardButton.Save)
+        if save_btn:
+            save_btn.setObjectName("SaveButton")
         self.buttons.accepted.connect(self.accept_settings)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)

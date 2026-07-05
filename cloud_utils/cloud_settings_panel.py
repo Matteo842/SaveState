@@ -352,6 +352,7 @@ class CloudSettingsPanel(QWidget):
         buttons_layout.addWidget(self.cancel_button)
         
         self.save_button = QPushButton("Save")
+        self.save_button.setObjectName("SaveButton")
         self.save_button.clicked.connect(self._on_save_clicked)
         buttons_layout.addWidget(self.save_button)
         

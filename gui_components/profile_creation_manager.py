@@ -156,6 +156,9 @@ class NewProfileDialog(QDialog):
         
         # --- Dialog Buttons ---
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        ok_btn = button_box.button(QDialogButtonBox.StandardButton.Ok)
+        if ok_btn:
+            ok_btn.setObjectName("SaveButton")
         button_box.accepted.connect(self._on_accept)
         button_box.rejected.connect(self.reject)
         self.button_box = button_box

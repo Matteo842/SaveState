@@ -731,17 +731,38 @@ class MainWindow(QMainWindow):
         self.overrides_enable_checkbox = QCheckBox("Use profile-specific settings")
         editor_layout.addWidget(self.overrides_enable_checkbox)
         self.overrides_group = QGroupBox("Overrides")
+        overrides_outer = QHBoxLayout()
+        overrides_outer.setContentsMargins(8, 6, 8, 6)
+        overrides_outer.setSpacing(12)
         overrides_form = QFormLayout()
-        overrides_form.setContentsMargins(8, 6, 8, 6)
+        overrides_form.setContentsMargins(0, 0, 0, 0)
         overrides_form.setVerticalSpacing(4)
         # Max backups
         self.override_max_backups_spin = QSpinBox()
         self.override_max_backups_spin.setRange(1, 999)
-        overrides_form.addRow("Max backups:", self.override_max_backups_spin)
+        self.override_max_backups_spin.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        self.override_max_backups_row = QWidget()
+        override_max_backups_layout = QHBoxLayout(self.override_max_backups_row)
+        override_max_backups_layout.setContentsMargins(0, 0, 0, 0)
+        override_max_backups_layout.setSpacing(8)
+        override_max_backups_layout.addWidget(self.override_max_backups_spin, stretch=1)
+        override_max_backups_layout.addStretch(1)
+        overrides_form.addRow("Max backups:", self.override_max_backups_row)
         # Compression mode
         self.override_compression_combo = QComboBox()
         self.override_compression_combo.addItems(["standard", "maximum", "stored"])
-        overrides_form.addRow("Compression:", self.override_compression_combo)
+        self.override_compression_combo.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        self.override_compression_row = QWidget()
+        override_compression_layout = QHBoxLayout(self.override_compression_row)
+        override_compression_layout.setContentsMargins(0, 0, 0, 0)
+        override_compression_layout.setSpacing(8)
+        override_compression_layout.addWidget(self.override_compression_combo, stretch=1)
+        override_compression_layout.addStretch(1)
+        overrides_form.addRow("Compression:", self.override_compression_row)
         # Max source size MB (match Settings dialog options)
         self.override_size_options = [
             ("50 MB", 50), ("100 MB", 100), ("250 MB", 250), ("500 MB", 500),
@@ -751,22 +772,63 @@ class MainWindow(QMainWindow):
         self.override_max_size_combo = QComboBox()
         for display_text, _ in self.override_size_options:
             self.override_max_size_combo.addItem(display_text)
-        overrides_form.addRow("Max source size (MB):", self.override_max_size_combo)
+        self.override_max_size_combo.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        self.override_max_size_row = QWidget()
+        override_max_size_layout = QHBoxLayout(self.override_max_size_row)
+        override_max_size_layout.setContentsMargins(0, 0, 0, 0)
+        override_max_size_layout.setSpacing(8)
+        override_max_size_layout.addWidget(self.override_max_size_combo, stretch=1)
+        override_max_size_layout.addStretch(1)
+        overrides_form.addRow("Max source size (MB):", self.override_max_size_row)
         # Check free space
         self.override_check_space_checkbox = QCheckBox("Check free disk space before backup")
         overrides_form.addRow(self.override_check_space_checkbox)
-        self.overrides_group.setLayout(overrides_form)
+
+        overrides_form_widget = QWidget()
+        overrides_form_widget.setLayout(overrides_form)
+        overrides_outer.addWidget(overrides_form_widget, stretch=2)
+
+        self.overrides_illustration_label = QLabel()
+        self.overrides_illustration_label.setObjectName("OverridesIllustration")
+        self.overrides_illustration_label.setFixedSize(104, 104)
+        self.overrides_illustration_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.overrides_illustration_label.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding
+        )
+        self.overrides_illustration_label.setToolTip(
+            "Profile-specific overrides for backup limits, compression, and size."
+        )
+        overrides_outer.addWidget(
+            self.overrides_illustration_label,
+            stretch=0,
+            alignment=Qt.AlignmentFlag.AlignCenter,
+        )
+
+        self.overrides_group.setLayout(overrides_outer)
+        self._update_overrides_illustration()
         editor_layout.addWidget(self.overrides_group)
 
         # --- Auto Backup section ---
         self.auto_backup_enable_checkbox = QCheckBox("Enable automatic backup")
         editor_layout.addWidget(self.auto_backup_enable_checkbox)
         self.auto_backup_group = QGroupBox("Automatic Backup")
+        auto_backup_outer = QHBoxLayout()
+        auto_backup_outer.setContentsMargins(8, 6, 8, 6)
+        auto_backup_outer.setSpacing(12)
         auto_backup_form = QFormLayout()
-        auto_backup_form.setContentsMargins(8, 6, 8, 6)
+        auto_backup_form.setContentsMargins(0, 0, 0, 0)
         auto_backup_form.setVerticalSpacing(4)
-        # Trigger mode
+        # Trigger mode (combo uses half the row; illustration sits on the right of the section)
+        self.auto_backup_trigger_row = QWidget()
+        trigger_row_layout = QHBoxLayout(self.auto_backup_trigger_row)
+        trigger_row_layout.setContentsMargins(0, 0, 0, 0)
+        trigger_row_layout.setSpacing(8)
         self.auto_backup_mode_combo = QComboBox()
+        self.auto_backup_mode_combo.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         # (display text, internal mode value)
         self.auto_backup_mode_options = [
             ("When the game is closed", "process_close"),
@@ -775,7 +837,9 @@ class MainWindow(QMainWindow):
         ]
         for display_text, _ in self.auto_backup_mode_options:
             self.auto_backup_mode_combo.addItem(display_text)
-        auto_backup_form.addRow("Trigger:", self.auto_backup_mode_combo)
+        trigger_row_layout.addWidget(self.auto_backup_mode_combo, stretch=1)
+        trigger_row_layout.addStretch(1)
+        auto_backup_form.addRow("Trigger:", self.auto_backup_trigger_row)
         # Interval (value + unit) - used by the two schedule modes
         self.auto_backup_interval_row = QWidget()
         interval_row_layout = QHBoxLayout(self.auto_backup_interval_row)
@@ -830,7 +894,29 @@ class MainWindow(QMainWindow):
         )
         auto_backup_form.addRow(self.auto_backup_sync_online_checkbox)
 
-        self.auto_backup_group.setLayout(auto_backup_form)
+        auto_backup_form_widget = QWidget()
+        auto_backup_form_widget.setLayout(auto_backup_form)
+        auto_backup_outer.addWidget(auto_backup_form_widget, stretch=2)
+
+        self.auto_backup_illustration_label = QLabel()
+        self.auto_backup_illustration_label.setObjectName("AutoBackupIllustration")
+        self.auto_backup_illustration_label.setFixedSize(104, 104)
+        self.auto_backup_illustration_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.auto_backup_illustration_label.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding
+        )
+        self.auto_backup_illustration_label.setToolTip(
+            "Automatic backup keeps your saves safe on a schedule, when files change, "
+            "or when the game closes."
+        )
+        auto_backup_outer.addWidget(
+            self.auto_backup_illustration_label,
+            stretch=0,
+            alignment=Qt.AlignmentFlag.AlignCenter,
+        )
+
+        self.auto_backup_group.setLayout(auto_backup_outer)
+        self._update_auto_backup_illustration()
         editor_layout.addWidget(self.auto_backup_group)
 
         # Keep the editor controls anchored to the top at their natural size; any
@@ -845,6 +931,7 @@ class MainWindow(QMainWindow):
         # Save/Cancel buttons
         buttons_row = QHBoxLayout()
         self.edit_save_button = QPushButton("Save")
+        self.edit_save_button.setObjectName("SaveButton")
         self.edit_cancel_button = QPushButton("Cancel")
         buttons_row.addStretch(1)
         buttons_row.addWidget(self.edit_save_button)
@@ -990,6 +1077,7 @@ class MainWindow(QMainWindow):
         settings_buttons_row = QHBoxLayout()
         self.settings_exit_button = QPushButton("Exit")
         self.settings_save_button = QPushButton("Save")
+        self.settings_save_button.setObjectName("SaveButton")
         settings_buttons_row.addStretch(1)
         settings_buttons_row.addWidget(self.settings_exit_button)
         settings_buttons_row.addWidget(self.settings_save_button)
@@ -2710,6 +2798,42 @@ class MainWindow(QMainWindow):
             unit_index, value = 0, minutes
         self.auto_backup_interval_unit_combo.setCurrentIndex(unit_index)
         self.auto_backup_interval_spin.setValue(int(value))
+
+    def _render_png_illustration(self, label, png_relative_path: str):
+        """Load and scale a PNG illustration into a QLabel with Hi-DPI support."""
+        if label is None:
+            return
+        try:
+            png_path = resource_path(png_relative_path)
+            source = QPixmap(png_path)
+            if source.isNull():
+                logging.warning(f"Could not load PNG illustration ({png_relative_path})")
+                return
+
+            size = label.width() or 104
+            dpr = self.devicePixelRatioF()
+            scaled = source.scaled(
+                int(size * dpr),
+                int(size * dpr),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            scaled.setDevicePixelRatio(dpr)
+            label.setPixmap(scaled)
+        except Exception as e:
+            logging.warning(f"Could not render PNG illustration ({png_relative_path}): {e}")
+
+    def _update_auto_backup_illustration(self):
+        self._render_png_illustration(
+            getattr(self, 'auto_backup_illustration_label', None),
+            "icons/auto_backup_illustration.png",
+        )
+
+    def _update_overrides_illustration(self):
+        self._render_png_illustration(
+            getattr(self, 'overrides_illustration_label', None),
+            "icons/overrides_illustration.png",
+        )
 
     def _apply_online_sync_availability(self):
         """Update the 'Sync backups online' checkbox tooltip and gate toggling.

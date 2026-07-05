@@ -65,6 +65,25 @@ QPushButton#DangerButton:hover {
 QPushButton#DangerButton:pressed {
     background-color: #880000;
 }
+QPushButton#SaveButton {
+    background-color: #229954;
+    color: #FFFFFF;
+    border: 1px solid #1E8449;
+    font-weight: bold;
+}
+QPushButton#SaveButton:hover {
+    background-color: #27AE60;
+    border-color: #229954;
+}
+QPushButton#SaveButton:pressed {
+    background-color: #1E8449;
+    border-color: #196F3D;
+}
+QPushButton#SaveButton:disabled {
+    background-color: #1A3D2B;
+    color: #6B8F7A;
+    border-color: #2A4034;
+}
 /* --- NUOVE REGOLE SEMPLIFICATE PER QGroupBox --- */
 QGroupBox {
     background-color: transparent; /* <-- AGGIUNGI (come tema chiaro) */
@@ -519,6 +538,25 @@ QPushButton#DangerButton:hover {
 QPushButton#DangerButton:pressed {
     background-color: #C73238;
     border-color: #A0252A;
+}
+QPushButton#SaveButton {
+    background-color: #1B5E20;
+    color: #FFFFFF;
+    border: 1px solid #145214;
+    font-weight: bold;
+}
+QPushButton#SaveButton:hover {
+    background-color: #2E7D32;
+    border-color: #1B5E20;
+}
+QPushButton#SaveButton:pressed {
+    background-color: #145214;
+    border-color: #0D3B10;
+}
+QPushButton#SaveButton:disabled {
+    background-color: #E8F0E8;
+    color: #A0B8A0;
+    border-color: #C8D8C8;
 }
 
 /* ---- Group boxes ---- */

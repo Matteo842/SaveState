@@ -181,5 +181,9 @@ class ThemeManager:
             if hasattr(self.main_window, 'profile_table_manager') and self.main_window.profile_table_manager:
                 self.main_window.profile_table_manager.update_theme()
                 logging.debug("ThemeManager: Notified profile_table_manager of theme change.")
+            if hasattr(self.main_window, '_update_auto_backup_illustration'):
+                self.main_window._update_auto_backup_illustration()
+            if hasattr(self.main_window, '_update_overrides_illustration'):
+                self.main_window._update_overrides_illustration()
         except Exception as e:
             logging.error(f"ThemeManager: Error notifying components of theme change: {e}", exc_info=True)

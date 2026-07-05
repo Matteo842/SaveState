@@ -355,6 +355,7 @@ class ControllerPanel(QGroupBox):
         self.reset_button.clicked.connect(self._reset_to_defaults)
         self.exit_button = QPushButton("Exit")
         self.save_button = QPushButton("Save")
+        self.save_button.setObjectName("SaveButton")
         btn_row.addWidget(self.reset_button)
         btn_row.addStretch(1)
         btn_row.addWidget(self.exit_button)

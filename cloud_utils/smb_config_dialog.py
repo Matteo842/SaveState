@@ -203,8 +203,8 @@ class SMBConfigDialog(QDialog):
         button_layout.addWidget(self.cancel_btn)
         
         self.save_btn = QPushButton("Save")
+        self.save_btn.setObjectName("SaveButton")
         self.save_btn.clicked.connect(self._on_save_clicked)
-        self.save_btn.setProperty("class", "primary")
         button_layout.addWidget(self.save_btn)
         
         layout.addLayout(button_layout)
@@ -237,16 +237,6 @@ class SMBConfigDialog(QDialog):
             }
             QLabel[class="status-label"] {
                 font-size: 10pt;
-            }
-            QPushButton[class="primary"] {
-                background-color: #AA0000;
-                font-weight: bold;
-            }
-            QPushButton[class="primary"]:hover {
-                background-color: #CC0000;
-            }
-            QPushButton[class="primary"]:pressed {
-                background-color: #880000;
             }
         """)
     
