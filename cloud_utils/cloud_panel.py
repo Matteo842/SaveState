@@ -7,6 +7,8 @@ Similar to the settings panel, this is embedded in the main window.
 
 import os
 import logging
+import time
+from cloud_utils.cloud_sync_availability import AUTO_UPLOAD_COOLDOWN_SEC
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox,
@@ -125,12 +127,13 @@ class UploadWorker(QObject):
     summary_ready = Signal(dict)  # aggregated stats for UI messaging
     cancelled = Signal()  # Emitted when operation is cancelled
     
-    def __init__(self, provider, backup_list, backup_base_dir, max_backups=None):
+    def __init__(self, provider, backup_list, backup_base_dir, max_backups=None, latest_only=False):
         super().__init__()
         self.provider = provider  # Can be any StorageProvider (Google Drive, FTP, SMB, WebDAV)
         self.backup_list = backup_list
         self.backup_base_dir = backup_base_dir
         self.max_backups = max_backups
+        self.latest_only = bool(latest_only)
         self._cancelled = False
         self._current_file_msg = ""
 
@@ -177,7 +180,12 @@ class UploadWorker(QObject):
                 backup_path = os.path.join(self.backup_base_dir, backup_name)
                 
                 try:
-                    res = self.provider.upload_backup(backup_path, backup_name, max_backups=self.max_backups)
+                    res = self.provider.upload_backup(
+                        backup_path,
+                        backup_name,
+                        max_backups=self.max_backups,
+                        latest_only=self.latest_only,
+                    )
                     ok = False
                     uploaded_cnt = 0
                     skipped_cnt = 0
@@ -546,6 +554,16 @@ class CloudSavePanel(QWidget):
         # Refresh button cooldown timer
         self._refresh_cooldown_active = False
         self._refresh_cooldown_seconds = 3  # 3 seconds cooldown
+
+        # Cloud status refresh debounce (DriveFiles.List is expensive at scale)
+        self._cloud_status_refresh_min_interval_sec = 30
+        self._last_cloud_status_refresh_at = 0.0
+        self._cloud_status_refresh_pending = False
+
+        # Event-driven auto-upload rate limiting (per profile, API protection)
+        self._auto_upload_last_time: dict[str, float] = {}
+        self._auto_upload_pending: set[str] = set()
+        self._auto_upload_flush_scheduled = False
         
         # Sorting state for table headers (like Windows Explorer)
         # None = default sorting (favorites first, then alphabetical)
@@ -1745,7 +1763,7 @@ class CloudSavePanel(QWidget):
         
         # Also refresh cloud status if connected
         if self._is_any_provider_connected():
-            self._refresh_cloud_status()
+            self._refresh_cloud_status(force=True)
         
         # Create countdown timer
         remaining_seconds = self._refresh_cooldown_seconds
@@ -2062,7 +2080,7 @@ class CloudSavePanel(QWidget):
                 
                 # Refresh the backup list to show cloud backups
                 self.refresh_local_backups()
-                self._refresh_cloud_status()
+                self._refresh_cloud_status(force=True)
                 
                 logging.info(f"Connected to SMB: {smb_path}")
             else:
@@ -2163,7 +2181,7 @@ class CloudSavePanel(QWidget):
                 
                 # Refresh the backup list to show cloud backups
                 self.refresh_local_backups()
-                self._refresh_cloud_status()
+                self._refresh_cloud_status(force=True)
                 
                 logging.info(f"Connected to FTP: {ftp_host}")
             else:
@@ -2271,7 +2289,7 @@ class CloudSavePanel(QWidget):
                 
                 # Refresh the backup list to show cloud backups
                 self.refresh_local_backups()
-                self._refresh_cloud_status()
+                self._refresh_cloud_status(force=True)
                 
                 logging.info(f"Connected to WebDAV: {webdav_url}")
                 return True
@@ -2362,7 +2380,7 @@ class CloudSavePanel(QWidget):
                 self.disconnect_button.setText("Disconnect")
                 self.disconnect_button.setEnabled(True)
                 self.refresh_local_backups()
-                self._refresh_cloud_status()
+                self._refresh_cloud_status(force=True)
                 logging.info(f"Connected to Git: {repo_path}")
             else:
                 QMessageBox.warning(
@@ -2612,7 +2630,7 @@ class CloudSavePanel(QWidget):
         
         if success:
             self._set_connected(True)
-            self._refresh_cloud_status()
+            self._refresh_cloud_status(force=True)
             
             # Setup periodic sync if enabled
             self._setup_periodic_sync()
@@ -3365,7 +3383,7 @@ class CloudSavePanel(QWidget):
         QMessageBox.information(self, title, msg)
         
         # Refresh cloud status
-        self._refresh_cloud_status()
+        self._refresh_cloud_status(force=True)
         self._last_upload_summary = None
 
     def _on_upload_summary(self, summary: dict):
@@ -3742,7 +3760,7 @@ class CloudSavePanel(QWidget):
         )
         
         # Refresh cloud status
-        self._refresh_cloud_status()
+        self._refresh_cloud_status(force=True)
     
     def _on_group_checkbox_changed(self, state, member_names):
         """Handle group checkbox change - toggle all member profile checkboxes."""
@@ -4050,7 +4068,7 @@ class CloudSavePanel(QWidget):
         if success:
             logging.info("Startup auto-connect successful")
             self._set_connected(True)
-            self._refresh_cloud_status()
+            self._refresh_cloud_status(force=True)
             
             # Setup periodic sync if enabled
             self._setup_periodic_sync()
@@ -4098,12 +4116,32 @@ class CloudSavePanel(QWidget):
         logging.debug("Exiting cloud settings panel")
         self.stacked_widget.setCurrentIndex(0)  # Switch back to main panel
     
-    def _refresh_cloud_status(self):
+    def _refresh_cloud_status(self, *, force: bool = False):
         """Refresh cloud backup status for all backups in background."""
         # Get active provider - don't show warnings here as this happens automatically
         active_provider = self._get_active_provider()
         if not active_provider or not active_provider.is_connected:
             return
+
+        now = time.monotonic()
+        if not force:
+            elapsed = now - self._last_cloud_status_refresh_at
+            if elapsed < self._cloud_status_refresh_min_interval_sec:
+                if not self._cloud_status_refresh_pending:
+                    self._cloud_status_refresh_pending = True
+                    delay_ms = int(
+                        (self._cloud_status_refresh_min_interval_sec - elapsed) * 1000
+                    ) + 50
+                    logging.debug(
+                        "Cloud status refresh debounced (~%ds)", delay_ms // 1000,
+                    )
+                    QTimer.singleShot(
+                        delay_ms,
+                        lambda: self._refresh_cloud_status(force=True),
+                    )
+                return
+        self._cloud_status_refresh_pending = False
+        self._last_cloud_status_refresh_at = now
         
         # Prevent multiple simultaneous refreshes which could cause QThread crash
         if hasattr(self, 'refresh_thread') and self.refresh_thread is not None:
@@ -4303,6 +4341,55 @@ class CloudSavePanel(QWidget):
         except Exception as e:
             logging.debug(f"Could not refresh online sync UI state: {e}")
 
+    def _mark_auto_upload_times(self, profile_names):
+        """Record upload start time for per-profile cooldown."""
+        now = time.monotonic()
+        for name in profile_names:
+            if isinstance(name, str) and name:
+                self._auto_upload_last_time[name] = now
+
+    def _schedule_pending_auto_upload_flush(self):
+        """Schedule a single retry for profiles waiting on upload cooldown."""
+        if self._auto_upload_flush_scheduled or not self._auto_upload_pending:
+            return
+        now = time.monotonic()
+        min_wait = float(AUTO_UPLOAD_COOLDOWN_SEC)
+        for name in self._auto_upload_pending:
+            last = self._auto_upload_last_time.get(name, 0.0)
+            wait = AUTO_UPLOAD_COOLDOWN_SEC - (now - last)
+            min_wait = min(min_wait, max(wait, 0.1))
+        self._auto_upload_flush_scheduled = True
+        QTimer.singleShot(int(min_wait * 1000) + 50, self._flush_pending_auto_uploads)
+
+    def _flush_pending_auto_uploads(self):
+        """Upload profiles queued while cooldown or another sync was active."""
+        self._auto_upload_flush_scheduled = False
+        if self._sync_in_progress:
+            self._schedule_pending_auto_upload_flush()
+            return
+        if not self._auto_upload_pending:
+            return
+
+        available, _reason = self.is_online_sync_available()
+        if not available:
+            self._schedule_pending_auto_upload_flush()
+            return
+
+        now = time.monotonic()
+        ready = [
+            n for n in list(self._auto_upload_pending)
+            if now - self._auto_upload_last_time.get(n, 0.0) >= AUTO_UPLOAD_COOLDOWN_SEC
+        ]
+        if not ready:
+            self._schedule_pending_auto_upload_flush()
+            return
+
+        for name in ready:
+            self._auto_upload_pending.discard(name)
+        logging.info("[Cloud] Flushing %d pending auto-upload(s): %s", len(ready), ready)
+        self._mark_auto_upload_times(ready)
+        self._auto_sync_profiles(ready, quiet_notification=True, latest_only=True)
+
     def request_profile_auto_upload(self, profile_names):
         """Public entry point: upload the given profiles' backups to the cloud now.
 
@@ -4336,9 +4423,6 @@ class CloudSavePanel(QWidget):
             unknown = [n for n in names if n not in self.profiles]
             if unknown:
                 logging.debug(f"Auto-upload: profiles not in cached list (proceeding): {unknown}")
-            if self._sync_in_progress:
-                logging.debug("Auto-upload skipped: a sync is already in progress")
-                return False
 
             available, reason = self.is_online_sync_available()
             if not available:
@@ -4348,13 +4432,45 @@ class CloudSavePanel(QWidget):
                 )
                 return False
 
-            self._auto_sync_profiles(names, quiet_notification=True)
-            return True
+            if self._sync_in_progress:
+                self._auto_upload_pending.update(names)
+                logging.debug("[Cloud] Auto-upload queued (sync already running): %s", names)
+                return True
+
+            now = time.monotonic()
+            ready = []
+            deferred = []
+            for name in names:
+                last = self._auto_upload_last_time.get(name, 0.0)
+                if now - last >= AUTO_UPLOAD_COOLDOWN_SEC:
+                    ready.append(name)
+                else:
+                    deferred.append(name)
+
+            if deferred:
+                self._auto_upload_pending.update(deferred)
+                wait_sec = AUTO_UPLOAD_COOLDOWN_SEC - (
+                    now - self._auto_upload_last_time.get(deferred[0], 0.0)
+                )
+                logging.info(
+                    "[Cloud] Auto-upload cooldown for %s (~%.0fs until retry). "
+                    "Only the newest backup will be uploaded.",
+                    deferred,
+                    max(wait_sec, 0),
+                )
+                self._schedule_pending_auto_upload_flush()
+
+            if ready:
+                self._mark_auto_upload_times(ready)
+                self._auto_sync_profiles(ready, quiet_notification=True, latest_only=True)
+                return True
+
+            return bool(deferred)
         except Exception as e:
             logging.error(f"Auto-upload request failed: {e}", exc_info=True)
             return False
 
-    def _auto_sync_profiles(self, profile_names, *, quiet_notification: bool = False):
+    def _auto_sync_profiles(self, profile_names, *, quiet_notification: bool = False, latest_only: bool = False):
         """Automatically sync specified profiles in background.
 
         quiet_notification: when True, suppress the generic "Periodic Sync
@@ -4380,9 +4496,9 @@ class CloudSavePanel(QWidget):
         if hasattr(active_provider, 'reset_cancellation'):
             active_provider.reset_cancellation()
 
-        # Get max backups setting
+        # Get max backups setting (full sync only; event-driven uploads push latest only)
         max_backups = None
-        if self.cloud_settings.get('max_cloud_backups_enabled', False):
+        if not latest_only and self.cloud_settings.get('max_cloud_backups_enabled', False):
             max_backups = self.cloud_settings.get('max_cloud_backups_count', 5)
 
         # Create worker for background sync
@@ -4391,7 +4507,8 @@ class CloudSavePanel(QWidget):
             active_provider,
             profile_names,
             self.backup_base_dir,
-            max_backups
+            max_backups,
+            latest_only=latest_only,
         )
         self.auto_sync_worker.moveToThread(self.auto_sync_thread)
 
@@ -4421,7 +4538,7 @@ class CloudSavePanel(QWidget):
         
         # Refresh cloud status in case some files were synced before cancellation
         try:
-            self._refresh_cloud_status()
+            self._refresh_cloud_status(force=True)
         except Exception:
             pass
 
@@ -4441,6 +4558,7 @@ class CloudSavePanel(QWidget):
             self._disconnect_after_current_sync = False
 
         self._sync_in_progress = False
+        self._flush_pending_auto_uploads()
     
     def _on_auto_sync_finished(self, success_count, total_count):
         """Handle automatic sync completion."""
@@ -4480,6 +4598,7 @@ class CloudSavePanel(QWidget):
             self._disconnect_after_current_sync = False
 
         self._sync_in_progress = False
+        self._flush_pending_auto_uploads()
 
     # ---- Helpers ----
     def _remove_worker_from_list(self, worker):
@@ -4540,7 +4659,7 @@ class CloudSavePanel(QWidget):
             if success:
                 self._set_connected(True)
                 try:
-                    self._refresh_cloud_status()
+                    self._refresh_cloud_status(force=True)
                 except Exception:
                     pass
                 on_connected_callable()

@@ -823,9 +823,10 @@ class MainWindow(QMainWindow):
         # saves. The provider itself is configured in the Cloud panel.
         self.auto_backup_sync_online_checkbox = QCheckBox("Sync backups online (upload to cloud)")
         self.auto_backup_sync_online_checkbox.setToolTip(
-            "After each automatic backup, upload it to your configured cloud "
-            "provider. Upload only: it never overwrites your local saves. "
-            "Set up the provider in the Cloud panel."
+            "After each automatic backup, upload the newest backup to your "
+            "configured cloud provider (upload only; never overwrites local saves). "
+            "Requires an active cloud connection and a backup interval of at least "
+            "15 minutes. Cloud uploads are rate-limited to protect API quotas."
         )
         auto_backup_form.addRow(self.auto_backup_sync_online_checkbox)
 
@@ -2642,6 +2643,15 @@ class MainWindow(QMainWindow):
             if not isinstance(process_names, list):
                 process_names = []
 
+            sync_online = bool(cfg.get('sync_online', False))
+            if sync_online:
+                from cloud_utils.cloud_sync_availability import (
+                    MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES,
+                    interval_ok_for_online_sync,
+                )
+                if not interval_ok_for_online_sync(interval_minutes):
+                    interval_minutes = MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES
+
             # Mode combo
             mode_index = next(
                 (i for i, (_, v) in enumerate(self.auto_backup_mode_options) if v == mode), 0
@@ -2681,6 +2691,26 @@ class MainWindow(QMainWindow):
         finally:
             self._profile_editor_suppress_prompts = False
 
+    def _get_auto_backup_interval_minutes(self) -> int:
+        """Return the auto-backup interval from the profile editor controls."""
+        unit_index = self.auto_backup_interval_unit_combo.currentIndex()
+        unit_mult = 1
+        if 0 <= unit_index < len(self.auto_backup_interval_units):
+            unit_mult = self.auto_backup_interval_units[unit_index][1]
+        return max(1, int(self.auto_backup_interval_spin.value()) * int(unit_mult))
+
+    def _set_auto_backup_interval_minutes(self, minutes: int):
+        """Set the profile editor interval controls from a minute value."""
+        minutes = max(1, int(minutes))
+        if minutes % 1440 == 0:
+            unit_index, value = 2, minutes // 1440
+        elif minutes % 60 == 0:
+            unit_index, value = 1, minutes // 60
+        else:
+            unit_index, value = 0, minutes
+        self.auto_backup_interval_unit_combo.setCurrentIndex(unit_index)
+        self.auto_backup_interval_spin.setValue(int(value))
+
     def _apply_online_sync_availability(self):
         """Update the 'Sync backups online' checkbox tooltip and gate toggling.
 
@@ -2688,6 +2718,9 @@ class MainWindow(QMainWindow):
         online sync cannot be enabled, instead of a silently disabled control.
         """
         try:
+            from cloud_utils.cloud_sync_availability import (
+                MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES,
+            )
             cb = getattr(self, 'auto_backup_sync_online_checkbox', None)
             if cb is None:
                 return
@@ -2705,9 +2738,10 @@ class MainWindow(QMainWindow):
 
             if available:
                 cb.setToolTip(
-                    "After each automatic backup, upload it to your configured "
-                    "cloud provider. Upload only: it never overwrites your local "
-                    "saves. Requires an active cloud connection."
+                    "After each automatic backup, upload the newest backup to your "
+                    "configured cloud provider. Upload only; requires an active "
+                    f"connection. Minimum backup interval: "
+                    f"{MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES} minutes."
                 )
             elif cb.isChecked():
                 cb.setToolTip(
@@ -2738,29 +2772,59 @@ class MainWindow(QMainWindow):
             logging.debug(f"on_cloud_sync_availability_changed: {e}")
 
     def _on_sync_online_checkbox_toggled(self, checked):
-        """Block enabling online sync unless the cloud gate passes right now."""
+        """Block enabling online sync unless cloud and interval gates pass."""
         if not checked or getattr(self, '_profile_editor_suppress_prompts', False):
             return
+        cb = self.auto_backup_sync_online_checkbox
         try:
-            panel = getattr(self, 'cloud_panel', None)
-            if panel is None or not hasattr(panel, 'is_online_sync_available'):
-                return
-            available, reason = panel.is_online_sync_available()
-            if available:
-                return
-            cb = self.auto_backup_sync_online_checkbox
-            cb.blockSignals(True)
-            cb.setChecked(False)
-            cb.blockSignals(False)
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.warning(
-                self,
-                "Online sync unavailable",
-                f"Cannot enable online sync:\n\n{reason}\n\n"
-                f"Open the Cloud panel, configure your cloud provider, and connect "
-                f"before turning on this option.",
+            from cloud_utils.cloud_sync_availability import (
+                MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES,
+                interval_ok_for_online_sync,
             )
-            self._apply_online_sync_availability()
+
+            panel = getattr(self, 'cloud_panel', None)
+            if panel is not None and hasattr(panel, 'is_online_sync_available'):
+                available, reason = panel.is_online_sync_available()
+                if not available:
+                    cb.blockSignals(True)
+                    cb.setChecked(False)
+                    cb.blockSignals(False)
+                    QMessageBox.warning(
+                        self,
+                        "Online sync unavailable",
+                        f"Cannot enable online sync:\n\n{reason}\n\n"
+                        f"Open the Cloud panel, configure your cloud provider, and connect "
+                        f"before turning on this option.",
+                    )
+                    self._apply_online_sync_availability()
+                    return
+
+            interval = self._get_auto_backup_interval_minutes()
+            min_iv = MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES
+            if interval_ok_for_online_sync(interval):
+                return
+
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Backup interval too short")
+            msg_box.setIcon(QMessageBox.Icon.Question)
+            msg_box.setTextFormat(Qt.TextFormat.RichText)
+            msg_box.setText(
+                "Online sync uploads each automatic backup to the cloud.<br><br>"
+                f"<b>With online sync enabled, the backup interval cannot be shorter "
+                f"than {min_iv} minutes.</b><br><br>"
+                f"Your current interval is {interval} minute(s). "
+                f"Increase it to {min_iv} minutes?"
+            )
+            msg_box.setStandardButtons(
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
+            if msg_box.exec() != QMessageBox.StandardButton.Yes:
+                cb.blockSignals(True)
+                cb.setChecked(False)
+                cb.blockSignals(False)
+                return
+            self._set_auto_backup_interval_minutes(min_iv)
         except Exception as e:
             logging.error(f"Error handling sync-online toggle: {e}")
 

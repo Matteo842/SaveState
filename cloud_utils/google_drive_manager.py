@@ -49,12 +49,17 @@ def _lazy_init():
     HttpError = _HttpError
 
 import hashlib
+from cloud_utils.storage_provider import select_zip_files_for_upload
 
 # If modifying these scopes, delete the token.pickle file
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
 # App folder name in Google Drive
 APP_FOLDER_NAME = "SaveState Backups"
+
+# In-memory cache TTLs to cut repeated DriveFiles.List traffic (seconds).
+FOLDER_FILES_CACHE_TTL_SEC = 90
+CLOUD_BACKUPS_LIST_CACHE_TTL_SEC = 45
 
 
 class GoogleDriveManager:
@@ -90,6 +95,10 @@ class GoogleDriveManager:
         
         # Cancellation support
         self._cancelled = False
+
+        # DriveFiles.List caches (per-folder file lists + aggregated cloud backup index)
+        self._folder_files_cache: dict[str, tuple[float, list]] = {}
+        self._cloud_backups_cache: tuple[float, list] | None = None
         
     def authenticate(self, auth_url_callback: Optional[Callable[[str], None]] = None) -> bool:
         """
@@ -271,12 +280,21 @@ class GoogleDriveManager:
         self.credentials = None
         self.is_connected = False
         self.app_folder_id = None
+        self._invalidate_list_caches()
         
         # Optionally delete token file to force re-authentication
         # if self.token_file.exists():
         #     self.token_file.unlink()
         
         logging.info("Disconnected from Google Drive")
+
+    def _invalidate_list_caches(self, folder_id: str | None = None) -> None:
+        """Drop cached list results after mutations or disconnect."""
+        if folder_id:
+            self._folder_files_cache.pop(folder_id, None)
+        else:
+            self._folder_files_cache.clear()
+        self._cloud_backups_cache = None
     
     def request_cancellation(self):
         """Request cancellation of current operation."""
@@ -371,7 +389,7 @@ class GoogleDriveManager:
             return None
 
     def upload_backup(self, local_path: str, profile_name: str, overwrite: bool = True, 
-                      max_backups: Optional[int] = None) -> Dict[str, any]:
+                      max_backups: Optional[int] = None, latest_only: bool = False) -> Dict[str, any]:
         """
         Upload a backup folder to Google Drive.
         
@@ -399,34 +417,26 @@ class GoogleDriveManager:
                 logging.error(f"Could not create profile folder: {profile_name}")
                 return False
             
-            # Get list of .zip files to upload (sorted by most recent first)
-            zip_files = [f for f in os.listdir(local_path) if f.endswith('.zip')]
-            if not zip_files:
+            # Get list of .zip files to upload (newest first; optional latest-only)
+            files_to_upload = select_zip_files_for_upload(
+                local_path, max_backups=max_backups, latest_only=latest_only,
+            )
+            if not files_to_upload:
                 logging.warning(f"No .zip files found in {local_path}")
                 return {'ok': True, 'uploaded_count': 0, 'skipped_newer_or_same': 0, 'total_candidates': 0}
-
-            # Sort by modification time (newest first)
-            try:
-                zip_files_sorted = sorted(
-                    zip_files,
-                    key=lambda name: os.path.getmtime(os.path.join(local_path, name)),
-                    reverse=True
-                )
-            except Exception as e_sort:
-                logging.debug(f"Could not sort zip files by mtime: {e_sort}")
-                zip_files_sorted = zip_files
-
-            # When a max_backups limit is provided, only upload the N most recent files
-            if max_backups and max_backups > 0:
-                files_to_upload = zip_files_sorted[:max_backups]
-                logging.info(f"Max backups set to {max_backups}. Uploading {len(files_to_upload)} most recent file(s).")
-            else:
-                files_to_upload = zip_files_sorted
             
             logging.info(f"Uploading {len(files_to_upload)} files for profile '{profile_name}'...")
 
             uploaded_count = 0
             skipped_newer_or_same = 0
+
+            # One DriveFiles.List per profile folder (not one per zip file).
+            remote_files_by_name: dict[str, dict] = {}
+            if overwrite:
+                for file_meta in self._list_files_in_folder(profile_folder_id):
+                    name = file_meta.get('name')
+                    if name:
+                        remote_files_by_name[name] = file_meta
             
             # Upload each file
             for idx, filename in enumerate(files_to_upload, 1):
@@ -447,15 +457,16 @@ class GoogleDriveManager:
                 if self.progress_callback:
                     self.progress_callback(idx, len(files_to_upload), f"Uploading {filename}")
                 
-                # Check if file already exists in Drive
-                existing_file_id = None
-                if overwrite:
-                    existing_file_id = self._find_file_in_folder(filename, profile_folder_id)
+                # Check if file already exists in Drive (from folder listing above)
+                existing_meta = remote_files_by_name.get(filename) if overwrite else None
+                existing_file_id = existing_meta.get('id') if existing_meta else None
                 
                 if existing_file_id:
                     # CHECK 1: MD5 Hash Comparison (Strong Integrity Check)
                     local_md5 = self._compute_local_md5(file_path)
-                    remote_md5 = self._get_remote_md5(existing_file_id)
+                    remote_md5 = (existing_meta or {}).get('md5Checksum')
+                    if not remote_md5:
+                        remote_md5 = self._get_remote_md5(existing_file_id)
                     
                     if local_md5 and remote_md5 and local_md5 == remote_md5:
                         logging.info(f"Skipping upload for '{filename}': content identical (MD5 match)")
@@ -464,7 +475,7 @@ class GoogleDriveManager:
 
                     # CHECK 2: Timestamp Fallback (if MD5s differ or check failed)
                     try:
-                        if not self._is_local_newer(file_path, existing_file_id):
+                        if not self._is_local_newer_from_meta(file_path, existing_meta):
                             logging.info(f"Skipping upload for '{filename}': cloud version is newer or same age")
                             skipped_newer_or_same += 1
                             continue
@@ -488,6 +499,7 @@ class GoogleDriveManager:
                     if success:
                         logging.info(f"Updated file: {filename}")
                         uploaded_count += 1
+                        self._invalidate_list_caches(profile_folder_id)
                     else:
                         logging.warning(f"Failed to update file: {filename}")
                 else:
@@ -508,13 +520,14 @@ class GoogleDriveManager:
                     if success:
                         logging.info(f"Uploaded file: {filename}")
                         uploaded_count += 1
+                        self._invalidate_list_caches(profile_folder_id)
                     else:
                         logging.warning(f"Failed to upload file: {filename}")
             
             logging.info(f"Upload completed for profile '{profile_name}'")
             
             # IMPORTANT: Cleanup old backups AFTER successful upload (safety first!)
-            if max_backups and max_backups > 0:
+            if max_backups and max_backups > 0 and not latest_only:
                 self._cleanup_old_backups(profile_folder_id, profile_name, max_backups)
             
             return {
@@ -670,6 +683,12 @@ class GoogleDriveManager:
         if not self.service or not self.app_folder_id:
             logging.error("Not connected to Google Drive")
             return []
+
+        if self._cloud_backups_cache is not None:
+            cached_at, cached_data = self._cloud_backups_cache
+            if time.monotonic() - cached_at < CLOUD_BACKUPS_LIST_CACHE_TTL_SEC:
+                logging.debug("Returning cached cloud backup list")
+                return cached_data
         
         try:
             # List all folders in the app folder
@@ -712,6 +731,7 @@ class GoogleDriveManager:
                 })
             
             logging.info(f"Found {len(backups)} backup folders in cloud")
+            self._cloud_backups_cache = (time.monotonic(), backups)
             return backups
             
         except HttpError as e:
@@ -792,6 +812,7 @@ class GoogleDriveManager:
                 "delete cloud backup folder"
             )
             logging.info(f"Deleted cloud backup folder: {profile_name}")
+            self._invalidate_list_caches(profile_folder_id)
             return True
             
         except HttpError as e:
@@ -981,6 +1002,17 @@ class GoogleDriveManager:
             return True
         return local_ts > remote_ts
 
+    def _is_local_newer_from_meta(self, local_path: str, remote_meta: dict) -> bool:
+        """Like _is_local_newer but uses metadata from a folder listing (no extra Get)."""
+        try:
+            local_ts = os.path.getmtime(local_path)
+        except Exception:
+            return True
+        remote_ts = self._parse_drive_timestamp((remote_meta or {}).get('modifiedTime', ''))
+        if remote_ts is None:
+            return True
+        return local_ts > remote_ts
+
     # ===== Retry helpers =====
     def _should_retry_http_error(self, error: HttpError) -> bool:
         try:
@@ -1028,11 +1060,16 @@ class GoogleDriveManager:
             logging.error(f"{description} failed after retries: {last_exc}")
             raise last_exc
     
-    def _list_files_in_folder(self, folder_id: str) -> List[Dict]:
+    def _list_files_in_folder(self, folder_id: str, *, use_cache: bool = True) -> List[Dict]:
         """List all files in a folder."""
         if not self.service:
             logging.debug("Service unavailable during file list request, skipping.")
             return []
+
+        if use_cache and folder_id in self._folder_files_cache:
+            cached_at, cached_files = self._folder_files_cache[folder_id]
+            if time.monotonic() - cached_at < FOLDER_FILES_CACHE_TTL_SEC:
+                return cached_files
             
         try:
             query = f"'{folder_id}' in parents and trashed=false"
@@ -1046,7 +1083,9 @@ class GoogleDriveManager:
                 "list files in folder"
             )
             
-            return results.get('files', [])
+            files = results.get('files', [])
+            self._folder_files_cache[folder_id] = (time.monotonic(), files)
+            return files
             
         except Exception as e:
             # Don't log full traceback for simple "service is gone" errors during disconnection
@@ -1415,28 +1454,23 @@ class GoogleDriveManager:
             return
         
         try:
-            # Get all files in folder, sorted by modification time (oldest first)
-            query = f"'{folder_id}' in parents and trashed=false"
-            results = self.service.files().list(
-                q=query,
-                spaces='drive',
-                fields='files(id, name, modifiedTime)',
-                orderBy='modifiedTime'  # Oldest first
-            ).execute()
+            files = self._list_files_in_folder(folder_id, use_cache=False)
+            files_sorted = sorted(
+                files,
+                key=lambda f: self._parse_drive_timestamp(f.get('modifiedTime', '')) or 0.0,
+            )
             
-            files = results.get('files', [])
-            
-            if len(files) <= max_backups:
-                logging.info(f"Profile '{profile_name}': {len(files)} backups (within limit of {max_backups})")
+            if len(files_sorted) <= max_backups:
+                logging.info(f"Profile '{profile_name}': {len(files_sorted)} backups (within limit of {max_backups})")
                 return
             
             # Calculate how many to delete
-            files_to_delete = len(files) - max_backups
-            logging.info(f"Profile '{profile_name}': {len(files)} backups found, deleting {files_to_delete} oldest...")
+            files_to_delete = len(files_sorted) - max_backups
+            logging.info(f"Profile '{profile_name}': {len(files_sorted)} backups found, deleting {files_to_delete} oldest...")
             
             # Delete oldest files
             for i in range(files_to_delete):
-                file_to_delete = files[i]
+                file_to_delete = files_sorted[i]
                 file_id = file_to_delete['id']
                 file_name = file_to_delete['name']
                 
@@ -1446,6 +1480,7 @@ class GoogleDriveManager:
                 except Exception as e:
                     logging.error(f"Failed to delete {file_name}: {e}")
             
+            self._invalidate_list_caches(folder_id)
             logging.info(f"Cleanup completed for profile '{profile_name}': kept {max_backups} most recent backups")
             
         except Exception as e:

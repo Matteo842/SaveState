@@ -28,7 +28,7 @@ try:
 except ImportError:
     REQUESTS_AVAILABLE = False
 
-from cloud_utils.storage_provider import StorageProvider, ProviderType
+from cloud_utils.storage_provider import StorageProvider, ProviderType, select_zip_files_for_upload
 
 
 class WebDAVProvider(StorageProvider):
@@ -293,7 +293,8 @@ class WebDAVProvider(StorageProvider):
     
     def upload_backup(self, local_path: str, profile_name: str,
                       overwrite: bool = True,
-                      max_backups: Optional[int] = None) -> Dict[str, Any]:
+                      max_backups: Optional[int] = None,
+                      latest_only: bool = False) -> Dict[str, Any]:
         """
         Upload a backup folder to the WebDAV server.
         """
@@ -331,27 +332,13 @@ class WebDAVProvider(StorageProvider):
             remote_files = self._list_directory(profile_url)
             
             # Get list of .zip files to upload
-            zip_files = [f for f in os.listdir(local_path) if f.endswith('.zip')]
-            if not zip_files:
+            files_to_upload = select_zip_files_for_upload(
+                local_path, max_backups=max_backups, latest_only=latest_only,
+            )
+            if not files_to_upload:
                 logging.warning(f"No .zip files found in {local_path}")
                 result['ok'] = True
                 return result
-            
-            # Sort by modification time (newest first)
-            try:
-                zip_files_sorted = sorted(
-                    zip_files,
-                    key=lambda name: os.path.getmtime(os.path.join(local_path, name)),
-                    reverse=True
-                )
-            except Exception:
-                zip_files_sorted = zip_files
-            
-            # Apply max_backups limit
-            if max_backups and max_backups > 0:
-                files_to_upload = zip_files_sorted[:max_backups]
-            else:
-                files_to_upload = zip_files_sorted
             
             result['total_candidates'] = len(files_to_upload)
             

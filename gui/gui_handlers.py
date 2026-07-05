@@ -3005,6 +3005,7 @@ class MainWindowHandlers:
             new_data['overrides'] = overrides_dict
 
             # --- Capture Auto Backup configuration ---
+            ab_interval_clamped = False
             try:
                 ab_enabled = bool(mw.auto_backup_enable_checkbox.isChecked())
                 mode_index = mw.auto_backup_mode_combo.currentIndex()
@@ -3017,6 +3018,19 @@ class MainWindowHandlers:
                 if 0 <= unit_index < len(mw.auto_backup_interval_units):
                     unit_mult = mw.auto_backup_interval_units[unit_index][1]
                 ab_interval_minutes = max(1, int(mw.auto_backup_interval_spin.value()) * int(unit_mult))
+                try:
+                    cb_sync = mw.auto_backup_sync_online_checkbox
+                    ab_sync_online_preview = bool(cb_sync.isChecked())
+                except Exception:
+                    ab_sync_online_preview = False
+                if ab_sync_online_preview:
+                    from cloud_utils.cloud_sync_availability import (
+                        MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES,
+                        interval_ok_for_online_sync,
+                    )
+                    if not interval_ok_for_online_sync(ab_interval_minutes):
+                        ab_interval_minutes = MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES
+                        ab_interval_clamped = True
                 # Process names (only relevant for the game-close mode). The combo
                 # is pre-filled with the auto-detected executable, but the user
                 # may pick another running program or type one.
@@ -3129,7 +3143,17 @@ class MainWindowHandlers:
                     mw.profile_group.setVisible(True)
                 if hasattr(mw, 'exit_profile_edit_mode'):
                     mw.exit_profile_edit_mode()
-                mw.status_label.setText(f"Profile '{new_name}' updated.")
+                status = f"Profile '{new_name}' updated."
+                if ab_interval_clamped:
+                    from cloud_utils.cloud_sync_availability import (
+                        MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES,
+                    )
+                    status += (
+                        f" Backup interval raised to "
+                        f"{MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES} minutes "
+                        f"(minimum for online sync)."
+                    )
+                mw.status_label.setText(status)
                 # Reload the automatic backup engine with the new configuration
                 try:
                     if hasattr(mw, 'auto_backup_manager') and mw.auto_backup_manager:

@@ -9,6 +9,39 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Callable, Any
 from enum import Enum
 import logging
+import os
+
+
+def select_zip_files_for_upload(
+    local_path: str,
+    *,
+    max_backups: Optional[int] = None,
+    latest_only: bool = False,
+) -> List[str]:
+    """Return local .zip backup filenames to upload, newest first.
+
+    When *latest_only* is True only the most recent archive is returned
+    (used after event-driven auto-backups to avoid scanning the whole folder).
+    """
+    try:
+        zip_files = [f for f in os.listdir(local_path) if f.endswith('.zip')]
+    except OSError:
+        return []
+    if not zip_files:
+        return []
+    try:
+        zip_files_sorted = sorted(
+            zip_files,
+            key=lambda name: os.path.getmtime(os.path.join(local_path, name)),
+            reverse=True,
+        )
+    except Exception:
+        zip_files_sorted = zip_files
+    if latest_only:
+        return zip_files_sorted[:1]
+    if max_backups and max_backups > 0:
+        return zip_files_sorted[:max_backups]
+    return zip_files_sorted
 
 
 class ProviderType(Enum):
@@ -142,7 +175,8 @@ class StorageProvider(ABC):
     @abstractmethod
     def upload_backup(self, local_path: str, profile_name: str, 
                       overwrite: bool = True, 
-                      max_backups: Optional[int] = None) -> Dict[str, Any]:
+                      max_backups: Optional[int] = None,
+                      latest_only: bool = False) -> Dict[str, Any]:
         """
         Upload a backup folder to the storage.
         
@@ -151,6 +185,7 @@ class StorageProvider(ABC):
             profile_name: Name of the profile (used as folder name in storage)
             overwrite: If True, overwrite existing files; if False, skip existing
             max_backups: If set, keep only this many backups (delete oldest)
+            latest_only: If True, upload only the newest .zip (event-driven sync)
             
         Returns:
             Dict with keys:

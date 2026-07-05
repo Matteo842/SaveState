@@ -18,6 +18,20 @@ from typing import Any, Tuple
 # (available, user-facing reason when unavailable)
 Availability = Tuple[bool, str]
 
+# Minimum seconds between event-driven cloud uploads per profile (API protection).
+AUTO_UPLOAD_COOLDOWN_SEC = 15 * 60
+
+# Minimum automatic-backup interval when online sync is enabled on a profile.
+MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES = 15
+
+
+def interval_ok_for_online_sync(interval_minutes: int) -> bool:
+    """True if the backup interval meets the minimum for online sync."""
+    try:
+        return int(interval_minutes) >= MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES
+    except (TypeError, ValueError):
+        return False
+
 
 def _has_network(timeout: float = 2.0) -> bool:
     """Best-effort check that the machine can reach the internet."""
