@@ -39,50 +39,24 @@ class NoteOverlayButton(QPushButton):
         super().leaveEvent(event)
 
 
-class CloudSyncWarningDot(QLabel):
-    """Blinking amber dot shown when online sync is enabled but cloud is offline.
+class CloudSyncWarningIndicator(QLabel):
+    """Cloud-desync icon shown when online sync is enabled but cloud is offline."""
 
-    Uses the same attention-blink pattern as UpdateIndicator: toggles visible/
-    hidden for a few seconds so the user notices, then stays solid.
-    """
+    _ICON_SIZE = QSize(18, 18)
 
-    _STYLE_VISIBLE = (
-        "color: #FFC107; font-size: 13px; font-weight: bold; "
-        "background: transparent; border: none; padding: 0px;"
-    )
-    _STYLE_HIDDEN = (
-        "color: transparent; font-size: 13px; font-weight: bold; "
-        "background: transparent; border: none; padding: 0px;"
-    )
-
-    def __init__(self, parent=None):
-        super().__init__("\u25cf", parent)
-        self.setFixedSize(14, 14)
+    def __init__(self, icon_path, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(20, 20)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._blink_visible = True
-        self._blink_timer = QTimer(self)
-        self._blink_timer.setInterval(400)
-        self._blink_timer.timeout.connect(self._tick_blink)
-        self._blink_remaining = max(1, 6000 // self._blink_timer.interval())
-        self._apply_style()
-        self._blink_timer.start()
-
-    def _apply_style(self):
-        self.setStyleSheet(self._STYLE_VISIBLE if self._blink_visible else self._STYLE_HIDDEN)
-
-    def _tick_blink(self):
-        self._blink_visible = not self._blink_visible
-        self._blink_remaining -= 1
-        self._apply_style()
-        if self._blink_remaining <= 0:
-            self._blink_timer.stop()
-            self._blink_visible = True
-            self._apply_style()
-
-    def stop_blink(self):
-        self._blink_timer.stop()
-        self._blink_visible = True
-        self._apply_style()
+        self.setStyleSheet("background: transparent; border: none; padding: 0px;")
+        if icon_path and os.path.exists(icon_path):
+            self.setPixmap(QIcon(icon_path).pixmap(self._ICON_SIZE))
+        else:
+            self.setText("\u26a0")
+            self.setStyleSheet(
+                "color: #FFC107; font-size: 14px; font-weight: bold; "
+                "background: transparent; border: none; padding: 0px;"
+            )
 
 
 class NotePopupWidget(QWidget):
@@ -605,9 +579,20 @@ class ProfileListManager:
             logging.info("Note icon 'note.png' not found. Will use fallback text.")
         # --- End Loading Note Icon ---
 
+        # --- Cloud desync warning icon (sync enabled but cloud offline) ---
+        cloud_desync_icon_path = resource_path("icons/cloud-desync.png")
+        self.cloud_desync_icon_path = (
+            cloud_desync_icon_path if os.path.exists(cloud_desync_icon_path) else None
+        )
+        if not self.cloud_desync_icon_path:
+            logging.warning(
+                f"Cloud desync icon 'cloud-desync.png' not found in {cloud_desync_icon_path}"
+            )
+        # --- End Cloud desync icon ---
+
         # --- Note Overlay System ---
         self._note_overlay_buttons = []  # List of active NoteOverlayButton instances
-        self._cloud_sync_warning_dots = []  # Yellow indicators: sync enabled but cloud offline
+        self._cloud_sync_warning_dots = []  # cloud-desync icons: sync enabled but cloud offline
         current_theme = self.main_window.current_settings.get('theme', 'dark')
         is_dark = (current_theme == 'dark')
         # Create the shared note popup widget (child of main window for proper positioning)
@@ -1323,18 +1308,16 @@ class ProfileListManager:
             btn.raise_()
 
     def _clear_cloud_sync_warning_dots(self):
-        """Remove yellow cloud-sync warning indicators from the viewport."""
+        """Remove cloud-desync warning indicators from the viewport."""
         for dot in getattr(self, "_cloud_sync_warning_dots", []):
             try:
-                if hasattr(dot, "stop_blink"):
-                    dot.stop_blink()
                 dot.deleteLater()
             except Exception:
                 pass
         self._cloud_sync_warning_dots = []
 
     def _create_cloud_sync_warning_dots(self):
-        """Show a blinking amber dot when online sync is enabled but cloud is offline."""
+        """Show cloud-desync icon when online sync is enabled but cloud is offline."""
         self._clear_cloud_sync_warning_dots()
 
         try:
@@ -1364,7 +1347,7 @@ class ProfileListManager:
             if not profile_wants_online_sync(profile_data):
                 continue
 
-            dot = CloudSyncWarningDot(parent=viewport)
+            dot = CloudSyncWarningIndicator(self.cloud_desync_icon_path, parent=viewport)
             dot.setToolTip(
                 f"Online sync is enabled for this profile but paused:\n"
                 f"{tip_reason}.\n\n"
@@ -1379,7 +1362,7 @@ class ProfileListManager:
         QTimer.singleShot(0, self._reposition_cloud_sync_warning_dots)
 
     def _reposition_cloud_sync_warning_dots(self):
-        """Place warning dots at the right edge of the profile name cell."""
+        """Place cloud-desync icons at the right edge of the profile name cell."""
         viewport = self.table_widget.viewport()
         if not viewport:
             return
