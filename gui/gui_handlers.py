@@ -3139,7 +3139,6 @@ class MainWindowHandlers:
                 if hasattr(mw, 'profile_table_manager'):
                     mw.profile_table_manager.update_profile_table()
                     mw.profile_table_manager.select_profile_in_table(new_name)
-                QMessageBox.information(mw, "Profile Updated", f"Profile '{new_name}' saved successfully.")
                 # Clear edit state
                 mw._editing_profile_original_name = None
                 mw._editing_pending_icon_action = None
@@ -3182,6 +3181,39 @@ class MainWindowHandlers:
             mw = self.main_window
             if not hasattr(mw, 'auto_backup_group'):
                 return
+
+            if (
+                enabled
+                and not getattr(mw, '_profile_editor_suppress_prompts', False)
+                and not mw.current_settings.get('minimize_to_tray_on_close', False)
+            ):
+                msg_box = QMessageBox(mw)
+                msg_box.setWindowTitle("Minimize to tray required")
+                msg_box.setIcon(QMessageBox.Icon.Question)
+                msg_box.setTextFormat(Qt.TextFormat.RichText)
+                msg_box.setText(
+                    "Automatic backup needs SaveState to keep running in the background "
+                    "after you close the window.<br><br>"
+                    "<b>The \"Minimize to tray on close\" setting is currently off. "
+                    "Enable it now</b> so automatic backup can work?"
+                )
+                msg_box.setStandardButtons(
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
+                reply = msg_box.exec()
+                if reply != QMessageBox.StandardButton.Yes:
+                    cb = mw.auto_backup_enable_checkbox
+                    cb.blockSignals(True)
+                    cb.setChecked(False)
+                    cb.blockSignals(False)
+                    enabled = False
+                else:
+                    mw.current_settings['minimize_to_tray_on_close'] = True
+                    if settings_manager.save_settings(mw.current_settings):
+                        if hasattr(mw, 'settings_minimize_to_tray_checkbox'):
+                            mw.settings_minimize_to_tray_checkbox.setChecked(True)
+
             mw.auto_backup_group.setEnabled(bool(enabled))
             if enabled:
                 mw.auto_backup_group.setStyleSheet("")

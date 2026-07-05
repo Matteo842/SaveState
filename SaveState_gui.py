@@ -2626,6 +2626,7 @@ class MainWindow(QMainWindow):
 
     def _load_auto_backup_into_editor(self, profile_data):
         """Populate the Auto Backup editor fields from the profile's config."""
+        self._profile_editor_suppress_prompts = True
         try:
             cfg = {}
             if isinstance(profile_data, dict) and isinstance(profile_data.get('auto_backup'), dict):
@@ -2677,17 +2678,14 @@ class MainWindow(QMainWindow):
             self._apply_online_sync_availability()
         except Exception as e:
             logging.error(f"Error loading auto-backup config into editor: {e}")
+        finally:
+            self._profile_editor_suppress_prompts = False
 
     def _apply_online_sync_availability(self):
-        """Enable/disable the 'Sync backups online' checkbox based on whether a
-        cloud provider is actually connected.
+        """Update the 'Sync backups online' checkbox tooltip and gate toggling.
 
-        Rationale (safety/clarity): the user must never be able to turn on online
-        sync while the cloud is unusable, nor believe a save is synced when it is
-        not. So the checkbox can only be *enabled* when a provider is connected.
-        An already-configured (checked) profile stays visibly checked but
-        disabled with an explanatory tooltip when the cloud is offline, instead
-        of silently pretending everything is fine.
+        The checkbox stays clickable so the user gets an explanatory dialog when
+        online sync cannot be enabled, instead of a silently disabled control.
         """
         try:
             cb = getattr(self, 'auto_backup_sync_online_checkbox', None)
@@ -2699,28 +2697,29 @@ class MainWindow(QMainWindow):
             if panel is not None and hasattr(panel, 'is_online_sync_available'):
                 available, reason = panel.is_online_sync_available()
 
+            group_enabled = (
+                hasattr(self, 'auto_backup_group')
+                and self.auto_backup_group.isEnabled()
+            )
+            cb.setEnabled(group_enabled)
+
             if available:
-                cb.setEnabled(True)
                 cb.setToolTip(
                     "After each automatic backup, upload it to your configured "
                     "cloud provider. Upload only: it never overwrites your local "
                     "saves. Requires an active cloud connection."
                 )
+            elif cb.isChecked():
+                cb.setToolTip(
+                    f"Online sync is ON for this profile but paused: {reason}. "
+                    f"Local automatic backups still run. Connect in the Cloud "
+                    f"panel to resume uploading."
+                )
             else:
-                # Cannot *turn on* online sync while the cloud is unavailable.
-                cb.setEnabled(False)
-                if cb.isChecked():
-                    cb.setToolTip(
-                        f"Online sync is ON for this profile but paused: {reason}. "
-                        f"Local automatic backups still run. Connect in the Cloud "
-                        f"panel to resume uploading."
-                    )
-                else:
-                    cb.setChecked(False)
-                    cb.setToolTip(
-                        f"Online sync unavailable: {reason}. Connect and configure "
-                        f"a cloud provider in the Cloud panel to enable it."
-                    )
+                cb.setToolTip(
+                    f"Online sync unavailable: {reason}. "
+                    f"Connect and configure a cloud provider in the Cloud panel to enable it."
+                )
         except Exception as e:
             logging.error(f"Error applying online sync availability: {e}")
 
@@ -2740,7 +2739,7 @@ class MainWindow(QMainWindow):
 
     def _on_sync_online_checkbox_toggled(self, checked):
         """Block enabling online sync unless the cloud gate passes right now."""
-        if not checked:
+        if not checked or getattr(self, '_profile_editor_suppress_prompts', False):
             return
         try:
             panel = getattr(self, 'cloud_panel', None)
@@ -2757,8 +2756,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Online sync unavailable",
-                f"Cannot enable online sync:\n{reason}\n\n"
-                f"Open the Cloud panel, configure your provider, and connect first.",
+                f"Cannot enable online sync:\n\n{reason}\n\n"
+                f"Open the Cloud panel, configure your cloud provider, and connect "
+                f"before turning on this option.",
             )
             self._apply_online_sync_availability()
         except Exception as e:
