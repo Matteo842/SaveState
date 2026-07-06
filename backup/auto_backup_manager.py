@@ -256,6 +256,10 @@ class AutoBackupManager:
         """
         return bool(self._enabled)
 
+    def get_enabled_profile_names(self) -> list[str]:
+        """Return sorted profile names that currently have auto-backup enabled."""
+        return sorted(self._enabled.keys())
+
     # ------------------------------------------------------------------
     # Tick logic
     # ------------------------------------------------------------------

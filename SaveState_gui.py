@@ -1368,6 +1368,9 @@ class MainWindow(QMainWindow):
         self.settings_exit_button.clicked.connect(self.handlers.handle_settings_exit)
         self.settings_save_button.clicked.connect(self.handlers.handle_settings_save)
         self.settings_browse_button.clicked.connect(self.handlers.handle_settings_browse)
+        self.settings_minimize_to_tray_checkbox.toggled.connect(
+            self.handlers.handle_minimize_to_tray_toggled
+        )
         # Controller panel connections
         self.controller_button.clicked.connect(self.handlers.handle_controller)
         self.controller_exit_button.clicked.connect(self.handlers.handle_controller_exit)
@@ -3276,19 +3279,39 @@ class MainWindow(QMainWindow):
             except Exception:
                 auto_backup_enabled = False
 
-            if periodic_sync_enabled or auto_backup_enabled:
-                # A background feature forces minimize to tray - show as checked and disabled
-                self.settings_minimize_to_tray_checkbox.setChecked(True)
-                self.settings_minimize_to_tray_checkbox.setEnabled(False)
-                if periodic_sync_enabled:
-                    self.settings_minimize_to_tray_checkbox.setToolTip("Forced ON because Periodic Sync is enabled in Cloud settings")
+            cb = self.settings_minimize_to_tray_checkbox
+            cb.blockSignals(True)
+            if periodic_sync_enabled:
+                cb.setChecked(True)
+                cb.setEnabled(False)
+                cb.setToolTip(
+                    "Forced ON because Periodic Sync is enabled in Cloud settings"
+                )
+            elif auto_backup_enabled:
+                cb.setChecked(True)
+                cb.setEnabled(True)
+                try:
+                    names = abm.get_enabled_profile_names()
+                except Exception:
+                    names = []
+                if names:
+                    preview = ", ".join(names[:4])
+                    if len(names) > 4:
+                        preview += f", +{len(names) - 4} more"
+                    cb.setToolTip(
+                        f"Required while automatic backup is enabled on: {preview}. "
+                        "Uncheck to disable automatic backup on those profiles."
+                    )
                 else:
-                    self.settings_minimize_to_tray_checkbox.setToolTip("Forced ON because Automatic Backup is enabled on one or more profiles")
+                    cb.setToolTip(
+                        "Required while automatic backup is enabled on one or more profiles. "
+                        "Uncheck to disable it everywhere."
+                    )
             else:
-                # Normal behavior - use the saved setting
-                self.settings_minimize_to_tray_checkbox.setChecked(self.current_settings.get("minimize_to_tray_on_close", False))
-                self.settings_minimize_to_tray_checkbox.setEnabled(True)
-                self.settings_minimize_to_tray_checkbox.setToolTip("")
+                cb.setChecked(self.current_settings.get("minimize_to_tray_on_close", False))
+                cb.setEnabled(True)
+                cb.setToolTip("")
+            cb.blockSignals(False)
             
             # Toggle UI visibility
             self.profile_group.setVisible(False)

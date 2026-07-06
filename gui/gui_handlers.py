@@ -8,6 +8,7 @@ import zipfile
 import tempfile
 import threading
 import config
+from html import escape
 
 from PySide6.QtWidgets import QMessageBox, QDialog, QInputDialog, QApplication, QFileDialog
 from PySide6.QtCore import Slot, QUrl, QPropertyAnimation, QTimer, Qt
@@ -418,6 +419,93 @@ class MainWindowHandlers:
         )
         if directory:
             self.main_window.settings_path_edit.setText(os.path.normpath(directory))
+
+    @Slot(bool)
+    def handle_minimize_to_tray_toggled(self, checked):
+        """When unchecking tray mode, offer to disable auto-backup on affected profiles."""
+        try:
+            mw = self.main_window
+            if not getattr(mw, '_settings_mode_active', False) or checked:
+                return
+
+            try:
+                from cloud_utils import cloud_settings_manager
+                cloud_settings = cloud_settings_manager.load_cloud_settings()
+                periodic_sync_enabled = bool(cloud_settings.get('auto_sync_enabled', False))
+            except Exception:
+                periodic_sync_enabled = False
+            if periodic_sync_enabled:
+                return
+
+            abm = getattr(mw, 'auto_backup_manager', None)
+            profile_names = abm.get_enabled_profile_names() if abm else []
+            if not profile_names:
+                return
+
+            profile_lines = "<br>".join(
+                f"&nbsp;&nbsp;• {escape(name)}" for name in profile_names
+            )
+            msg_box = QMessageBox(mw)
+            msg_box.setWindowTitle("Disable automatic backup?")
+            msg_box.setIcon(QMessageBox.Icon.Question)
+            msg_box.setTextFormat(Qt.TextFormat.RichText)
+            msg_box.setText(
+                "Automatic backup needs SaveState to keep running in the system tray "
+                "after you close the window."
+            )
+            msg_box.setInformativeText(
+                "<b>The following profile(s) have automatic backup enabled:</b><br><br>"
+                f"{profile_lines}<br><br>"
+                "Turn off \"Minimize to tray on close\" and "
+                "<b>disable automatic backup on all listed profiles?</b>"
+            )
+            msg_box.setStandardButtons(
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+            reply = msg_box.exec()
+
+            cb = mw.settings_minimize_to_tray_checkbox
+            if reply != QMessageBox.StandardButton.Yes:
+                cb.blockSignals(True)
+                cb.setChecked(True)
+                cb.blockSignals(False)
+                return
+
+            for name in profile_names:
+                data = mw.profiles.get(name)
+                if not isinstance(data, dict):
+                    continue
+                ab_cfg = data.get('auto_backup')
+                if isinstance(ab_cfg, dict):
+                    ab_cfg['enabled'] = False
+                else:
+                    data['auto_backup'] = {'enabled': False}
+
+            if not core_logic.save_profiles(mw.profiles):
+                QMessageBox.critical(
+                    mw,
+                    "Save Failed",
+                    "Could not save profile changes. Minimize to tray was not disabled.",
+                )
+                cb.blockSignals(True)
+                cb.setChecked(True)
+                cb.blockSignals(False)
+                return
+
+            try:
+                if abm:
+                    abm.reload()
+            except Exception as e_abm:
+                logging.warning(f"Failed to reload auto-backup manager: {e_abm}")
+
+            cb.setToolTip("")
+            logging.info(
+                "Disabled automatic backup on %d profile(s) after turning off minimize to tray.",
+                len(profile_names),
+            )
+        except Exception as e:
+            logging.error(f"Error handling minimize-to-tray toggle: {e}", exc_info=True)
 
     @Slot()
     def handle_settings_save(self):
