@@ -97,7 +97,6 @@ class FTPConfigDialog(QDialog):
         self.setMinimumWidth(450)
         
         self._init_ui()
-        self._apply_styles()
         self._load_current_config()
     
     def _init_ui(self):
@@ -214,56 +213,6 @@ class FTPConfigDialog(QDialog):
         button_layout.addWidget(self.save_button)
         
         layout.addLayout(button_layout)
-    
-    def _apply_styles(self):
-        """Apply consistent styling to the dialog (matching SaveState dark theme)."""
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #2D2D30;
-                color: #E0E0E0;
-            }
-            QGroupBox {
-                font-weight: bold;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                margin-top: 8px;
-                padding: 8px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 3px;
-            }
-            QLineEdit, QSpinBox {
-                background-color: #3E3E42;
-                border: 1px solid #555555;
-                border-radius: 3px;
-                padding: 5px;
-                color: #E0E0E0;
-            }
-            QLineEdit:focus, QSpinBox:focus {
-                border: 1px solid #007ACC;
-            }
-            QPushButton {
-                background-color: #4A4A4A;
-                border: 1px solid #555555;
-                border-radius: 3px;
-                padding: 6px 16px;
-                color: #E0E0E0;
-            }
-            QPushButton:hover {
-                background-color: #5A5A5A;
-            }
-            QPushButton:pressed {
-                background-color: #3A3A3A;
-            }
-            QCheckBox {
-                color: #E0E0E0;
-            }
-            QLabel {
-                color: #E0E0E0;
-            }
-        """)
     
     def _load_current_config(self):
         """Load current configuration into UI fields."""
