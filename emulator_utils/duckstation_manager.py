@@ -36,20 +36,24 @@ def get_duckstation_memcard_path() -> str | None:
 
     elif system == "Linux":
         user_home = os.path.expanduser("~")
-        # 1. Check Flatpak path first
-        flatpak_path = os.path.join(user_home, ".var", "app", "org.duckstation.DuckStation", "config", "duckstation", "memcards")
-        if os.path.isdir(flatpak_path):
-            memcard_path = flatpak_path
-            log.debug(f"Found DuckStation memcards via Flatpak path: {memcard_path}")
-        else:
-            log.debug(f"Flatpak path not found: {flatpak_path}")
-            # 2. Check standard XDG config path
-            xdg_config_path = os.path.join(user_home, ".config", "duckstation", "memcards")
-            if os.path.isdir(xdg_config_path):
-                memcard_path = xdg_config_path
-                log.debug(f"Found DuckStation memcards via XDG config path: {memcard_path}")
+        # Duckstation stores configs in either XDG_DATA_HOME or .local/share
+        xdg_data_home = os.environ.get("XDG_DATA_HOME") or os.path.join(user_home, ".local", "share")
+
+        candidate_paths = [
+            os.path.join(user_home, ".var", "app", "org.duckstation.DuckStation", "config", "duckstation", "memcards"),
+            os.path.join(xdg_data_home, "duckstation", "memcards"),
+            os.path.join(user_home, ".config", "duckstation", "memcards"),
+        ]
+
+        for candidate_path in candidate_paths:
+            if os.path.isdir(candidate_path):
+                memcard_path = candidate_path
+                log.debug(f"Found DuckStation memcards via path: {memcard_path}")
+                break
             else:
-                log.debug(f"XDG config path not found: {xdg_config_path}. No standard Linux path found.")
+                log.debug(f"Path not found: {candidate_path}")
+        else:
+            log.debug("No standard Linux DuckStation memcard path found.")
 
     elif system == "Darwin": # macOS
         user_home = os.path.expanduser("~")
