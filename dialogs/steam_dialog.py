@@ -86,6 +86,10 @@ class SteamDialog(QDialog):
         self.game_list_widget.setHeaderLabels(["", "Game Name", "Cloud", "AppID"])
         self.game_list_widget.setColumnCount(4)
         
+        header_item = self.game_list_widget.headerItem()
+        header_item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
+        header_item.setTextAlignment(3, Qt.AlignmentFlag.AlignCenter)
+        
         # Configure columns
         header = self.game_list_widget.header()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)  # Checkbox column
