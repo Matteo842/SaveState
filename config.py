@@ -534,6 +534,113 @@ BANNED_FOLDER_NAMES_LOWER = {
      ".svn", # Comune in progetti SVN
 }
 
+# Parole chiave (minuscole) per escludere processi dal picker dell'auto-backup.
+# Se il nome del processo (basename, es. "chrome.exe") contiene una di queste
+# sottostringhe, non viene mostrato nella lista "Game process".
+# Usiamo keyword e non nomi esatti perché i processi di sistema/utility variano
+# tra le macchine (OEM, antivirus, driver, ecc.).
+AUTO_BACKUP_PROCESS_BLACKLIST_KEYWORDS = {
+    # Windows core / session / shell
+    "svchost", "csrss", "lsass", "smss", "wininit", "winlogon",
+    "dwm.exe", "explorer.exe", "sihost", "taskhost", "fontdrvhost", "dashost",
+    "runtimebroker", "dllhost", "conhost", "ctfmon", "unsecapp",
+    "audiodg", "wlanext", "wmiapsrv", "wmiprvse", "wudfhost", "wslservice",
+    "useroobebroker", "applicationframehost", "textinputhost",
+    "searchapp", "searchfilter", "searchindexer", "searchprotocolhost",
+    "startmenuexperiencehost", "securityhealth", "spoolsv", "services.exe",
+    "windowspackagemanagerserver", "openconsole", "comppkgsrv",
+    "crashpad_handler", "crashhelper", "startupchecking", "systemsettings",
+    "lockapp", "shellexperiencehost", "backgroundtaskhost",
+
+    # Xbox Game Bar / Game DVR (partono spesso all'avvio di un gioco)
+    "gamebar", "gamebarftserver", "gamebarpresencewriter", "gamebarwidget",
+    "xboxgamebarwidgets", "xboxgameoverlay", "gamingoverlay", "gamedvr",
+    "bcastdvr", "xboxpcapp",
+
+    # Windows Update / manutenzione sistema (tiworker, trustedinstaller, ecc.)
+    "tiworker", "trustedinstaller", "wermgr", "werfault", "msiexec",
+    "usoclient", "usocoreworker", "setuphost", "sedlauncher", "sedsvc",
+    "mousocoreworker", "compattelrunner", "wsappx",
+
+    # ASUS / OEM / motherboard utilities
+    "armoury", "asus", "atkex", "aisuite", "rog", "gameturbo",
+    "asuscert", "asusfan", "asusupdate", "asus_framework", "acpowernotification",
+
+    # GPU / chipset / audio drivers
+    "nvcontainer", "nvdisplay", "nvidia", "amd3d", "amdfendr", "amddvr",
+    "rtkaud", "igfx", "jhi_service", "nahimic", "sonicstudio", "realtek",
+
+    # Browser
+    "chrome", "firefox", "msedge", "opera", "brave", "vivaldi", "iexplore", "browser",
+
+    # Adobe / Creative Cloud
+    "adobe", "photoshop", "illustrator", "premiere", "afterfx", "acrobat",
+    "lightroom", "indesign", "audition", "animate", "dreamweaver",
+    "ccxprocess", "cclib", "creative cloud",
+
+    # Microsoft Office / productivity
+    "office", "clicktorun", "winword", "excel", "powerpnt", "outlook", "onenote",
+    "teams", "skype", "calculatorapp", "yourphone", "cortana", "onedrive",
+
+    # IDE / terminal / dev runtimes
+    "cursor", "vscode", "devenv", "windowsterminal", "pwsh", "powershell",
+    "cmd.exe", "py.exe", "python.exe", "pythonw.exe", "node.exe",
+    "jusched", "jucheck", "java.exe", "javaws.exe", "dotnet",
+
+    # Communication / social / media
+    "discord", "spotify", "slack", "zoom", "telegram", "whatsapp", "signal",
+    "twitch", "vlc", "itunes", "groove",
+
+    # Game launchers / platform services (non i giochi veri e propri)
+    "steamwebhelper", "steamservice", "steamchina", "epicgameslauncher",
+    "origin.exe", "eadesktop", "goggalaxy", "battlenet", "ubisoft", "uplay",
+    "gamingservices", "gameinput", "xbox", "googleplaygamesservices", "galaxyclient",
+
+    # Streaming / recording / overlay
+    "obs64", "obs32", "obs.exe", "streamlabs", "nvsphelper", "nvbroadcast",
+
+    # Desktop / input / peripheral utilities
+    "voicemod", "wallpaper", "warp", "vpn", "powertoys", "taskbarx",
+    "lghub", "logitech", "razer", "corsair", "icue", "msiafterburner",
+    "rivatuner", "afterburner", "fancontrol", "openrgb",
+
+    # Virtualization
+    "vmware", "vmnat", "vmnet", "virtualbox", "vboxservice", "vboxtray",
+
+    # Antivirus / security
+    "avp", "avast", "avgui", "avg", "kaspersky", "norton", "mcafee",
+    "malwarebytes", "eset", "bitdefender", "defender", "sophos", "webroot",
+
+    # Download managers / cloud sync
+    "idman", "utorrent", "qbittorrent", "transmission", "dropbox", "googledrive",
+    "sync", "backblaze", "megasync",
+
+    # Sandbox / driver assistants / misc background tools
+    "sandboxie", "sbiesvc", "dsaservice", "dsatray", "dsaupdateservice",
+    "ezupdt", "dipawaymode", "plugin-nm-server", "hyphelper", "nefarius",
+    "ss_conn_service", "ctxsvc", "sbcommand", "fg64",
+    "githubdesktop", "github", "rundll32", "lsaiso", "gamesdk", "kpm",
+    "mbhal", "dramhal", "aac3572",
+}
+
+# Nomi processo esatti (minuscoli) da escludere sempre dal picker auto-backup.
+AUTO_BACKUP_PROCESS_BLACKLIST_EXACT = {
+    "system",
+    "system idle process",
+    "[system process]",
+    "registry",
+    "memcompression",
+    "idle",
+    # Launcher principali (keyword troppo ampie per nomi corti)
+    "steam.exe",
+    "epicgameslauncher.exe",
+    "galaxyclient.exe",
+    "origin.exe",
+    "uplay.exe",
+    "battlenet.exe",
+    "hyp.exe",
+}
+
 # Set di parole (minuscole) da ignorare durante il confronto di similarità
 # tra nomi di giochi e nomi di cartelle (fuzzy matching).
 # Aiuta a ignorare termini comuni, edizioni, articoli, ecc.

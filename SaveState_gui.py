@@ -872,10 +872,13 @@ class MainWindow(QMainWindow):
         self.auto_backup_process_combo.setToolTip(
             "Name of the game's process/executable (e.g. Game.exe). "
             "The entry auto-detected from this profile is shown in green; "
-            "you can also pick any running program or type a name."
+            "running programs are sorted by GPU, then RAM, then CPU usage. "
+            "You can also type a name manually."
         )
         self.auto_backup_process_refresh_button = QPushButton("Refresh")
-        self.auto_backup_process_refresh_button.setToolTip("Reload the list of currently running programs")
+        self.auto_backup_process_refresh_button.setToolTip(
+            "Reload running programs (sorted by GPU/RAM/CPU, system apps hidden)"
+        )
         process_row_layout.addWidget(self.auto_backup_process_combo, stretch=1)
         process_row_layout.addWidget(self.auto_backup_process_refresh_button)
         self.auto_backup_process_label = QLabel("Game process:")
@@ -3012,7 +3015,7 @@ class MainWindow(QMainWindow):
 
             current_text = self.auto_backup_process_combo.currentText() if preserve_text else ""
 
-            running = sorted(process_watch_utils.list_running_process_names())
+            running = process_watch_utils.list_running_processes_for_picker()
             # Build the item list: detected entry first (even if not running now),
             # then the running programs (avoiding a duplicate of the detected one).
             items = []

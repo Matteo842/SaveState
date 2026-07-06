@@ -3,13 +3,42 @@ from PySide6.QtWidgets import (
     QDialog, QTreeWidget, QTreeWidgetItem, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QApplication, QInputDialog, QMessageBox, QLineEdit, QCheckBox, QWidget, QHeaderView
 )
-from PySide6.QtCore import Signal, Slot, Qt, QTimer, QEvent, QSize
+from PySide6.QtCore import Signal, Slot, Qt, QTimer, QEvent, QSize, QThread
 from PySide6.QtGui import QColor
 
 # Import necessary logic
 from core import core_logic
+from common.steam_cloud_utils import (
+    get_cloud_save_status_batch,
+    format_cloud_status,
+    get_cached_cloud_status,
+)
 import logging
 import os
+
+
+class SteamCloudStatusWorker(QThread):
+    """Background worker that resolves Steam Cloud status for installed games."""
+    progress = Signal(str, int, int)
+    finished = Signal(dict)
+
+    def __init__(self, appids, force_refresh=False, parent=None):
+        super().__init__(parent)
+        self.appids = list(appids)
+        self.force_refresh = force_refresh
+        self.setObjectName("SteamCloudStatusWorker")
+
+    def run(self):
+        try:
+            results = get_cloud_save_status_batch(
+                self.appids,
+                force_refresh=self.force_refresh,
+                progress_callback=lambda appid, current, total: self.progress.emit(appid, current, total),
+            )
+            self.finished.emit(results)
+        except Exception as e:
+            logging.error(f"[SteamDialog] Cloud status worker failed: {e}", exc_info=True)
+            self.finished.emit({})
 
 # --- Steam Game Management Dialog ---
 class SteamDialog(QDialog):
@@ -26,7 +55,7 @@ class SteamDialog(QDialog):
         super().__init__(parent)
         self.main_window_ref = main_window_ref
         self.setWindowTitle("Steam Games Management")
-        self.setMinimumWidth(600)
+        self.setMinimumWidth(780)
         self.setMinimumHeight(400)
 
         # Internal references
@@ -37,23 +66,27 @@ class SteamDialog(QDialog):
 
         # Track checked items for multi-selection
         self.checked_items = set()  # Set of appids that are checked
+        self._cloud_status_worker = None
+        self._cloud_status_by_appid = {}
         
         # --- Create UI Widgets ---
-        # TreeWidget with 3 columns: Checkbox, Game Name, AppID
+        # TreeWidget with 4 columns: Checkbox, Game Name, Cloud Saves, AppID
         self.game_list_widget = QTreeWidget()
-        self.game_list_widget.setHeaderLabels(["Select", "Game Name", "AppID"])
-        self.game_list_widget.setColumnCount(3)
+        self.game_list_widget.setHeaderLabels(["Select", "Game Name", "Has Cloud Saves?", "AppID"])
+        self.game_list_widget.setColumnCount(4)
         
         # Configure columns
         header = self.game_list_widget.header()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)  # Checkbox column
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Game name stretches
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)  # AppID fixed
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)  # Cloud status
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)  # AppID fixed
         header.resizeSection(0, 36)  # Checkbox column width - compact to save space
-        header.resizeSection(2, 130)  # AppID column width
+        header.resizeSection(2, 130)  # Cloud saves column
+        header.resizeSection(3, 130)  # AppID column width
         header.setStretchLastSection(False)
         
-        self.game_list_widget.setHeaderHidden(True)  # Hide header for clean look
+        self.game_list_widget.setHeaderHidden(False)
         self.game_list_widget.setIndentation(0)  # Remove tree indentation to prevent text clipping
         
         # Styling: larger font, increased row height for checkboxes, horizontal separators
@@ -127,6 +160,7 @@ class SteamDialog(QDialog):
     @Slot()
     def start_steam_scan(self):
         """Refresh the Steam games list by re-scanning installed games."""
+        self._stop_cloud_status_worker()
         self.status_label.setText("Scanning Steam games...")
         QApplication.processEvents()  # Update UI to show scanning message
         
@@ -151,19 +185,20 @@ class SteamDialog(QDialog):
             self.status_label.setText(f"Error refreshing: {e}")
             return
         
-        self.populate_game_list()
+        self.populate_game_list(force_cloud_refresh=True)
         self.status_label.setText(f"List updated. {len(self.steam_games_data)} games found.")
 
 
-    def populate_game_list(self):
+    def populate_game_list(self, force_cloud_refresh=False):
         """Populate the game list with checkbox widgets for multi-selection."""
+        self._stop_cloud_status_worker()
         self.game_list_widget.clear()
         self.checked_items.clear()  # Reset checked items
         self._is_batch_mode = False
         
         if not self.steam_games_data:
             # Add a dummy item if no games found
-            item = QTreeWidgetItem(["", "No games found.", ""])
+            item = QTreeWidgetItem(["", "No games found.", "", ""])
             self.game_list_widget.addTopLevelItem(item)
             self.configure_button.setEnabled(False)
             self.configure_button.setText("Configure Selected Profile")
@@ -175,16 +210,22 @@ class SteamDialog(QDialog):
             profile_exists_marker = "[EXISTING PROFILE]" if game_data['name'] in self.profiles else ""
             # Display name without AppID
             display_text = f"{game_data['name']} {profile_exists_marker}".strip()
+            cached_status = get_cached_cloud_status(appid)
+            if cached_status is not None:
+                self._cloud_status_by_appid[appid] = cached_status
+            cloud_text = format_cloud_status(cached_status) if cached_status is not None else "..."
             
-            # Create TreeItem with empty first column (for checkbox), Name in Col 1, AppID in Col 2
-            item = QTreeWidgetItem(["", display_text, f"AppID: {appid}"])
+            # Create TreeItem with empty first column (for checkbox), Name in Col 1, Cloud in Col 2, AppID in Col 3
+            item = QTreeWidgetItem(["", display_text, cloud_text, f"AppID: {appid}"])
+            self._apply_cloud_status_style(item, cached_status)
             
             # Store appid in both column 0 (for checkbox handling) and column 1 (for selection handling)
             item.setData(0, Qt.ItemDataRole.UserRole, appid)
             item.setData(1, Qt.ItemDataRole.UserRole, appid)
             
-            # Align the AppID column (column 2) to the left for better readability
+            # Align columns for readability
             item.setTextAlignment(2, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            item.setTextAlignment(3, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             
             self.game_list_widget.addTopLevelItem(item)
             
@@ -233,6 +274,74 @@ class SteamDialog(QDialog):
         self.game_list_widget.clearSelection()
         self.game_list_widget.setCurrentItem(None)
         self.configure_button.setEnabled(False)
+        self._start_cloud_status_lookup(force_refresh=force_cloud_refresh)
+
+    def _stop_cloud_status_worker(self):
+        if self._cloud_status_worker and self._cloud_status_worker.isRunning():
+            self._cloud_status_worker.wait(3000)
+        self._cloud_status_worker = None
+
+    def _start_cloud_status_lookup(self, force_refresh=False):
+        if not self.steam_games_data:
+            return
+
+        appids = list(self.steam_games_data.keys())
+        needs_lookup = [
+            appid for appid in appids
+            if force_refresh or get_cached_cloud_status(appid) is None
+        ]
+        if not needs_lookup:
+            return
+
+        self.status_label.setText("Checking Steam Cloud support...")
+        self._cloud_status_worker = SteamCloudStatusWorker(
+            needs_lookup,
+            force_refresh=force_refresh,
+            parent=self,
+        )
+        self._cloud_status_worker.progress.connect(self._on_cloud_status_progress)
+        self._cloud_status_worker.finished.connect(self._on_cloud_status_finished)
+        self._cloud_status_worker.start()
+
+    @Slot(str, int, int)
+    def _on_cloud_status_progress(self, appid, current, total):
+        game_name = self.steam_games_data.get(appid, {}).get("name", appid)
+        self.status_label.setText(
+            f"Checking Steam Cloud support ({current}/{total}): {game_name}"
+        )
+        QApplication.processEvents()
+
+    @Slot(dict)
+    def _on_cloud_status_finished(self, results):
+        self._cloud_status_worker = None
+        if results:
+            self._cloud_status_by_appid.update(results)
+            self._update_cloud_status_column(results)
+
+        if self.steam_games_data:
+            self.status_label.setText(
+                f"Loaded {len(self.steam_games_data)} games. Select a game and click Configure."
+            )
+        else:
+            self.status_label.setText("Select a game and click Configure.")
+
+    def _update_cloud_status_column(self, results):
+        for i in range(self.game_list_widget.topLevelItemCount()):
+            item = self.game_list_widget.topLevelItem(i)
+            appid = item.data(0, Qt.ItemDataRole.UserRole)
+            if not appid or appid not in results:
+                continue
+            status = results[appid]
+            item.setText(2, format_cloud_status(status))
+            self._apply_cloud_status_style(item, status)
+
+    def _apply_cloud_status_style(self, item, status):
+        if status is True:
+            item.setForeground(2, QColor("#8BC34A"))
+        elif status is False:
+            item.setForeground(2, QColor("#FFB74D"))
+        else:
+            item.setForeground(2, QColor("#B0B0B0"))
     
     def _on_checkbox_changed(self, appid, state):
         """Handle checkbox state change for multi-selection."""
@@ -604,11 +713,12 @@ class SteamDialog(QDialog):
 
         for i in range(self.game_list_widget.topLevelItemCount()):
             item = self.game_list_widget.topLevelItem(i)
-            # Make item visible if text is found in the item's text, case-insensitive
-            item.setHidden(text.lower() not in item.text(0).lower())
+            searchable = f"{item.text(1)} {item.text(2)} {item.text(3)}".lower()
+            item.setHidden(text.lower() not in searchable)
 
     def reject(self):
         logging.debug("[SteamDialog] Dialog rejected.")
+        self._stop_cloud_status_worker()
         
         # Cancella tutti i thread di ricerca in corso quando la dialog viene chiusa
         if self.main_window_ref and hasattr(self.main_window_ref, 'cancellation_manager'):
@@ -624,7 +734,8 @@ class SteamDialog(QDialog):
         super().reject()
 
     def accept(self):
-        super().accept() 
+        self._stop_cloud_status_worker()
+        super().accept()
 
 # --- FINE CLASSE SteamDialog ---
 

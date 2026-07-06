@@ -1,12 +1,12 @@
 """
 process_watch_utils.py
 
-Lightweight, dependency-free helpers to enumerate the names of the processes
-currently running on the system. Used by the automatic backup feature to detect
-when a watched game has been closed.
+Lightweight helpers to enumerate the names of the processes currently running on
+the system. Used by the automatic backup feature to detect when a watched game
+has been closed, and by the GUI process picker.
 
-No subprocess is spawned: enumeration happens entirely in-process via native
-APIs, which keeps it compatible with single-file Nuitka builds.
+No subprocess is spawned for enumeration: native APIs are used in-process, which
+keeps compatibility with single-file Nuitka builds.
 
 - Windows: ctypes + Toolhelp32 snapshot (same style as controller_manager.py).
 - Linux / SteamOS: read process names from the /proc filesystem.
@@ -19,8 +19,16 @@ All returned names are lowercased basenames (e.g. "game.exe", "ryujinx").
 import logging
 import os
 import platform
+import re
+import time
+from dataclasses import dataclass
+
+import psutil
+
+import config
 
 _SYSTEM = platform.system()
+_PID_RE = re.compile(r"pid_(\d+)", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +89,175 @@ def _list_windows() -> set[str]:
         kernel32.CloseHandle(snapshot)
 
     return names
+
+
+# ---------------------------------------------------------------------------
+# Auto-backup process picker helpers
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _AggregatedProcessStats:
+    name: str
+    gpu_bytes: int = 0
+    ram_bytes: int = 0
+    cpu_percent: float = 0.0
+
+
+def is_blacklisted_process_name(name: str) -> bool:
+    """True if *name* should be hidden from the auto-backup process picker."""
+    normalized = normalize_process_name(name)
+    if not normalized:
+        return True
+    if normalized in config.AUTO_BACKUP_PROCESS_BLACKLIST_EXACT:
+        return True
+    return any(
+        keyword in normalized
+        for keyword in config.AUTO_BACKUP_PROCESS_BLACKLIST_KEYWORDS
+    )
+
+
+def _windows_gpu_bytes_by_pid() -> dict[int, int]:
+    """Map PID -> dedicated GPU memory bytes (Windows only, best effort)."""
+    if _SYSTEM != "Windows":
+        return {}
+
+    import ctypes
+    from ctypes import wintypes
+
+    pdh = ctypes.windll.PDH
+    PDH_FMT_LARGE = 0x00000400
+    PDH_MORE_DATA = ctypes.c_long(0x800007D2).value
+    _ITEM_SIZE = 24  # QWORD name ptr, QWORD padding, QWORD value
+
+    query = wintypes.HANDLE()
+    counter = wintypes.HANDLE()
+    counter_path = r"\GPU Process Memory(*)\Dedicated Usage"
+
+    try:
+        if pdh.PdhOpenQueryW(None, 0, ctypes.byref(query)) != 0:
+            return {}
+        if pdh.PdhAddCounterW(query, counter_path, 0, ctypes.byref(counter)) != 0:
+            return {}
+        if pdh.PdhCollectQueryData(query) != 0:
+            return {}
+
+        bufsize = wintypes.DWORD(0)
+        itemcount = wintypes.DWORD(0)
+        status = pdh.PdhGetFormattedCounterArrayW(
+            counter, PDH_FMT_LARGE, ctypes.byref(bufsize), ctypes.byref(itemcount), None
+        )
+        if status != PDH_MORE_DATA or not bufsize.value or not itemcount.value:
+            return {}
+
+        buf = (ctypes.c_byte * bufsize.value)()
+        status = pdh.PdhGetFormattedCounterArrayW(
+            counter, PDH_FMT_LARGE, ctypes.byref(bufsize), ctypes.byref(itemcount), buf
+        )
+        if status != 0:
+            return {}
+
+        raw = bytes(buf)
+        gpu_by_pid: dict[int, int] = {}
+        for index in range(itemcount.value):
+            offset = index * _ITEM_SIZE
+            if offset + _ITEM_SIZE > len(raw):
+                break
+            name_ptr = int.from_bytes(raw[offset:offset + 8], "little", signed=False)
+            value = int.from_bytes(raw[offset + 16:offset + 24], "little", signed=False)
+            if value <= 0 or not name_ptr:
+                continue
+            try:
+                instance_name = ctypes.wstring_at(name_ptr)
+            except OSError:
+                continue
+            match = _PID_RE.search(instance_name)
+            if not match:
+                continue
+            pid = int(match.group(1))
+            gpu_by_pid[pid] = gpu_by_pid.get(pid, 0) + value
+        return gpu_by_pid
+    except Exception as e:
+        logging.debug(f"process_watch_utils: GPU counter read failed: {e}")
+        return {}
+    finally:
+        try:
+            if counter.value:
+                pdh.PdhRemoveCounter(counter)
+            if query.value:
+                pdh.PdhCloseQuery(query)
+        except Exception:
+            pass
+
+
+def _aggregate_running_process_stats(cpu_sample_seconds: float = 0.1) -> dict[str, _AggregatedProcessStats]:
+    """Collect per-process-name resource usage, aggregated across duplicate PIDs."""
+    gpu_by_pid = _windows_gpu_bytes_by_pid()
+    stats_by_name: dict[str, _AggregatedProcessStats] = {}
+    proc_refs: list[psutil.Process] = []
+
+    for proc in psutil.process_iter(["pid", "name", "memory_info"]):
+        try:
+            raw_name = proc.info.get("name")
+            if not raw_name:
+                continue
+            name = normalize_process_name(raw_name)
+            if not name or is_blacklisted_process_name(name):
+                continue
+
+            pid = proc.info.get("pid")
+            mem = proc.info.get("memory_info")
+            ram_bytes = int(getattr(mem, "rss", 0) or 0) if mem else 0
+            gpu_bytes = int(gpu_by_pid.get(pid, 0)) if pid is not None else 0
+
+            entry = stats_by_name.get(name)
+            if entry is None:
+                entry = _AggregatedProcessStats(name=name)
+                stats_by_name[name] = entry
+            entry.ram_bytes += ram_bytes
+            entry.gpu_bytes += gpu_bytes
+            proc_refs.append(proc)
+            proc.cpu_percent(interval=None)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+        except Exception:
+            continue
+
+    if cpu_sample_seconds > 0 and proc_refs:
+        time.sleep(cpu_sample_seconds)
+
+    for proc in proc_refs:
+        try:
+            name = normalize_process_name(proc.name())
+            if not name or name not in stats_by_name:
+                continue
+            stats_by_name[name].cpu_percent += float(proc.cpu_percent(interval=None) or 0.0)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+        except Exception:
+            continue
+
+    return stats_by_name
+
+
+def list_running_processes_for_picker(cpu_sample_seconds: float = 0.1) -> list[str]:
+    """Return running process names for the auto-backup picker.
+
+    Processes are filtered via the auto-backup blacklist and sorted by resource
+    usage: dedicated GPU memory first, then RAM, then CPU.
+    """
+    try:
+        stats = _aggregate_running_process_stats(cpu_sample_seconds=cpu_sample_seconds)
+        ordered = sorted(
+            stats.values(),
+            key=lambda item: (-item.gpu_bytes, -item.ram_bytes, -item.cpu_percent, item.name),
+        )
+        return [item.name for item in ordered]
+    except Exception as e:
+        logging.error(f"process_watch_utils: failed to build picker process list: {e}", exc_info=True)
+        return sorted(
+            name for name in list_running_process_names()
+            if not is_blacklisted_process_name(name)
+        )
 
 
 # ---------------------------------------------------------------------------

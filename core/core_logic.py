@@ -1987,6 +1987,13 @@ from common.steam_utils import (
     clear_steam_cache,
     STEAM_ID64_BASE,
 )
+from common.steam_cloud_utils import (
+    get_cloud_save_status,
+    get_cloud_save_status_batch,
+    get_cached_cloud_status,
+    format_cloud_status,
+    clear_cloud_cache,
+)
 
 # --- Function to delete a backup file ---
 def delete_single_backup_file(file_path):
