@@ -4,17 +4,24 @@ from PySide6.QtWidgets import (
     QApplication, QInputDialog, QMessageBox, QLineEdit, QCheckBox, QWidget, QHeaderView
 )
 from PySide6.QtCore import Signal, Slot, Qt, QTimer, QEvent, QSize, QThread
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QIcon
 
 # Import necessary logic
 from core import core_logic
 from common.steam_cloud_utils import (
     get_cloud_save_status_batch,
-    format_cloud_status,
     get_cached_cloud_status,
 )
+from common.utils import resource_path
 import logging
 import os
+
+CLOUD_ICON_YES_PATH = "icons/steam-cloud-yes.png"
+CLOUD_ICON_NO_PATH = "icons/steam-cloud-no.png"
+CLOUD_ICON_YES_FALLBACK = "icons/cloud-sync.png"
+CLOUD_ICON_NO_FALLBACK = "icons/cloud-desync.png"
+CLOUD_ICON_UNKNOWN_PATH = "icons/cloud.png"
+CLOUD_ICON_SIZE = QSize(22, 22)
 
 
 class SteamCloudStatusWorker(QThread):
@@ -55,8 +62,12 @@ class SteamDialog(QDialog):
         super().__init__(parent)
         self.main_window_ref = main_window_ref
         self.setWindowTitle("Steam Games Management")
-        self.setMinimumWidth(780)
+        self.setMinimumWidth(650)
         self.setMinimumHeight(400)
+
+        self._icon_cloud_yes = self._load_cloud_icon(CLOUD_ICON_YES_PATH, CLOUD_ICON_YES_FALLBACK)
+        self._icon_cloud_no = self._load_cloud_icon(CLOUD_ICON_NO_PATH, CLOUD_ICON_NO_FALLBACK)
+        self._icon_cloud_unknown = self._load_cloud_icon(CLOUD_ICON_UNKNOWN_PATH)
 
         # Internal references
         self.steam_search_thread = None 
@@ -70,21 +81,24 @@ class SteamDialog(QDialog):
         self._cloud_status_by_appid = {}
         
         # --- Create UI Widgets ---
-        # TreeWidget with 4 columns: Checkbox, Game Name, Cloud Saves, AppID
+        # TreeWidget with 4 columns: Checkbox, Game Name, Cloud icon, AppID
         self.game_list_widget = QTreeWidget()
-        self.game_list_widget.setHeaderLabels(["Select", "Game Name", "Has Cloud Saves?", "AppID"])
+        self.game_list_widget.setHeaderLabels(["", "Game Name", "Cloud", "AppID"])
         self.game_list_widget.setColumnCount(4)
         
         # Configure columns
         header = self.game_list_widget.header()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)  # Checkbox column
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Game name stretches
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)  # Cloud status
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)  # Cloud status icon
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)  # AppID fixed
         header.resizeSection(0, 36)  # Checkbox column width - compact to save space
-        header.resizeSection(2, 130)  # Cloud saves column
-        header.resizeSection(3, 130)  # AppID column width
+        header.resizeSection(2, 44)  # Icon-only cloud column
+        header.resizeSection(3, 120)  # AppID column width
         header.setStretchLastSection(False)
+        
+        self.game_list_widget.headerItem().setToolTip(2, "Steam Cloud Saves")
+        self.game_list_widget.setIconSize(CLOUD_ICON_SIZE)
         
         self.game_list_widget.setHeaderHidden(False)
         self.game_list_widget.setIndentation(0)  # Remove tree indentation to prevent text clipping
@@ -213,18 +227,18 @@ class SteamDialog(QDialog):
             cached_status = get_cached_cloud_status(appid)
             if cached_status is not None:
                 self._cloud_status_by_appid[appid] = cached_status
-            cloud_text = format_cloud_status(cached_status) if cached_status is not None else "..."
+            cloud_text = ""
             
-            # Create TreeItem with empty first column (for checkbox), Name in Col 1, Cloud in Col 2, AppID in Col 3
+            # Create TreeItem with empty first column (for checkbox), Name in Col 1, Cloud icon in Col 2, AppID in Col 3
             item = QTreeWidgetItem(["", display_text, cloud_text, f"AppID: {appid}"])
-            self._apply_cloud_status_style(item, cached_status)
+            self._apply_cloud_status_icon(item, cached_status)
             
             # Store appid in both column 0 (for checkbox handling) and column 1 (for selection handling)
             item.setData(0, Qt.ItemDataRole.UserRole, appid)
             item.setData(1, Qt.ItemDataRole.UserRole, appid)
             
             # Align columns for readability
-            item.setTextAlignment(2, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            item.setTextAlignment(2, Qt.AlignmentFlag.AlignCenter)
             item.setTextAlignment(3, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             
             self.game_list_widget.addTopLevelItem(item)
@@ -332,16 +346,33 @@ class SteamDialog(QDialog):
             if not appid or appid not in results:
                 continue
             status = results[appid]
-            item.setText(2, format_cloud_status(status))
-            self._apply_cloud_status_style(item, status)
+            self._apply_cloud_status_icon(item, status)
 
-    def _apply_cloud_status_style(self, item, status):
+    def _load_cloud_icon(self, primary_path, fallback_path=None):
+        for relative_path in (primary_path, fallback_path):
+            if not relative_path:
+                continue
+            full_path = resource_path(relative_path)
+            if os.path.isfile(full_path):
+                return QIcon(full_path)
+        logging.warning(f"[SteamDialog] Cloud icon not found: {primary_path}")
+        return QIcon()
+
+    def _apply_cloud_status_icon(self, item, status):
+        item.setText(2, "")
+        item.setTextAlignment(2, Qt.AlignmentFlag.AlignCenter)
         if status is True:
-            item.setForeground(2, QColor("#8BC34A"))
+            item.setIcon(2, self._icon_cloud_yes)
+            item.setToolTip(2, "Steam Cloud Saves: Yes")
         elif status is False:
-            item.setForeground(2, QColor("#FFB74D"))
+            item.setIcon(2, self._icon_cloud_no)
+            item.setToolTip(2, "Steam Cloud Saves: No")
+        elif status is None:
+            item.setIcon(2, self._icon_cloud_unknown)
+            item.setToolTip(2, "Steam Cloud Saves: Unknown")
         else:
-            item.setForeground(2, QColor("#B0B0B0"))
+            item.setIcon(2, QIcon())
+            item.setToolTip(2, "Checking Steam Cloud support...")
     
     def _on_checkbox_changed(self, appid, state):
         """Handle checkbox state change for multi-selection."""
@@ -713,7 +744,7 @@ class SteamDialog(QDialog):
 
         for i in range(self.game_list_widget.topLevelItemCount()):
             item = self.game_list_widget.topLevelItem(i)
-            searchable = f"{item.text(1)} {item.text(2)} {item.text(3)}".lower()
+            searchable = f"{item.text(1)} {item.text(3)}".lower()
             item.setHidden(text.lower() not in searchable)
 
     def reject(self):

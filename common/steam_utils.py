@@ -30,6 +30,38 @@ _cached_id_details = None
 # Constant for SteamID3 <-> SteamID64 conversion
 STEAM_ID64_BASE = 76561197960265728
 
+# Installed Steam entries that are not playable games (tools, runtimes, servers).
+STEAM_NON_GAME_APPIDS = frozenset({
+    "228980",   # Steamworks Common Redistributables
+    "1070560",  # Steam Linux Runtime 1.0 (scout)
+    "1391110",  # Steam Linux Runtime 2.0 (soldier)
+    "1628350",  # Steam Linux Runtime 3.0 (sniper)
+    "1493710",  # Proton Experimental
+    "1420170",  # Proton EasyAntiCheat Runtime
+    "1826330",  # Proton BattlEye Runtime
+})
+
+STEAM_NON_GAME_NAME_KEYWORDS = (
+    "redistributables",
+    "dedicated server",
+    "steam linux runtime",
+    "proton experimental",
+    "proton easyanticheat",
+    "proton battleye",
+)
+
+
+def _is_blacklisted_steam_app(appid: str, name: str) -> bool:
+    """Return True for Steam tools/runtimes that should not appear as games."""
+    if str(appid) in STEAM_NON_GAME_APPIDS:
+        return True
+
+    name_lower = name.lower()
+    if "steam" in name_lower and "runtime" in name_lower:
+        return True
+
+    return any(keyword in name_lower for keyword in STEAM_NON_GAME_NAME_KEYWORDS)
+
 
 def clear_steam_cache():
     """
@@ -399,10 +431,9 @@ def _process_app_manifest(app_state: dict, steamapps_path: str, lib_path: str,
         logging.debug(f"  Skipping AppID {appid} ('{name}'): Install directory not found.")
         return None
     
-    # Filter out Steam Runtime and similar tools
-    name_lower = name.lower()
-    if "steam" in name_lower and "runtime" in name_lower:
-        logging.info(f"Skipping '{name}' (AppID: {appid}) as it appears to be a Steam Runtime tool.")
+    # Filter out Steam tools, runtimes, redistributables, and dedicated servers
+    if _is_blacklisted_steam_app(appid, name):
+        logging.info(f"Skipping '{name}' (AppID: {appid}) — blacklisted non-game Steam entry.")
         return None
     
     if not installdir_absolute or not isinstance(installdir_absolute, str):
