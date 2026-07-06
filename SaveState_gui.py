@@ -225,6 +225,74 @@ class _ControllerDialogBadger(_QObject):
             _set(cancel_btn, "back",   "B", "#922B21")
 
 
+class _DialogConfirmButtonStyler(_QObject):
+    """Apply SaveButton theme to confirmation controls in transient system dialogs."""
+
+    def eventFilter(self, watched, event):
+        if event.type() == _QEvent.Type.Show and isinstance(watched, QDialog):
+            QTimer.singleShot(0, lambda d=watched: self._apply(d))
+        return False
+
+    def _apply(self, dialog):
+        if not dialog.isVisible():
+            return
+
+        if isinstance(dialog, QMessageBox):
+            if hasattr(dialog, '_ctrl_exit_confirm_btn'):
+                dialog._ctrl_exit_confirm_btn.setObjectName("SaveButton")
+                return
+            for std_btn in (
+                QMessageBox.StandardButton.Yes,
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.StandardButton.Open,
+                QMessageBox.StandardButton.Save,
+            ):
+                btn = dialog.button(std_btn)
+                if btn:
+                    btn.setObjectName("SaveButton")
+                    return
+            return
+
+        if isinstance(dialog, QInputDialog):
+            for bb in dialog.findChildren(_QDialogButtonBox):
+                for std_btn in (
+                    _QDialogButtonBox.StandardButton.Ok,
+                    _QDialogButtonBox.StandardButton.Yes,
+                    _QDialogButtonBox.StandardButton.Save,
+                ):
+                    btn = bb.button(std_btn)
+                    if btn:
+                        btn.setObjectName("SaveButton")
+                        return
+            return
+
+        if (hasattr(dialog, 'delete_button') and
+                hasattr(dialog, 'delete_all_button') and
+                hasattr(dialog, 'close_button')):
+            return
+
+        if (hasattr(dialog, 'configure_button') and
+                hasattr(dialog, 'refresh_button') and
+                hasattr(dialog, 'close_button')):
+            return
+
+        if hasattr(dialog, 'ok_button'):
+            dialog.ok_button.setObjectName("SaveButton")
+            return
+
+        if hasattr(dialog, 'button_box') and isinstance(dialog.button_box, _QDialogButtonBox):
+            bb = dialog.button_box
+            for std_btn in (
+                _QDialogButtonBox.StandardButton.Ok,
+                _QDialogButtonBox.StandardButton.Yes,
+                _QDialogButtonBox.StandardButton.Save,
+            ):
+                btn = bb.button(std_btn)
+                if btn:
+                    btn.setObjectName("SaveButton")
+                    break
+
+
 # --- Finestra Principale ---
 # Approccio semplificato: mostrare l'overlay quando la finestra è attiva
 
@@ -1343,6 +1411,9 @@ class MainWindow(QMainWindow):
         self.controller_manager = ControllerManager(self)
         if self.current_settings.get("controller_support_enabled", True):
             self.controller_manager.start()
+
+        self._dialog_confirm_styler = _DialogConfirmButtonStyler()
+        QApplication.instance().installEventFilter(self._dialog_confirm_styler)
 
         # Automatic local backup engine (in-process, tray-dependent like cloud sync)
         self.auto_backup_manager = AutoBackupManager(self)
