@@ -4,9 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version Number (e.g., 2.1.0 or 2.4B)'
+        description: 'Version Number (e.g., 2.8.1 or 2.4B)'
         required: true
         default: '2.5.0'
+      post_release_only:
+        description: 'Solo VirusTotal + WinGet (release già pubblicata, usa workflow aggiornato)'
+        type: boolean
+        default: false
   release:
     types: [published]
 
@@ -23,7 +27,7 @@ jobs:
   # 1. WINDOWS BUILD (Nuitka + Firma)
   # =========================================================
   build-windows:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.post_release_only != true
     runs-on: windows-latest
     steps:
     - name: Checkout
@@ -175,7 +179,7 @@ jobs:
   # 2. LINUX BUILD (Lasciato invariato o puoi usare Nuitka anche qui)
   # =========================================================
   build-linux:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.post_release_only != true
     runs-on: ubuntu-latest
     steps:
     - name: ⬇️ Checkout Repository
@@ -270,7 +274,7 @@ jobs:
   # 3. RELEASE CREATION
   # =========================================================
   create-release:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.post_release_only != true
     needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     permissions:
@@ -318,9 +322,11 @@ jobs:
   # =========================================================
   scan-virustotal:
     if: >-
-      github.event_name == 'release' &&
-      github.event.release.draft == false &&
-      github.event.release.prerelease == false
+      (github.event_name == 'release' &&
+       github.event.release.draft == false &&
+       github.event.release.prerelease == false) ||
+      (github.event_name == 'workflow_dispatch' &&
+       inputs.post_release_only == true)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -329,11 +335,15 @@ jobs:
       - name: 🛡️ Scan release EXE via VirusTotal URL
         env:
           VT_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
         run: |
           set -euo pipefail
           VT_API="https://www.virustotal.com/api/v3"
-          TAG="${{ github.event.release.tag_name }}"
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            TAG="v${{ github.event.inputs.version }}"
+          fi
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/SaveState.exe"
 
           vt_request() {
@@ -515,9 +525,11 @@ jobs:
   # =========================================================
   submit-winget:
     if: >-
-      github.event_name == 'release' &&
-      github.event.release.draft == false &&
-      github.event.release.prerelease == false
+      (github.event_name == 'release' &&
+       github.event.release.draft == false &&
+       github.event.release.prerelease == false) ||
+      (github.event_name == 'workflow_dispatch' &&
+       inputs.post_release_only == true)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -527,4 +539,5 @@ jobs:
         with:
           identifier: Matteo842.SaveState
           installers-regex: '\.exe$'
+          release-tag: ${{ github.event.release.tag_name || format('v{0}', github.event.inputs.version) }}
           token: ${{ secrets.WINGET_TOKEN }}
