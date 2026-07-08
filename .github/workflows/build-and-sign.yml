@@ -169,12 +169,6 @@ jobs:
         name: SaveState-Windows-Package
         path: SaveState_v${{ env.RELEASE_VERSION }}_Win.zip
 
-    - name: Upload Signed Windows EXE
-      uses: actions/upload-artifact@v4
-      with:
-        name: SaveState-Windows-Exe
-        path: dist_signed_final/SaveState.exe
-
   # =========================================================
   # 2. LINUX BUILD (Lasciato invariato o puoi usare Nuitka anche qui)
   # =========================================================
@@ -298,9 +292,11 @@ jobs:
             --jq .body)
 
           {
-            echo "### Windows — SaveState.exe"
+            echo "### Windows"
             echo ""
-            echo "_Il badge VirusTotal viene aggiunto automaticamente quando pubblichi questa release (~300 MB, scan via GitHub CDN)._"
+            echo "Scarica **SaveState_v${{ env.RELEASE_VERSION }}_Win.zip** (contiene SaveState.exe, LICENSE e README)."
+            echo ""
+            echo "_Il badge VirusTotal dell'exe viene aggiunto automaticamente alla pubblicazione._"
             echo ""
             echo "---"
             echo ""
@@ -309,7 +305,6 @@ jobs:
 
           echo "Creating Release v${{ env.RELEASE_VERSION }}..."
           gh release create "v${{ env.RELEASE_VERSION }}" \
-            "SaveState-Windows-Exe/SaveState.exe" \
             SaveState-Windows-Package/* \
             SaveState-Linux-Package/* \
             SaveState-AppImage-Standalone/* \
@@ -318,7 +313,7 @@ jobs:
             --notes-file release_notes.md
 
   # =========================================================
-  # 4. VIRUSTOTAL (alla pubblicazione — VT scarica l'exe da GitHub)
+  # 4. VIRUSTOTAL (estrae l'exe dallo zip pubblico — niente exe sfuso in release)
   # =========================================================
   scan-virustotal:
     if: >-
@@ -328,11 +323,11 @@ jobs:
       (github.event_name == 'workflow_dispatch' &&
        inputs.post_release_only == true)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: write
     steps:
-      - name: 🛡️ Scan release EXE via VirusTotal URL
+      - name: 🛡️ Scan Windows EXE with VirusTotal
         env:
           VT_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
           GH_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
@@ -345,7 +340,10 @@ jobs:
           else
             TAG="v${{ github.event.inputs.version }}"
           fi
-          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/SaveState.exe"
+          VERSION="${TAG#v}"
+          ZIP_NAME="SaveState_v${VERSION}_Win.zip"
+          ZIP_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${ZIP_NAME}"
+          EXE="/tmp/vt_extract/SaveState.exe"
 
           vt_request() {
             local method="$1"
@@ -384,82 +382,80 @@ jobs:
             fi
           }
 
-          echo "Submitting release asset to VirusTotal (VT downloads ~300 MB from GitHub CDN):"
-          echo "$DOWNLOAD_URL"
-          sleep 15
+          echo "Downloading Windows zip (GPL bundle with LICENSE + README):"
+          echo "$ZIP_URL"
+          curl -sSL -o /tmp/win.zip "$ZIP_URL"
+          mkdir -p /tmp/vt_extract
+          unzip -j /tmp/win.zip SaveState.exe -d /tmp/vt_extract
 
-          HTTP_CODE=$(curl -sS -o /tmp/vt_response.json -w "%{http_code}" \
-            -X POST \
-            -H "Accept: application/json" \
-            -H "x-apikey: $VT_API_KEY" \
-            --form "url=$DOWNLOAD_URL" \
-            "$VT_API/urls")
-          vt_assert_json
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "VirusTotal URL submission failed (HTTP $HTTP_CODE)"
-            jq . /tmp/vt_response.json || cat /tmp/vt_response.json
-            exit 1
-          fi
+          SHA256=$(sha256sum "$EXE" | awk '{print $1}')
+          FILE_SIZE=$(stat -c%s "$EXE")
+          echo "SaveState.exe SHA256: $SHA256 ($FILE_SIZE bytes)"
 
-          ANALYSIS_ID=$(jq -r '.data.id // empty' /tmp/vt_response.json)
-          if [ -z "$ANALYSIS_ID" ]; then
-            echo "URL submission response missing analysis id:"
-            jq . /tmp/vt_response.json
-            exit 1
-          fi
-
-          echo "VirusTotal analysis id: $ANALYSIS_ID"
-          for attempt in $(seq 1 60); do
+          HTTP_CODE=$(vt_request GET "$VT_API/files/$SHA256")
+          if [ "$HTTP_CODE" = "200" ]; then
+            cp /tmp/vt_response.json /tmp/vt_report.json
+            echo "File already known to VirusTotal."
+          elif [ "$HTTP_CODE" = "404" ]; then
+            echo "Uploading SaveState.exe to VirusTotal..."
             sleep 15
-            HTTP_CODE=$(vt_request GET "$VT_API/analyses/$ANALYSIS_ID")
-            vt_assert_json
-            STATUS=$(jq -r '.data.attributes.status // empty' /tmp/vt_response.json)
-            echo "VirusTotal analysis status ($attempt/60): ${STATUS:-unknown}"
-            if [ "$STATUS" = "completed" ]; then
-              break
+
+            if [ "$FILE_SIZE" -gt 33554432 ]; then
+              HTTP_CODE=$(vt_request GET "$VT_API/files/upload_url")
+              vt_assert_json
+              UPLOAD_URL=$(jq -r '.data' /tmp/vt_response.json)
+              sleep 15
+              HTTP_CODE=$(curl -sS -o /tmp/vt_response.json -w "%{http_code}" \
+                -X POST \
+                -H "Accept: application/json" \
+                -H "x-apikey: $VT_API_KEY" \
+                --form "file=@$EXE" \
+                "$UPLOAD_URL")
+            else
+              HTTP_CODE=$(curl -sS -o /tmp/vt_response.json -w "%{http_code}" \
+                -X POST \
+                -H "Accept: application/json" \
+                -H "x-apikey: $VT_API_KEY" \
+                --form "file=@$EXE" \
+                "$VT_API/files")
             fi
-          done
 
-          if [ "${STATUS:-}" != "completed" ]; then
-            echo "VirusTotal analysis did not complete in time."
-            exit 1
-          fi
-
-          # meta.file_info is at the JSON root, not under data
-          SHA256=$(jq -r '.meta.file_info.sha256 // .data.meta.file_info.sha256 // empty' /tmp/vt_response.json)
-
-          if [ -z "$SHA256" ] || [ "$SHA256" = "null" ]; then
-            URL_ID=$(python3 -c "import base64; print(base64.urlsafe_b64encode('''$DOWNLOAD_URL'''.encode()).decode().strip('='))")
-            sleep 15
-            HTTP_CODE=$(vt_request GET "$VT_API/urls/$URL_ID")
             vt_assert_json
-            SHA256=$(jq -r '.data.attributes.last_http_response_content_sha256 // empty' /tmp/vt_response.json)
-          fi
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "VirusTotal upload failed (HTTP $HTTP_CODE)"
+              jq . /tmp/vt_response.json || cat /tmp/vt_response.json
+              exit 1
+            fi
 
-          MALICIOUS=$(jq -r '.data.attributes.stats.malicious // .data.attributes.last_analysis_stats.malicious // 0' /tmp/vt_response.json)
-          SUSPICIOUS=$(jq -r '.data.attributes.stats.suspicious // .data.attributes.last_analysis_stats.suspicious // 0' /tmp/vt_response.json)
-          DETECTIONS=$((MALICIOUS + SUSPICIOUS))
-          TOTAL=$(jq -r '
-            (.data.attributes.stats // .data.attributes.last_analysis_stats // {}) |
-            [to_entries[] | .value | tonumber? // 0] | add // 0
-          ' /tmp/vt_response.json)
+            ANALYSIS_ID=$(jq -r '.data.id // empty' /tmp/vt_response.json)
+            for attempt in $(seq 1 40); do
+              sleep 15
+              HTTP_CODE=$(vt_request GET "$VT_API/analyses/$ANALYSIS_ID")
+              vt_assert_json
+              STATUS=$(jq -r '.data.attributes.status // empty' /tmp/vt_response.json)
+              echo "VirusTotal analysis status ($attempt/40): ${STATUS:-unknown}"
+              if [ "$STATUS" = "completed" ]; then
+                break
+              fi
+            done
 
-          if [ -n "$SHA256" ] && [ "$SHA256" != "null" ] && [ "$TOTAL" -eq 0 ]; then
             sleep 15
             HTTP_CODE=$(vt_request GET "$VT_API/files/$SHA256")
-            if [ "$HTTP_CODE" = "200" ]; then
-              MALICIOUS=$(jq -r '.data.attributes.last_analysis_stats.malicious // 0' /tmp/vt_response.json)
-              SUSPICIOUS=$(jq -r '.data.attributes.last_analysis_stats.suspicious // 0' /tmp/vt_response.json)
-              DETECTIONS=$((MALICIOUS + SUSPICIOUS))
-              TOTAL=$(jq -r '[.data.attributes.last_analysis_stats | to_entries[] | .value] | add // 0' /tmp/vt_response.json)
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "Failed to fetch VirusTotal file report (HTTP $HTTP_CODE)"
+              exit 1
             fi
-          fi
-
-          if [ -z "$SHA256" ] || [ "$SHA256" = "null" ]; then
-            echo "Could not resolve SHA256 for VirusTotal badge."
-            jq . /tmp/vt_response.json
+            cp /tmp/vt_response.json /tmp/vt_report.json
+          else
+            echo "Unexpected VirusTotal lookup response: HTTP $HTTP_CODE"
+            cat /tmp/vt_response.json
             exit 1
           fi
+
+          MALICIOUS=$(jq -r '.data.attributes.last_analysis_stats.malicious // 0' /tmp/vt_report.json)
+          SUSPICIOUS=$(jq -r '.data.attributes.last_analysis_stats.suspicious // 0' /tmp/vt_report.json)
+          DETECTIONS=$((MALICIOUS + SUSPICIOUS))
+          TOTAL=$(jq -r '[.data.attributes.last_analysis_stats | to_entries[] | .value] | add // 0' /tmp/vt_report.json)
 
           if [ "$DETECTIONS" -eq 0 ]; then
             COLOR="brightgreen"
@@ -539,6 +535,6 @@ jobs:
         uses: vedantmgoyal9/winget-releaser@v2
         with:
           identifier: Matteo842.SaveState
-          installers-regex: '\.exe$'
+          installers-regex: 'SaveState_v.*_Win\.zip$'
           release-tag: ${{ github.event.release.tag_name || format('v{0}', github.event.inputs.version) }}
           token: ${{ secrets.WINGET_TOKEN }}
