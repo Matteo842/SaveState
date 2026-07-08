@@ -7,6 +7,8 @@ on:
         description: 'Version Number (e.g., 2.1.0 or 2.4B)'
         required: true
         default: '2.5.0'
+  release:
+    types: [published]
 
 env:
   RELEASE_VERSION: ${{ github.event.inputs.version }}
@@ -21,6 +23,7 @@ jobs:
   # 1. WINDOWS BUILD (Nuitka + Firma)
   # =========================================================
   build-windows:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
     - name: Checkout
@@ -162,10 +165,17 @@ jobs:
         name: SaveState-Windows-Package
         path: SaveState_v${{ env.RELEASE_VERSION }}_Win.zip
 
+    - name: Upload Signed Windows EXE
+      uses: actions/upload-artifact@v4
+      with:
+        name: SaveState-Windows-Exe
+        path: dist_signed_final/SaveState.exe
+
   # =========================================================
   # 2. LINUX BUILD (Lasciato invariato o puoi usare Nuitka anche qui)
   # =========================================================
   build-linux:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
     - name: ⬇️ Checkout Repository
@@ -260,6 +270,7 @@ jobs:
   # 3. RELEASE CREATION
   # =========================================================
   create-release:
+    if: github.event_name == 'workflow_dispatch'
     needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     permissions:
@@ -271,15 +282,128 @@ jobs:
       - name: ⬇️ Download all artifacts
         uses: actions/download-artifact@v4
 
+      - name: 🛡️ Scan Windows EXE with VirusTotal
+        id: virustotal
+        env:
+          VT_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+        run: |
+          set -euo pipefail
+          EXE="SaveState-Windows-Exe/SaveState.exe"
+
+          if [ ! -f "$EXE" ]; then
+            echo "Signed Windows EXE artifact not found: $EXE"
+            exit 1
+          fi
+
+          SHA256=$(sha256sum "$EXE" | awk '{print $1}')
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+          fetch_report() {
+            curl -sS -H "x-apikey: $VT_API_KEY" \
+              "https://www.virustotal.com/api/v3/files/$SHA256"
+          }
+
+          HTTP_CODE=$(curl -sS -o /tmp/vt_report.json -w "%{http_code}" \
+            -H "x-apikey: $VT_API_KEY" \
+            "https://www.virustotal.com/api/v3/files/$SHA256")
+
+          if [ "$HTTP_CODE" = "404" ]; then
+            echo "Uploading SaveState.exe to VirusTotal..."
+            UPLOAD=$(curl -sS -H "x-apikey: $VT_API_KEY" \
+              --form "file=@$EXE" \
+              "https://www.virustotal.com/api/v3/files")
+            ANALYSIS_ID=$(echo "$UPLOAD" | jq -r '.data.id')
+
+            for _ in $(seq 1 40); do
+              sleep 15
+              ANALYSIS=$(curl -sS -H "x-apikey: $VT_API_KEY" \
+                "https://www.virustotal.com/api/v3/analyses/$ANALYSIS_ID")
+              STATUS=$(echo "$ANALYSIS" | jq -r '.data.attributes.status')
+              echo "VirusTotal analysis status: $STATUS"
+              if [ "$STATUS" = "completed" ]; then
+                break
+              fi
+            done
+
+            fetch_report > /tmp/vt_report.json
+          elif [ "$HTTP_CODE" != "200" ]; then
+            echo "Unexpected VirusTotal response: HTTP $HTTP_CODE"
+            cat /tmp/vt_report.json
+            exit 1
+          fi
+
+          MALICIOUS=$(jq -r '.data.attributes.last_analysis_stats.malicious // 0' /tmp/vt_report.json)
+          SUSPICIOUS=$(jq -r '.data.attributes.last_analysis_stats.suspicious // 0' /tmp/vt_report.json)
+          DETECTIONS=$((MALICIOUS + SUSPICIOUS))
+          TOTAL=$(jq -r '[.data.attributes.last_analysis_stats | to_entries[] | .value] | add // 0' /tmp/vt_report.json)
+
+          if [ "$DETECTIONS" -eq 0 ]; then
+            COLOR="brightgreen"
+            LABEL="${DETECTIONS}/${TOTAL}%20Safe"
+            ALT="VirusTotal - Safe"
+          elif [ "$DETECTIONS" -le 2 ]; then
+            COLOR="yellow"
+            LABEL="${DETECTIONS}/${TOTAL}%20Detections"
+            ALT="VirusTotal - ${DETECTIONS}/${TOTAL} Detections"
+          else
+            COLOR="red"
+            LABEL="${DETECTIONS}/${TOTAL}%20Detections"
+            ALT="VirusTotal - ${DETECTIONS}/${TOTAL} Detections"
+          fi
+
+          BADGE="[![${ALT}](https://img.shields.io/badge/VirusTotal-${LABEL}-${COLOR}?style=flat-square&logo=virustotal)](https://www.virustotal.com/gui/file/${SHA256}?nocache=1)"
+          {
+            echo "badge<<EOF"
+            echo "$BADGE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: 🚀 Create Release with GitHub CLI
         env:
           GH_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
         run: |
+          set -euo pipefail
+
+          AUTO_NOTES=$(gh api repos/${{ github.repository }}/releases/generate-notes \
+            -f tag_name="v${{ env.RELEASE_VERSION }}" \
+            -f target_commitish="${{ github.sha }}" \
+            --jq .body)
+
+          {
+            echo "### Windows — SaveState.exe"
+            echo ""
+            echo "${{ steps.virustotal.outputs.badge }}"
+            echo ""
+            echo "---"
+            echo ""
+            echo "$AUTO_NOTES"
+          } > release_notes.md
+
           echo "Creating Release v${{ env.RELEASE_VERSION }}..."
-          gh release create v${{ env.RELEASE_VERSION }} \
+          gh release create "v${{ env.RELEASE_VERSION }}" \
+            "SaveState-Windows-Exe/SaveState.exe" \
             SaveState-Windows-Package/* \
             SaveState-Linux-Package/* \
             SaveState-AppImage-Standalone/* \
             --title "SaveState v${{ env.RELEASE_VERSION }}" \
             --draft \
-            --generate-notes
+            --notes-file release_notes.md
+
+  # =========================================================
+  # 4. WINGET (solo quando la release viene pubblicata)
+  # =========================================================
+  submit-winget:
+    if: >-
+      github.event_name == 'release' &&
+      github.event.release.draft == false &&
+      github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Submit to WinGet
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: Matteo842.SaveState
+          installers-regex: '\.exe$'
+          token: ${{ secrets.GITHUB_TOKEN }}
