@@ -282,82 +282,6 @@ jobs:
       - name: ⬇️ Download all artifacts
         uses: actions/download-artifact@v4
 
-      - name: 🛡️ Scan Windows EXE with VirusTotal
-        id: virustotal
-        env:
-          VT_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
-        run: |
-          set -euo pipefail
-          EXE="SaveState-Windows-Exe/SaveState.exe"
-
-          if [ ! -f "$EXE" ]; then
-            echo "Signed Windows EXE artifact not found: $EXE"
-            exit 1
-          fi
-
-          SHA256=$(sha256sum "$EXE" | awk '{print $1}')
-          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
-
-          fetch_report() {
-            curl -sS -H "x-apikey: $VT_API_KEY" \
-              "https://www.virustotal.com/api/v3/files/$SHA256"
-          }
-
-          HTTP_CODE=$(curl -sS -o /tmp/vt_report.json -w "%{http_code}" \
-            -H "x-apikey: $VT_API_KEY" \
-            "https://www.virustotal.com/api/v3/files/$SHA256")
-
-          if [ "$HTTP_CODE" = "404" ]; then
-            echo "Uploading SaveState.exe to VirusTotal..."
-            UPLOAD=$(curl -sS -H "x-apikey: $VT_API_KEY" \
-              --form "file=@$EXE" \
-              "https://www.virustotal.com/api/v3/files")
-            ANALYSIS_ID=$(echo "$UPLOAD" | jq -r '.data.id')
-
-            for _ in $(seq 1 40); do
-              sleep 15
-              ANALYSIS=$(curl -sS -H "x-apikey: $VT_API_KEY" \
-                "https://www.virustotal.com/api/v3/analyses/$ANALYSIS_ID")
-              STATUS=$(echo "$ANALYSIS" | jq -r '.data.attributes.status')
-              echo "VirusTotal analysis status: $STATUS"
-              if [ "$STATUS" = "completed" ]; then
-                break
-              fi
-            done
-
-            fetch_report > /tmp/vt_report.json
-          elif [ "$HTTP_CODE" != "200" ]; then
-            echo "Unexpected VirusTotal response: HTTP $HTTP_CODE"
-            cat /tmp/vt_report.json
-            exit 1
-          fi
-
-          MALICIOUS=$(jq -r '.data.attributes.last_analysis_stats.malicious // 0' /tmp/vt_report.json)
-          SUSPICIOUS=$(jq -r '.data.attributes.last_analysis_stats.suspicious // 0' /tmp/vt_report.json)
-          DETECTIONS=$((MALICIOUS + SUSPICIOUS))
-          TOTAL=$(jq -r '[.data.attributes.last_analysis_stats | to_entries[] | .value] | add // 0' /tmp/vt_report.json)
-
-          if [ "$DETECTIONS" -eq 0 ]; then
-            COLOR="brightgreen"
-            LABEL="${DETECTIONS}/${TOTAL}%20Safe"
-            ALT="VirusTotal - Safe"
-          elif [ "$DETECTIONS" -le 2 ]; then
-            COLOR="yellow"
-            LABEL="${DETECTIONS}/${TOTAL}%20Detections"
-            ALT="VirusTotal - ${DETECTIONS}/${TOTAL} Detections"
-          else
-            COLOR="red"
-            LABEL="${DETECTIONS}/${TOTAL}%20Detections"
-            ALT="VirusTotal - ${DETECTIONS}/${TOTAL} Detections"
-          fi
-
-          BADGE="[![${ALT}](https://img.shields.io/badge/VirusTotal-${LABEL}-${COLOR}?style=flat-square&logo=virustotal)](https://www.virustotal.com/gui/file/${SHA256}?nocache=1)"
-          {
-            echo "badge<<EOF"
-            echo "$BADGE"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
       - name: 🚀 Create Release with GitHub CLI
         env:
           GH_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
@@ -372,7 +296,7 @@ jobs:
           {
             echo "### Windows — SaveState.exe"
             echo ""
-            echo "${{ steps.virustotal.outputs.badge }}"
+            echo "_Il badge VirusTotal viene aggiunto automaticamente quando pubblichi questa release (~300 MB, scan via GitHub CDN)._"
             echo ""
             echo "---"
             echo ""
@@ -390,7 +314,184 @@ jobs:
             --notes-file release_notes.md
 
   # =========================================================
-  # 4. WINGET (solo quando la release viene pubblicata)
+  # 4. VIRUSTOTAL (alla pubblicazione — VT scarica l'exe da GitHub)
+  # =========================================================
+  scan-virustotal:
+    if: >-
+      github.event_name == 'release' &&
+      github.event.release.draft == false &&
+      github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: 🛡️ Scan release EXE via VirusTotal URL
+        env:
+          VT_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VT_API="https://www.virustotal.com/api/v3"
+          TAG="${{ github.event.release.tag_name }}"
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/SaveState.exe"
+
+          vt_request() {
+            local method="$1"
+            local url="$2"
+            shift 2
+            local attempt http_code
+
+            for attempt in 1 2 3 4 5; do
+              http_code=$(curl -sS -o /tmp/vt_response.json -w "%{http_code}" \
+                -X "$method" \
+                -H "Accept: application/json" \
+                -H "x-apikey: $VT_API_KEY" \
+                "$@" \
+                "$url")
+
+              if [ "$http_code" = "429" ] || [ "$http_code" = "503" ]; then
+                echo "VirusTotal rate limit/transient error (HTTP $http_code), retry $attempt/5..." >&2
+                sleep $((attempt * 20))
+                continue
+              fi
+
+              echo "$http_code"
+              return 0
+            done
+
+            echo "VirusTotal request failed after retries (last HTTP $http_code)" >&2
+            cat /tmp/vt_response.json || true
+            exit 1
+          }
+
+          vt_assert_json() {
+            if ! jq empty /tmp/vt_response.json 2>/dev/null; then
+              echo "VirusTotal returned non-JSON response:" >&2
+              cat /tmp/vt_response.json
+              exit 1
+            fi
+          }
+
+          echo "Submitting release asset to VirusTotal (VT downloads ~300 MB from GitHub CDN):"
+          echo "$DOWNLOAD_URL"
+          sleep 15
+
+          HTTP_CODE=$(curl -sS -o /tmp/vt_response.json -w "%{http_code}" \
+            -X POST \
+            -H "Accept: application/json" \
+            -H "x-apikey: $VT_API_KEY" \
+            --form "url=$DOWNLOAD_URL" \
+            "$VT_API/urls")
+          vt_assert_json
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "VirusTotal URL submission failed (HTTP $HTTP_CODE)"
+            jq . /tmp/vt_response.json || cat /tmp/vt_response.json
+            exit 1
+          fi
+
+          ANALYSIS_ID=$(jq -r '.data.id // empty' /tmp/vt_response.json)
+          if [ -z "$ANALYSIS_ID" ]; then
+            echo "URL submission response missing analysis id:"
+            jq . /tmp/vt_response.json
+            exit 1
+          fi
+
+          echo "VirusTotal analysis id: $ANALYSIS_ID"
+          for attempt in $(seq 1 60); do
+            sleep 15
+            HTTP_CODE=$(vt_request GET "$VT_API/analyses/$ANALYSIS_ID")
+            vt_assert_json
+            STATUS=$(jq -r '.data.attributes.status // empty' /tmp/vt_response.json)
+            echo "VirusTotal analysis status ($attempt/60): ${STATUS:-unknown}"
+            if [ "$STATUS" = "completed" ]; then
+              break
+            fi
+          done
+
+          if [ "${STATUS:-}" != "completed" ]; then
+            echo "VirusTotal analysis did not complete in time."
+            exit 1
+          fi
+
+          SHA256=$(jq -r '.data.meta.file_info.sha256 // empty' /tmp/vt_response.json)
+
+          MALICIOUS=$(jq -r '.data.attributes.stats.malicious // .data.attributes.last_analysis_stats.malicious // 0' /tmp/vt_response.json)
+          SUSPICIOUS=$(jq -r '.data.attributes.stats.suspicious // .data.attributes.last_analysis_stats.suspicious // 0' /tmp/vt_response.json)
+          DETECTIONS=$((MALICIOUS + SUSPICIOUS))
+          TOTAL=$(jq -r '
+            (.data.attributes.stats // .data.attributes.last_analysis_stats // {}) |
+            [to_entries[] | .value | tonumber? // 0] | add // 0
+          ' /tmp/vt_response.json)
+
+          if [ -z "$SHA256" ] || [ "$SHA256" = "null" ]; then
+            echo "Could not resolve SHA256 for VirusTotal badge."
+            jq . /tmp/vt_response.json
+            exit 1
+          fi
+
+          if [ "$DETECTIONS" -eq 0 ]; then
+            COLOR="brightgreen"
+            LABEL="${DETECTIONS}/${TOTAL}%20Safe"
+            ALT="VirusTotal - Safe"
+          elif [ "$DETECTIONS" -le 2 ]; then
+            COLOR="yellow"
+            LABEL="${DETECTIONS}/${TOTAL}%20Detections"
+            ALT="VirusTotal - ${DETECTIONS}/${TOTAL} Detections"
+          else
+            COLOR="red"
+            LABEL="${DETECTIONS}/${TOTAL}%20Detections"
+            ALT="VirusTotal - ${DETECTIONS}/${TOTAL} Detections"
+          fi
+
+          BADGE="[![${ALT}](https://img.shields.io/badge/VirusTotal-${LABEL}-${COLOR}?style=flat-square&logo=virustotal)](https://www.virustotal.com/gui/file/${SHA256}?nocache=1)"
+          CURRENT_BODY=$(gh release view "$TAG" --json body --jq .body)
+
+          export BADGE CURRENT_BODY
+          python3 <<'PY'
+          import os
+
+          badge = os.environ["BADGE"]
+          current = os.environ.get("CURRENT_BODY", "")
+          marker_start = "<!-- vt-badge-start -->"
+          marker_end = "<!-- vt-badge-end -->"
+          section = (
+              "### Windows — SaveState.exe\n\n"
+              f"{marker_start}\n{badge}\n{marker_end}\n"
+          )
+
+          if marker_start in current:
+              before, rest = current.split(marker_start, 1)
+              _, after = rest.split(marker_end, 1)
+              new_body = before.rstrip() + "\n\n" + section.rstrip() + after.lstrip("\n")
+          elif "### Windows — SaveState.exe" in current:
+              lines = current.splitlines()
+              out = []
+              skip = False
+              for line in lines:
+                  if line.strip() == "### Windows — SaveState.exe":
+                      out.append(section.rstrip())
+                      skip = True
+                      continue
+                  if skip:
+                      if line.strip() == "---":
+                          skip = False
+                          out.append(line)
+                      continue
+                  out.append(line)
+              new_body = "\n".join(out).strip() + "\n"
+          else:
+              new_body = section + "\n---\n\n" + current.lstrip("\n")
+
+          with open("release_notes.md", "w", encoding="utf-8", newline="\n") as fh:
+              fh.write(new_body)
+          PY
+
+          gh release edit "$TAG" --notes-file release_notes.md
+          echo "Release notes updated with VirusTotal badge."
+
+  # =========================================================
+  # 5. WINGET (solo quando la release viene pubblicata)
   # =========================================================
   submit-winget:
     if: >-
