@@ -548,9 +548,61 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
 
       - name: Submit to WinGet
-        uses: vedantmgoyal9/winget-releaser@v2
-        with:
-          identifier: Matteo842.SaveState
-          installers-regex: 'SaveState_v.*_Win\.zip$'
-          release-tag: ${{ github.event.release.tag_name || format('v{0}', github.event.inputs.version) }}
-          token: ${{ secrets.WINGET_TOKEN }}
+        env:
+          KOMAC_FORK_OWNER: ${{ github.repository_owner }}
+          KOMAC_CREATED_WITH: WinGet Releaser
+          KOMAC_CREATED_WITH_URL: ${{ github.server_url }}/${{ github.repository }}/actions
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            TAG="v${{ github.event.inputs.version }}"
+          fi
+          VERSION="${TAG#v}"
+
+          ZIP_URL=$(gh api "repos/${GH_REPO}/releases/tags/${TAG}" \
+            --jq '.assets[] | select(.name | test("^SaveState_v.*_Win\\.zip$")) | .browser_download_url')
+          if [ -z "$ZIP_URL" ]; then
+            echo "Windows zip asset not found on release ${TAG}"
+            exit 1
+          fi
+
+          komac sync
+
+          set +e
+          SUBMIT_OUTPUT=$(komac update 'Matteo842.SaveState' --version "$VERSION" --submit --urls "$ZIP_URL" 2>&1)
+          SUBMIT_CODE=$?
+          set -e
+          echo "$SUBMIT_OUTPUT"
+
+          if echo "$SUBMIT_OUTPUT" | grep -qi "Successfully created microsoft/winget-pkgs#"; then
+            echo "WinGet PR created successfully."
+            exit 0
+          fi
+
+          if echo "$SUBMIT_OUTPUT" | grep -qi "already a closed pull request"; then
+            echo "A closed PR already exists for this version — creating a fresh branch and PR..."
+            komac update 'Matteo842.SaveState' --version "$VERSION" --urls "$ZIP_URL"
+
+            BRANCH=$(gh api "repos/${KOMAC_FORK_OWNER}/winget-pkgs/git/matching-refs/heads/Matteo842.SaveState-${VERSION}" \
+              --jq 'sort_by(.ref) | last | .ref | sub("^refs/heads/"; "")')
+            if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
+              echo "Could not find komac branch for SaveState ${VERSION} on fork."
+              exit 1
+            fi
+
+            gh pr create \
+              --repo microsoft/winget-pkgs \
+              --head "${KOMAC_FORK_OWNER}:${BRANCH}" \
+              --title "New version: Matteo842.SaveState version ${VERSION}" \
+              --body "Pull request has been created with [WinGet Releaser](https://github.com/vedantmgoyal9/winget-releaser) :rocket:
+
+          Retry after a previously closed pull request for the same version."
+            echo "WinGet PR created from branch ${BRANCH}."
+            exit 0
+          fi
+
+          exit "${SUBMIT_CODE:-1}"

@@ -114,13 +114,32 @@ def _query_store_api(appid: str) -> Optional[bool]:
         logging.warning(f"Steam Store API request failed for AppID {appid}: {e}")
         return None
 
-    app_data = payload.get(str(appid), {})
-    if not app_data.get("success"):
+    if not isinstance(payload, dict):
+        logging.debug(f"Steam Store API returned unexpected payload for AppID {appid}.")
+        return None
+
+    app_data = payload.get(str(appid))
+    if not isinstance(app_data, dict) or not app_data.get("success"):
         logging.debug(f"Steam Store API returned no data for AppID {appid}.")
         return None
 
-    categories = app_data.get("data", {}).get("categories", [])
-    return any(cat.get("id") == STEAM_CLOUD_CATEGORY_ID for cat in categories)
+    data = app_data.get("data")
+    if not isinstance(data, dict):
+        logging.debug(
+            f"Steam Store API returned unexpected data shape for AppID {appid}: "
+            f"{type(data).__name__}."
+        )
+        return None
+
+    categories = data.get("categories", [])
+    if not isinstance(categories, list):
+        logging.debug(f"Steam Store API returned unexpected categories for AppID {appid}.")
+        return None
+
+    return any(
+        isinstance(cat, dict) and cat.get("id") == STEAM_CLOUD_CATEGORY_ID
+        for cat in categories
+    )
 
 
 def get_cached_cloud_status(appid: str) -> Optional[bool]:
@@ -183,7 +202,14 @@ def get_cloud_save_status_batch(
         if progress_callback:
             progress_callback(appid, index, total)
 
-        has_cloud = _query_store_api(appid)
+        try:
+            has_cloud = _query_store_api(appid)
+        except Exception as e:
+            logging.warning(
+                f"Steam Store API query failed unexpectedly for AppID {appid}: {e}"
+            )
+            has_cloud = None
+
         results[appid] = has_cloud
         cache[appid] = _cache_entry(has_cloud, "store_api")
         _save_cache()
