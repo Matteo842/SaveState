@@ -414,7 +414,16 @@ jobs:
             exit 1
           fi
 
-          SHA256=$(jq -r '.data.meta.file_info.sha256 // empty' /tmp/vt_response.json)
+          # meta.file_info is at the JSON root, not under data
+          SHA256=$(jq -r '.meta.file_info.sha256 // .data.meta.file_info.sha256 // empty' /tmp/vt_response.json)
+
+          if [ -z "$SHA256" ] || [ "$SHA256" = "null" ]; then
+            URL_ID=$(python3 -c "import base64; print(base64.urlsafe_b64encode('''$DOWNLOAD_URL'''.encode()).decode().strip('='))")
+            sleep 15
+            HTTP_CODE=$(vt_request GET "$VT_API/urls/$URL_ID")
+            vt_assert_json
+            SHA256=$(jq -r '.data.attributes.last_http_response_content_sha256 // empty' /tmp/vt_response.json)
+          fi
 
           MALICIOUS=$(jq -r '.data.attributes.stats.malicious // .data.attributes.last_analysis_stats.malicious // 0' /tmp/vt_response.json)
           SUSPICIOUS=$(jq -r '.data.attributes.stats.suspicious // .data.attributes.last_analysis_stats.suspicious // 0' /tmp/vt_response.json)
@@ -423,6 +432,17 @@ jobs:
             (.data.attributes.stats // .data.attributes.last_analysis_stats // {}) |
             [to_entries[] | .value | tonumber? // 0] | add // 0
           ' /tmp/vt_response.json)
+
+          if [ -n "$SHA256" ] && [ "$SHA256" != "null" ] && [ "$TOTAL" -eq 0 ]; then
+            sleep 15
+            HTTP_CODE=$(vt_request GET "$VT_API/files/$SHA256")
+            if [ "$HTTP_CODE" = "200" ]; then
+              MALICIOUS=$(jq -r '.data.attributes.last_analysis_stats.malicious // 0' /tmp/vt_response.json)
+              SUSPICIOUS=$(jq -r '.data.attributes.last_analysis_stats.suspicious // 0' /tmp/vt_response.json)
+              DETECTIONS=$((MALICIOUS + SUSPICIOUS))
+              TOTAL=$(jq -r '[.data.attributes.last_analysis_stats | to_entries[] | .value] | add // 0' /tmp/vt_response.json)
+            fi
+          fi
 
           if [ -z "$SHA256" ] || [ "$SHA256" = "null" ]; then
             echo "Could not resolve SHA256 for VirusTotal badge."
@@ -507,4 +527,4 @@ jobs:
         with:
           identifier: Matteo842.SaveState
           installers-regex: '\.exe$'
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.WINGET_TOKEN }}
