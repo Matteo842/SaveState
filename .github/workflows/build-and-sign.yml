@@ -531,6 +531,22 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: cargo-bins/cargo-binstall@main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Install komac
+        run: cargo binstall komac -y
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Cleanup stale WinGet branches (incl. closed PRs)
+        run: komac cleanup
+        env:
+          KOMAC_FORK_OWNER: ${{ github.repository_owner }}
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+
       - name: Submit to WinGet
         uses: vedantmgoyal9/winget-releaser@v2
         with:
