@@ -92,6 +92,35 @@ def _cache_entry(has_cloud: Optional[bool], source: str) -> dict:
     }
 
 
+def _extract_categories(data) -> Optional[List]:
+    """
+    Normalize category data from the Steam Store API.
+
+    With ``filters=categories``, Steam usually returns::
+
+        {"data": {"categories": [...]}}
+
+    but for some titles it returns the category list directly::
+
+        {"data": [...]}
+
+    An empty list means the game has no listed categories (no cloud saves).
+    """
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        categories = data.get("categories", [])
+        return categories if isinstance(categories, list) else None
+    return None
+
+
+def _has_cloud_category(categories: List) -> bool:
+    return any(
+        isinstance(cat, dict) and cat.get("id") == STEAM_CLOUD_CATEGORY_ID
+        for cat in categories
+    )
+
+
 def _query_store_api(appid: str) -> Optional[bool]:
     """Return True/False for cloud support, or None if the query failed."""
     if requests is None:
@@ -124,22 +153,15 @@ def _query_store_api(appid: str) -> Optional[bool]:
         return None
 
     data = app_data.get("data")
-    if not isinstance(data, dict):
+    categories = _extract_categories(data)
+    if categories is None:
         logging.debug(
             f"Steam Store API returned unexpected data shape for AppID {appid}: "
             f"{type(data).__name__}."
         )
         return None
 
-    categories = data.get("categories", [])
-    if not isinstance(categories, list):
-        logging.debug(f"Steam Store API returned unexpected categories for AppID {appid}.")
-        return None
-
-    return any(
-        isinstance(cat, dict) and cat.get("id") == STEAM_CLOUD_CATEGORY_ID
-        for cat in categories
-    )
+    return _has_cloud_category(categories)
 
 
 def get_cached_cloud_status(appid: str) -> Optional[bool]:

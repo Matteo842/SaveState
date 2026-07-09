@@ -325,14 +325,14 @@ def load_settings():
         "theme": "dark", # Possible values: 'dark', 'light'
         "compression_mode": "standard",
         "check_free_space_enabled": True,
-        "enable_global_drag_effect": True, # ADDED: For the pynput global mouse drag detection overlay
+        "enable_global_drag_effect": False, # ADDED: For the pynput global mouse drag detection overlay
         # UI: shorten long save paths in selection dialogs
         "shorten_paths_enabled": True,
         # UI: show game icons next to profile names
         "show_profile_icons": True,
         # Auto-update: check for new GitHub releases on startup.
         # Disabled by default to respect "no internet unless user asks".
-        "check_updates_on_startup": False,
+        "check_updates_on_startup": True,
         # Auto-update: remember a release tag the user chose to skip.
         # Empty string means no skip. Set automatically by the update dialog.
         "skip_update_tag": "",
