@@ -181,7 +181,17 @@ Get SaveState up and running on your system.
 4. Make it executable: `chmod +x SaveState*.AppImage`
 5. Run it — no dependencies needed!
 
-**Option 2: Running from Source (for development or advanced users)**
+**Option 2: Install via WinGet (Windows)**
+
+SaveState is available on the [Windows Package Manager](https://learn.microsoft.com/en-us/windows/package-manager/winget/) (WinGet):
+
+```powershell
+winget install Matteo842.SaveState
+```
+
+WinGet downloads and installs the latest release automatically — no manual extraction needed.
+
+**Option 3: Running from Source (for development or advanced users)**
 
 1.  Ensure you have Python 3.10+ and Git installed.
 2.  Clone the repository:
