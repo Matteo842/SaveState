@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QMessageBox, QCheckBox, QHBoxLayout
 )
 from PySide6.QtCore import Qt, Slot
+from dialogs.selection_utils import apply_profile_selection_style
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +48,9 @@ class EmulatorGameSelectionDialog(QDialog):
         # --- List Widget ---
         self.profile_list_widget = QListWidget()
         self.profile_list_widget.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.profile_selection_delegate = apply_profile_selection_style(
+            self.profile_list_widget, parent
+        )
 
         # Populate the list widget
         if not self.profile_data_list:

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QWidget, QStackedLayout, QCheckBox, QHBoxLayout, QPushButton
 )
 from PySide6.QtCore import Qt, Slot
+from dialogs.selection_utils import apply_profile_selection_style
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class RetroArchCoreSelectionDialog(QDialog):
 
         self.list_widget = QListWidget()
         self.list_widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.selection_delegate = apply_profile_selection_style(self.list_widget, parent)
         for core in self.cores_list:
             name = core.get("name", core.get("id", "Unknown"))
             count = core.get("count", 0)
@@ -104,6 +106,7 @@ class RetroArchSetupDialog(QDialog):
         core_layout.addWidget(self.core_label)
         self.core_list = QListWidget()
         self.core_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.core_selection_delegate = apply_profile_selection_style(self.core_list, parent)
         for core in self.cores_list:
             name = core.get("name", core.get("id", "Unknown"))
             count = core.get("count", 0)
@@ -141,6 +144,9 @@ class RetroArchSetupDialog(QDialog):
         profile_layout.addWidget(self.profile_label)
         self.profile_list = QListWidget()
         self.profile_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.profile_selection_delegate = apply_profile_selection_style(
+            self.profile_list, parent
+        )
         self.profile_list.itemDoubleClicked.connect(lambda _: self._on_next_or_select())
         self.profile_list.itemSelectionChanged.connect(self._update_button_state)
         profile_layout.addWidget(self.profile_list)

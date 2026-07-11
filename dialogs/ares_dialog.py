@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QHBoxLayout, QPushButton
 )
 from PySide6.QtCore import Qt, Slot
+from dialogs.selection_utils import apply_profile_selection_style
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +53,9 @@ class AresSetupDialog(QDialog):
 
         self.system_list = QListWidget()
         self.system_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.system_selection_delegate = apply_profile_selection_style(
+            self.system_list, parent
+        )
         for system in self.systems_list:
             name = system.get("name", system.get("id", "Unknown"))
             count = system.get("count", 0)
@@ -90,6 +94,9 @@ class AresSetupDialog(QDialog):
 
         self.profile_list = QListWidget()
         self.profile_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.profile_selection_delegate = apply_profile_selection_style(
+            self.profile_list, parent
+        )
         self.profile_list.itemDoubleClicked.connect(lambda _: self._on_next_or_select())
         self.profile_list.itemSelectionChanged.connect(self._update_button_state)
         profile_layout.addWidget(self.profile_list)
