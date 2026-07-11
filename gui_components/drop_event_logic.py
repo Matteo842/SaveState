@@ -109,6 +109,91 @@ class DropEventMixin:
         except Exception as e:
             logging.error(f"Error in generic ROM path prompt for '{emulator_key}': {e}", exc_info=True)
         return False, None
+
+    def _resolve_emulator_executable(self, path):
+        """Resolve a dropped emulator shortcut to an executable when possible."""
+        if not path:
+            return None
+        resolved_path = path
+        if platform.system() == "Windows" and str(path).lower().endswith(".lnk"):
+            try:
+                import winshell
+                shortcut_target = winshell.shortcut(path).path
+                if shortcut_target:
+                    resolved_path = shortcut_target
+            except Exception as exc:
+                logging.debug(f"Could not resolve emulator shortcut '{path}': {exc}")
+        return resolved_path if os.path.exists(resolved_path) else None
+
+    def _add_emulator_profiles(
+        self,
+        mw,
+        selected_profiles,
+        profile_prefix,
+        emulator_id,
+        emulator_executable=None,
+    ):
+        """Create selected emulator profiles, skipping existing names, in one save."""
+        pending_profiles = {}
+        skipped_existing = 0
+
+        for selected_profile in selected_profiles or []:
+            if not selected_profile:
+                continue
+            profile_id = selected_profile.get("id", "")
+            selected_name = selected_profile.get("name", profile_id)
+            if not selected_name:
+                logging.warning("Skipping emulator profile without a name or id.")
+                continue
+
+            profile_name = f"{profile_prefix} - {selected_name}"
+            if profile_name in mw.profiles or profile_name in pending_profiles:
+                skipped_existing += 1
+                logging.info(f"Skipping existing emulator profile: {profile_name}")
+                continue
+
+            new_profile = {
+                "name": profile_name,
+                "paths": selected_profile.get("paths", []),
+                "emulator": emulator_id,
+            }
+            if emulator_executable and os.path.exists(emulator_executable):
+                new_profile["emulator_executable"] = emulator_executable
+
+            for key, value in selected_profile.items():
+                if key not in {"name", "paths", "emulator"}:
+                    new_profile[key] = value
+
+            pending_profiles[profile_name] = new_profile
+
+        if not pending_profiles:
+            if skipped_existing:
+                mw.status_label.setText(
+                    f"No profiles added; skipped {skipped_existing} existing profile(s)."
+                )
+            return [], skipped_existing
+
+        profiles_to_save = dict(mw.profiles)
+        profiles_to_save.update(pending_profiles)
+        if not mw.core_logic.save_profiles(profiles_to_save):
+            logging.error("Failed to save bulk emulator profiles.")
+            QMessageBox.critical(
+                mw, "Save Error", "Failed to save the profiles. Check the log for details."
+            )
+            return [], skipped_existing
+
+        mw.profiles.update(pending_profiles)
+        added_names = list(pending_profiles)
+        if hasattr(mw, "profile_table_manager"):
+            mw.profile_table_manager.update_profile_table()
+            mw.profile_table_manager.select_profile_in_table(added_names[-1])
+
+        status = f"Added {len(added_names)} emulator profile(s)."
+        if skipped_existing:
+            status += f" Skipped {skipped_existing} existing profile(s)."
+        mw.status_label.setText(status)
+        logging.info(status)
+        return added_names, skipped_existing
     
     def _cancel_detection_threads(self, *args):
         """Cancella tutti i thread di rilevamento attivi."""
@@ -659,47 +744,21 @@ class DropEventMixin:
                             setup_dialog = AresSetupDialog(ares_hint, systems, mw)
                             if setup_dialog.exec():
                                 system_id = setup_dialog.get_selected_system()
-                                selected_profile = setup_dialog.get_selected_profile_data()
-                                if system_id and selected_profile:
-                                    profile_id = selected_profile.get('id', '')
-                                    selected_name = selected_profile.get('name', profile_id)
-                                    save_paths = selected_profile.get('paths', [])
-                                    profile_name = f"ares - {selected_name}"
-                                    if profile_name in mw.profiles:
-                                        reply = QMessageBox.question(
-                                            mw, "Existing Profile",
-                                            f"A profile named '{profile_name}' already exists. Overwrite it?",
-                                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                            QMessageBox.StandardButton.No)
-                                        if reply == QMessageBox.StandardButton.No:
-                                            mw.status_label.setText("Profile creation cancelled.")
-                                            self._hide_overlay_if_visible(mw)
-                                            mw.set_controls_enabled(True)
-                                            QApplication.restoreOverrideCursor()
-                                            event.acceptProposedAction()
-                                            return True
-                                    new_profile = {
-                                        'name': profile_name,
-                                        'paths': save_paths,
-                                        'emulator': 'ares'
-                                    }
-                                    # Add emulator_executable for icon extraction
+                                selected_profiles = setup_dialog.get_selected_profiles_data()
+                                if system_id and selected_profiles:
                                     exe_name = 'ares.exe' if platform.system() == "Windows" else 'ares'
-                                    ares_exe = os.path.join(ares_hint, exe_name) if os.path.isdir(ares_hint) else ares_hint
-                                    if ares_exe and os.path.exists(ares_exe):
-                                        new_profile['emulator_executable'] = ares_exe
-                                    # Copy extra data from selected profile
-                                    for k, v in selected_profile.items():
-                                        if k not in ['name', 'paths']:
-                                            new_profile[k] = v
-                                    mw.profiles[profile_name] = new_profile
-                                    if mw.core_logic.save_profiles(mw.profiles):
-                                        if hasattr(mw, 'profile_table_manager'):
-                                            mw.profile_table_manager.update_profile_table()
-                                            mw.profile_table_manager.select_profile_in_table(profile_name)
-                                        mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
-                                    else:
-                                        QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
+                                    ares_exe = (
+                                        os.path.join(ares_hint, exe_name)
+                                        if os.path.isdir(ares_hint)
+                                        else ares_hint
+                                    )
+                                    self._add_emulator_profiles(
+                                        mw,
+                                        selected_profiles,
+                                        profile_prefix='ares',
+                                        emulator_id='ares',
+                                        emulator_executable=ares_exe,
+                                    )
                     except Exception as e_ares:
                         logging.error(f"ares flow error: {e_ares}", exc_info=True)
                         QMessageBox.critical(mw, "ares Error", f"An error occurred while scanning ares: {e_ares}")
@@ -737,43 +796,15 @@ class DropEventMixin:
                             setup_dialog = RetroArchSetupDialog(ra_hint, cores, mw)
                             if setup_dialog.exec():
                                 core_id = setup_dialog.get_selected_core()
-                                selected_profile = setup_dialog.get_selected_profile_data()
-                                if core_id and selected_profile:
-                                    profile_id = selected_profile.get('id', '')
-                                    selected_name = selected_profile.get('name', profile_id)
-                                    save_paths = selected_profile.get('paths', [])
-                                    profile_name = f"{core_id} - {selected_name}"
-                                    if profile_name in mw.profiles:
-                                        reply = QMessageBox.question(mw, "Existing Profile", f"A profile named '{profile_name}' already exists. Overwrite it?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-                                        if reply == QMessageBox.StandardButton.No:
-                                            mw.status_label.setText("Profile creation cancelled.")
-                                            event.acceptProposedAction(); return
-                                    new_profile = {'name': profile_name, 'paths': save_paths, 'emulator': core_id}
-                                    
-                                    # Add emulator_executable for icon extraction (RetroArch)
-                                    retroarch_exe = file_path
-                                    if platform.system() == "Windows" and file_path.lower().endswith('.lnk'):
-                                        try:
-                                            import winshell
-                                            shortcut = winshell.shortcut(file_path)
-                                            if shortcut.path and os.path.exists(shortcut.path):
-                                                retroarch_exe = shortcut.path
-                                        except Exception:
-                                            pass
-                                    if retroarch_exe and os.path.exists(retroarch_exe):
-                                        new_profile['emulator_executable'] = retroarch_exe
-                                    
-                                    for k, v in selected_profile.items():
-                                        if k not in ['name', 'paths']:
-                                            new_profile[k] = v
-                                    mw.profiles[profile_name] = new_profile
-                                    if mw.core_logic.save_profiles(mw.profiles):
-                                        if hasattr(mw, 'profile_table_manager'):
-                                            mw.profile_table_manager.update_profile_table()
-                                            mw.profile_table_manager.select_profile_in_table(profile_name)
-                                        mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
-                                    else:
-                                        QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
+                                selected_profiles = setup_dialog.get_selected_profiles_data()
+                                if core_id and selected_profiles:
+                                    self._add_emulator_profiles(
+                                        mw,
+                                        selected_profiles,
+                                        profile_prefix=core_id,
+                                        emulator_id=core_id,
+                                        emulator_executable=self._resolve_emulator_executable(file_path),
+                                    )
                         # end cores empty/else
                     except Exception as e_ra:
                         logging.error(f"RetroArch flow error: {e_ra}", exc_info=True)
@@ -792,71 +823,14 @@ class DropEventMixin:
                     # Show dialog for selecting which emulator game to create a profile for
                     selection_dialog = EmulatorGameSelectionDialog(emulator_key, profiles_data, mw)
                     if selection_dialog.exec():
-                        selected_profile = selection_dialog.get_selected_profile_data()
-                        if selected_profile:
-                            # Extract details from the selected profile
-                            profile_id = selected_profile.get('id', '')
-                            selected_name = selected_profile.get('name', profile_id)
-                            save_paths = selected_profile.get('paths', [])
-                            
-                            # Create a profile name based on the emulator and game
-                            profile_name_base = f"{emulator_key} - {selected_name}"
-                            profile_name = profile_name_base
-                            
-                            # Check if profile already exists
-                            if profile_name in mw.profiles:
-                                reply = QMessageBox.question(mw, "Existing Profile",
-                                                        f"A profile named '{profile_name}' already exists. Overwrite it?",
-                                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                                        QMessageBox.StandardButton.No)
-                                if reply == QMessageBox.StandardButton.No:
-                                    mw.status_label.setText("Profile creation cancelled.")
-                                    event.acceptProposedAction()
-                                    return
-                                else:
-                                    logging.warning(f"Overwriting existing profile: {profile_name}")
-                            
-                            # Create the profile with the appropriate data
-                            new_profile = {
-                                'name': profile_name,
-                                'paths': save_paths,
-                                'emulator': emulator_key
-                            }
-                            
-                            # Add emulator_executable for icon extraction
-                            # Resolve .lnk to get the actual emulator executable path
-                            emulator_exe_path = file_path
-                            if platform.system() == "Windows" and file_path.lower().endswith('.lnk'):
-                                try:
-                                    import winshell
-                                    shortcut = winshell.shortcut(file_path)
-                                    if shortcut.path and os.path.exists(shortcut.path):
-                                        emulator_exe_path = shortcut.path
-                                except Exception as e_lnk:
-                                    logging.debug(f"Could not resolve .lnk for emulator icon: {e_lnk}")
-                            
-                            if emulator_exe_path and os.path.exists(emulator_exe_path):
-                                new_profile['emulator_executable'] = emulator_exe_path
-                                logging.debug(f"Added emulator_executable to profile: {emulator_exe_path}")
-                            
-                            # Copy additional fields from selected_profile (like 'id', 'type', etc.)
-                            for key, value in selected_profile.items():
-                                if key not in ['name', 'paths']:  # Don't overwrite name and paths
-                                    new_profile[key] = value
-                            
-                            # Add the profile to the main window's profiles dictionary
-                            mw.profiles[profile_name] = new_profile
-                            
-                            # Save the profiles to disk
-                            if mw.core_logic.save_profiles(mw.profiles):
-                                if hasattr(mw, 'profile_table_manager'):
-                                    mw.profile_table_manager.update_profile_table()
-                                    mw.profile_table_manager.select_profile_in_table(profile_name)
-                                mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
-                                logging.info(f"Emulator game profile '{profile_name}' created/updated with emulator '{emulator_key}'.")
-                            else:
-                                logging.error(f"Failed to save profiles after adding '{profile_name}'.")
-                                QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
+                        selected_profiles = selection_dialog.get_selected_profiles_data()
+                        self._add_emulator_profiles(
+                            mw,
+                            selected_profiles,
+                            profile_prefix=emulator_key,
+                            emulator_id=emulator_key,
+                            emulator_executable=self._resolve_emulator_executable(file_path),
+                        )
                     else:
                         logging.info("User cancelled emulator game selection.")
                     
@@ -1213,48 +1187,19 @@ class DropEventMixin:
                             setup_dialog = AresSetupDialog(ares_hint, systems, mw)
                             if setup_dialog.exec():
                                 system_id = setup_dialog.get_selected_system()
-                                selected_profile = setup_dialog.get_selected_profile_data()
-                                if system_id and selected_profile:
-                                    profile_id = selected_profile.get('id', '')
-                                    selected_name = selected_profile.get('name', profile_id)
-                                    save_paths = selected_profile.get('paths', [])
-                                    profile_name = f"ares - {selected_name}"
-                                    if profile_name in mw.profiles:
-                                        reply = QMessageBox.question(
-                                            mw, "Existing Profile",
-                                            f"A profile named '{profile_name}' already exists. Overwrite it?",
-                                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                            QMessageBox.StandardButton.No)
-                                        if reply == QMessageBox.StandardButton.No:
-                                            mw.status_label.setText("Profile creation cancelled.")
-                                            self._hide_overlay_if_visible(mw)
-                                            mw.set_controls_enabled(True)
-                                            QApplication.restoreOverrideCursor()
-                                            event.acceptProposedAction()
-                                            return
-                                    new_profile = {
-                                        'name': profile_name,
-                                        'paths': save_paths,
-                                        'emulator': 'ares'
-                                    }
-                                    if target_path and os.path.exists(target_path):
-                                        new_profile['emulator_executable'] = target_path
-                                    elif ares_hint and os.path.isdir(ares_hint):
+                                selected_profiles = setup_dialog.get_selected_profiles_data()
+                                if system_id and selected_profiles:
+                                    ares_exe = target_path
+                                    if not (ares_exe and os.path.exists(ares_exe)):
                                         exe_name = 'ares.exe' if platform.system() == "Windows" else 'ares'
-                                        fallback_exe = os.path.join(ares_hint, exe_name)
-                                        if os.path.exists(fallback_exe):
-                                            new_profile['emulator_executable'] = fallback_exe
-                                    for k, v in selected_profile.items():
-                                        if k not in ['name', 'paths']:
-                                            new_profile[k] = v
-                                    mw.profiles[profile_name] = new_profile
-                                    if mw.core_logic.save_profiles(mw.profiles):
-                                        if hasattr(mw, 'profile_table_manager'):
-                                            mw.profile_table_manager.update_profile_table()
-                                            mw.profile_table_manager.select_profile_in_table(profile_name)
-                                        mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
-                                    else:
-                                        QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
+                                        ares_exe = os.path.join(ares_hint, exe_name)
+                                    self._add_emulator_profiles(
+                                        mw,
+                                        selected_profiles,
+                                        profile_prefix='ares',
+                                        emulator_id='ares',
+                                        emulator_executable=ares_exe,
+                                    )
                     except Exception as e_ares:
                         logging.error(f"ares flow error (fallback): {e_ares}", exc_info=True)
                         QMessageBox.critical(mw, "ares Error", f"An error occurred while scanning ares: {e_ares}")
@@ -1280,49 +1225,14 @@ class DropEventMixin:
                                     if profiles_data:
                                         selection_dialog = EmulatorGameSelectionDialog(core_id, profiles_data, mw)
                                         if selection_dialog.exec():
-                                            selected_profile = selection_dialog.get_selected_profile_data()
-                                            logging.debug(f"PCM.dropEvent: Emulator game selected. Raw selected_profile data: {selected_profile}")
-                                            if selected_profile:
-                                                profile_id = selected_profile.get('id', '')
-                                                selected_name = selected_profile.get('name', profile_id)
-                                                save_paths = selected_profile.get('paths', [])
-                                                profile_name = f"{core_id} - {selected_name}"
-                                                if profile_name in mw.profiles:
-                                                    reply = QMessageBox.question(mw, "Existing Profile",
-                                                                                f"A profile named '{profile_name}' already exists. Overwrite it?",
-                                                                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                                                                QMessageBox.StandardButton.No)
-                                                    if reply == QMessageBox.StandardButton.No:
-                                                        mw.status_label.setText("Profile creation cancelled.")
-                                                        return
-                                                    else:
-                                                        logging.warning(f"Overwriting existing profile: {profile_name}")
-                                                new_profile = {
-                                                    'name': profile_name,
-                                                    'paths': save_paths,
-                                                    'emulator': core_id
-                                                }
-                                                
-                                                # Add emulator_executable for icon extraction (RetroArch fallback)
-                                                if target_path and os.path.exists(target_path):
-                                                    new_profile['emulator_executable'] = target_path
-                                                    logging.debug(f"Added emulator_executable to profile (RetroArch fallback): {target_path}")
-                                                
-                                                for key, value in selected_profile.items():
-                                                    if key not in ['name', 'paths']:
-                                                        new_profile[key] = value
-                                                if 'save_dir' in selected_profile and selected_profile['save_dir']:
-                                                    new_profile['save_dir'] = selected_profile['save_dir']
-                                                    logging.debug(f"PCM.dropEvent: Added 'save_dir': '{selected_profile['save_dir']}' to new_profile for '{profile_name}'.")
-                                                mw.profiles[profile_name] = new_profile
-                                                if mw.core_logic.save_profiles(mw.profiles):
-                                                    mw.profile_table_manager.update_profile_table()
-                                                    mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
-                                                    mw.profile_table_manager.select_profile_in_table(profile_name)
-                                                    logging.info(f"Emulator game profile '{profile_name}' created/updated with emulator '{core_id}'.")
-                                                else:
-                                                    logging.error(f"Failed to save profiles after adding '{profile_name}'.")
-                                                    QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
+                                            selected_profiles = selection_dialog.get_selected_profiles_data()
+                                            self._add_emulator_profiles(
+                                                mw,
+                                                selected_profiles,
+                                                profile_prefix=core_id,
+                                                emulator_id=core_id,
+                                                emulator_executable=target_path,
+                                            )
                     except Exception as e_ra:
                         logging.error(f"RetroArch flow error: {e_ra}", exc_info=True)
                         QMessageBox.critical(mw, "RetroArch Error", f"An error occurred while scanning RetroArch: {e_ra}")
@@ -1340,71 +1250,14 @@ class DropEventMixin:
                     # Show dialog for selecting which emulator game to create a profile for
                     selection_dialog = EmulatorGameSelectionDialog(emulator_key, profiles_data, mw)
                     if selection_dialog.exec():
-                        selected_profile = selection_dialog.get_selected_profile_data()
-                        logging.debug(f"PCM.dropEvent: Emulator game selected. Raw selected_profile data: {selected_profile}") # ADDED LOG
-                        if selected_profile:
-                            # Extract details from the selected profile
-                            profile_id = selected_profile.get('id', '')
-                            selected_name = selected_profile.get('name', profile_id)
-                            save_paths = selected_profile.get('paths', [])
-                            
-                            # Create a profile name based on the emulator and game
-                            profile_name_base = f"{emulator_key} - {selected_name}"
-                            profile_name = profile_name_base
-                            
-                            # Check if profile already exists
-                            if profile_name in mw.profiles:
-                                reply = QMessageBox.question(mw, "Existing Profile",
-                                                        f"A profile named '{profile_name}' already exists. Overwrite it?",
-                                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                                        QMessageBox.StandardButton.No)
-                                if reply == QMessageBox.StandardButton.No:
-                                    mw.status_label.setText("Profile creation cancelled.")
-                                    return
-                                else:
-                                    logging.warning(f"Overwriting existing profile: {profile_name}")
-                            
-                            # Create the profile with the appropriate data
-                            new_profile = {
-                                'name': profile_name,
-                                'paths': save_paths,
-                                'emulator': emulator_key
-                            }
-                            
-                            # Add emulator_executable for icon extraction
-                            # In this fallback section, target_path is already resolved
-                            if target_path and os.path.exists(target_path):
-                                new_profile['emulator_executable'] = target_path
-                                logging.debug(f"Added emulator_executable to profile (fallback): {target_path}")
-                            
-                            # Copy additional fields from selected_profile (like 'id', 'type', etc.)
-                            for key, value in selected_profile.items():
-                                if key not in ['name', 'paths']:  # Don't overwrite name and paths
-                                    new_profile[key] = value
-                            
-                            # Add save_dir to new_profile if it was automatically determined and present in selected_profile
-                            if 'save_dir' in selected_profile and selected_profile['save_dir']:
-                                new_profile['save_dir'] = selected_profile['save_dir']
-                                logging.debug(f"PCM.dropEvent: Added 'save_dir': '{selected_profile['save_dir']}' to new_profile for '{profile_name}'.")
-                            elif emulator_key == 'PCSX2':
-                                logging.warning(f"PCM.dropEvent: PCSX2 profile '{profile_name}' selected, but 'save_dir' was missing or empty in selected_profile data. Selective backup might be affected.")
-                            
-                            logging.debug(f"PCM.dropEvent: Final new_profile data before saving for '{profile_name}': {new_profile}") # ADDED LOG
-                            
-                            # Add the profile to the main window's profiles dictionary
-                            mw.profiles[profile_name] = new_profile
-                            
-                            # Save the profiles to disk
-                            if mw.core_logic.save_profiles(mw.profiles):
-                                mw.profile_table_manager.update_profile_table()
-                                mw.status_label.setText(f"Profile '{profile_name}' created successfully.")
-                                logging.info(f"Emulator game profile '{profile_name}' created/updated with emulator '{emulator_key}'.")
-                                
-                                # Select the newly created profile in the table
-                                mw.profile_table_manager.select_profile_in_table(profile_name)
-                            else:
-                                logging.error(f"Failed to save profiles after adding '{profile_name}'.")
-                                QMessageBox.critical(mw, "Save Error", "Failed to save the profiles. Check the log for details.")
+                        selected_profiles = selection_dialog.get_selected_profiles_data()
+                        self._add_emulator_profiles(
+                            mw,
+                            selected_profiles,
+                            profile_prefix=emulator_key,
+                            emulator_id=emulator_key,
+                            emulator_executable=target_path,
+                        )
                     else:
                         logging.info("User cancelled emulator game selection.")
                     

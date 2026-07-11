@@ -30,19 +30,23 @@ class EmulatorGameSelectionDialog(QDialog):
         self.setMinimumWidth(400)
 
         self.profile_data_list = profile_data_list
-        self.selected_profile_data = None # Store the selected profile dict here
+        self.selected_profile_data = None # Backward-compatible first selected profile
+        self.selected_profiles_data = []
 
         # --- Layout ---
         layout = QVBoxLayout(self)
 
         # --- Label ---
-        label = QLabel(f"The following profiles/games have been found for {emulator_name}.\nSelect the one to add:")
+        label = QLabel(
+            f"The following profiles/games have been found for {emulator_name}.\n"
+            "Select one or more games to add:"
+        )
         label.setWordWrap(True)
         layout.addWidget(label)
 
         # --- List Widget ---
         self.profile_list_widget = QListWidget()
-        self.profile_list_widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.profile_list_widget.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
 
         # Populate the list widget
         if not self.profile_data_list:
@@ -85,6 +89,10 @@ class EmulatorGameSelectionDialog(QDialog):
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
+        self.select_all_button = self.button_box.addButton(
+            "Select All", QDialogButtonBox.ButtonRole.ActionRole
+        )
+        self.select_all_button.clicked.connect(self._select_all_profiles)
         layout.addWidget(self.button_box)
 
         self.setLayout(layout)
@@ -93,32 +101,58 @@ class EmulatorGameSelectionDialog(QDialog):
         self._update_button_state()
 
         # Select the first item by default if list is not empty
-        if self.profile_list_widget.count() > 0 and self.profile_list_widget.item(0).flags() & Qt.ItemFlag.ItemIsSelectable:
-            self.profile_list_widget.setCurrentRow(0)
+        for row in range(self.profile_list_widget.count()):
+            item = self.profile_list_widget.item(row)
+            if item.flags() & Qt.ItemFlag.ItemIsSelectable and item.data(Qt.ItemDataRole.UserRole):
+                self.profile_list_widget.setCurrentItem(item)
+                break
 
     @Slot()
     def _update_button_state(self):
-        """Enables the OK button only if a valid item is selected."""
+        """Enable profile actions only when valid game rows exist/are selected."""
         ok_button = self.button_box.button(QDialogButtonBox.StandardButton.Ok)
         if ok_button:
-            selected_items = self.profile_list_widget.selectedItems()
-            is_selection_valid = False # Assume not valid initially
-            if selected_items:
-                # Check if the first selected item has the selectable flag set
-                flags = selected_items[0].flags()
-                if flags & Qt.ItemFlag.ItemIsSelectable:
-                    is_selection_valid = True # It's valid if selectable
+            selected_items = [
+                item for item in self.profile_list_widget.selectedItems()
+                if item.flags() & Qt.ItemFlag.ItemIsSelectable
+                and item.data(Qt.ItemDataRole.UserRole)
+            ]
+            selection_count = len(selected_items)
+            ok_button.setEnabled(selection_count > 0)
+            ok_button.setText(
+                "Add Game" if selection_count == 1 else f"Add {selection_count} Games"
+            )
 
-        # Now setEnabled is called with a proper boolean
-        ok_button.setEnabled(is_selection_valid)
+        has_profiles = any(
+            self.profile_list_widget.item(row).data(Qt.ItemDataRole.UserRole)
+            for row in range(self.profile_list_widget.count())
+        )
+        self.select_all_button.setEnabled(has_profiles)
+
+    @Slot()
+    def _select_all_profiles(self):
+        """Select every actual profile row while leaving section headers untouched."""
+        self.profile_list_widget.clearSelection()
+        for row in range(self.profile_list_widget.count()):
+            item = self.profile_list_widget.item(row)
+            if item.flags() & Qt.ItemFlag.ItemIsSelectable and item.data(Qt.ItemDataRole.UserRole):
+                item.setSelected(True)
+        self._update_button_state()
 
     def accept(self):
         """Overrides accept to save the selected item's data before closing."""
-        selected_items = self.profile_list_widget.selectedItems()
+        selected_items = [
+            item for item in self.profile_list_widget.selectedItems()
+            if item.flags() & Qt.ItemFlag.ItemIsSelectable
+            and item.data(Qt.ItemDataRole.UserRole)
+        ]
         if selected_items:
-            self.selected_profile_data = selected_items[0].data(Qt.ItemDataRole.UserRole)
-            if self.selected_profile_data:
-                log.debug(f"Emulator game selected: {self.selected_profile_data}")
+            self.selected_profiles_data = [
+                item.data(Qt.ItemDataRole.UserRole) for item in selected_items
+            ]
+            self.selected_profile_data = self.selected_profiles_data[0]
+            if self.selected_profiles_data:
+                log.debug(f"Emulator games selected: {self.selected_profiles_data}")
                 super().accept() # Call the original QDialog accept
             else:
                 # Should not happen if UserRole is set correctly
@@ -134,4 +168,8 @@ class EmulatorGameSelectionDialog(QDialog):
         (e.g., {'id': '...', 'path': '...'}) after the dialog has been accepted.
         Returns None if the dialog was cancelled or no selection was made.
         """
-        return self.selected_profile_data 
+        return self.selected_profile_data
+
+    def get_selected_profiles_data(self):
+        """Return all selected profile dictionaries after the dialog is accepted."""
+        return list(self.selected_profiles_data)
