@@ -4,7 +4,7 @@
 import logging
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QListWidget, QDialogButtonBox, QAbstractItemView,
-    QListWidgetItem, QMessageBox
+    QListWidgetItem, QMessageBox, QCheckBox, QHBoxLayout
 )
 from PySide6.QtCore import Qt, Slot
 
@@ -27,7 +27,7 @@ class EmulatorGameSelectionDialog(QDialog):
         """
         super().__init__(parent)
         self.setWindowTitle(f"Select {emulator_name} Game")
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(460)
 
         self.profile_data_list = profile_data_list
         self.selected_profile_data = None # Backward-compatible first selected profile
@@ -83,16 +83,23 @@ class EmulatorGameSelectionDialog(QDialog):
 
         self.profile_list_widget.itemSelectionChanged.connect(self._update_button_state)
         self.profile_list_widget.itemDoubleClicked.connect(self.accept) # Double-click accepts
+
+        selection_row = QHBoxLayout()
+        selection_row.addStretch()
+        self.select_all_checkbox = QCheckBox("Select all games")
+        self.select_all_checkbox.setTristate(True)
+        self.select_all_checkbox.clicked.connect(self._toggle_all_profiles)
+        selection_row.addWidget(self.select_all_checkbox)
+        layout.addLayout(selection_row)
         layout.addWidget(self.profile_list_widget)
 
         # --- Buttons ---
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
-        self.select_all_button = self.button_box.addButton(
-            "Select All", QDialogButtonBox.ButtonRole.ActionRole
+        self.button_box.button(QDialogButtonBox.StandardButton.Ok).setObjectName(
+            "SaveButton"
         )
-        self.select_all_button.clicked.connect(self._select_all_profiles)
         layout.addWidget(self.button_box)
 
         self.setLayout(layout)
@@ -122,21 +129,33 @@ class EmulatorGameSelectionDialog(QDialog):
             ok_button.setText(
                 "Add Game" if selection_count == 1 else f"Add {selection_count} Games"
             )
+            ok_button.setDefault(True)
 
-        has_profiles = any(
-            self.profile_list_widget.item(row).data(Qt.ItemDataRole.UserRole)
+        profile_count = sum(
+            1
             for row in range(self.profile_list_widget.count())
+            if self.profile_list_widget.item(row).data(Qt.ItemDataRole.UserRole)
         )
-        self.select_all_button.setEnabled(has_profiles)
+        self.select_all_checkbox.setEnabled(profile_count > 0)
+        self.select_all_checkbox.blockSignals(True)
+        if profile_count == 0 or selection_count == 0:
+            state = Qt.CheckState.Unchecked
+        elif selection_count == profile_count:
+            state = Qt.CheckState.Checked
+        else:
+            state = Qt.CheckState.PartiallyChecked
+        self.select_all_checkbox.setCheckState(state)
+        self.select_all_checkbox.blockSignals(False)
 
-    @Slot()
-    def _select_all_profiles(self):
-        """Select every actual profile row while leaving section headers untouched."""
+    @Slot(bool)
+    def _toggle_all_profiles(self, checked):
+        """Select or clear every actual profile row, leaving section headers untouched."""
         self.profile_list_widget.clearSelection()
-        for row in range(self.profile_list_widget.count()):
-            item = self.profile_list_widget.item(row)
-            if item.flags() & Qt.ItemFlag.ItemIsSelectable and item.data(Qt.ItemDataRole.UserRole):
-                item.setSelected(True)
+        if checked:
+            for row in range(self.profile_list_widget.count()):
+                item = self.profile_list_widget.item(row)
+                if item.flags() & Qt.ItemFlag.ItemIsSelectable and item.data(Qt.ItemDataRole.UserRole):
+                    item.setSelected(True)
         self._update_button_state()
 
     def accept(self):

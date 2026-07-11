@@ -6,7 +6,7 @@ from typing import List, Dict, Optional
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QListWidget, QDialogButtonBox, QAbstractItemView,
-    QListWidgetItem, QWidget, QStackedLayout
+    QListWidgetItem, QWidget, QStackedLayout, QCheckBox, QHBoxLayout, QPushButton
 )
 from PySide6.QtCore import Qt, Slot
 
@@ -81,7 +81,7 @@ class RetroArchSetupDialog(QDialog):
     def __init__(self, ra_hint: str, cores_list: List[Dict[str, str]], parent=None):
         super().__init__(parent)
         self.setWindowTitle("RetroArch Setup")
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(520)
 
         self.ra_hint = ra_hint
         self.cores_list = cores_list or []
@@ -118,6 +118,24 @@ class RetroArchSetupDialog(QDialog):
         # Page 1: Profile selection
         self.profile_page = QWidget(self)
         profile_layout = QVBoxLayout(self.profile_page)
+
+        profile_header = QHBoxLayout()
+        self.back_button = QPushButton("←  Back")
+        self.back_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.back_button.setStyleSheet(
+            "QPushButton { border: none; background: transparent; padding: 4px 8px; "
+            "min-width: 0px; text-align: left; } "
+            "QPushButton:hover { text-decoration: underline; }"
+        )
+        self.back_button.clicked.connect(self._on_back)
+        profile_header.addWidget(self.back_button)
+        profile_header.addStretch()
+        self.select_all_checkbox = QCheckBox("Select all games")
+        self.select_all_checkbox.setTristate(True)
+        self.select_all_checkbox.clicked.connect(self._toggle_all_profiles)
+        profile_header.addWidget(self.select_all_checkbox)
+        profile_layout.addLayout(profile_header)
+
         self.profile_label = QLabel("Select one or more games/profiles for the chosen core:")
         self.profile_label.setWordWrap(True)
         profile_layout.addWidget(self.profile_label)
@@ -132,15 +150,10 @@ class RetroArchSetupDialog(QDialog):
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.button_box.accepted.connect(self._on_next_or_select)
         self.button_box.rejected.connect(self.reject)
-        layout.addWidget(self.button_box)
-
-        # Add back button (ActionRole)
-        self.back_button = self.button_box.addButton("Back", QDialogButtonBox.ButtonRole.ActionRole)
-        self.back_button.clicked.connect(self._on_back)
-        self.select_all_button = self.button_box.addButton(
-            "Select All", QDialogButtonBox.ButtonRole.ActionRole
+        self.button_box.button(QDialogButtonBox.StandardButton.Ok).setObjectName(
+            "SaveButton"
         )
-        self.select_all_button.clicked.connect(self._select_all_profiles)
+        layout.addWidget(self.button_box)
 
         # Initial state
         self.stack.setCurrentIndex(0)
@@ -153,12 +166,10 @@ class RetroArchSetupDialog(QDialog):
         ok_btn = self.button_box.button(QDialogButtonBox.StandardButton.Ok)
         if self.stack.currentIndex() == 0:
             if ok_btn: ok_btn.setText("Next")
-            self.back_button.setEnabled(False)
-            self.select_all_button.setVisible(False)
         else:
             if ok_btn: ok_btn.setText("Add Selected")
-            self.back_button.setEnabled(True)
-            self.select_all_button.setVisible(True)
+        if ok_btn:
+            ok_btn.setDefault(True)
 
     @Slot()
     def _update_button_state(self):
@@ -176,10 +187,21 @@ class RetroArchSetupDialog(QDialog):
                 ok_btn.setText(
                     "Add Game" if len(selected) == 1 else f"Add {len(selected)} Games"
                 )
-            self.select_all_button.setEnabled(any(
-                self.profile_list.item(row).data(Qt.ItemDataRole.UserRole)
+            profile_count = sum(
+                1
                 for row in range(self.profile_list.count())
-            ))
+                if self.profile_list.item(row).data(Qt.ItemDataRole.UserRole)
+            )
+            self.select_all_checkbox.setEnabled(profile_count > 0)
+            self.select_all_checkbox.blockSignals(True)
+            if profile_count == 0 or len(selected) == 0:
+                state = Qt.CheckState.Unchecked
+            elif len(selected) == profile_count:
+                state = Qt.CheckState.Checked
+            else:
+                state = Qt.CheckState.PartiallyChecked
+            self.select_all_checkbox.setCheckState(state)
+            self.select_all_checkbox.blockSignals(False)
 
     @Slot()
     def _on_next_or_select(self):
@@ -218,13 +240,14 @@ class RetroArchSetupDialog(QDialog):
             self._configure_button_texts()
             self._update_button_state()
 
-    @Slot()
-    def _select_all_profiles(self):
+    @Slot(bool)
+    def _toggle_all_profiles(self, checked):
         self.profile_list.clearSelection()
-        for row in range(self.profile_list.count()):
-            item = self.profile_list.item(row)
-            if item.data(Qt.ItemDataRole.UserRole):
-                item.setSelected(True)
+        if checked:
+            for row in range(self.profile_list.count()):
+                item = self.profile_list.item(row)
+                if item.data(Qt.ItemDataRole.UserRole):
+                    item.setSelected(True)
         self._update_button_state()
 
     def _populate_profiles_for_core(self, core_id: Optional[str]):
