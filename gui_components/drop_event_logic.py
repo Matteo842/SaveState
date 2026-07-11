@@ -652,6 +652,8 @@ class DropEventMixin:
                 # Gestione generica per emulatori
                 # Implementazione inline invece di chiamare un metodo separato
                 mw = handler_instance.main_window
+                rom_directory_prompted = False
+                emulator_error_already_shown = False
                 logging.info(f"DragDropHandler: Handling emulator: {emulator_key} with {len(profiles_data) if profiles_data else 'no'} profiles")
                     
                 # Special handling for SameBoy emulator
@@ -675,6 +677,7 @@ class DropEventMixin:
                             mw, "SameBoy Detection Error",
                             f"An error occurred while trying to detect SameBoy profiles: {e}\n"
                             "You can try adding the emulator again or set the path manually via settings (if available).")
+                        emulator_error_already_shown = True
 
                 # Special handling for ares emulator: saves path not configured
                 if emulator_key == 'ares' and profiles_data is None:
@@ -712,6 +715,7 @@ class DropEventMixin:
                         except UnboundLocalError:
                             base_hint = None
                     prompted, result_profiles = self._prompt_for_emulator_rom_dir_and_find_profiles(mw, emulator_key, base_hint)
+                    rom_directory_prompted = prompted
                     if prompted:
                         # If we showed a prompt, use its result and skip the generic 'no profiles' popup
                         profiles_data = result_profiles if result_profiles is not None else []
@@ -772,7 +776,10 @@ class DropEventMixin:
                 # RetroArch two-step flow: select core, then games
                 if emulator_key == 'RetroArch' or emulator_key == 'retroarch':
                     try:
-                        from emulator_utils.retroarch_manager import list_retroarch_cores, find_retroarch_profiles
+                        from emulator_utils.retroarch_manager import (
+                            RETROARCH_UNSORTED_CORE_ID,
+                            list_retroarch_cores,
+                        )
                         # Resolve RA root hint: prefer resolved .lnk target dir or exe dir
                         ra_hint = file_path
                         if platform.system() == "Windows" and isinstance(ra_hint, str) and ra_hint.lower().endswith('.lnk'):
@@ -798,11 +805,16 @@ class DropEventMixin:
                                 core_id = setup_dialog.get_selected_core()
                                 selected_profiles = setup_dialog.get_selected_profiles_data()
                                 if core_id and selected_profiles:
+                                    profile_core_id = (
+                                        'RetroArch'
+                                        if core_id == RETROARCH_UNSORTED_CORE_ID
+                                        else core_id
+                                    )
                                     self._add_emulator_profiles(
                                         mw,
                                         selected_profiles,
-                                        profile_prefix=core_id,
-                                        emulator_id=core_id,
+                                        profile_prefix=profile_core_id,
+                                        emulator_id=profile_core_id,
                                         emulator_executable=self._resolve_emulator_executable(file_path),
                                     )
                         # end cores empty/else
@@ -841,15 +853,9 @@ class DropEventMixin:
                     event.acceptProposedAction()
                     return True # Handled emulator case (profiles found or dialog cancelled)
                 elif emulator_key:  # Emulator detected but no profiles found
-                    # If we already prompted the user for a path, avoid showing an extra 'no profiles' popup
-                    skip_no_profiles_popup = False
-                    try:
-                        # If profiles_data is [] because of a user cancel/prompt path invalidation, we skip popup
-                        skip_no_profiles_popup = True if isinstance(profiles_data, list) and len(profiles_data) == 0 else False
-                    except Exception:
-                        skip_no_profiles_popup = False
-
-                    if not skip_no_profiles_popup and profiles_data is not None:
+                    # Avoid a duplicate warning only when a ROM directory dialog
+                    # was actually shown. Empty finder results must remain visible.
+                    if not rom_directory_prompted and not emulator_error_already_shown:
                         logging.warning(f"{emulator_key} detected, but no profiles found in its standard directory.")
                         QMessageBox.warning(
                             mw, f"{emulator_key.capitalize()} Profiles",
@@ -1126,6 +1132,7 @@ class DropEventMixin:
             # If an emulator was detected, handle it accordingly
             if emulator_result is not None:
                 emulator_key, profiles_data = emulator_result
+                emulator_error_already_shown = False
                 
                 # Special handling for SameBoy emulator
                 if emulator_key == 'sameboy' and profiles_data is None:
@@ -1148,6 +1155,7 @@ class DropEventMixin:
                             mw, "SameBoy Detection Error",
                             f"An error occurred while trying to detect SameBoy profiles: {e}\n"
                             "You can try adding the emulator again or set the path manually via settings (if available).")
+                        emulator_error_already_shown = True
                 
                 # Special handling for ares emulator: saves path not configured
                 if emulator_key == 'ares' and profiles_data is None:
@@ -1212,7 +1220,11 @@ class DropEventMixin:
                 # RetroArch two-step flow in fallback branch
                 if emulator_key == 'RetroArch' or emulator_key == 'retroarch':
                     try:
-                        from emulator_utils.retroarch_manager import list_retroarch_cores, find_retroarch_profiles
+                        from emulator_utils.retroarch_manager import (
+                            RETROARCH_UNSORTED_CORE_ID,
+                            find_retroarch_profiles,
+                            list_retroarch_cores,
+                        )
                         cores = list_retroarch_cores(target_path)
                         if not cores:
                             QMessageBox.warning(mw, "RetroArch", "No cores with saves detected under RetroArch paths.")
@@ -1226,11 +1238,16 @@ class DropEventMixin:
                                         selection_dialog = EmulatorGameSelectionDialog(core_id, profiles_data, mw)
                                         if selection_dialog.exec():
                                             selected_profiles = selection_dialog.get_selected_profiles_data()
+                                            profile_core_id = (
+                                                'RetroArch'
+                                                if core_id == RETROARCH_UNSORTED_CORE_ID
+                                                else core_id
+                                            )
                                             self._add_emulator_profiles(
                                                 mw,
                                                 selected_profiles,
-                                                profile_prefix=core_id,
-                                                emulator_id=core_id,
+                                                profile_prefix=profile_core_id,
+                                                emulator_id=profile_core_id,
                                                 emulator_executable=target_path,
                                             )
                     except Exception as e_ra:
@@ -1244,7 +1261,7 @@ class DropEventMixin:
                     return # handled RA
 
                 # Handle emulator profiles if found
-                if emulator_key and profiles_data is not None: # Check if profiles_data is not None (it could be an empty list)
+                if emulator_key and bool(profiles_data):
                     logging.info(f"Found {emulator_key} profiles: {len(profiles_data)}")
                     
                     # Show dialog for selecting which emulator game to create a profile for
@@ -1269,8 +1286,9 @@ class DropEventMixin:
                     return # Return after handling emulator profiles
                 elif emulator_key: # Emulator detected but no profiles found
                     logging.warning(f"{emulator_key} detected, but no profiles found in its standard directory.")
-                    QMessageBox.warning(mw, f"Emulator Detected ({emulator_key})",
-                                    f"Detected link to {emulator_key}, but no profiles found in its standard folder.\nCheck the emulator's save location.")
+                    if not emulator_error_already_shown:
+                        QMessageBox.warning(mw, f"Emulator Detected ({emulator_key})",
+                                        f"Detected link to {emulator_key}, but no profiles found in its standard folder.\nCheck the emulator's save location.")
                 return # IMPORTANT: Stop further processing if an emulator was detected
 
             # self.game_name_input.setText(game_name) # Temporarily commented out

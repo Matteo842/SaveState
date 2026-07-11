@@ -10,6 +10,8 @@ from typing import Dict, List, Optional, Tuple, TypedDict
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
+RETROARCH_UNSORTED_CORE_ID = "__retroarch_unsorted__"
+
 
 class CoreEntry(TypedDict):
     id: str
@@ -138,6 +140,25 @@ def _first_existing_dir(candidates: List[Optional[str]]) -> Optional[str]:
     return None
 
 
+def _most_recent_existing_file(candidates: List[str]) -> Optional[str]:
+    """Return the most recently modified candidate, preserving order for ties."""
+    existing = []
+    seen = set()
+    for index, path in enumerate(candidates):
+        if not path:
+            continue
+        normalized = os.path.normcase(os.path.abspath(path))
+        if normalized in seen or not os.path.isfile(path):
+            continue
+        seen.add(normalized)
+        try:
+            modified_at = os.path.getmtime(path)
+        except OSError:
+            modified_at = 0
+        existing.append((modified_at, -index, path))
+    return max(existing, default=(None, None, None))[2]
+
+
 def _resolve_ra_paths(executable_path_or_dir: Optional[str]) -> Dict[str, Optional[str]]:
     """Resolve RetroArch root, saves directory and system directory using both root and retroarch.cfg.
     Preference: explicit directories in retroarch.cfg > root defaults.
@@ -181,7 +202,7 @@ def _resolve_ra_paths(executable_path_or_dir: Optional[str]) -> Dict[str, Option
         home = os.path.expanduser('~')
         cfg_candidates.append(os.path.join(home, 'Library', 'Application Support', 'RetroArch', 'retroarch.cfg'))
 
-    cfg_path = next((p for p in cfg_candidates if p and os.path.isfile(p)), None)
+    cfg_path = _most_recent_existing_file(cfg_candidates)
     cfg = _read_retroarch_cfg(cfg_path)
     cfg_dir = os.path.dirname(cfg_path) if cfg_path else None
 
@@ -221,9 +242,27 @@ def _resolve_ra_paths(executable_path_or_dir: Optional[str]) -> Dict[str, Option
     default_states: Optional[str] = None
     sysname = platform.system()
     if sysname == 'Windows':
-        default_saves = _get_saves_dir(ra_root)
-        default_system = os.path.join(ra_root, 'system') if ra_root and os.path.isdir(os.path.join(ra_root, 'system')) else None
-        default_states = os.path.join(ra_root, 'states') if ra_root and os.path.isdir(os.path.join(ra_root, 'states')) else None
+        appdata = os.getenv('APPDATA')
+        local_appdata = os.getenv('LOCALAPPDATA')
+        windows_roots = [
+            cfg_dir,
+            ra_root,
+            os.path.join(appdata, 'RetroArch') if appdata else None,
+            os.path.join(local_appdata, 'RetroArch') if local_appdata else None,
+            (
+                os.path.join(local_appdata, 'Packages', 'RetroArch', 'LocalState')
+                if local_appdata else None
+            ),
+        ]
+        default_saves = _first_existing_dir([
+            os.path.join(root, 'saves') if root else None for root in windows_roots
+        ])
+        default_system = _first_existing_dir([
+            os.path.join(root, 'system') if root else None for root in windows_roots
+        ])
+        default_states = _first_existing_dir([
+            os.path.join(root, 'states') if root else None for root in windows_roots
+        ])
     elif sysname == 'Linux':
         home = os.path.expanduser('~')
         xdg_config = os.getenv('XDG_CONFIG_HOME') or os.path.join(home, '.config')
@@ -299,6 +338,22 @@ def _iter_files_shallow(root_dir: str) -> List[str]:
             full = os.path.join(root_dir, entry)
             if os.path.isfile(full):
                 out.append(full)
+    except Exception as e:
+        log.warning(f"Error walking directory '{root_dir}': {e}")
+    return out
+
+
+def _iter_files_recursive(root_dir: str, max_depth: int = 3) -> List[str]:
+    """Return files under root_dir, limiting recursion to avoid broad scans."""
+    out: List[str] = []
+    try:
+        root_abs = os.path.abspath(root_dir)
+        for current_root, dirnames, filenames in os.walk(root_abs):
+            relative = os.path.relpath(current_root, root_abs)
+            depth = 0 if relative == '.' else relative.count(os.sep) + 1
+            if depth >= max_depth:
+                dirnames[:] = []
+            out.extend(os.path.join(current_root, name) for name in filenames)
     except Exception as e:
         log.warning(f"Error walking directory '{root_dir}': {e}")
     return out
@@ -390,7 +445,7 @@ def list_retroarch_cores(executable_path_or_dir: Optional[str] = None) -> List[C
                 core_path = os.path.join(saves_dir, entry)
                 if not os.path.isdir(core_path):
                     continue
-                count = len(_iter_files_shallow(core_path))
+                count = len(_iter_files_recursive(core_path))
                 if count > 0:
                     seen_ids[entry] = seen_ids.get(entry, 0) + count
 
@@ -400,12 +455,26 @@ def list_retroarch_cores(executable_path_or_dir: Optional[str] = None) -> List[C
                 states_core_path = os.path.join(states_dir, entry)
                 if not os.path.isdir(states_core_path):
                     continue
-                count = len(_iter_files_shallow(states_core_path))
+                count = len(_iter_files_recursive(states_core_path))
                 if count > 0:
                     seen_ids[entry] = seen_ids.get(entry, 0) + count
 
         for core_id, count in seen_ids.items():
             cores.append({'id': core_id, 'name': core_id, 'count': count})
+
+        # RetroArch can also keep saves directly in the root when per-core
+        # sorting is disabled. Surface those files as one honest generic entry.
+        root_files = []
+        if saves_dir:
+            root_files.extend(_iter_files_shallow(saves_dir))
+        if states_dir:
+            root_files.extend(_iter_files_shallow(states_dir))
+        if root_files:
+            cores.append({
+                'id': RETROARCH_UNSORTED_CORE_ID,
+                'name': 'Unsorted saves',
+                'count': len(root_files),
+            })
 
         # PS2: any directory containing .ps2 under system or saves
         ps2_dir, ps2_count = _find_dir_with_ext([system_dir, saves_dir], '.ps2', max_depth=3)
@@ -509,33 +578,43 @@ def find_retroarch_profiles(selected_core: str, executable_path_or_dir: Optional
             return profiles
 
     core_dirs: List[str] = []
-    if saves_dir:
-        candidate = os.path.join(saves_dir, core_name)
-        if os.path.isdir(candidate):
-            core_dirs.append(candidate)
-    if states_dir:
-        candidate = os.path.join(states_dir, core_name)
-        if os.path.isdir(candidate):
-            core_dirs.append(candidate)
+    flat_files: List[str] = []
+    is_unsorted = core_name == RETROARCH_UNSORTED_CORE_ID
+    if is_unsorted:
+        if saves_dir:
+            flat_files.extend(_iter_files_shallow(saves_dir))
+        if states_dir:
+            flat_files.extend(_iter_files_shallow(states_dir))
+    else:
+        if saves_dir:
+            candidate = os.path.join(saves_dir, core_name)
+            if os.path.isdir(candidate):
+                core_dirs.append(candidate)
+        if states_dir:
+            candidate = os.path.join(states_dir, core_name)
+            if os.path.isdir(candidate):
+                core_dirs.append(candidate)
 
-    if not core_dirs:
+    if not core_dirs and not flat_files:
         return []
 
     profiles: List[ProfileEntry] = []
     seen: Dict[str, ProfileEntry] = {}
 
     try:
+        files_to_process = list(flat_files)
         for core_dir in core_dirs:
-            for full in _iter_files_shallow(core_dir):
-                entry = os.path.basename(full)
-                base = os.path.splitext(entry)[0]
-                display = re.sub(r"\s*\([A-Za-z]{2}(?:,[A-Za-z]{2})+\)$", "", base).strip() or base
-                key = base.lower()
-                if key in seen:
-                    if full not in seen[key]['paths']:
-                        seen[key]['paths'].append(full)
-                else:
-                    seen[key] = {'id': base, 'name': display, 'paths': [full]}
+            files_to_process.extend(_iter_files_recursive(core_dir))
+        for full in files_to_process:
+            entry = os.path.basename(full)
+            base = os.path.splitext(entry)[0]
+            display = re.sub(r"\s*\([A-Za-z]{2}(?:,[A-Za-z]{2})+\)$", "", base).strip() or base
+            key = base.lower()
+            if key in seen:
+                if full not in seen[key]['paths']:
+                    seen[key]['paths'].append(full)
+            else:
+                seen[key] = {'id': base, 'name': display, 'paths': [full]}
         profiles = list(seen.values())
     except Exception as e:
         log.error(f"Error scanning core directories {core_dirs}: {e}")
