@@ -16,6 +16,9 @@ import pickle
 import time
 import datetime
 import random
+import queue
+import threading
+import urllib.parse
 from typing import Optional, List, Dict, Callable, Any
 from pathlib import Path
 from PySide6.QtCore import QObject, Signal
@@ -50,6 +53,8 @@ def _lazy_init():
 
 import hashlib
 from cloud_utils.storage_provider import select_zip_files_for_upload
+from common.utils import resource_path
+from config import get_app_data_folder
 
 # If modifying these scopes, delete the token.pickle file
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
@@ -60,6 +65,75 @@ APP_FOLDER_NAME = "SaveState Backups"
 # In-memory cache TTLs to cut repeated DriveFiles.List traffic (seconds).
 FOLDER_FILES_CACHE_TTL_SEC = 90
 CLOUD_BACKUPS_LIST_CACHE_TTL_SEC = 45
+OAUTH_CALLBACK_HOST = "127.0.0.1"
+OAUTH_CALLBACK_TIMEOUT_SEC = 180
+OAUTH_SERVER_POLL_SEC = 0.5
+
+
+class _OAuthCallbackHandler:
+    """Capture only a valid OAuth callback, ignoring browser noise such as favicon requests."""
+
+    def __init__(self, expected_state: str):
+        self.expected_state = expected_state
+        self.authorization_response: Optional[str] = None
+
+    @staticmethod
+    def _html_response(title: str, message: str) -> bytes:
+        return (
+            "<!doctype html><html><head><meta charset=\"utf-8\">"
+            f"<title>{title}</title></head>"
+            "<body style=\"font-family:sans-serif;text-align:center;padding:50px\">"
+            f"<h1>{title}</h1><p>{message}</p></body></html>"
+        ).encode("utf-8")
+
+    def __call__(self, environ, start_response):
+        from wsgiref.util import request_uri
+
+        response_url = request_uri(environ)
+        parsed = urllib.parse.urlparse(response_url)
+        params = urllib.parse.parse_qs(parsed.query)
+        state = params.get("state", [""])[0]
+
+        if parsed.path == "/favicon.ico":
+            start_response("204 No Content", [("Content-Length", "0")])
+            return [b""]
+
+        if not ("code" in params or "error" in params):
+            response = self._html_response(
+                "Authorization Pending",
+                "This is the SaveState authorization endpoint. Return to the Google sign-in page.",
+            )
+            start_response("400 Bad Request", [
+                ("Content-Type", "text/html; charset=utf-8"),
+                ("Content-Length", str(len(response))),
+            ])
+            return [response]
+
+        if not state or state != self.expected_state:
+            logging.warning("Rejected Google OAuth callback with an invalid state")
+            response = self._html_response(
+                "Authorization Rejected",
+                "The authorization state was invalid. Return to SaveState and try again.",
+            )
+            start_response("400 Bad Request", [
+                ("Content-Type", "text/html; charset=utf-8"),
+                ("Content-Length", str(len(response))),
+            ])
+            return [response]
+
+        self.authorization_response = response_url
+        if "error" in params:
+            title = "Authorization Cancelled"
+            message = "Google did not authorize SaveState. You can close this window."
+        else:
+            title = "Authorization Successful"
+            message = "You can close this window and return to SaveState."
+        response = self._html_response(title, message)
+        start_response("200 OK", [
+            ("Content-Type", "text/html; charset=utf-8"),
+            ("Content-Length", str(len(response))),
+        ])
+        return [response]
 
 
 class GoogleDriveManager:
@@ -76,10 +150,17 @@ class GoogleDriveManager:
         self.is_connected = False
         self.app_folder_id = None  # ID of the SaveState folder in Google Drive
         
-        # Paths for credentials and token
+        # Bundled credentials are read-only; user tokens must survive AppImage
+        # extraction and therefore belong in the platform app-data directory.
         self.base_dir = Path(__file__).parent
-        self.client_secret_file = self.base_dir / 'client_secret.json'
-        self.token_file = self.base_dir / 'token.pickle'
+        self.client_secret_file = Path(resource_path("cloud_utils/client_secret.json"))
+        self.token_file = Path(get_app_data_folder()) / "google_drive_token.pickle"
+        self._legacy_token_file = self.base_dir / "token.pickle"
+        self.last_auth_error = ""
+        self._auth_lock = threading.Lock()
+        self._manual_callback_urls: queue.Queue[str] = queue.Queue()
+        self._oauth_callback_port: Optional[int] = None
+        self._oauth_expected_state: Optional[str] = None
         
         # Progress callback
         self.progress_callback: Optional[Callable[[int, int, str], None]] = None
@@ -112,15 +193,27 @@ class GoogleDriveManager:
         Returns:
             bool: True if authentication successful, False otherwise
         """
+        if not self._auth_lock.acquire(blocking=False):
+            self.last_auth_error = "Another Google Drive authentication attempt is already running."
+            logging.warning(self.last_auth_error)
+            return False
+
+        self.reset_cancellation()
+        self.last_auth_error = ""
+        self._discard_manual_callback_urls()
         try:
             creds = None
             
             # Check if we have a saved token
-            if self.token_file.exists():
+            token_to_load = self.token_file
+            if not token_to_load.exists() and self._legacy_token_file.exists():
+                token_to_load = self._legacy_token_file
+                logging.info("Found legacy Google Drive token; it will be migrated to app data")
+            if token_to_load.exists():
                 try:
-                    with open(self.token_file, 'rb') as token:
+                    with open(token_to_load, 'rb') as token:
                         creds = pickle.load(token)
-                    logging.info("Loaded existing credentials from token file")
+                    logging.info("Loaded existing Google Drive credentials")
                 except Exception as e:
                     logging.warning(f"Error loading token file: {e}")
                     creds = None
@@ -139,7 +232,10 @@ class GoogleDriveManager:
                 # If still no valid creds, start OAuth flow
                 if not creds:
                     if not self.client_secret_file.exists():
-                        logging.error(f"Client secret file not found: {self.client_secret_file}")
+                        self.last_auth_error = (
+                            "Google Drive configuration is missing (client_secret.json was not found)."
+                        )
+                        logging.error(f"{self.last_auth_error} Path: {self.client_secret_file}")
                         return False
                     
                     try:
@@ -148,97 +244,101 @@ class GoogleDriveManager:
                             str(self.client_secret_file), SCOPES
                         )
                         
-                        # Create local server manually to get the port BEFORE generating auth URL
-                        # This ensures the redirect_uri is correct (fixes Linux browser issue)
                         import wsgiref.simple_server
                         import webbrowser
                         
                         # Allow HTTP for localhost (required for OAuth on localhost)
                         os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-                        
-                        host = 'localhost'
-                        
-                        # Create a simple WSGI app to capture the OAuth response
-                        class _AuthResponseHandler:
-                            def __init__(self):
-                                self.authorization_response = None
-                            
-                            def __call__(self, environ, start_response):
-                                from wsgiref.util import request_uri
-                                self.authorization_response = request_uri(environ)
-                                # Send a simple response to the browser
-                                response = b"""
-                                <html><head><title>Authorization Complete</title></head>
-                                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                                <h1>Authorization Successful!</h1>
-                                <p>You can close this window and return to SaveState.</p>
-                                </body></html>
-                                """
-                                start_response('200 OK', [
-                                    ('Content-Type', 'text/html; charset=utf-8'),
-                                    ('Content-Length', str(len(response)))
-                                ])
-                                return [response]
-                        
-                        wsgi_app = _AuthResponseHandler()
-                        
-                        # Create server on random port with timeout
+                        # An explicit IPv4 loopback avoids localhost resolving to
+                        # IPv6 while the embedded WSGI server listens on IPv4.
+                        wsgi_app = _OAuthCallbackHandler("")
                         local_server = wsgiref.simple_server.make_server(
-                            host, 0, wsgi_app, handler_class=wsgiref.simple_server.WSGIRequestHandler
+                            OAUTH_CALLBACK_HOST,
+                            0,
+                            wsgi_app,
+                            handler_class=wsgiref.simple_server.WSGIRequestHandler,
                         )
-                        local_server.timeout = 120  # 2 minute timeout for OAuth
-                        port = local_server.server_port
-                        
-                        # Set redirect_uri BEFORE generating auth URL
-                        redirect_uri = f'http://{host}:{port}/'
-                        flow.redirect_uri = redirect_uri
-                        
-                        # NOW generate auth URL - this will have the correct redirect_uri
-                        auth_url, state = flow.authorization_url(
-                            access_type='offline',
-                            prompt='consent'
-                        )
-                        logging.info(f"Authorization URL generated with redirect_uri: {redirect_uri}")
-                        
-                        # Notify callback with correct URL
-                        if auth_url_callback:
-                            try:
-                                auth_url_callback(auth_url)
-                            except Exception as e_cb:
-                                logging.warning(f"Error in auth_url_callback: {e_cb}")
-                        
-                        # Try to open browser
                         try:
-                            webbrowser.open(auth_url, new=1)
-                            logging.info("Browser opened for authorization")
-                        except Exception as e_browser:
-                            logging.warning(f"Could not open browser: {e_browser}")
-                        
-                        # Wait for the OAuth redirect (this is blocking)
-                        logging.info(f"Waiting for OAuth response on {redirect_uri}...")
-                        local_server.handle_request()
-                        
-                        # Check if we got a response
-                        if wsgi_app.authorization_response is None:
-                            logging.error("No authorization response received")
+                            port = local_server.server_port
+                            redirect_uri = f"http://{OAUTH_CALLBACK_HOST}:{port}/"
+                            flow.redirect_uri = redirect_uri
+                            auth_url, state = flow.authorization_url(
+                                access_type="offline",
+                                prompt="consent",
+                            )
+                            wsgi_app.expected_state = state
+                            self._oauth_callback_port = port
+                            self._oauth_expected_state = state
+                            logging.info(
+                                "Google OAuth callback server listening on %s",
+                                redirect_uri,
+                            )
+
+                            if auth_url_callback:
+                                try:
+                                    auth_url_callback(auth_url)
+                                except Exception as e_cb:
+                                    logging.warning(f"Error in auth_url_callback: {e_cb}")
+
+                            try:
+                                opened = webbrowser.open(auth_url, new=1)
+                                if not opened:
+                                    logging.warning("Default browser did not confirm that it opened")
+                            except Exception as e_browser:
+                                logging.warning(f"Could not open browser: {e_browser}")
+
+                            authorization_response = self._wait_for_oauth_callback(
+                                local_server, wsgi_app, state, port
+                            )
+                        finally:
+                            self._oauth_callback_port = None
+                            self._oauth_expected_state = None
+                            local_server.server_close()
+
+                        if not authorization_response:
                             return False
-                        
-                        # Fetch token using the authorization response
-                        flow.fetch_token(authorization_response=wsgi_app.authorization_response)
+
+                        params = urllib.parse.parse_qs(
+                            urllib.parse.urlparse(authorization_response).query
+                        )
+                        if "error" in params:
+                            oauth_error = params.get("error_description", params["error"])[0]
+                            self.last_auth_error = f"Google authorization was not completed: {oauth_error}"
+                            logging.warning(self.last_auth_error)
+                            return False
+
+                        flow.fetch_token(authorization_response=authorization_response)
                         creds = flow.credentials
                         logging.info("OAuth2 flow completed successfully")
                         
                     except Exception as e:
-                        logging.error(f"Error during OAuth2 flow: {e}")
+                        self.last_auth_error = f"Google OAuth failed: {e}"
+                        logging.error(self.last_auth_error, exc_info=True)
                         return False
                 
                 # Save the credentials for the next run
                 try:
-                    with open(self.token_file, 'wb') as token:
+                    self.token_file.parent.mkdir(parents=True, exist_ok=True)
+                    temporary_token = self.token_file.with_suffix(".tmp")
+                    with open(temporary_token, 'wb') as token:
                         pickle.dump(creds, token)
-                    logging.info("Credentials saved to token file")
+                    os.replace(temporary_token, self.token_file)
+                    if os.name != "nt":
+                        os.chmod(self.token_file, 0o600)
+                    logging.info("Google Drive credentials saved in app data")
                 except Exception as e:
                     logging.warning(f"Error saving token file: {e}")
+                else:
+                    if (
+                        token_to_load == self._legacy_token_file
+                        and self._legacy_token_file.exists()
+                        and self._legacy_token_file != self.token_file
+                    ):
+                        try:
+                            self._legacy_token_file.unlink()
+                            logging.info("Removed legacy Google Drive token after migration")
+                        except OSError as e:
+                            logging.warning(f"Could not remove legacy Google Drive token: {e}")
             
             # Build the service
             try:
@@ -256,6 +356,9 @@ class GoogleDriveManager:
                 # Create or find app folder
                 self.app_folder_id = self.create_app_folder()
                 if not self.app_folder_id:
+                    self.last_auth_error = (
+                        "Google Drive connected, but the SaveState backup folder could not be accessed."
+                    )
                     logging.warning("Could not create/find app folder")
                     self.service = None
                     self.credentials = None
@@ -267,26 +370,118 @@ class GoogleDriveManager:
                 return True
                 
             except Exception as e:
-                logging.error(f"Error building Drive service: {e}")
+                self.last_auth_error = f"Google Drive API initialization failed: {e}"
+                logging.error(self.last_auth_error, exc_info=True)
                 return False
                 
         except Exception as e:
-            logging.error(f"Unexpected error during authentication: {e}")
+            self.last_auth_error = f"Unexpected Google Drive authentication error: {e}"
+            logging.error(self.last_auth_error, exc_info=True)
             return False
+        finally:
+            self._oauth_callback_port = None
+            self._oauth_expected_state = None
+            self._auth_lock.release()
+
+    def _discard_manual_callback_urls(self) -> None:
+        """Remove callback URLs left by an earlier authentication attempt."""
+        while True:
+            try:
+                self._manual_callback_urls.get_nowait()
+            except queue.Empty:
+                return
+
+    def submit_auth_callback_url(self, callback_url: str) -> tuple[bool, str]:
+        """Submit a browser redirect URL when the browser cannot reach loopback."""
+        callback_url = (callback_url or "").strip()
+        try:
+            parsed = urllib.parse.urlparse(callback_url)
+            params = urllib.parse.parse_qs(parsed.query)
+            if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
+                return False, "Paste the complete localhost URL shown in the browser address bar."
+            if not ("code" in params or "error" in params):
+                return False, "The URL does not contain a Google authorization result."
+            if not self._oauth_expected_state:
+                return False, "No Google authorization is currently waiting for a callback."
+            if params.get("state", [""])[0] != self._oauth_expected_state:
+                return False, "The URL belongs to a different authorization attempt."
+            if parsed.port != self._oauth_callback_port:
+                return False, "The URL belongs to a different authorization attempt."
+        except (TypeError, ValueError):
+            return False, "The pasted callback URL is not valid."
+
+        self._manual_callback_urls.put(callback_url)
+        return True, ""
+
+    def _wait_for_oauth_callback(
+        self, local_server, wsgi_app: _OAuthCallbackHandler, expected_state: str, port: int
+    ) -> Optional[str]:
+        """Wait for either the HTTP callback or a manually pasted redirect URL."""
+        deadline = time.monotonic() + OAUTH_CALLBACK_TIMEOUT_SEC
+        while time.monotonic() < deadline:
+            if self._cancelled:
+                self.last_auth_error = "Google Drive authorization was cancelled."
+                logging.info(self.last_auth_error)
+                return None
+
+            try:
+                manual_url = self._manual_callback_urls.get_nowait()
+            except queue.Empty:
+                manual_url = None
+            if manual_url:
+                parsed = urllib.parse.urlparse(manual_url)
+                params = urllib.parse.parse_qs(parsed.query)
+                if (
+                    parsed.hostname in {"127.0.0.1", "localhost"}
+                    and parsed.port == port
+                    and params.get("state", [""])[0] == expected_state
+                ):
+                    logging.info("Using manually submitted Google OAuth callback URL")
+                    return manual_url
+
+            if wsgi_app.authorization_response:
+                return wsgi_app.authorization_response
+
+            remaining = deadline - time.monotonic()
+            local_server.timeout = min(OAUTH_SERVER_POLL_SEC, max(0.0, remaining))
+            local_server.handle_request()
+
+        self.last_auth_error = (
+            "Google authorization timed out because the browser callback was not received. "
+            "If the browser shows a failed localhost page, paste its full address into SaveState."
+        )
+        logging.error(self.last_auth_error)
+        return None
     
     def disconnect(self):
-        """Disconnect from Google Drive and clear credentials."""
+        """End the active connection while preserving saved credentials."""
         self.service = None
         self.credentials = None
         self.is_connected = False
         self.app_folder_id = None
         self._invalidate_list_caches()
-        
-        # Optionally delete token file to force re-authentication
-        # if self.token_file.exists():
-        #     self.token_file.unlink()
-        
         logging.info("Disconnected from Google Drive")
+
+    def logout(self) -> bool:
+        """Disconnect and delete all current and legacy saved credentials."""
+        self.disconnect()
+        removed = False
+        deletion_errors = []
+        for token_path in {self.token_file, self._legacy_token_file}:
+            try:
+                if token_path.exists():
+                    token_path.unlink()
+                    removed = True
+                    logging.info("Deleted saved Google Drive credentials: %s", token_path)
+            except OSError as e:
+                deletion_errors.append(f"{token_path}: {e}")
+
+        if deletion_errors:
+            raise OSError(
+                "Could not delete all saved Google Drive credentials: "
+                + "; ".join(deletion_errors)
+            )
+        return removed
 
     def _invalidate_list_caches(self, folder_id: str | None = None) -> None:
         """Drop cached list results after mutations or disconnect."""

@@ -87,6 +87,10 @@ class AuthWorker(QObject):
     def cancel(self):
         """Mark this worker as cancelled."""
         self.is_cancelled = True
+        try:
+            self.drive_manager.request_cancellation()
+        except Exception as e:
+            logging.debug(f"Could not interrupt authentication worker {self.worker_id}: {e}")
         logging.info(f"AuthWorker {self.worker_id} marked as cancelled")
     
     def run(self):
@@ -107,7 +111,12 @@ class AuthWorker(QObject):
             if success:
                 self.finished.emit(True, "")
             else:
-                self.finished.emit(False, "Authentication failed. Please check your credentials.")
+                error_message = getattr(
+                    self.drive_manager,
+                    "last_auth_error",
+                    "",
+                ) or "Google Drive authentication failed."
+                self.finished.emit(False, error_message)
         except Exception as e:
             # Don't emit signal if this worker was cancelled
             if self.is_cancelled:
@@ -2607,14 +2616,16 @@ class CloudSavePanel(QWidget):
             from PySide6.QtCore import QTimer
             self.auth_timeout_timer = QTimer(self)
             self.auth_timeout_timer.setSingleShot(True)
-            # 60 seconds timeout; if exceeded, abort and restore UI
+            # Keep this slightly longer than the manager's 180-second callback
+            # deadline so the worker can return its specific diagnostic first.
             self.auth_timeout_timer.timeout.connect(self._on_auth_timeout)
-            self.auth_timeout_timer.start(60000)
+            self.auth_timeout_timer.start(210000)
         except Exception:
             pass
     
     def _on_auth_finished(self, success, error_message):
         """Handle authentication completion."""
+        self._current_auth_worker = None
         self.progress_bar.setVisible(False)
         self.connect_button.setEnabled(True)
 
@@ -2648,10 +2659,9 @@ class CloudSavePanel(QWidget):
                 "Connection Failed",
                 f"Could not connect to Google Drive.\n\n"
                 f"{error_message}\n\n"
-                "Please make sure:\n"
-                "• You have a valid client_secret.json file\n"
-                "• You authorized the application in your browser\n"
-                "• You have an active internet connection"
+                "Check your internet connection and complete authorization in the browser. "
+                "If the browser cannot load the localhost page, copy its full address and "
+                "paste it into the authorization window."
             )
         
         # Close the auth URL dialog if it's open
@@ -2685,7 +2695,9 @@ class CloudSavePanel(QWidget):
         instruction_label = QLabel(
             "A browser window should open for authorization.\n\n"
             "If the browser didn't open automatically, copy the URL below\n"
-            "and paste it into your browser to authorize SaveState:"
+            "and paste it into your browser to authorize SaveState.\n\n"
+            "SteamOS/AppImage fallback: if authorization finishes on a page that cannot\n"
+            "load, copy the complete URL from that page's address bar and paste it below."
         )
         instruction_label.setWordWrap(True)
         layout.addWidget(instruction_label)
@@ -2700,6 +2712,17 @@ class CloudSavePanel(QWidget):
         
         # Store reference to update if needed
         self._auth_url_field = url_field
+
+        callback_field = QLineEdit()
+        callback_field.setPlaceholderText(
+            "Paste failed http://127.0.0.1:PORT/?code=...&state=... URL here"
+        )
+        callback_field.setClearButtonEnabled(True)
+        layout.addWidget(callback_field)
+
+        callback_status = QLabel("")
+        callback_status.setWordWrap(True)
+        layout.addWidget(callback_status)
 
         # Button row
         button_layout = QHBoxLayout()
@@ -2716,6 +2739,24 @@ class CloudSavePanel(QWidget):
         copy_button.clicked.connect(copy_url)
         button_layout.addWidget(copy_button)
 
+        submit_button = QPushButton("Submit Redirect URL")
+
+        def submit_callback_url():
+            callback_url = callback_field.text().strip()
+            success, message = self.drive_manager.submit_auth_callback_url(callback_url)
+            if success:
+                callback_status.setText("Authorization response submitted. Finishing connection…")
+                callback_status.setStyleSheet("color: #5cb85c; font-size: 11px;")
+                callback_field.setEnabled(False)
+                submit_button.setEnabled(False)
+            else:
+                callback_status.setText(message)
+                callback_status.setStyleSheet("color: #d9534f; font-size: 11px;")
+
+        submit_button.clicked.connect(submit_callback_url)
+        callback_field.returnPressed.connect(submit_callback_url)
+        button_layout.addWidget(submit_button)
+
         button_layout.addStretch()
         
         # Cancel button
@@ -2726,7 +2767,10 @@ class CloudSavePanel(QWidget):
         layout.addLayout(button_layout)
         
         # Info label
-        info_label = QLabel("This dialog will close automatically when authorization completes.")
+        info_label = QLabel(
+            "This dialog closes automatically when authorization completes. "
+            "Redirect URLs contain a temporary code; do not share them."
+        )
         info_label.setStyleSheet("color: gray; font-size: 11px;")
         layout.addWidget(info_label)
 
@@ -2795,8 +2839,8 @@ class CloudSavePanel(QWidget):
         # Close auth URL dialog if open
         self._close_auth_url_dialog()
 
-        # Cancel the current worker (don't kill thread - let it finish naturally)
-        # The OAuth flow will eventually timeout or complete, but we'll ignore the results
+        # Cancel the current worker. The manager polls its loopback server in short
+        # intervals, so cancellation now interrupts the OAuth wait promptly.
         if self._current_auth_worker is not None:
             try:
                 self._current_auth_worker.cancel()
@@ -2805,9 +2849,7 @@ class CloudSavePanel(QWidget):
                 logging.debug(f"Could not cancel worker: {e}")
             self._current_auth_worker = None
 
-        # NOTE: We do NOT terminate the thread! OAuth flow is blocking and cannot be interrupted.
-        # The thread will finish naturally when OAuth completes or times out.
-        # This prevents the "QThread: Destroyed while thread is still running" crash.
+        # Do not terminate the QThread; the worker exits cleanly after observing cancellation.
 
         # Restore UI state
         try:
@@ -2819,8 +2861,7 @@ class CloudSavePanel(QWidget):
                 self,
                 "Authentication Cancelled",
                 "Authentication timed out or was cancelled.\n\n"
-                "You can try connecting again. If you complete the authorization in your browser, "
-                "it will be saved for next time."
+                "Try connecting again and complete the browser authorization within three minutes."
             )
         except Exception as e:
             logging.error(f"Error restoring UI after timeout: {e}")
@@ -2949,18 +2990,30 @@ class CloudSavePanel(QWidget):
         
         logging.info("Logging out from Google Drive...")
         
+        logout_error = None
+        credentials_removed = False
         try:
-            # Disconnect first
-            self.drive_manager.disconnect()
-            self._set_connected(False)
-            self.cloud_backups.clear()
-            self._repopulate_table()
-            
-            # Delete token file
-            token_file = self.drive_manager.token_file
-            if token_file.exists():
-                token_file.unlink()
-                logging.info(f"Token file deleted: {token_file}")
+            # Logout differs from Disconnect: it also removes both the current
+            # app-data token and any legacy token left by older versions.
+            credentials_removed = self.drive_manager.logout()
+        except Exception as e:
+            logout_error = e
+            logging.error(f"Error during logout: {e}")
+
+        # logout() disconnects before deleting tokens, so even if the token
+        # deletion fails the session is gone: the UI must reflect that.
+        self._set_connected(False)
+        self.cloud_backups.clear()
+        self._repopulate_table()
+
+        if logout_error is not None:
+            QMessageBox.critical(
+                self,
+                "Logout Error",
+                f"An error occurred during logout:\n{logout_error}"
+            )
+        else:
+            if credentials_removed:
                 QMessageBox.information(
                     self,
                     "Logout Successful",
@@ -2968,27 +3021,19 @@ class CloudSavePanel(QWidget):
                     "Your saved credentials have been deleted."
                 )
             else:
-                logging.warning("Token file not found during logout")
+                logging.warning("No saved Google Drive credentials found during logout")
                 QMessageBox.information(
                     self,
                     "Logout Complete",
                     "Logged out (no saved credentials found)."
                 )
-            
-            # Update settings panel if open
-            try:
-                if self.stacked_widget.currentIndex() == 1 and hasattr(self, 'settings_panel') and self.settings_panel:
-                    self.settings_panel.refresh_storage_status()
-            except Exception:
-                pass
-                
-        except Exception as e:
-            logging.error(f"Error during logout: {e}")
-            QMessageBox.critical(
-                self,
-                "Logout Error",
-                f"An error occurred during logout:\n{str(e)}"
-            )
+
+        # Update settings panel if open
+        try:
+            if self.stacked_widget.currentIndex() == 1 and hasattr(self, 'settings_panel') and self.settings_panel:
+                self.settings_panel.refresh_storage_status()
+        except Exception:
+            pass
     
     def _set_connected(self, connected):
         """Update UI based on connection status."""
@@ -4045,6 +4090,7 @@ class CloudSavePanel(QWidget):
         startup_auth_thread = QThread()
         startup_auth_worker = AuthWorker(self.drive_manager, worker_id)
         startup_auth_worker.moveToThread(startup_auth_thread)
+        self._current_auth_worker = startup_auth_worker
         
         # Add thread and worker to active lists to prevent premature destruction
         self._active_auth_threads.append(startup_auth_thread)
@@ -4052,6 +4098,9 @@ class CloudSavePanel(QWidget):
         
         # Connect signals
         startup_auth_thread.started.connect(startup_auth_worker.run)
+        startup_auth_worker.auth_url_ready.connect(
+            self._show_auth_url_dialog, Qt.ConnectionType.QueuedConnection
+        )
         startup_auth_worker.finished.connect(self._on_startup_auth_finished)
         startup_auth_worker.finished.connect(startup_auth_thread.quit)
         startup_auth_worker.finished.connect(startup_auth_worker.deleteLater)
@@ -4063,6 +4112,8 @@ class CloudSavePanel(QWidget):
     
     def _on_startup_auth_finished(self, success, error_message):
         """Handle startup authentication completion."""
+        self._current_auth_worker = None
+        self._close_auth_url_dialog()
         # Restore main window cloud button state regardless of success
         self._set_main_cloud_button_connecting(False)
         if success:
@@ -4656,6 +4707,8 @@ class CloudSavePanel(QWidget):
         self._disconnect_after_current_sync = bool(disconnect_after)
 
         def _after_auth(success, error_message):
+            self._current_auth_worker = None
+            self._close_auth_url_dialog()
             if success:
                 self._set_connected(True)
                 try:
@@ -4674,12 +4727,16 @@ class CloudSavePanel(QWidget):
         ensure_auth_thread = QThread()
         ensure_auth_worker = AuthWorker(self.drive_manager, worker_id)
         ensure_auth_worker.moveToThread(ensure_auth_thread)
+        self._current_auth_worker = ensure_auth_worker
         
         # Add thread and worker to active lists to prevent premature destruction
         self._active_auth_threads.append(ensure_auth_thread)
         self._active_auth_workers.append(ensure_auth_worker)
         
         ensure_auth_thread.started.connect(ensure_auth_worker.run)
+        ensure_auth_worker.auth_url_ready.connect(
+            self._show_auth_url_dialog, Qt.ConnectionType.QueuedConnection
+        )
         ensure_auth_worker.finished.connect(_after_auth)
         ensure_auth_worker.finished.connect(ensure_auth_thread.quit)
         ensure_auth_worker.finished.connect(ensure_auth_worker.deleteLater)
