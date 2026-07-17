@@ -1783,123 +1783,119 @@ def _find_steam_grid_icon(appid: str, size: int = DEFAULT_ICON_SIZE) -> Optional
     return None
 
 
-def get_profile_icon(profile_data: dict, profile_name: str, size: int = DEFAULT_ICON_SIZE) -> Optional[QIcon]:
+def get_profile_icon_path(profile_data: dict, profile_name: str,
+                          size: int = DEFAULT_ICON_SIZE) -> Optional[str]:
     """
-    Get the icon for a profile based on its game_executable field.
-    Falls back to searching in game_install_dir for Steam games,
-    or emulator_executable for emulator profiles.
-    On Linux, also searches for .desktop files and icon directories.
-    
-    Args:
-        profile_data: The profile dictionary
-        profile_name: Name of the profile (for logging)
-        size: Desired icon size
-        
-    Returns:
-        QIcon if icon could be extracted, None otherwise
+    Get the image path for a profile icon.
+
+    This is the path-based counterpart of :func:`get_profile_icon`, intended
+    for widgets (such as notifications) that need to load the same cached game
+    artwork directly.
+
+    User-selected icons take priority, followed by bundled special-case icons
+    and the normal executable/Steam/Linux extraction pipeline.
     """
     if not isinstance(profile_data, dict):
         return None
 
-    # --- User-chosen custom icon takes priority over auto-detection ---
     custom_icon = get_custom_icon_path(profile_data)
     if custom_icon:
         try:
-            icon = QIcon(custom_icon)
-            if not icon.isNull():
-                return icon
+            if not QIcon(custom_icon).isNull():
+                return custom_icon
         except Exception as e:
-            logger.debug(f"Failed to load custom icon '{custom_icon}' for '{profile_name}': {e}")
+            logger.debug(
+                f"Failed to load custom icon '{custom_icon}' for "
+                f"'{profile_name}': {e}"
+            )
 
-    # --- Check for Minecraft profiles ---
-    # Minecraft profiles have paths containing .minecraft/saves or minecraft/saves (Prism Launcher)
+    # Minecraft profiles use the bundled icon, just like the profile table.
     profile_path = profile_data.get('path', '')
     if profile_path:
         path_lower = profile_path.lower().replace('\\', '/')
         is_minecraft = (
-            '.minecraft/saves' in path_lower or 
+            '.minecraft/saves' in path_lower or
             'minecraft/saves' in path_lower or
-            '/saves/' in path_lower and 'prism' in path_lower.lower()
+            ('/saves/' in path_lower and 'prism' in path_lower)
         )
-        
         if is_minecraft:
-            # Use the bundled minecraft.png icon from the icons folder
             try:
                 from common.utils import resource_path
                 minecraft_icon_path = resource_path("icons/minecraft.png")
-                if os.path.exists(minecraft_icon_path):
-                    icon = QIcon(minecraft_icon_path)
-                    if not icon.isNull():
-                        logger.debug(f"Using Minecraft icon for profile '{profile_name}'")
-                        return icon
+                if (
+                    os.path.isfile(minecraft_icon_path)
+                    and not QIcon(minecraft_icon_path).isNull()
+                ):
+                    logger.debug(f"Using Minecraft icon for profile '{profile_name}'")
+                    return minecraft_icon_path
             except Exception as e:
                 logger.debug(f"Error loading Minecraft icon: {e}")
-    
+
     is_linux = platform.system() != "Windows"
-    
-    # Check for game_executable in profile
     exe_path = profile_data.get('game_executable')
-    
-    # If no executable stored, try to find one in game_install_dir (for Steam games)
+
     if not exe_path:
         install_dir = profile_data.get('game_install_dir')
         if install_dir:
             exe_path = _find_main_executable_in_dir(install_dir)
             if exe_path:
                 logger.debug(f"Found exe in install dir for '{profile_name}': {exe_path}")
-    
-    # If still no executable, check for emulator_executable (for emulator profiles)
+
     if not exe_path:
         emulator_exe = profile_data.get('emulator_executable')
         if emulator_exe and os.path.exists(emulator_exe):
             exe_path = emulator_exe
             logger.debug(f"Using emulator_executable for '{profile_name}': {exe_path}")
-    
-    icon_path = None
-    
-    # Try to extract icon from executable
-    if exe_path:
-        icon_path = extract_icon_from_executable(exe_path, size)
-    
-    # On Linux, try additional methods if executable extraction failed
+
+    icon_path = extract_icon_from_executable(exe_path, size) if exe_path else None
+
     if not icon_path and is_linux:
-        # Try to find Steam library icon by AppID
         steam_appid = profile_data.get('steam_appid') or profile_data.get('appid')
         if steam_appid:
             steam_icon = _find_steam_grid_icon(str(steam_appid), size)
             if steam_icon:
-                # Convert and cache it
                 cache_dir = get_icon_cache_dir()
-                cache_filename = f"steam_{steam_appid}.png"
-                cache_path = os.path.join(cache_dir, cache_filename)
-                
-                if os.path.exists(cache_path):
-                    icon_path = cache_path
-                elif _convert_icon_to_png(steam_icon, cache_path, size):
+                cache_path = os.path.join(cache_dir, f"steam_{steam_appid}.png")
+                if os.path.exists(cache_path) or _convert_icon_to_png(steam_icon, cache_path, size):
                     icon_path = cache_path
                     logger.debug(f"Using Steam library icon for '{profile_name}'")
-        
-        # Try to find icon by game name
+
         if not icon_path:
             game_name = profile_data.get('game_name') or profile_name
             name_icon = _find_icon_by_game_name(game_name, size)
             if name_icon:
-                # Convert and cache it
                 cache_dir = get_icon_cache_dir()
-                cache_filename = _get_cache_filename(f"name_{game_name}")
-                cache_path = os.path.join(cache_dir, cache_filename)
-                
-                if os.path.exists(cache_path):
-                    icon_path = cache_path
-                elif _convert_icon_to_png(name_icon, cache_path, size):
+                cache_path = os.path.join(
+                    cache_dir, _get_cache_filename(f"name_{game_name}")
+                )
+                if os.path.exists(cache_path) or _convert_icon_to_png(name_icon, cache_path, size):
                     icon_path = cache_path
                     logger.debug(f"Found icon by game name for '{profile_name}'")
-    
-    if icon_path and os.path.exists(icon_path):
+
+    return icon_path if icon_path and os.path.isfile(icon_path) else None
+
+
+def get_profile_icon(profile_data: dict, profile_name: str, size: int = DEFAULT_ICON_SIZE) -> Optional[QIcon]:
+    """
+    Get the icon for a profile based on its game_executable field.
+    Falls back to searching in game_install_dir for Steam games,
+    or emulator_executable for emulator profiles.
+    On Linux, also searches for .desktop files and icon directories.
+
+    Args:
+        profile_data: The profile dictionary
+        profile_name: Name of the profile (for logging)
+        size: Desired icon size
+
+    Returns:
+        QIcon if icon could be extracted, None otherwise
+    """
+    icon_path = get_profile_icon_path(profile_data, profile_name, size)
+    if icon_path:
         icon = QIcon(icon_path)
         if not icon.isNull():
             return icon
-    
+
     return None
 
 

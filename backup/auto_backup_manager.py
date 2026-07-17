@@ -553,10 +553,17 @@ class AutoBackupManager:
             handlers._show_controller_shortcut_notification(
                 bool(success), title, clean,
                 duration_ms=AUTO_BACKUP_NOTIFICATION_DURATION_MS,
+                profile_name=profile_name,
             )
             return
         try:
-            backup_runner.show_notification(bool(success), message, force=True)
+            backup_runner.show_notification(
+                bool(success),
+                message,
+                force=True,
+                profile_name=profile_name,
+                profile_data=self.main_window.profiles.get(profile_name),
+            )
         except Exception:
             pass
 

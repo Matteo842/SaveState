@@ -1467,7 +1467,15 @@ class MainWindowHandlers:
                 else:
                     notif_title = "Backup Error"
                     notif_msg = f"Backup failed for: {profile_names}"
-                self._show_controller_shortcut_notification(notif_success, notif_title, notif_msg)
+                self._show_controller_shortcut_notification(
+                    notif_success,
+                    notif_title,
+                    notif_msg,
+                    profile_name=(
+                        selected_profile_names[0]
+                        if len(selected_profile_names) == 1 else None
+                    ),
+                )
             
             if not skip_confirmation:
                 if was_cancelled:
@@ -3983,7 +3991,7 @@ class MainWindowHandlers:
         self.main_window.profile_table_manager.update_profile_table()
 
     def _show_controller_shortcut_notification(self, success: bool, title: str, message: str,
-                                               duration_ms=None):
+                                               duration_ms=None, profile_name=None):
         """Show a NotificationPopup for controller shortcut actions triggered while app is in system tray.
         Uses the same NotificationPopup widget as desktop shortcut notifications."""
         try:
@@ -3992,7 +4000,21 @@ class MainWindowHandlers:
             clean_message = re.sub(r'\n+', '\n', message).strip()
 
             icon_path = None
-            if success:
+            if profile_name:
+                profile_data = self.main_window.profiles.get(profile_name)
+                if isinstance(profile_data, dict):
+                    try:
+                        from gui_components.icon_extractor import get_profile_icon_path
+                        icon_path = get_profile_icon_path(
+                            profile_data, profile_name, size=64
+                        )
+                    except Exception as e_icon:
+                        logging.debug(
+                            f"Unable to resolve notification icon for "
+                            f"'{profile_name}': {e_icon}"
+                        )
+
+            if not icon_path and success:
                 icon_path_candidate = resource_path(os.path.join("icons", "SaveStateIconBK.ico"))
                 if os.path.exists(icon_path_candidate):
                     icon_path = icon_path_candidate
@@ -4023,8 +4045,8 @@ class MainWindowHandlers:
             if primary_screen:
                 screen_geometry = primary_screen.availableGeometry()
                 margin = 15
-                popup_x = screen_geometry.width() - popup.width() - margin
-                popup_y = screen_geometry.height() - popup.height() - margin
+                popup_x = screen_geometry.right() - popup.width() - margin + 1
+                popup_y = screen_geometry.bottom() - popup.height() - margin + 1
                 popup.move(popup_x, popup_y)
 
             popup.show()

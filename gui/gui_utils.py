@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 from PySide6.QtCore import QThread, Signal, QObject, Qt, QTimer
-from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout, QApplication, QStyle
-from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import (
+    QWidget, QLabel, QHBoxLayout, QVBoxLayout, QFrame, QApplication, QStyle,
+    QGraphicsDropShadowEffect,
+)
+from PySide6.QtGui import QPixmap, QColor
 
 # Importa core_logic e logging SOLO per la gestione delle eccezioni nel blocco 'except'
 # Se non esistessero quel blocco 'except' specifico, questi import non servirebbero qui.
@@ -540,10 +543,12 @@ class NotificationPopup(QWidget):
                  duration_ms=None):
         super().__init__(parent)
 
+        self.setObjectName("NotificationPopup")
         self._duration_ms = max(
             3000,
             int(duration_ms if duration_ms is not None else DEFAULT_NOTIFICATION_DURATION_MS),
         )
+        self.duration_ms = self._duration_ms
 
         # ToolTip + no-focus: overlay fullscreen without stealing input from the game.
         self.setWindowFlags(
@@ -553,51 +558,93 @@ class NotificationPopup(QWidget):
             Qt.WindowType.ToolTip
         )
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        # Fa sì che il widget venga eliminato alla chiusura
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         if sys.platform.startswith("linux"):
             self.setWindowFlags(
                 self.windowFlags() | Qt.WindowType.X11BypassWindowManagerHint
             )
-        # Opzionale: abilita trasparenza se lo sfondo nel QSS lo usa
-        # self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
-        # --- Contenuto ---
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(15, 10, 15, 10) # Margini interni
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(9, 9, 9, 9)
 
-        # Icona (Successo o Errore)
-        icon_label = QLabel()
-        style = QApplication.instance().style() # Ottieni stile per icone standard
-        icon_size = 32 # Dimensione icona
+        card = QFrame(self)
+        card.setObjectName("NotificationCard")
+        card.setProperty("notificationStatus", "success" if success else "error")
+        card.setMinimumWidth(340)
+        card.setMaximumWidth(500)
+        outer_layout.addWidget(card)
+
+        shadow = QGraphicsDropShadowEffect(card)
+        shadow.setBlurRadius(22)
+        shadow.setOffset(0, 5)
+        shadow.setColor(QColor(0, 0, 0, 105))
+        card.setGraphicsEffect(shadow)
+
+        card_layout = QHBoxLayout(card)
+        card_layout.setContentsMargins(0, 0, 16, 0)
+        card_layout.setSpacing(0)
+
+        accent = QFrame(card)
+        accent.setObjectName(
+            "NotificationAccentSuccess" if success else "NotificationAccentError"
+        )
+        accent.setFixedWidth(5)
+        card_layout.addWidget(accent)
+
+        content_layout = QHBoxLayout()
+        content_layout.setContentsMargins(15, 14, 0, 14)
+        content_layout.setSpacing(13)
+        card_layout.addLayout(content_layout, stretch=1)
+
+        icon_label = QLabel(card)
+        icon_label.setObjectName("NotificationIcon")
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setFixedSize(50, 50)
+        style = QApplication.instance().style()
+        icon_size = 42
 
         custom_icon_loaded = False
         if icon_path and os.path.exists(icon_path):
             pixmap = QPixmap(icon_path)
             if not pixmap.isNull():
-                icon_label.setPixmap(pixmap.scaled(icon_size, icon_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                icon_label.setPixmap(
+                    pixmap.scaled(
+                        icon_size,
+                        icon_size,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
                 custom_icon_loaded = True
             else:
                 logging.warning(f"NotificationPopup: Failed to load custom icon from {icon_path}")
 
         if not custom_icon_loaded:
             if success:
-                 icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton) # O SP_MessageBoxInformation
-                 # Potresti impostare un objectName per stile QSS specifico: icon_label.setObjectName("SuccessIcon")
+                icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton)
             else:
-                 icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical) # O SP_MessageBoxWarning
-                 # Potresti impostare un objectName per stile QSS specifico: icon_label.setObjectName("ErrorIcon")
+                icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical)
             if not icon.isNull():
-                 icon_label.setPixmap(icon.pixmap(icon_size, icon_size))
-        layout.addWidget(icon_label)
+                icon_label.setPixmap(icon.pixmap(icon_size, icon_size))
+        content_layout.addWidget(icon_label, alignment=Qt.AlignmentFlag.AlignTop)
 
-        # Testo Messaggio
-        self.message_label = QLabel(f"<b>{title}</b><br>{message}") # Usa HTML per grassetto e a capo
-        self.message_label.setWordWrap(True) # Abilita a capo
-        # Imposta objectName per stile QSS specifico se serve: self.message_label.setObjectName("NotificationText")
-        layout.addWidget(self.message_label, stretch=1) # Stretch per usare spazio
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 1, 0, 1)
+        text_layout.setSpacing(5)
 
-        self.setLayout(layout)
+        self.title_label = QLabel(str(title), card)
+        self.title_label.setObjectName("NotificationTitle")
+        self.title_label.setTextFormat(Qt.TextFormat.PlainText)
+        text_layout.addWidget(self.title_label)
+
+        self.message_label = QLabel(str(message), card)
+        self.message_label.setObjectName("NotificationMessage")
+        self.message_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.message_label.setWordWrap(True)
+        self.message_label.setMaximumWidth(385)
+        text_layout.addWidget(self.message_label)
+        content_layout.addLayout(text_layout, stretch=1)
 
         # --- Timer per Auto-Chiusura ---
         self.close_timer = QTimer(self)

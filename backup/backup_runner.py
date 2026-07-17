@@ -54,7 +54,29 @@ def set_gui_notifications_enabled(enabled):
     _gui_notifications_enabled = bool(enabled)
 
 
-def show_notification(success, message, force=False):
+def _notification_icon_path(success, profile_name=None, profile_data=None):
+    """Resolve the profile artwork, with the existing SaveState icon as fallback."""
+    if profile_name and isinstance(profile_data, dict):
+        try:
+            from gui_components.icon_extractor import get_profile_icon_path
+            game_icon = get_profile_icon_path(profile_data, profile_name, size=64)
+            if game_icon:
+                return game_icon
+        except Exception as e:
+            logging.debug(
+                f"Unable to resolve game icon for notification '{profile_name}': {e}"
+            )
+
+    if success:
+        fallback = resource_path(os.path.join("icons", "SaveStateIconBK.ico"))
+        if os.path.exists(fallback):
+            return fallback
+        logging.warning(f"Notification fallback icon not found: {fallback}")
+
+    return None
+
+
+def show_notification(success, message, force=False, profile_name=None, profile_data=None):
     """
     Shows a custom popup notification. Uses native Linux notifications if available,
     otherwise falls back to Qt.
@@ -66,6 +88,21 @@ def show_notification(success, message, force=False):
     logging.debug(">>> Entered show_notification <<<")
     title = "Backup Complete" if success else "Backup Error"
     clean_message = re.sub(r'\n+', '\n', message).strip()
+    if success:
+        success_prefix = "Backup completed successfully:"
+        if clean_message.startswith(success_prefix):
+            clean_message = clean_message[len(success_prefix):].lstrip()
+        clean_message = re.sub(
+            r"\s+Deleted (\d+) obsolete backups?\.$",
+            lambda match: (
+                f"\nRemoved {match.group(1)} obsolete "
+                f"{'backup' if match.group(1) == '1' else 'backups'}."
+            ),
+            clean_message,
+        )
+    notification_icon = _notification_icon_path(
+        success, profile_name=profile_name, profile_data=profile_data
+    )
 
     if not _gui_notifications_enabled and not force:
         log_level = logging.INFO if success else logging.ERROR
@@ -78,13 +115,8 @@ def show_notification(success, message, force=False):
             notification = notify_py.Notify()
             notification.title = title
             notification.message = clean_message
-            if success:
-                icon_path_native = resource_path(os.path.join("icons", "SaveStateIconBK.ico"))
-                if os.path.exists(icon_path_native):
-                    notification.icon = icon_path_native
-                else:
-                    logging.warning(f"Success icon not found for native notification: {icon_path_native}")
-            # For errors, notify-py will use a default system error icon if not specified
+            if notification_icon:
+                notification.icon = notification_icon
             notification.send(block=False) # Send non-blocking
             log_level = logging.INFO if success else logging.ERROR
             logging.log(log_level, f"BACKUP RESULT (Native Linux Notification): {title} - {clean_message}")
@@ -128,20 +160,11 @@ def show_notification(success, message, force=False):
 
         logging.debug("Creating NotificationPopup...")
         title = "Backup Complete" if success else "Backup Error" 
-        clean_message = re.sub(r'\n+', '\n', message).strip()
-
-        icon_path_qt = None
-        if success:
-            icon_path_qt_success = resource_path(os.path.join("icons", "SaveStateIconBK.ico"))
-            if os.path.exists(icon_path_qt_success):
-                icon_path_qt = icon_path_qt_success
-            else:
-                logging.warning(f"Success icon not found for Qt notification: {icon_path_qt_success}")
-        # For errors with Qt, NotificationPopup currently doesn't have specific error icon logic
-        # We'll pass None, it might default to no icon or its own default. Future enhancement: add error icon to NotificationPopup.
 
         try:
-            popup = NotificationPopup(title, clean_message, success, icon_path=icon_path_qt)
+            popup = NotificationPopup(
+                title, clean_message, success, icon_path=notification_icon
+            )
             # Apply QSS *before* adjustSize and show for consistency
             logging.debug("Applying QSS...")
             try:
@@ -159,8 +182,8 @@ def show_notification(success, message, force=False):
             if primary_screen:
                  screen_geometry = primary_screen.availableGeometry()
                  margin = 15
-                 popup_x = screen_geometry.width() - popup.width() - margin
-                 popup_y = screen_geometry.height() - popup.height() - margin
+                 popup_x = screen_geometry.right() - popup.width() - margin + 1
+                 popup_y = screen_geometry.bottom() - popup.height() - margin + 1
                  popup.move(popup_x, popup_y)
                  logging.debug(f"Positioning notification at: ({popup_x}, {popup_y})")
             else:
@@ -181,8 +204,7 @@ def show_notification(success, message, force=False):
         # If we created the QApplication just for this notification, set a timer to close it
         # shortly after the popup should have closed itself.
         if created_app and app:
-            popup_duration_ms = 6000 # Duration of the popup (must match the one in NotificationPopup)
-            quit_delay_ms = popup_duration_ms + 500 # Add half a second of margin
+            quit_delay_ms = popup.duration_ms + 500
             logging.debug(f"Setting QTimer to call app.quit() after {quit_delay_ms} ms.")
             QTimer.singleShot(quit_delay_ms, app.quit)
             # Start the event loop, but it will exit automatically thanks to the timer
@@ -299,12 +321,17 @@ def _run_group_backup(group_name, profiles, settings):
             logging.error(f"[Group Backup] Error backing up '{member_name}': {e}", exc_info=True)
     
     # Show final notification
+    group_data = profiles.get(group_name)
     if all_success:
         message = f"Group backup completed successfully!\n\n{group_name}: {success_count}/{len(member_profiles)} profiles backed up."
-        show_notification(True, message)
+        show_notification(
+            True, message, profile_name=group_name, profile_data=group_data
+        )
     else:
         message = f"Group backup completed with errors.\n\n{group_name}: {success_count}/{len(member_profiles)} succeeded.\nFailed: {', '.join(failed_profiles)}"
-        show_notification(False, message)
+        show_notification(
+            False, message, profile_name=group_name, profile_data=group_data
+        )
     
     return all_success
 
@@ -383,7 +410,12 @@ def run_silent_backup(profile_name):
     if paths_to_backup is None or not paths_to_backup: # Also check if the list is empty
         logging.error(f"No valid backup path ('paths' or 'path') found for '{profile_name}'. Backup cancelled.")
         # Show a more specific message to the user
-        show_notification(False, f"Error: No valid backup path defined for {profile_name}.")
+        show_notification(
+            False,
+            f"Error: No valid backup path defined for {profile_name}.",
+            profile_name=profile_name,
+            profile_data=profile_data,
+        )
         return False
     # At this point, paths_to_backup contains a list (potentially with a single element) of paths
     # The actual validation of the paths' existence will happen inside perform_backup
@@ -445,7 +477,12 @@ def run_silent_backup(profile_name):
     # Validate other settings (backup_base_dir is checked above)
     if not backup_base_dir or max_bk is None or max_src_size is None:
          logging.error("Necessary settings (backup base directory, max backups, max source size) are invalid in backup_runner.")
-         show_notification(False, "Error: Invalid backup settings.")
+         show_notification(
+             False,
+             "Error: Invalid backup settings.",
+             profile_name=profile_name,
+             profile_data=profile_data,
+         )
          return False
 
     # 5. Calculate Total Source Size (using core_logic helper)
@@ -455,7 +492,12 @@ def run_silent_backup(profile_name):
     if total_source_size == -1: # Check if core_logic signaled a critical error
         msg = f"Backup cancelled for '{profile_name}': Critical error calculating source size (see core_logic logs)."
         logging.error(msg)
-        show_notification(False, "Error calculating source size. Backup cancelled.") # Generic to user
+        show_notification(
+            False,
+            "Error calculating source size. Backup cancelled.",
+            profile_name=profile_name,
+            profile_data=profile_data,
+        )
         return False
     # Logging of the size itself is handled by _get_actual_total_source_size in core_logic
 
@@ -477,13 +519,23 @@ def run_silent_backup(profile_name):
                  required_gb = required_bytes_with_margin / (1024*1024*1024)
                  msg = f"Insufficient disk space for backup '{profile_name}'. Available: {free_gb:.2f} GB, Estimated Required: {required_gb:.2f} GB (incl. {min_gb_required} GB margin)."
                  logging.error(msg)
-                 show_notification(False, msg)
+                 show_notification(
+                     False,
+                     msg,
+                     profile_name=profile_name,
+                     profile_data=profile_data,
+                 )
                  return False
             logging.info("Space control passed.")
         except Exception as e_space:
             msg = f"Disk space check error: {e_space}"
             logging.error(msg, exc_info=True)
-            show_notification(False, msg)
+            show_notification(
+                False,
+                msg,
+                profile_name=profile_name,
+                profile_data=profile_data,
+            )
             return False
 
     # 6. Perform Actual Backup
@@ -504,12 +556,22 @@ def run_silent_backup(profile_name):
         logging.debug(f"      Result: success={success}, error_message='{message}'")
 
         # 7. Show Notification
-        show_notification(success, message)
+        show_notification(
+            success,
+            message,
+            profile_name=profile_name,
+            profile_data=profile_data,
+        )
         return success
     except Exception as e_backup:
          # Unexpected error INSIDE perform_backup not handled? Log it here.
          logging.error(f"Unexpected error during execution core_logic.perform_backup: {e_backup}", exc_info=True)
-         show_notification(False, f"Unexpected backup error: {e_backup}")
+         show_notification(
+             False,
+             f"Unexpected backup error: {e_backup}",
+             profile_name=profile_name,
+             profile_data=profile_data,
+         )
          return False
 
 
