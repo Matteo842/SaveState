@@ -121,15 +121,17 @@ QStatusBar::item {
     border: none; /* Nessun bordo tra messaggi status bar */
 }
 QProgressBar {
-    border: 1px solid #555;
-    border-radius: 3px;
+    border: 1px solid #555555;
+    border-radius: 5px;
     text-align: center;
     color: #F0F0F0;
+    background-color: #2A2A2A;
+    min-height: 10px;
+    max-height: 14px;
 }
 QProgressBar::chunk {
-    background-color: #A10808; /* Barra progresso rossa scura */
-    width: 10px; /* Larghezza blocchetti barra */
-    margin: 1px;
+    background-color: #C62828;
+    border-radius: 4px;
 }
 QMessageBox {
     background-color: #3C3C3C;
@@ -689,15 +691,16 @@ QStatusBar::item {
 }
 QProgressBar {
     border: 1px solid #C9CCD3;
-    border-radius: 6px;
+    border-radius: 5px;
     text-align: center;
     color: #1F2024;
-    background-color: #F4F5F7;
-    min-height: 14px;
+    background-color: #E4E6EB;
+    min-height: 10px;
+    max-height: 14px;
 }
 QProgressBar::chunk {
     background-color: #4F46E5;
-    border-radius: 5px;
+    border-radius: 4px;
 }
 
 /* ---- MessageBox / Dialog ---- */

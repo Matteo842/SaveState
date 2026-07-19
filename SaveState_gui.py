@@ -14,7 +14,7 @@ from core import core_logic # Added import
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QStatusBar, QFrame, QSizePolicy,
-    QProgressBar, QGroupBox, QLineEdit,
+    QGroupBox, QLineEdit,
     QStyle, QDockWidget, QPlainTextEdit, QTableWidget, QGraphicsOpacityEffect,
     QDialog, QFileDialog, QMenu, QSpinBox, QComboBox, QCheckBox, QFormLayout,
     QSizeGrip, QMessageBox, QGridLayout, QSystemTrayIcon, QInputDialog
@@ -62,6 +62,7 @@ from gui_components.profile_list_manager import ProfileListManager
 from gui_components.theme_manager import ThemeManager
 from gui_components.profile_creation_manager import ProfileCreationManager
 from gui_components.drag_drop_handler import DragDropHandler
+from gui_components.busy_indicator import BusyIndicator
 from cloud_utils.cloud_panel import CloudSavePanel
 from cloud_utils import cloud_settings_manager
 from core import core_logic # Mantenuto per load_profiles
@@ -540,10 +541,8 @@ class MainWindow(QMainWindow):
         
         #self.status_label = QLabel(self.tr("Pronto."))
         self.status_label.setObjectName("StatusLabel")
-        self.progress_bar = QProgressBar()
+        self.progress_bar = BusyIndicator()
         self.progress_bar.setVisible(False)
-        self.progress_bar.setMaximum(0)
-        self.progress_bar.setMinimum(0)
         
         new_icon = style.standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder) # Icona Nuova Cartella?
         self.new_profile_button.setIcon(new_icon)
@@ -1275,8 +1274,10 @@ class MainWindow(QMainWindow):
         # --- FINE Layout Search Bar e Pulsante Log ---
         
         status_bar = QStatusBar()
+        # Only one of status_label / progress_bar is visible at a time;
+        # both stretch so the snake can span the full window width when busy.
         status_bar.addWidget(self.status_label, stretch=1)
-        status_bar.addPermanentWidget(self.progress_bar)
+        status_bar.addWidget(self.progress_bar, stretch=1)
         try:
             # Add a size grip so the frameless window remains resizable
             self.size_grip = QSizeGrip(self)
@@ -2116,7 +2117,10 @@ class MainWindow(QMainWindow):
         self.open_backup_dir_button.setEnabled(enabled and has_profiles)
         if hasattr(self, 'cloud_button'):
             self.cloud_button.setEnabled(enabled and has_profiles)
-        self.progress_bar.setVisible(not enabled)
+        busy = not enabled
+        self.progress_bar.setVisible(busy)
+        # Hide status text while the full-width snake runs
+        self.status_label.setVisible(not busy)
         # Editor controls
         if hasattr(self, 'edit_name_edit'):
             self.edit_name_edit.setEnabled(enabled)
