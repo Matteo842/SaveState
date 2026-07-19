@@ -1346,6 +1346,250 @@ def _perform_ymir_restore(profile_name: str, profile_data: dict, archive_path: s
             pass
 
 
+def _is_xemu_profile(profile_data: dict) -> bool:
+    """True se il profilo è gestito dal motore chirurgico xemu (XBSV)."""
+    if not isinstance(profile_data, dict):
+        return False
+    emulator = str(profile_data.get("emulator", "")).strip().lower()
+    return emulator == "xemu"
+
+
+def _resolve_xemu_targets(profile_data: dict, fallback_paths: list = None) -> tuple:
+    """
+    Risolve HDD QCOW2 e Title ID per un profilo xemu.
+
+    Returns:
+        Tuple (hdd_path: str, title_id: str) oppure (None, None) se incompleto.
+    """
+    if not isinstance(profile_data, dict):
+        return None, None
+
+    title_id = profile_data.get("title_id") or profile_data.get("id")
+    if isinstance(title_id, str):
+        title_id = title_id.strip().lower()
+    else:
+        title_id = None
+    if not title_id or len(title_id) != 8:
+        logging.warning(
+            "xemu profile missing valid title_id/id (got %r).",
+            profile_data.get("title_id") or profile_data.get("id"),
+        )
+        return None, None
+
+    hdd_path = profile_data.get("hdd_path")
+    if not (isinstance(hdd_path, str) and hdd_path and os.path.isfile(hdd_path)):
+        candidates = []
+        paths = profile_data.get("paths")
+        if isinstance(paths, list):
+            candidates.extend(paths)
+        path = profile_data.get("path")
+        if isinstance(path, str):
+            candidates.append(path)
+        if fallback_paths:
+            candidates.extend(fallback_paths)
+        hdd_path = None
+        for candidate in candidates:
+            if isinstance(candidate, str) and candidate and os.path.isfile(candidate):
+                if candidate.lower().endswith(".qcow2") or os.path.isfile(candidate):
+                    hdd_path = candidate
+                    break
+
+    if not hdd_path or not os.path.isfile(hdd_path):
+        logging.warning("xemu profile: HDD QCOW2 not found for title_id=%s", title_id)
+        return None, None
+
+    logging.debug("xemu profile resolved: title_id=%s hdd=%s", title_id, hdd_path)
+    return hdd_path, title_id
+
+
+def _perform_xemu_backup(profile_name: str, profile_data: dict, archive_path: str,
+                         zip_compression, zip_compresslevel,
+                         fallback_paths: list = None) -> tuple:
+    """
+    Backup chirurgico xemu: estrae XBSV v7 dal QCOW2 e lo mette nello ZIP SaveState.
+    Non copia l'intero HDD.
+    """
+    import tempfile
+    from pathlib import Path
+
+    hdd_path, title_id = _resolve_xemu_targets(profile_data, fallback_paths=fallback_paths)
+    if not hdd_path or not title_id:
+        return False, "xemu profile incomplete: need Title ID and HDD (.qcow2) path"
+
+    try:
+        from emulator_utils.xemu_lab.backup import (
+            BackupError,
+            backup_title_id_from_path,
+            save_backup,
+        )
+        from emulator_utils.xemu_lab.safety import SafetyError, assert_xemu_closed
+    except ImportError as e:
+        logging.error(f"Could not import xemu_lab: {e}")
+        return False, f"xemu lab not available: {e}"
+
+    temp_dir = tempfile.mkdtemp(prefix="savestate_xemu_")
+    try:
+        try:
+            assert_xemu_closed()
+        except SafetyError as e:
+            return False, str(e)
+
+        logging.info(
+            "xemu: surgical backup title_id=%s from '%s'", title_id, hdd_path
+        )
+        game_backup = backup_title_id_from_path(hdd_path, title_id)
+        bin_path, json_path = save_backup(game_backup, output_dir=temp_dir)
+
+        with zipfile.ZipFile(
+            archive_path, "w", compression=zip_compression, compresslevel=zip_compresslevel
+        ) as zipf:
+            manifest_data = {
+                "schema": 1,
+                "app_version": getattr(config, "APP_VERSION", "unknown"),
+                "created_at": datetime.now().isoformat(),
+                "profile_name": profile_name,
+                "emulator": "xemu",
+                "format": "XBSV",
+                "title_id": title_id,
+                "hdd_path": hdd_path,
+                "xbsv_version": getattr(game_backup, "format_version", 7),
+                "data_clusters": getattr(game_backup, "cluster_count", 0),
+                "platform": platform.system(),
+            }
+            zipf.writestr(
+                "savestate/manifest.json",
+                json.dumps(manifest_data, indent=2, ensure_ascii=False),
+            )
+            zipf.write(bin_path, arcname="xemu_save.bin")
+            zipf.write(json_path, arcname="xemu_save.json")
+            logging.debug(
+                "xemu: archived %s (%s bytes) + sidecar",
+                Path(bin_path).name,
+                os.path.getsize(bin_path),
+            )
+
+        return True, f"xemu Title ID {title_id} backed up successfully (XBSV)"
+
+    except BackupError as e:
+        logging.error(f"xemu backup rejected: {e}")
+        return False, f"xemu backup failed: {e}"
+    except Exception as e:
+        logging.error(f"xemu backup failed: {e}", exc_info=True)
+        return False, f"xemu backup failed: {e}"
+    finally:
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
+def _perform_xemu_restore(profile_name: str, profile_data: dict, archive_path: str,
+                          fallback_paths: list = None) -> tuple:
+    """
+    Restore chirurgico xemu: applica XBSV v7 sull'HDD live (same-guest o remap).
+    Non sostituisce l'intero QCOW2.
+    """
+    import tempfile
+
+    hdd_path, title_id = _resolve_xemu_targets(profile_data, fallback_paths=fallback_paths)
+    if not hdd_path or not title_id:
+        return False, "xemu profile incomplete: need Title ID and HDD (.qcow2) path"
+
+    try:
+        from emulator_utils.xemu_lab.backup import load_backup
+        from emulator_utils.xemu_lab.restore import RestoreError, safe_restore_backup_file
+        from emulator_utils.xemu_lab.safety import SafetyError
+    except ImportError as e:
+        logging.error(f"Could not import xemu_lab: {e}")
+        return False, f"xemu lab not available: {e}"
+
+    temp_dir = tempfile.mkdtemp(prefix="savestate_xemu_restore_")
+    try:
+        with zipfile.ZipFile(archive_path, "r") as zipf:
+            members = zipf.namelist()
+            bin_member = None
+            json_member = None
+            fallback_bin = None
+            fallback_json = None
+            for name in members:
+                if name.endswith("/") or name.startswith("savestate/"):
+                    continue
+                base = os.path.basename(name).lower()
+                if base == "xemu_save.bin":
+                    bin_member = name
+                elif base == "xemu_save.json":
+                    json_member = name
+                elif fallback_bin is None and base.endswith(".bin"):
+                    fallback_bin = name
+                elif fallback_json is None and base.endswith(".json"):
+                    fallback_json = name
+            bin_member = bin_member or fallback_bin
+            json_member = json_member or fallback_json
+
+            if not bin_member:
+                return False, "No XBSV .bin found in the backup archive (not an xemu surgical backup?)"
+
+            logging.debug("xemu: extracting '%s' from archive...", bin_member)
+            zipf.extract(bin_member, temp_dir)
+            extracted_bin = os.path.join(temp_dir, bin_member)
+            extracted_json = None
+            if json_member:
+                zipf.extract(json_member, temp_dir)
+                extracted_json = os.path.join(temp_dir, json_member)
+
+        try:
+            backup = load_backup(extracted_bin, json_path=extracted_json)
+        except Exception as e:
+            return False, f"Invalid XBSV backup in archive: {e}"
+
+        backup_tid = str(getattr(backup, "title_id", "")).strip().lower()
+        if backup_tid and backup_tid != title_id:
+            return False, (
+                f"Backup Title ID ({backup_tid}) does not match profile ({title_id})"
+            )
+
+        logging.info(
+            "xemu: surgical restore title_id=%s -> '%s'", title_id, hdd_path
+        )
+        report = safe_restore_backup_file(
+            extracted_bin,
+            hdd_path,
+            json_path=extracted_json,
+            verify=True,
+            allow_allocate=True,
+            require_xemu_closed=True,
+        )
+
+        mode = getattr(report, "mode", "unknown")
+        verified = getattr(report, "verified", False)
+        remapped = getattr(report, "clusters_remapped", 0)
+        if not verified:
+            return False, (
+                f"xemu restore finished but verification failed "
+                f"(mode={mode}, remapped={remapped})"
+            )
+
+        detail = f"mode={mode}"
+        if remapped:
+            detail += f", remapped={remapped}"
+        return True, f"xemu Title ID {title_id} restored successfully ({detail})"
+
+    except SafetyError as e:
+        logging.error(f"xemu restore blocked: {e}")
+        return False, str(e)
+    except RestoreError as e:
+        logging.error(f"xemu restore rejected: {e}")
+        return False, f"xemu restore failed: {e}"
+    except Exception as e:
+        logging.error(f"xemu restore failed: {e}", exc_info=True)
+        return False, f"xemu restore failed: {e}"
+    finally:
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
 def _add_directory_to_zip(zipf: zipfile.ZipFile, source_path: str) -> None:
     """
     Add all files from a directory to a ZIP archive, preserving structure.
@@ -1457,11 +1701,17 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
         logging.error(f"Backup error '{profile_name}': {error_message}")
         return False, error_message
 
+    is_xemu = bool(profile_data and _is_xemu_profile(profile_data))
+
     # --- Check source size limit ---
-    size_ok, size_error = _check_source_size_limit(paths_to_process, max_source_size_mb)
-    if not size_ok:
-        logging.error(size_error)
-        return False, size_error
+    # xemu: paths point at the full HDD QCOW2; we only extract a surgical XBSV slice.
+    if not is_xemu:
+        size_ok, size_error = _check_source_size_limit(paths_to_process, max_source_size_mb)
+        if not size_ok:
+            logging.error(size_error)
+            return False, size_error
+    else:
+        logging.info("Source size check skipped for xemu (surgical Title ID backup, not full HDD).")
 
     # --- Create backup directory ---
     try:
@@ -1479,6 +1729,30 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
     logging.info(f"Creating backup for '{profile_name}': {len(paths_to_process)} source(s) -> '{archive_path}'")
 
     zip_compression, zip_compresslevel = _get_compression_settings(compression_mode)
+
+    # --- Check for xemu specialized backup (must not fall through to full HDD zip) ---
+    if is_xemu:
+        logging.info(f"Using xemu specialized backup for '{profile_name}'")
+        success, message = _perform_xemu_backup(
+            profile_name,
+            profile_data,
+            archive_path,
+            zip_compression,
+            zip_compresslevel,
+            fallback_paths=paths_to_process,
+        )
+        if success:
+            deleted_files = manage_backups(
+                profile_name, backup_base_dir, max_backups, profile_data=profile_data
+            )
+            deleted_msg = f" Deleted {len(deleted_files)} obsolete backups." if deleted_files else ""
+            return True, f"Backup completed successfully:\n'{archive_name}'" + deleted_msg
+        try:
+            if os.path.exists(archive_path):
+                os.remove(archive_path)
+        except Exception:
+            pass
+        return False, message
 
     # --- Check for Ymir (Saturn) specialized backup ---
     if profile_data:
@@ -1866,6 +2140,16 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path, pr
     if not archive_ok:
         logging.error(archive_error)
         return False, archive_error
+
+    # --- Check for xemu specialized restore (must not wipe/replace the QCOW2) ---
+    if profile_data and _is_xemu_profile(profile_data):
+        logging.info(f"Using xemu specialized restore for '{profile_name}'")
+        return _perform_xemu_restore(
+            profile_name,
+            profile_data,
+            archive_to_restore_path,
+            fallback_paths=paths_to_process,
+        )
 
     # --- Check for Ymir (Saturn) specialized restore ---
     if profile_data:

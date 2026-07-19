@@ -1720,38 +1720,9 @@ class MainWindowHandlers:
             else:
                  logging.debug("Free space check disabled.")
 
-            # TODO: Xemu specialized backup - TEMPORARILY DISABLED
-            # Xemu code is commented out until a working system for extracting/injecting
-            # saves from the HDD is implemented. When ready, uncomment this block.
-            
-            # from core import core_logic  # Import here for both xemu and generic backup
-            # profile_data = self.main_window.profiles.get(profile_name, {})
-            # if isinstance(profile_data, dict) and profile_data.get('emulator') == 'xemu':
-            #     logging.info(f"Using xemu specialized backup for '{profile_name}'")
-            #     from emulator_utils.xemu_manager import backup_xbox_save
-            #     
-            #     # Create backup directory for this profile
-            #     sanitized_folder_name = core_logic.sanitize_foldername(profile_name)
-            #     profile_backup_dir = os.path.join(backup_base_dir, sanitized_folder_name)
-            #     
-            #     # Try to find executable path from profile paths
-            #     executable_path = None
-            #     if 'paths' in profile_data and profile_data['paths']:
-            #         # For xemu, the path might be the HDD file, so get its directory
-            #         first_path = profile_data['paths'][0]
-            #         if first_path.endswith('.qcow2'):
-            #             executable_path = os.path.dirname(first_path)
-            #     
-            #     self.main_window.worker_thread = WorkerThread(
-            #         backup_xbox_save,
-            #         profile_data.get('id', 'unknown'),
-            #         profile_backup_dir,
-            #         executable_path
-            #     )
-            # else:
-            
-            # Use generic backup for all profiles (including xemu until specialized handler is ready)
-            logging.info(f"Using generic backup for '{profile_name}' with source(s): {source_paths}")
+            # xemu surgical backup/restore is handled inside core_logic.perform_backup
+            # when profile_data['emulator'] == 'xemu' (XBSV via xemu_lab).
+            logging.info(f"Using backup for '{profile_name}' with source(s): {source_paths}")
             self.main_window.worker_thread = WorkerThread(
                 core_logic.perform_backup,
                 profile_name,
