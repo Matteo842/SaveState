@@ -1,10 +1,12 @@
 # emulator_utils/xemu_manager.py
 # -*- coding: utf-8 -*-
-"""Discovery profili xemu (config → HDD → Title ID su FATX).
+"""xemu profile discovery: locate config, resolve the live QCOW2 HDD, list Title IDs.
 
-Niente backup/restore qui: quello va in core / runner SaveState.
-Quando sposti il file in SaveState, metti anche la cartella ``xemu_lab/``
-accanto a questo manager (dentro ``emulator_utils/``).
+Scans ``xemu.toml`` (portable next to the exe, then OS-standard paths), reads
+``sys.files.hdd_path``, and enumerates UDATA titles via ``xemu_lab``.
+
+Surgical backup/restore of Xbox saves lives in ``core_logic`` + ``xemu_lab``,
+not in this module.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ except ImportError:  # pragma: no cover - Python < 3.11
 
 try:
     from .obfuscation_utils import xor_bytes
-except ImportError:  # pragma: no cover - fuori da SaveState / senza obfuscation
+except ImportError:  # pragma: no cover - standalone / no obfuscation helpers
     try:
         from obfuscation_utils import xor_bytes  # type: ignore
     except ImportError:
@@ -49,7 +51,7 @@ def _manager_dir() -> str:
 
 
 def _load_title_map() -> dict[str, str]:
-    """Carica mappa Title ID → nome (JSON in dev, PKL obfuscato in release)."""
+    """Load Title ID → display name (JSON in dev, obfuscated PKL in release)."""
 
     global _title_map, _title_map_loaded
     if _title_map_loaded:
@@ -107,7 +109,7 @@ def _display_name(title_id: str) -> str:
     names = _load_title_map()
     if tid in names:
         return names[tid]
-    # Fallback piccolo di xemu_lab se la mappa non c'è.
+    # Fallback to xemu_lab small built-in map when the full title map is missing.
     try:
         from .xemu_lab.titles import game_display_name
     except ImportError:
@@ -119,7 +121,7 @@ def _display_name(title_id: str) -> str:
 
 
 def _candidate_toml_paths(executable_path: str | None) -> list[str]:
-    """Ordine: portable (accanto all'exe), poi path standard OS."""
+    """Candidate ``xemu.toml`` paths: portable (next to exe), then OS defaults."""
 
     candidates: list[str] = []
     seen: set[str] = set()
@@ -163,7 +165,7 @@ def _candidate_toml_paths(executable_path: str | None) -> list[str]:
                 "xemu.toml",
             )
         )
-        # Alcune build usano anche XDG_CONFIG.
+        # Some builds also store config under XDG_CONFIG.
         xdg_config = os.getenv("XDG_CONFIG_HOME", os.path.join(home, ".config"))
         add(os.path.join(xdg_config, "xemu", "xemu", "xemu.toml"))
     elif system == "Darwin":
@@ -182,7 +184,7 @@ def _candidate_toml_paths(executable_path: str | None) -> list[str]:
 
 
 def _parse_hdd_path_simple(text: str) -> str | None:
-    """Fallback senza tomllib: cerca hdd_path sotto [sys.files]."""
+    """Fallback without tomllib: find ``hdd_path`` under ``[sys.files]``."""
 
     in_section = False
     for raw_line in text.splitlines():
@@ -201,7 +203,7 @@ def _parse_hdd_path_simple(text: str) -> str | None:
         )
         if match:
             return match.group(2).strip() or None
-        # TOML senza quote (raro)
+        # Unquoted TOML value (uncommon)
         match = re.match(r"^hdd_path\s*=\s*(.+)$", line, flags=re.IGNORECASE)
         if match:
             return match.group(1).strip().strip("\"'") or None
@@ -226,7 +228,7 @@ def _read_hdd_path_from_toml(toml_path: str) -> str | None:
                 if isinstance(value, str) and value.strip():
                     hdd = value.strip()
         except Exception as exc:
-            log.debug("tomllib failed on %s: %s — fallback line parse", toml_path, exc)
+            log.debug("tomllib failed on %s: %s — falling back to line parse", toml_path, exc)
 
     if not hdd:
         try:
@@ -244,7 +246,7 @@ def _read_hdd_path_from_toml(toml_path: str) -> str | None:
 
 
 def find_xemu_toml(executable_path: str | None = None) -> str | None:
-    """Restituisce il primo ``xemu.toml`` esistente (portable → standard)."""
+    """Return the first existing ``xemu.toml`` (portable, then standard locations)."""
 
     for path in _candidate_toml_paths(executable_path):
         if os.path.isfile(path):
@@ -255,7 +257,7 @@ def find_xemu_toml(executable_path: str | None = None) -> str | None:
 
 
 def get_xemu_hdd_path(executable_path: str | None = None) -> str | None:
-    """Path assoluto dell'HDD QCOW2 in uso da xemu (da ``xemu.toml``)."""
+    """Absolute path of the QCOW2 HDD currently used by xemu (from ``xemu.toml``)."""
 
     toml_path = find_xemu_toml(executable_path)
     if not toml_path:
@@ -274,17 +276,16 @@ def get_xemu_hdd_path(executable_path: str | None = None) -> str | None:
 
 
 def find_xemu_profiles(executable_path: str | None = None) -> list[dict[str, Any]]:
-    """Elenca i giochi (UDATA) sull'HDD live di xemu.
+    """List UDATA games on the live xemu HDD as SaveState profile dicts.
 
-    Ogni profilo:
-      - ``id``: Title ID (8 hex)
-      - ``name``: nome display
-      - ``paths``: ``[hdd_path]`` — stesso file per tutti i Title ID;
-        il backup/restore chirurgico andrà gestito in core (non copiare
-        l'intero QCOW2 come se fosse una cartella save).
-      - ``title_id``: stesso di ``id`` (comodo per core)
-      - ``hdd_path``: path assoluto HDD
-      - ``area``: ``UDATA``
+    Each profile includes:
+      - ``id`` / ``title_id``: Title ID (8 hex)
+      - ``name``: display name
+      - ``paths``: ``[hdd_path]`` (shared QCOW2 for all titles; surgical
+        backup/restore is handled in core, not by copying the whole image)
+      - ``emulator``: ``\"xemu\"``
+      - ``hdd_path``: absolute HDD path
+      - ``area``: typically ``UDATA``
     """
 
     log.info("Attempting to find xemu profiles...")
