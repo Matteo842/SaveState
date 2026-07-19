@@ -121,12 +121,14 @@ SaveState automatically detects save data locations for a wide range of emulator
 | DeSmuME | Cemu | Flycast | ShadPs4 |
 | SameBoy | PCSX2 \* | Xenia | Eden (yuzu) |
 | melonDS | Gopher64 | Citron | Vita3K |
-| Mednafen/Mednaffe | ymir |  |  |
+| Mednafen/Mednaffe | ymir | **xemu** † |  |
 
 ★ *Enhanced integration with guided setup*
 
 ---
 \* PlayStation 2 memory card functionality in `SaveState` utilizes and adapts code from the [mymcplusplus](https://github.com/Adubbz/mymcplusplus) project, which is based on mymc+ by Florian Märkl and the original mymc by Ross Ridge. The mymcplusplus source code is distributed under the GNU General Public License v3.0. `SaveState`, including these derived components, is also licensed under GPLv3.
+
+† Original Xbox (**xemu**) support uses a surgical QCOW2/FATX backup engine developed for this project. The research lab, method notes, and engine that made title-level extract/restore possible (including on HDDs where a game was never launched) are published separately as [**xemu_tools**](https://github.com/Matteo842/xemu_tools) by the same author ([Matteo842](https://github.com/Matteo842)).
 
 ---
 
