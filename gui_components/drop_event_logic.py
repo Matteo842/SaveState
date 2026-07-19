@@ -1464,17 +1464,17 @@ class DropEventMixin:
                     if hasattr(mw, 'profile_table_manager'):
                         mw.profile_table_manager.update_profile_table()
                     if hasattr(mw, 'status_label'):
-                        mw.status_label.setText(f"Aggiunti {added_count} profili.")
+                        mw.status_label.setText(f"Added {added_count} profile(s).")
                     logging.info(f"Saved {added_count} profiles.")
                 else:
                     if hasattr(mw, 'status_label'):
-                        mw.status_label.setText("Errore nel salvataggio dei profili.")
+                        mw.status_label.setText("Error saving profiles.")
                     logging.error("Failed to save profiles.")
-                    QMessageBox.critical(mw, "Errore", "Impossibile salvare i profili.")
+                    QMessageBox.critical(mw, "Error", "Unable to save profiles.")
             else:
                 # Rejected or closed
                 if hasattr(mw, 'status_label'):
-                    mw.status_label.setText("Creazione profili annullata.")
+                    mw.status_label.setText("Profile creation cancelled.")
                 logging.info("MultiProfileDialog: Profile creation cancelled by user.")
         except Exception as e:
             logging.error(f"Error finalizing multi-profile dialog: {e}", exc_info=True)

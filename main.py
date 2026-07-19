@@ -495,7 +495,7 @@ if __name__ == "__main__":
                  logging.critical(f"Critical application init error: {e_app_init}", exc_info=True)
                  # Try to show a Qt message box
                  try: 
-                     QMessageBox.critical(None, "Errore Avvio Critico", f"Impossibile inizializzare l'ambiente grafico.\n{e_app_init}")
+                     QMessageBox.critical(None, "Critical Startup Error", f"Unable to initialize the graphical environment.\n{e_app_init}")
                  except Exception as e_msgbox:
                      logging.error(f"Failed to show critical error QMessageBox: {e_msgbox}")
                  sys.exit(1) # Exit immediately
@@ -649,7 +649,7 @@ if __name__ == "__main__":
                                 window.profile_table_manager.update_profile_table() # Aggiorna tabella
                                 logging.info("Initial settings configured and saved by user.")
                             else:
-                                QMessageBox.critical(window, "Errore", "Impossibile salvare le impostazioni iniziali.")
+                                QMessageBox.critical(window, "Error", "Unable to save initial settings.")
                         else: # User cancelled the first launch dialog
                             reply = QMessageBox.question(window, "Default Settings",
                                                         "No specific settings saved. Use default settings and continue?",
@@ -715,12 +715,12 @@ if __name__ == "__main__":
                 except ImportError as e_imp:
                      # CRITICAL: Library import error, application cannot start.
                      logging.critical(f"Missing library: {e_imp}. Application cannot start.", exc_info=True)
-                     QMessageBox.critical(None, "Errore Import", f"Errore critico: libreria mancante.\n{e_imp}\nL'applicazione non può avviarsi.")
+                     QMessageBox.critical(None, "Import Error", f"Critical error: missing library.\n{e_imp}\nThe application cannot start.")
                      sys.exit(1)
                 except Exception as e_gui_init:
                      logging.critical(f"Fatal GUI initialization error: {e_gui_init}", exc_info=True)
                      try:
-                        QMessageBox.critical(None, "Errore Avvio", f"Errore fatale durante l'inizializzazione della GUI:\n{e_gui_init}")
+                        QMessageBox.critical(None, "Startup Error", f"Fatal error during GUI initialization:\n{e_gui_init}")
                      except Exception as e_final_msgbox:
                          logging.error(f"Failed to show fatal GUI error QMessageBox: {e_final_msgbox}")
                      sys.exit(1)
