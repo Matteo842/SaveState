@@ -59,15 +59,17 @@ from gui_components import lock_backup_manager
 from common.utils import resource_path
 
 
-# Verde iconico prima Xbox (lime storico 2001) + verde brand più scuro
-XBOX_LIME = "#9BC848"
-XBOX_GREEN = "#107C10"
-XBOX_LIME_BRIGHT = "#C5E872"
+# Verde Xbox ufficiale (#0E7A0D) + lime chiaro per bordi/LED su UI scura
+XBOX_GREEN = "#0E7A0D"
+XBOX_GREEN_HOVER = "#0B650B"
+XBOX_GREEN_PRESSED = "#094F09"
+XBOX_LIME = "#3DDC3D"  # variante chiara del green (leggibile su dark)
+XBOX_LIME_BRIGHT = "#6AEF6A"
 XBOX_METAL_TOP = "#C8CCD0"
 XBOX_METAL_MID = "#9EA3A8"
 XBOX_METAL_DARK = "#5C6166"
 
-# Stili bottoni: stessa famiglia (lime bordo / green fill) — niente #229954 di SaveButton
+# Stili bottoni: stessa famiglia Xbox — niente #229954 di SaveButton
 _XBOX_BTN_PRIMARY = f"""
 QPushButton {{
     padding: 8px 18px;
@@ -78,11 +80,11 @@ QPushButton {{
     border-radius: 4px;
 }}
 QPushButton:hover {{
-    background-color: #0D6A0D;
+    background-color: {XBOX_GREEN_HOVER};
     border-color: {XBOX_LIME_BRIGHT};
 }}
 QPushButton:pressed {{
-    background-color: #0A550A;
+    background-color: {XBOX_GREEN_PRESSED};
 }}
 QPushButton:disabled {{
     color: #AAAAAA;
@@ -97,16 +99,16 @@ QPushButton {{
     font-weight: bold;
     color: {XBOX_LIME};
     background-color: transparent;
-    border: 2px solid {XBOX_LIME};
+    border: 2px solid {XBOX_GREEN};
     border-radius: 4px;
 }}
 QPushButton:hover {{
     color: #FFFFFF;
     background-color: {XBOX_GREEN};
-    border-color: {XBOX_LIME_BRIGHT};
+    border-color: {XBOX_LIME};
 }}
 QPushButton:pressed {{
-    background-color: #0A550A;
+    background-color: {XBOX_GREEN_PRESSED};
 }}
 QPushButton:disabled {{
     color: #666666;
@@ -247,17 +249,17 @@ class GamesListDelegate(QStyledItemDelegate):
         updated = bool(index.data(UPDATED_BADGE_ROLE))
 
         if is_current:
-            painter.fillRect(option.rect, QColor(155, 200, 72, 45))
+            painter.fillRect(option.rect, QColor(14, 122, 13, 55))
             painter.fillRect(
                 option.rect.x(),
                 option.rect.y(),
                 3,
                 option.rect.height(),
-                QColor(XBOX_LIME),
+                QColor(XBOX_GREEN),
             )
 
         if updated:
-            painter.fillRect(option.rect, QColor(16, 124, 16, 70))
+            painter.fillRect(option.rect, QColor(14, 122, 13, 90))
 
         opt = QStyleOptionViewItem(option)
         if is_current or updated:
@@ -327,7 +329,7 @@ class XemuHddPanel(QWidget):
                 min-height: 22px;
             }}
             QListWidget::item:hover {{
-                background: rgba(155, 200, 72, 40);
+                background: rgba(14, 122, 13, 55);
             }}
             QScrollBar:vertical {{
                 background: transparent;
