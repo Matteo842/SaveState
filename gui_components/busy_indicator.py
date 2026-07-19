@@ -20,6 +20,7 @@ _INITIAL_LEN = 3
 _SPEED_MS = 70
 _PULSE_MS = 50
 _PULSE_STEPS = 24  # round-trip dim ↔ bright
+_APPLE_HIDDEN_TICKS = 8  # pause before the next apple appears
 
 
 class BusyIndicator(QWidget):
@@ -41,6 +42,7 @@ class BusyIndicator(QWidget):
         self._cols = 0
         self._full = False
         self._pulse = 0
+        self._apple_hidden = 0
 
         self._timer = QTimer(self)
         self._timer.setInterval(_SPEED_MS)
@@ -53,6 +55,7 @@ class BusyIndicator(QWidget):
         self._cols = 0
         self._full = False
         self._pulse = 0
+        self._apple_hidden = 0
         self._timer.setInterval(_SPEED_MS)
         if not self._timer.isActive():
             self._timer.start()
@@ -63,7 +66,7 @@ class BusyIndicator(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        cols = self._column_count()
+        cols, _, _, _ = self._layout()
         if cols != self._cols and cols > 0:
             self._cols = cols
             if not self._full:
@@ -71,32 +74,28 @@ class BusyIndicator(QWidget):
                 self._length = min(self._length, max_len)
                 self._head = min(self._head, max(0, cols - 2))
 
-    def _pixel_size(self) -> int:
-        """Square pixel size from bar height (chunky blocks, not a solid fill)."""
-        return max(2, self.height() - 2 * _PAD)
-
-    def _column_count(self) -> int:
-        px = self._pixel_size()
-        inner_w = max(0, self.width() - 2 * _PAD)
-        return max(4, (inner_w + _GAP) // (px + _GAP))
-
     def _layout(self):
-        """Return (pixel_size, cols, x0, inner_h)."""
-        px = self._pixel_size()
-        cols = self._column_count()
-        inner_h = self.height() - 2 * _PAD
+        """Centered pixel grid: (cols, px, x0, inner_h).
+
+        Leftover width is split left/right so both sides look the same.
+        """
+        inner_h = max(2, self.height() - 2 * _PAD)
+        inner_w = max(0, self.width() - 2 * _PAD)
+        px = inner_h  # square chunks
+        cols = max(4, (inner_w + _GAP) // (px + _GAP))
         used = cols * px + (cols - 1) * _GAP
-        x0 = _PAD + max(0, (self.width() - 2 * _PAD - used) // 2)
-        return px, cols, x0, inner_h
+        x0 = _PAD + max(0, (inner_w - used) // 2)
+        return cols, px, x0, inner_h
 
     def _enter_full(self, cols: int):
         self._full = True
         self._length = cols
         self._pulse = 0
+        self._apple_hidden = 0
         self._timer.setInterval(_PULSE_MS)
 
     def _tick(self):
-        cols = self._column_count()
+        cols, _, _, _ = self._layout()
         if cols < 4:
             return
         self._cols = cols
@@ -106,12 +105,17 @@ class BusyIndicator(QWidget):
             self.update()
             return
 
+        if self._apple_hidden > 0:
+            self._apple_hidden -= 1
+
         apple = cols - 1
         max_len = apple
 
         self._head += 1
         if self._head >= apple:
+            # Ate it — apple vanishes, snake respawns longer; apple returns soon
             self._length += 1
+            self._apple_hidden = _APPLE_HIDDEN_TICKS
             if self._length > max_len:
                 self._enter_full(cols)
             else:
@@ -158,18 +162,18 @@ class BusyIndicator(QWidget):
 
         painter.fillRect(0, 0, w, h, track)
 
-        px, cols, x0, inner_h = self._layout()
+        cols, px, x0, inner_h = self._layout()
         if cols < 4:
             return
 
         if self._full:
-            self._paint_full_pulse(painter, cols, x0, px, inner_h, dim, lit)
+            self._paint_full_pulse(painter, cols, px, x0, inner_h, dim, lit)
         else:
             self._paint_snake(
-                painter, cols, x0, px, inner_h, empty, lit, head_c, apple_c
+                painter, cols, px, x0, inner_h, empty, lit, head_c, apple_c
             )
 
-    def _paint_snake(self, painter, cols, x0, px, inner_h, empty, lit, head_c, apple_c):
+    def _paint_snake(self, painter, cols, px, x0, inner_h, empty, lit, head_c, apple_c):
         apple_col = cols - 1
         snake_cols = set()
         for i in range(self._length):
@@ -177,9 +181,10 @@ class BusyIndicator(QWidget):
             if 0 <= col < apple_col:
                 snake_cols.add(col)
 
+        show_apple = self._apple_hidden == 0
         for col in range(cols):
             x = self._pixel_x(col, x0, px)
-            if col == apple_col and self._head < apple_col:
+            if col == apple_col and show_apple:
                 color = apple_c
             elif col in snake_cols:
                 color = head_c if col == self._head else lit
@@ -187,7 +192,7 @@ class BusyIndicator(QWidget):
                 color = empty
             painter.fillRect(x, _PAD, px, inner_h, color)
 
-    def _paint_full_pulse(self, painter, cols, x0, px, inner_h, dim, lit):
+    def _paint_full_pulse(self, painter, cols, px, x0, inner_h, dim, lit):
         # Stationary full snake: every pixel lit, whole bar pulses dim↔bright
         color = self._lerp_color(dim, lit, self._pulse_factor())
         for col in range(cols):

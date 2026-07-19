@@ -1274,8 +1274,14 @@ class MainWindow(QMainWindow):
         # --- FINE Layout Search Bar e Pulsante Log ---
         
         status_bar = QStatusBar()
+        status_bar.setContentsMargins(0, 0, 0, 0)
         # Only one of status_label / progress_bar is visible at a time;
-        # both stretch so the snake can span the full window width when busy.
+        # both stretch so the snake can span the status bar when busy.
+        # Left pad mirrors the size-grip width so the snake looks centered.
+        self._busy_left_pad = QWidget()
+        self._busy_left_pad.setFixedWidth(0)
+        self._busy_left_pad.setVisible(False)
+        status_bar.addWidget(self._busy_left_pad)
         status_bar.addWidget(self.status_label, stretch=1)
         status_bar.addWidget(self.progress_bar, stretch=1)
         try:
@@ -2121,6 +2127,15 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(busy)
         # Hide status text while the full-width snake runs
         self.status_label.setVisible(not busy)
+        # Mirror size-grip width on the left so the snake isn't visually shifted
+        if hasattr(self, '_busy_left_pad'):
+            if busy and hasattr(self, 'size_grip'):
+                grip_w = max(self.size_grip.sizeHint().width(), self.size_grip.width())
+                self._busy_left_pad.setFixedWidth(grip_w)
+                self._busy_left_pad.setVisible(True)
+            else:
+                self._busy_left_pad.setVisible(False)
+                self._busy_left_pad.setFixedWidth(0)
         # Editor controls
         if hasattr(self, 'edit_name_edit'):
             self.edit_name_edit.setEnabled(enabled)
