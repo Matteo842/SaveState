@@ -1,17 +1,17 @@
 # Contributing
 
-Thank you for your interest in contributing to SaveState!
+Thank you for your interest in SaveState!
 
-## Current Status
+## No pull requests (for now)
 
-This is a solo project managed by a single developer. Due to a specific (AI-assisted) development workflow, it is very difficult for me to review, test, and integrate external code contributions safely and effectively.
+This is a solo project. The maintainer is **not** a full-time programmer reviewing PRs as a day job — the workflow is AI-assisted and integrating outside code safely is hard.
 
-**Because of this, I am not accepting code contributions (Pull Requests) at this time.**
+**Please do not open Pull Requests.** They will not be reviewed or merged.
 
-This policy ensures I can maintain the project's quality and security standards.
+## You can still help
 
-## You can still help!
+Bugs, ideas, and feedback are welcome — **open an [Issue](https://github.com/Matteo842/SaveState/issues)** using one of the templates. That is the best way to contribute right now.
 
-Your feedback and ideas are highly valuable. If you find a bug or have an idea for a new feature, please **open an Issue** using one of our templates. This is the best way to contribute to the project's development.
+Want to run from source anyway? See [docs/Building-from-Source.md](docs/Building-from-Source.md). Other guides live under [docs/](docs/README.md).
 
-Thank you for your understanding!
+Thank you for understanding.
