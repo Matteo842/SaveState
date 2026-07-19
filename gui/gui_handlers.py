@@ -1791,6 +1791,16 @@ class MainWindowHandlers:
                 'name': profile_name,
                 'data': profile_data
             }
+
+            # xemu: custom 3-column restore UI (orchestrates restore + animation itself)
+            if str(profile_data.get("emulator", "")).lower() == "xemu":
+                from dialogs.xemu_restore_dialog import XemuRestoreDialog
+
+                dialog = XemuRestoreDialog(profile_name, profile_data, self.main_window)
+                dialog.restore_completed.connect(self._on_xemu_restore_completed)
+                dialog.finished.connect(lambda _result: setattr(self, "_restore_profile_data", None))
+                dialog.show()
+                return
         else:
             # No profile selected - will use standalone ZIP restore mode
             self._restore_profile_data = None
@@ -1977,6 +1987,29 @@ class MainWindowHandlers:
         self.main_window.worker_thread.start()
         logging.info(f"Started batch restore for {len(restore_items)} profiles")
         
+    def _on_xemu_restore_completed(self, success: bool, message: str):
+        """Status update after XemuRestoreDialog finishes an in-dialog restore."""
+        if success:
+            text = message or "xemu restore completed."
+            self.main_window.status_label.setText(text)
+            logging.info("xemu restore UI completed: %s", text)
+        else:
+            text = message or "xemu restore failed."
+            self.main_window.status_label.setText(text)
+            logging.error("xemu restore UI failed: %s", text)
+        if hasattr(self.main_window, "set_controls_enabled"):
+            if not (
+                hasattr(self.main_window, "worker_thread")
+                and self.main_window.worker_thread
+                and self.main_window.worker_thread.isRunning()
+            ):
+                self.main_window.set_controls_enabled(True)
+        if hasattr(self.main_window, "profile_table_manager"):
+            try:
+                self.main_window.profile_table_manager.update_profile_table()
+            except Exception:
+                logging.debug("Could not refresh profile table after xemu restore", exc_info=True)
+
     def on_restore_dialog_finished(self, result, dialog):
         """Handle restore dialog result."""
         if result != QDialog.Accepted:
