@@ -1,4 +1,4 @@
-"""Nomi display per Title ID Xbox (stessa mappa di single_game_merger)."""
+"""Display names for Xbox Title IDs (same map as single_game_merger)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .qcow2 import QCOW2BlockDevice
 
 PathLike = Union[str, Path]
 
-# Copia della mappa usata da single_game_merger.GAME_NAMES (non modificare il merger).
+# Copy of the map used by single_game_merger.GAME_NAMES (do not edit the merger).
 GAME_NAMES = {
     "4c410015": "Mercenaries",
     "5345000f": "ToeJam & Earl III",
@@ -41,7 +41,7 @@ def list_games_on_image(
     partition: str = "E",
     areas: Sequence[str] = ("UDATA",),
 ) -> List[ListedGame]:
-    """Scansiona Title ID su un QCOW2 in coordinate guest (UDATA di default)."""
+    """Scan Title IDs on a QCOW2 in guest coordinates (UDATA by default)."""
 
     path = Path(image_path)
     games: List[ListedGame] = []

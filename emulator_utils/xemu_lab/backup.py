@@ -1,4 +1,4 @@
-"""Backup chirurgico guest-aware di un Title ID FATX (XBSV v6/v7)."""
+"""Surgical guest-aware backup of a FATX Title ID (XBSV v6/v7)."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ DEFAULT_BACKUP_DIR = Path(__file__).resolve().parent.parent / "surgical_backups_
 
 
 class BackupError(Exception):
-    """Errore durante l'estrazione o la serializzazione del backup."""
+    """Error during backup extraction or serialization."""
 
 
 @dataclass
@@ -67,11 +67,11 @@ def backup_title_id(
     partition: str = "E",
     areas: Sequence[str] = ("UDATA",),
 ) -> GameBackup:
-    """Estrae directory entries, FAT, cluster dati e envelope QCOW2."""
+    """Extract directory entries, FAT, data clusters, and QCOW2 envelopes."""
 
     normalized = title_id.strip().lower()
     if len(normalized) != 8:
-        raise BackupError(f"Title ID non valido: {title_id}")
+        raise BackupError(f"Invalid Title ID: {title_id}")
 
     volume = FATXVolume.open_partition(device, partition)
     directory_entries: List[Tuple[int, bytes]] = []
@@ -87,7 +87,7 @@ def backup_title_id(
             continue
         game_entry = volume.find_child(area_entry.first_cluster, normalized)
         if game_entry is None:
-            # Title ID sul disco può essere mixed-case.
+            # On-disk Title ID may be mixed-case.
             game_entry = volume.find_child(area_entry.first_cluster, title_id)
         if game_entry is None or not game_entry.is_directory:
             continue
@@ -106,11 +106,11 @@ def backup_title_id(
 
     if not found_any:
         raise BackupError(
-            f"Title ID {normalized} non trovato in "
+            f"Title ID {normalized} not found in "
             f"{partition}:\\{'/'.join(areas)}"
         )
     if not clusters:
-        raise BackupError(f"Nessun cluster dati per {normalized}")
+        raise BackupError(f"No data clusters for {normalized}")
 
     sorted_clusters = sorted(clusters)
     fat_runs = _build_fat_runs(volume, sorted_clusters)
@@ -177,7 +177,7 @@ def save_backup(
     backup: GameBackup,
     output_dir: PathLike = DEFAULT_BACKUP_DIR,
 ) -> Tuple[Path, Path]:
-    """Serializza XBSV + sidecar JSON. Restituisce (bin_path, json_path)."""
+    """Serialize XBSV + JSON sidecar. Returns (bin_path, json_path)."""
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -230,7 +230,7 @@ def serialize_backup(backup: GameBackup) -> bytes:
     header.extend(struct.pack("<I", version))
     title = backup.title_id.encode("ascii")
     if len(title) != 8:
-        raise BackupError("Title ID deve essere ASCII da 8 caratteri")
+        raise BackupError("Title ID must be 8 ASCII characters")
     header.extend(title)
     header.extend(backup.partition.encode("ascii")[:1].ljust(1, b"E"))
     header.extend(struct.pack("<I", backup.fat_entry_size))
@@ -239,13 +239,13 @@ def serialize_backup(backup: GameBackup) -> bytes:
     header.extend(struct.pack("<Q", created))
     source_hash = bytes.fromhex(backup.source_sha256) if backup.source_sha256 else bytes(32)
     if len(source_hash) != 32:
-        raise BackupError("source_sha256 non valido")
+        raise BackupError("Invalid source_sha256")
     header.extend(source_hash)
 
     header.extend(struct.pack("<I", len(backup.directory_entries)))
     for guest_offset, raw in backup.directory_entries:
         if len(raw) != 64:
-            raise BackupError("Directory entry deve essere da 64 byte")
+            raise BackupError("Directory entry must be 64 bytes")
         header.extend(struct.pack("<Q", guest_offset))
         header.extend(raw)
 
@@ -269,7 +269,7 @@ def serialize_backup(backup: GameBackup) -> bytes:
         for guest_cluster, payload in backup.qcow2_envelopes:
             if backup.qcow2_cluster_size and len(payload) != backup.qcow2_cluster_size:
                 raise BackupError(
-                    "Envelope QCOW2 con dimensione non coerente"
+                    "QCOW2 envelope size mismatch"
                 )
             header.extend(struct.pack("<I", guest_cluster))
             header.extend(struct.pack("<I", len(payload)))
@@ -288,7 +288,7 @@ def load_backup(bin_path: PathLike, json_path: Optional[PathLike] = None) -> Gam
             actual = hashlib.sha256(payload).hexdigest()
             if actual != expected:
                 raise BackupError(
-                    f"Hash backup non corrispondente: {actual} != {expected}"
+                    f"Backup hash mismatch: {actual} != {expected}"
                 )
 
     return deserialize_backup(payload, source_hint=path)
@@ -299,12 +299,12 @@ def deserialize_backup(
     source_hint: Optional[Path] = None,
 ) -> GameBackup:
     if len(payload) < 61:
-        raise BackupError("Backup troncato")
+        raise BackupError("Truncated backup")
     if payload[:4] != XBSV_MAGIC:
-        raise BackupError("Magic XBSV assente")
+        raise BackupError("Missing XBSV magic")
     version = struct.unpack_from("<I", payload, 4)[0]
     if version < XBSV_MIN_READ_VERSION or version > XBSV_VERSION:
-        raise BackupError(f"Versione backup non supportata: {version}")
+        raise BackupError(f"Unsupported backup version: {version}")
 
     title_id = payload[8:16].decode("ascii")
     partition = chr(payload[16])
@@ -316,7 +316,7 @@ def deserialize_backup(
     def need(size: int) -> None:
         nonlocal cursor
         if cursor + size > len(payload):
-            raise BackupError("Backup troncato durante il parse")
+            raise BackupError("Truncated backup during parse")
 
     need(4)
     dir_count = struct.unpack_from("<I", payload, cursor)[0]
@@ -385,7 +385,7 @@ def deserialize_backup(
 
     if cursor != len(payload):
         raise BackupError(
-            f"Byte residui nel backup: {len(payload) - cursor}"
+            f"Trailing bytes in backup: {len(payload) - cursor}"
         )
 
     return GameBackup(
@@ -406,7 +406,7 @@ def deserialize_backup(
 
 
 def list_backups(directory: PathLike = DEFAULT_BACKUP_DIR) -> List[Path]:
-    """Elenca i sidecar JSON XBSV v6/v7."""
+    """List XBSV v6/v7 JSON sidecars."""
 
     folder = Path(directory)
     if not folder.is_dir():
@@ -426,7 +426,7 @@ def list_backups(directory: PathLike = DEFAULT_BACKUP_DIR) -> List[Path]:
 
 
 def backup_display_label(json_path: PathLike) -> str:
-    """Etichetta menu: 'Mercenaries (18/07/26 08:49)'."""
+    """Menu label: 'Mercenaries (18/07/26 08:49)'."""
 
     path = Path(json_path)
     try:
@@ -458,7 +458,7 @@ def _collect_qcow2_envelopes(
     ranges: Sequence[Tuple[int, int]],
     cluster_size: int,
 ) -> List[Tuple[int, bytes]]:
-    """Copia i cluster QCOW2 interi toccati dai range chirurgici."""
+    """Copy full QCOW2 clusters touched by the surgical ranges."""
 
     touched: Set[int] = set()
     for offset, size in ranges:
@@ -474,7 +474,7 @@ def _collect_qcow2_envelopes(
         payload = device.read_at(guest_offset, cluster_size)
         if len(payload) != cluster_size:
             raise BackupError(
-                f"Lettura envelope QCOW2 {guest_cluster} incompleta"
+                f"Incomplete QCOW2 envelope read for cluster {guest_cluster}"
             )
         envelopes.append((guest_cluster, payload))
     return envelopes
@@ -485,7 +485,7 @@ def _backup_filename_stem(
     created_at: datetime,
     title_id: str,
 ) -> str:
-    """Nome file Windows-safe: 'Mercenaries (18-07-26 08-49)'."""
+    """Windows-safe filename: 'Mercenaries (18-07-26 08-49)'."""
 
     safe_name = re.sub(r'[<>:"/\\|?*]', "-", game_name).strip() or title_id
     safe_name = re.sub(r"\s+", " ", safe_name)
@@ -507,7 +507,7 @@ def _unique_path(path: Path) -> Path:
         candidate = parent / f"{stem} #{index}{suffix}"
         if not candidate.exists():
             return candidate
-    raise BackupError(f"Impossibile creare nome unico per {path.name}")
+    raise BackupError(f"Unable to create unique name for {path.name}")
 
 
 def _add_directory_entry(
@@ -525,7 +525,7 @@ def _build_fat_runs(
     volume: FATXVolume,
     clusters: Sequence[int],
 ) -> List[Tuple[int, int, bytes]]:
-    """Costruisce run FAT contigui solo sui cluster del gioco."""
+    """Build contiguous FAT runs for the game's clusters only."""
 
     if not clusters:
         return []

@@ -1,4 +1,4 @@
-"""Controlli di sicurezza per copie e scritture sull'HDD attivo."""
+"""Safety checks for copies and writes on the active HDD."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Iterable, Optional, Set, Union
 
 try:
     import psutil  # type: ignore
-except ImportError:  # pragma: no cover - fallback senza dipendenza
+except ImportError:  # pragma: no cover - fallback without dependency
     psutil = None
 
 
@@ -20,7 +20,7 @@ PathLike = Union[str, Path]
 
 
 class SafetyError(Exception):
-    """Operazione bloccata da un controllo di sicurezza."""
+    """Operation blocked by a safety check."""
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,7 @@ def assert_not_golden(
     backup_folder: PathLike,
     extra_protected: Optional[Iterable[PathLike]] = None,
 ) -> None:
-    """Impedisce scritture/copie distruttive sui golden dell'archivio."""
+    """Block destructive writes/copies on golden archive images."""
 
     target = Path(path).resolve()
     folder = Path(backup_folder).resolve()
@@ -59,19 +59,19 @@ def assert_not_golden(
 
     if normalize_path(target) in protected:
         raise SafetyError(
-            f"Percorso protetto (golden/archivio): {target}"
+            f"Protected path (golden/archive): {target}"
         )
     try:
         if folder in target.parents or target == folder:
             raise SafetyError(
-                f"Operazione dentro la cartella golden vietata: {target}"
+                f"Operation inside golden folder forbidden: {target}"
             )
     except OSError:
         pass
 
 
 def find_xemu_processes() -> list[str]:
-    """Restituisce i processi emulatore xemu in esecuzione."""
+    """Return running xemu emulator processes."""
 
     matches: list[str] = []
     if psutil is not None:
@@ -106,27 +106,27 @@ def find_xemu_processes() -> list[str]:
 
 
 def assert_path_writable(path: PathLike) -> None:
-    """Verifica che il file target esista e non sia di sola lettura."""
+    """Verify the target file exists and is not read-only."""
 
     target = Path(path)
     if not target.is_file():
-        raise SafetyError(f"HDD assente: {target}")
+        raise SafetyError(f"HDD missing: {target}")
     if not os.access(target, os.W_OK):
-        raise SafetyError(f"HDD non scrivibile (sola lettura?): {target}")
+        raise SafetyError(f"HDD not writable (read-only?): {target}")
     if os.name == "nt":
         import stat as stat_mod
 
         if not (target.stat().st_mode & stat_mod.S_IWRITE):
-            raise SafetyError(f"HDD non scrivibile (sola lettura?): {target}")
+            raise SafetyError(f"HDD not writable (read-only?): {target}")
 
 
 def assert_xemu_closed() -> None:
     running = find_xemu_processes()
     if running:
         raise SafetyError(
-            "xemu risulta in esecuzione ("
+            "xemu appears to be running ("
             + ", ".join(sorted(set(running)))
-            + "). Chiuderlo prima di copiare o scrivere l'HDD."
+            + "). Close it before copying or writing the HDD."
         )
 
 
@@ -145,18 +145,18 @@ def atomic_copy_qcow2(
     destination: PathLike,
     backup_folder: PathLike,
 ) -> CopyReport:
-    """Copia source → destination con file temporaneo, replace e verifica hash.
+    """Copy source → destination with temp file, replace, and hash verify.
 
-    Il golden (`source`) resta aperto solo in lettura a livello OS copy.
-    La destinazione non può trovarsi nell'archivio golden.
+    The golden (`source`) stays open read-only at the OS copy level.
+    The destination must not lie inside the golden archive.
     """
 
     src = Path(source).resolve()
     dst = Path(destination).resolve()
     if not src.is_file():
-        raise SafetyError(f"Sorgente assente: {src}")
+        raise SafetyError(f"Source missing: {src}")
     if is_same_path(src, dst):
-        raise SafetyError("Sorgente e destinazione coincidono")
+        raise SafetyError("Source and destination are the same")
 
     assert_not_golden(dst, backup_folder, extra_protected=[src])
     assert_xemu_closed()
@@ -176,7 +176,7 @@ def atomic_copy_qcow2(
         temp_hash = sha256_file(temp_path)
         if temp_hash != src_hash:
             raise SafetyError(
-                "Hash della copia temporanea non corrisponde alla sorgente"
+                "Temporary copy hash does not match source"
             )
         os.replace(temp_path, dst)
     except Exception:
@@ -187,7 +187,7 @@ def atomic_copy_qcow2(
     dst_hash = sha256_file(dst)
     if dst_hash != src_hash:
         raise SafetyError(
-            "Hash della destinazione non corrisponde dopo il replace"
+            "Destination hash does not match after replace"
         )
 
     return CopyReport(
@@ -203,6 +203,6 @@ def rollback_active_from_golden(
     active: PathLike,
     backup_folder: PathLike,
 ) -> CopyReport:
-    """Ripristina l'HDD attivo ricopiando il golden (stessa procedura atomica)."""
+    """Restore the active HDD by re-copying the golden (same atomic procedure)."""
 
     return atomic_copy_qcow2(golden, active, backup_folder)

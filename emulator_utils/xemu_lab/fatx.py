@@ -1,4 +1,4 @@
-"""Parser FATX guest-aware per il disco retail della prima Xbox."""
+"""Guest-aware FATX parser for the original Xbox retail disk."""
 
 from __future__ import annotations
 
@@ -26,15 +26,15 @@ TITLE_ID_PATTERN = re.compile(r"^[0-9a-fA-F]{8}$")
 
 
 class FATXError(Exception):
-    """Errore base del parser FATX."""
+    """Base FATX parser error."""
 
 
 class FATXFormatError(FATXError):
-    """Struttura FATX incoerente o non valida."""
+    """Inconsistent or invalid FATX structure."""
 
 
 class FATXBoundsError(FATXError):
-    """Cluster o offset fuori dalla partizione FATX."""
+    """Cluster or offset outside the FATX partition."""
 
 
 @dataclass(frozen=True)
@@ -53,15 +53,15 @@ class XboxRegion:
         return self.offset <= guest_offset < self.end
 
 
-# Layout fisso retail. La lunghezza E è quella usata dalle implementazioni
-# fatx-tools; per il parsing della FAT produce la file area osservata su xemu.
+# Fixed retail layout. Partition E length matches fatx-tools implementations;
+# for FAT parsing it yields the file area observed on xemu.
 XBOX_REGIONS: Tuple[XboxRegion, ...] = (
-    XboxRegion("CONFIG", 0x00000000, 0x00080000, "Area configurazione", False),
-    XboxRegion("X", 0x00080000, 0x2EE00000, "Cache gioco X"),
-    XboxRegion("Y", 0x2EE80000, 0x2EE00000, "Cache gioco Y"),
-    XboxRegion("Z", 0x5DC80000, 0x2EE00000, "Cache gioco Z"),
-    XboxRegion("C", 0x8CA80000, 0x1F400000, "Sistema"),
-    XboxRegion("E", 0xABE80000, 0x1312D6000, "Dati utente e giochi"),
+    XboxRegion("CONFIG", 0x00000000, 0x00080000, "Configuration area", False),
+    XboxRegion("X", 0x00080000, 0x2EE00000, "Game cache X"),
+    XboxRegion("Y", 0x2EE80000, 0x2EE00000, "Game cache Y"),
+    XboxRegion("Z", 0x5DC80000, 0x2EE00000, "Game cache Z"),
+    XboxRegion("C", 0x8CA80000, 0x1F400000, "System"),
+    XboxRegion("E", 0xABE80000, 0x1312D6000, "User data and games"),
 )
 
 XBOX_PARTITIONS: Dict[str, XboxRegion] = {
@@ -74,12 +74,12 @@ def get_region(name: str) -> XboxRegion:
     for region in XBOX_REGIONS:
         if region.name == normalized:
             return region
-    raise KeyError(f"Regione Xbox sconosciuta: {name}")
+    raise KeyError(f"Unknown Xbox region: {name}")
 
 
 def region_for_offset(guest_offset: int) -> Optional[XboxRegion]:
     if guest_offset < 0:
-        raise ValueError("L'offset guest deve essere >= 0")
+        raise ValueError("Guest offset must be >= 0")
     for region in XBOX_REGIONS:
         if region.contains(guest_offset):
             return region
@@ -114,7 +114,7 @@ class FATXHeader:
 
     @property
     def end_of_chain_start(self) -> int:
-        """Primo valore FAT che termina una catena (incluse varianti EOC)."""
+        """First FAT value that ends a chain (including EOC variants)."""
 
         return 0xFFF8 if self.is_fat16 else 0xFFFFFFF8
 
@@ -158,11 +158,11 @@ class GameDirectory:
 
 
 class FATXVolume:
-    """Vista read-only di una singola partizione FATX."""
+    """Read-only view of a single FATX partition."""
 
     def __init__(self, device: BlockDevice, partition: XboxRegion):
         if not partition.is_fatx:
-            raise ValueError(f"{partition.name} non è una partizione FATX")
+            raise ValueError(f"{partition.name} is not a FATX partition")
         self.device = device
         self.partition = partition
         self.header = self._read_header()
@@ -179,13 +179,13 @@ class FATXVolume:
     def _read_header(self) -> FATXHeader:
         if self.partition.end > self.device.size:
             raise FATXBoundsError(
-                f"Partizione {self.partition.name} oltre il disco guest"
+                f"Partition {self.partition.name} extends beyond guest disk"
             )
 
         raw = self.device.read_at(self.partition.offset, FATX_HEADER_SIZE)
         if raw[:4] != b"FATX":
             raise FATXFormatError(
-                f"Magic FATX assente in {self.partition.name} "
+                f"Missing FATX magic in {self.partition.name} "
                 f"@ 0x{self.partition.offset:x}"
             )
 
@@ -196,11 +196,11 @@ class FATXVolume:
             sectors_per_cluster & (sectors_per_cluster - 1)
         ):
             raise FATXFormatError(
-                f"SectorsPerCluster non valido: {sectors_per_cluster}"
+                f"Invalid SectorsPerCluster: {sectors_per_cluster}"
             )
         if sectors_per_cluster > 0x80:
             raise FATXFormatError(
-                f"SectorsPerCluster troppo grande: {sectors_per_cluster}"
+                f"SectorsPerCluster too large: {sectors_per_cluster}"
             )
 
         cluster_size = sectors_per_cluster * SECTOR_SIZE
@@ -219,10 +219,10 @@ class FATXVolume:
 
         if root_cluster < 1 or root_cluster > data_cluster_count:
             raise FATXFormatError(
-                f"RootDirFirstCluster fuori range: {root_cluster}"
+                f"RootDirFirstCluster out of range: {root_cluster}"
             )
         if data_cluster_count <= 0:
-            raise FATXFormatError("La FAT occupa l'intera partizione")
+            raise FATXFormatError("FAT occupies the entire partition")
 
         return FATXHeader(
             partition=self.partition,
@@ -240,9 +240,9 @@ class FATXVolume:
 
     def read_fat_entry(self, cluster: int) -> int:
         if not isinstance(cluster, int):
-            raise TypeError("Il cluster FAT deve essere un intero")
+            raise TypeError("FAT cluster must be an integer")
         if cluster < 0 or cluster >= self.header.max_clusters:
-            raise FATXBoundsError(f"Cluster FAT fuori range: {cluster}")
+            raise FATXBoundsError(f"FAT cluster out of range: {cluster}")
 
         offset = self.header.fat_offset + cluster * self.header.fat_entry_size
         raw = self.device.read_at(offset, self.header.fat_entry_size)
@@ -250,9 +250,9 @@ class FATXVolume:
 
     def cluster_offset(self, cluster: int) -> int:
         if not isinstance(cluster, int):
-            raise TypeError("Il cluster deve essere un intero")
+            raise TypeError("Cluster must be an integer")
         if cluster < 1 or cluster > self.header.data_cluster_count:
-            raise FATXBoundsError(f"Cluster dati fuori range: {cluster}")
+            raise FATXBoundsError(f"Data cluster out of range: {cluster}")
 
         offset = (
             self.header.file_area_offset
@@ -260,7 +260,7 @@ class FATXVolume:
         )
         if offset + self.header.cluster_size > self.partition.end:
             raise FATXBoundsError(
-                f"Cluster {cluster} oltre la partizione {self.partition.name}"
+                f"Cluster {cluster} beyond partition {self.partition.name}"
             )
         return offset
 
@@ -282,7 +282,7 @@ class FATXVolume:
     def classify_offset(self, guest_offset: int) -> FATXLocation:
         if not self.partition.contains(guest_offset):
             raise FATXBoundsError(
-                f"Offset 0x{guest_offset:x} fuori da {self.partition.name}"
+                f"Offset 0x{guest_offset:x} outside {self.partition.name}"
             )
 
         relative = guest_offset - self.partition.offset
@@ -335,7 +335,7 @@ class FATXVolume:
             or first_cluster > self.header.data_cluster_count
         ):
             raise FATXBoundsError(
-                f"Primo cluster fuori range: {first_cluster}"
+                f"First cluster out of range: {first_cluster}"
             )
 
         limit = (
@@ -344,7 +344,7 @@ class FATXVolume:
             else max_clusters
         )
         if limit <= 0:
-            raise ValueError("max_clusters deve essere > 0")
+            raise ValueError("max_clusters must be > 0")
         limit = min(limit, self.header.data_cluster_count)
 
         chain: List[int] = []
@@ -353,15 +353,15 @@ class FATXVolume:
         while True:
             if current in seen:
                 raise FATXFormatError(
-                    f"Ciclo FAT rilevato al cluster {current}"
+                    f"FAT cycle detected at cluster {current}"
                 )
             if current < 1 or current > self.header.data_cluster_count:
                 raise FATXBoundsError(
-                    f"Catena FAT punta fuori range: {current}"
+                    f"FAT chain points out of range: {current}"
                 )
             if len(chain) >= limit:
                 raise FATXFormatError(
-                    f"Catena FAT oltre il limite di {limit} cluster"
+                    f"FAT chain exceeds limit of {limit} clusters"
                 )
 
             seen.add(current)
@@ -369,15 +369,15 @@ class FATXVolume:
             next_cluster = self.read_fat_entry(current)
             if next_cluster == 0:
                 raise FATXFormatError(
-                    f"Catena FAT interrotta dopo il cluster {current}"
+                    f"FAT chain broken after cluster {current}"
                 )
-            # FAT16/FAT32 usano un intervallo di marker EOC (es. 0xFFF8..0xFFFF).
+            # FAT16/FAT32 use an EOC marker range (e.g. 0xFFF8..0xFFFF).
             if next_cluster >= self.header.end_of_chain_start:
                 break
             if next_cluster >= self.header.reserved_cluster_start:
                 raise FATXFormatError(
-                    f"Marker FAT 0x{next_cluster:x} inatteso "
-                    f"dopo il cluster {current}"
+                    f"Unexpected FAT marker 0x{next_cluster:x} "
+                    f"after cluster {current}"
                 )
             current = next_cluster
 
@@ -419,7 +419,7 @@ class FATXVolume:
         directory_cluster: int,
     ) -> Optional[DirectoryEntry]:
         if len(raw) != FATX_DIRENT_SIZE:
-            raise FATXFormatError("Directory entry troncata")
+            raise FATXFormatError("Truncated directory entry")
 
         filename_length = raw[0]
         if not 1 <= filename_length <= FATX_MAX_NAME:
@@ -428,21 +428,21 @@ class FATXVolume:
         attributes = raw[1]
         if attributes & ~0x37:
             raise FATXFormatError(
-                f"Attributi directory entry non validi "
+                f"Invalid directory entry attributes "
                 f"@ 0x{guest_offset:x}: 0x{attributes:02x}"
             )
 
         name_bytes = raw[2 : 2 + filename_length]
         if not _is_valid_fatx_name(name_bytes):
             raise FATXFormatError(
-                f"Nome directory entry non valido @ 0x{guest_offset:x}"
+                f"Invalid directory entry name @ 0x{guest_offset:x}"
             )
         name = name_bytes.decode("latin-1")
 
         first_cluster, file_size = struct.unpack_from("<II", raw, 44)
         if first_cluster > self.header.data_cluster_count:
             raise FATXFormatError(
-                f"FirstCluster fuori range @ 0x{guest_offset:x}: "
+                f"FirstCluster out of range @ 0x{guest_offset:x}: "
                 f"{first_cluster}"
             )
         if bool(attributes & FATX_DIRECTORY_ATTRIBUTE) and first_cluster == 0:
@@ -474,7 +474,7 @@ class FATXVolume:
         if parts and parts[0].upper().rstrip(":") == self.partition.name:
             parts = parts[1:]
         if not parts:
-            raise ValueError("Il percorso deve indicare almeno una entry")
+            raise ValueError("Path must name at least one entry")
 
         current_cluster = self.header.root_dir_first_cluster
         current: Optional[DirectoryEntry] = None
@@ -482,12 +482,12 @@ class FATXVolume:
             current = self.find_child(current_cluster, part)
             if current is None:
                 raise FileNotFoundError(
-                    f"Percorso FATX non trovato: {path}"
+                    f"FATX path not found: {path}"
                 )
             if index < len(parts) - 1:
                 if not current.is_directory:
                     raise NotADirectoryError(
-                        f"Componente FATX non directory: {current.name}"
+                        f"FATX path component is not a directory: {current.name}"
                     )
                 current_cluster = current.first_cluster
         assert current is not None
@@ -500,7 +500,7 @@ class FATXVolume:
         max_depth: int = 32,
     ) -> Iterator[TreeEntry]:
         if max_depth < 0:
-            raise ValueError("max_depth deve essere >= 0")
+            raise ValueError("max_depth must be >= 0")
         root_cluster = (
             self.header.root_dir_first_cluster
             if first_cluster is None
@@ -574,7 +574,7 @@ class FATXVolume:
             return b""
         if entry.first_cluster == 0:
             raise FATXFormatError(
-                f"File {entry.name} non vuoto senza first cluster"
+                f"Non-empty file {entry.name} has no first cluster"
             )
 
         remaining = entry.file_size
@@ -588,7 +588,7 @@ class FATXVolume:
                 break
         if remaining:
             raise FATXFormatError(
-                f"File {entry.name} più grande della catena FAT"
+                f"File {entry.name} larger than FAT chain"
             )
         return bytes(data)
 
@@ -602,7 +602,7 @@ class FATXVolume:
         *,
         exclude: Optional[Set[int]] = None,
     ) -> Iterator[int]:
-        """Yield cluster dati con FAT=0 (liberi)."""
+        """Yield data clusters with FAT=0 (free)."""
 
         blocked = exclude or set()
         for cluster in range(1, self.header.data_cluster_count + 1):
@@ -617,23 +617,23 @@ class FATXVolume:
         *,
         exclude: Optional[Set[int]] = None,
     ) -> List[int]:
-        """Trova ``count`` cluster liberi senza modificarli."""
+        """Find ``count`` free clusters without modifying them."""
 
         if count <= 0:
-            raise ValueError("count deve essere > 0")
+            raise ValueError("count must be > 0")
         found: List[int] = []
         for cluster in self.iter_free_clusters(exclude=exclude):
             found.append(cluster)
             if len(found) >= count:
                 return found
         raise FATXBoundsError(
-            f"Cluster FATX liberi insufficienti: servono {count}, "
-            f"ne ho {len(found)}"
+            f"Insufficient free FATX clusters: need {count}, "
+            f"found {len(found)}"
         )
 
     def fat_entry_offset(self, cluster: int) -> int:
         if cluster < 0 or cluster >= self.header.max_clusters:
-            raise FATXBoundsError(f"Cluster FAT fuori range: {cluster}")
+            raise FATXBoundsError(f"FAT cluster out of range: {cluster}")
         return self.header.fat_offset + cluster * self.header.fat_entry_size
 
     def encode_fat_entry(self, value: int) -> bytes:
@@ -643,10 +643,10 @@ class FATXVolume:
         self,
         directory_first_cluster: int,
     ) -> Tuple[int, int]:
-        """Trova uno slot dirent scrivibile (libero, deleted, o prima di END).
+        """Find a writable dirent slot (free, deleted, or before END).
 
-        Restituisce ``(guest_offset, directory_cluster)``.
-        Non estende la directory: se è piena solleva ``FATXBoundsError``.
+        Returns ``(guest_offset, directory_cluster)``.
+        Does not extend the directory: raises ``FATXBoundsError`` if full.
         """
 
         for directory_cluster in self.get_chain(directory_first_cluster):
@@ -662,12 +662,12 @@ class FATXVolume:
                 ):
                     return guest_offset, directory_cluster
         raise FATXBoundsError(
-            f"Nessuno slot libero nella directory "
+            f"No free slot in directory "
             f"(first_cluster={directory_first_cluster})"
         )
 
     def collect_title_clusters(self, title_id: str) -> Set[int]:
-        """Cluster dati usati da un Title ID in UDATA (e solo quelli)."""
+        """Data clusters used by a Title ID in UDATA (those only)."""
 
         normalized = title_id.strip().lower()
         root = self.header.root_dir_first_cluster
@@ -694,7 +694,7 @@ def discover_fatx_volumes(
     device: BlockDevice,
     names: Sequence[str] = ("X", "Y", "Z", "C", "E"),
 ) -> Dict[str, FATXVolume]:
-    """Apre solo le partizioni che contengono davvero una magic FATX."""
+    """Open only partitions that actually contain a FATX magic."""
 
     volumes: Dict[str, FATXVolume] = {}
     for name in names:
@@ -720,5 +720,5 @@ def _is_valid_fatx_name(name: bytes) -> bool:
 
 def _align_up(value: int, alignment: int) -> int:
     if alignment <= 0 or alignment & (alignment - 1):
-        raise ValueError("L'allineamento deve essere una potenza di due")
+        raise ValueError("Alignment must be a power of two")
     return (value + alignment - 1) & ~(alignment - 1)

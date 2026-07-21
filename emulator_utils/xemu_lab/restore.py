@@ -1,7 +1,7 @@
-"""Restore chirurgico guest-aware da backup XBSV v6/v7 (+ remap FATX 6.1).
+"""Surgical guest-aware restore from XBSV v6/v7 backups (+ FATX 6.1 remap).
 
-Include preflight, journal guest undo e checkpoint metadati QCOW2 per
-proteggere l'HDD live (nessun golden in prodotto).
+Includes preflight, guest undo journal, and QCOW2 metadata checkpoints to
+protect the live HDD (no golden image in production).
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ PathLike = Union[str, Path]
 
 
 class RestoreError(Exception):
-    """Restore rifiutato o fallito."""
+    """Restore rejected or failed."""
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ def safe_restore_backup_to_path(
     force_mode: Optional[str] = None,
     require_xemu_closed: bool = True,
 ) -> RestoreReport:
-    """API prodotto: preflight + restore con undo sull'HDD live."""
+    """Product API: preflight + restore with undo on the live HDD."""
 
     target = Path(target_path)
     if require_xemu_closed:
@@ -108,11 +108,11 @@ def restore_backup_to_path(
     allow_allocate: bool = False,
     force_mode: Optional[str] = None,
 ) -> RestoreReport:
-    """Applica il backup sull'immagine target (con undo interno)."""
+    """Apply the backup onto the target image (with internal undo)."""
 
     target = Path(target_path)
     if not target.is_file():
-        raise RestoreError(f"Target assente: {target}")
+        raise RestoreError(f"Target missing: {target}")
 
     try:
         with QCOW2WritableBlockDevice(target) as device:
@@ -156,7 +156,7 @@ def restore_backup_to_device(
     force_mode: Optional[str] = None,
 ) -> RestoreReport:
     if backup.fatx_cluster_size <= 0:
-        raise RestoreError("fatx_cluster_size non valido nel backup")
+        raise RestoreError("Invalid fatx_cluster_size in backup")
 
     plan = _build_restore_plan(
         backup,
@@ -183,7 +183,7 @@ def restore_backup_to_device(
                 actual = device.read_at(guest_offset, len(payload))
                 if actual != payload:
                     raise RestoreError(
-                        f"Verifica read-back fallita @ guest 0x{guest_offset:x}"
+                        f"Read-back verification failed @ guest 0x{guest_offset:x}"
                     )
             _verify_title_visible(device, backup)
             _verify_peer_titles(device, backup, plan.peer_title_ids)
@@ -195,16 +195,16 @@ def restore_backup_to_device(
         )
         if rolled_back:
             raise RestoreError(
-                f"Restore fallito ({exc}). "
-                "HDD ripristinato allo stato precedente "
-                "(undo guest"
-                + (" + checkpoint QCOW2" if host_checkpoint else "")
+                f"Restore failed ({exc}). "
+                "HDD restored to previous state "
+                "(guest undo"
+                + (" + QCOW2 checkpoint" if host_checkpoint else "")
                 + ")."
             ) from exc
         raise RestoreError(
-            f"Restore fallito ({exc}). "
-            "ATTENZIONE: undo incompleto — non avviare xemu su questo HDD; "
-            "ripristinare da un backup SaveState precedente se disponibile."
+            f"Restore failed ({exc}). "
+            "WARNING: incomplete undo — do not start xemu on this HDD; "
+            "restore from a previous SaveState backup if available."
         ) from exc
 
     fat_bytes = sum(len(blob) for _first, _off, blob in backup.fat_runs)
@@ -259,7 +259,7 @@ def _build_restore_plan(
             decision = decide_restore_path(backup, volume)
             decision_remap = not decision.use_same_guest
             if not decision_remap and not geometry_matches(backup, volume):
-                # Offset assoluti del backup non validi sul target → remap.
+                # Backup absolute offsets are invalid on the target → remap.
                 decision_remap = True
 
         if decision_remap:
@@ -287,7 +287,7 @@ def _build_restore_plan(
 
 
 def geometry_matches(backup: GameBackup, volume: FATXVolume) -> bool:
-    """True se gli offset guest del backup coincidono con la geometria target."""
+    """True if backup guest offsets match the target geometry."""
 
     if backup.fatx_cluster_size != volume.header.cluster_size:
         return False
@@ -311,21 +311,21 @@ def geometry_matches(backup: GameBackup, volume: FATXVolume) -> bool:
 def _assert_same_guest_geometry(backup: GameBackup, volume: FATXVolume) -> None:
     if backup.fatx_cluster_size != volume.header.cluster_size:
         raise RestoreError(
-            "fatx_cluster_size del backup "
+            "Backup fatx_cluster_size "
             f"({backup.fatx_cluster_size}) != target "
             f"({volume.header.cluster_size})"
         )
     if backup.fat_entry_size != volume.header.fat_entry_size:
         raise RestoreError(
-            "fat_entry_size del backup "
+            "Backup fat_entry_size "
             f"({backup.fat_entry_size}) != target "
             f"({volume.header.fat_entry_size})"
         )
     if not geometry_matches(backup, volume):
         raise RestoreError(
-            "Geometria FATX del target diversa dal backup "
-            "(offset cluster/FAT non allineati). Restore same-guest rifiutato "
-            "per evitare corruzione; riprovare con remap automatico."
+            "Target FATX geometry differs from backup "
+            "(cluster/FAT offsets misaligned). Same-guest restore rejected "
+            "to avoid corruption; retry with automatic remap."
         )
 
 
@@ -345,7 +345,7 @@ def _apply_plan(
                     and backup.qcow2_cluster_size != device.cluster_size
                 ):
                     raise RestoreError(
-                        "qcow2_cluster_size del backup "
+                        "Backup qcow2_cluster_size "
                         f"({backup.qcow2_cluster_size}) != target "
                         f"({device.cluster_size})"
                     )
@@ -381,7 +381,7 @@ def _capture_guest_undo(
     backup: GameBackup,
     plan: _RestorePlan,
 ) -> List[Tuple[int, bytes]]:
-    """Legge i byte guest che stiamo per sovrascrivere (solo cluster già leggibili)."""
+    """Read guest bytes about to be overwritten (readable clusters only)."""
 
     ranges = list(plan.pending)
     if plan.use_envelopes and plan.allow_allocate and backup.has_qcow2_envelopes:
@@ -396,7 +396,7 @@ def _capture_guest_undo(
         try:
             undo.append((offset, device.read_at(offset, size)))
         except (QCOW2WriteError, UnsupportedQCOW2Feature, ValueError):
-            # Cluster unalloc/compresso: il checkpoint host gestisce il rollback.
+            # Unallocated/compressed cluster: host checkpoint handles rollback.
             continue
     return undo
 
@@ -404,7 +404,7 @@ def _capture_guest_undo(
 def _merge_ranges(
     ranges: Sequence[Tuple[int, bytes]],
 ) -> List[Tuple[int, int]]:
-    """Unisce intervalli (offset, size) contigui/sovrapposti."""
+    """Merge contiguous/overlapping (offset, size) ranges."""
 
     points: List[Tuple[int, int]] = []
     for offset, payload in ranges:
@@ -431,7 +431,7 @@ def _rollback_restore(
     guest_undo: List[Tuple[int, bytes]],
     host_checkpoint: Optional[HostCheckpoint],
 ) -> bool:
-    """Best-effort undo. True se il checkpoint/undo è stato applicato."""
+    """Best-effort undo. True if checkpoint/undo was applied."""
 
     restored = False
     try:
@@ -439,7 +439,7 @@ def _rollback_restore(
             device.restore_host_checkpoint(host_checkpoint)
             restored = True
         for offset, payload in guest_undo:
-            # Dopo checkpoint i cluster overwrite-safe tornano scrivibili.
+            # After checkpoint, overwrite-safe clusters are writable again.
             try:
                 device.write_at(offset, payload, allocate=False)
             except (QCOW2WriteError, UnsupportedQCOW2Feature):
@@ -458,7 +458,7 @@ def _preflight_disk_space(
     backup: GameBackup,
     plan: _RestorePlan,
 ) -> None:
-    """Rifiuta se il volume host non ha spazio per la crescita stimata."""
+    """Reject if the host volume lacks space for the estimated growth."""
 
     if not plan.allow_allocate:
         return
@@ -468,13 +468,13 @@ def _preflight_disk_space(
     try:
         free = shutil.disk_usage(device.path).free
     except OSError as exc:
-        raise RestoreError(f"Impossibile leggere spazio disco: {exc}") from exc
-    # Margine per L2/refcount extras.
+        raise RestoreError(f"Unable to read disk space: {exc}") from exc
+    # Margin for L2/refcount extras.
     needed = estimate + (16 * device.cluster_size)
     if free < needed:
         raise RestoreError(
-            f"Spazio disco insufficiente per il restore "
-            f"(servono circa {needed} byte liberi, ne restano {free})."
+            f"Insufficient disk space for restore "
+            f"(need about {needed} free bytes, {free} remaining)."
         )
 
 
@@ -514,7 +514,7 @@ def _can_consider_fatx_remap(
     device: QCOW2WritableBlockDevice,
     backup: GameBackup,
 ) -> bool:
-    """True se il target ha layout Xbox abbastanza grande per la partizione."""
+    """True if the target has an Xbox layout large enough for the partition."""
 
     try:
         region = get_region(backup.partition)
@@ -528,7 +528,7 @@ def _preflight_allocate(
     device: QCOW2WritableBlockDevice,
     pending: List[Tuple[int, bytes]],
 ) -> None:
-    """Rifiuta allocate pericoloso senza envelope su cluster unalloc/zero."""
+    """Reject unsafe allocate without envelopes on unalloc/zero clusters."""
 
     if backup.has_qcow2_envelopes:
         return
@@ -547,12 +547,12 @@ def _preflight_allocate(
 
     if dangerous:
         raise RestoreError(
-            "Allocate su cluster QCOW2 unallocated/zero con copertura "
-            "parziale (condividono FAT/root con il save). I backup XBSV v6 "
-            "senza envelope non sono sicuri su HDD vergine/sparse. "
-            f"Cluster a rischio: {dangerous[:8]}"
+            "Allocate on unallocated/zero QCOW2 clusters with partial "
+            "coverage (they share FAT/root with the save). XBSV v6 backups "
+            "without envelopes are unsafe on a virgin/sparse HDD. "
+            f"At-risk clusters: {dangerous[:8]}"
             + ("..." if len(dangerous) > 8 else "")
-            + ". Rifare il backup (XBSV v7 con envelope QCOW2)."
+            + ". Recreate the backup (XBSV v7 with QCOW2 envelopes)."
         )
 
 
@@ -560,7 +560,7 @@ def _write_pending_allocating_coalesced(
     device: QCOW2WritableBlockDevice,
     pending: List[Tuple[int, bytes]],
 ) -> None:
-    """RMW per cluster QCOW2: base decompressa/zero + frammenti pending."""
+    """RMW per QCOW2 cluster: decompressed/zero base + pending fragments."""
 
     by_cluster: Dict[int, bytearray] = {}
     for offset, payload in pending:
@@ -605,7 +605,7 @@ def _verify_title_visible(
         volume = FATXVolume.open_partition(device, backup.partition)
     except Exception as exc:
         raise RestoreError(
-            f"Verifica FATX fallita aprendo partizione {backup.partition}: {exc}"
+            f"FATX verification failed opening partition {backup.partition}: {exc}"
         ) from exc
 
     title = backup.title_id.lower()
@@ -616,8 +616,8 @@ def _verify_title_visible(
     ]
     if not found:
         raise RestoreError(
-            f"Title ID {backup.title_id} non visibile in FATX dopo restore "
-            "(probabile corruzione metadata QCOW2/FAT condivisi o remap fallito)."
+            f"Title ID {backup.title_id} not visible in FATX after restore "
+            "(likely shared QCOW2/FAT metadata corruption or failed remap)."
         )
 
 
@@ -626,7 +626,7 @@ def _verify_peer_titles(
     backup: GameBackup,
     peer_ids: Set[str],
 ) -> None:
-    """Gli altri Title ID presenti prima del restore devono restare listabili."""
+    """Other Title IDs present before restore must remain listable."""
 
     if not peer_ids:
         return
@@ -645,8 +645,8 @@ def _verify_peer_titles(
     missing = sorted(peer_ids - after)
     if missing:
         raise RestoreError(
-            "Dopo il restore mancano Title ID che c'erano prima "
-            f"(possibile corruzione): {', '.join(missing)}"
+            "After restore, Title IDs that were present before are missing "
+            f"(possible corruption): {', '.join(missing)}"
         )
 
 
