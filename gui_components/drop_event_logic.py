@@ -485,6 +485,18 @@ class DropEventMixin:
                         files_to_process.extend(executables)
                     else:
                         logging.warning(f"DragDropHandler.dropEvent: No executables found in directory: {path}")
+                        msg_box = QMessageBox(mw)
+                        msg_box.setIcon(QMessageBox.Icon.Warning)
+                        msg_box.setWindowTitle("No Executable Found")
+                        msg_box.setTextFormat(Qt.TextFormat.RichText)
+                        msg_box.setText(
+                            "The dropped folder does not contain any executable or shortcut.<br><br>"
+                            "<b>To add a profile, drag and drop the game's or emulator's executable "
+                            "(.exe) or its shortcut — not a save folder or other data directory.</b><br><br>"
+                            f"Folder:<br>{path}"
+                        )
+                        msg_box.exec()
+                        mw.status_label.setText("No executable found in dropped folder.")
                         event.ignore()
                         return False
                 else:
