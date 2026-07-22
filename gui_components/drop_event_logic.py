@@ -383,30 +383,12 @@ class DropEventMixin:
                             # This will allow the multi-file handling code to filter out invalid files
                             # We're not returning here, letting it fall through to the multi-file handling code
                         else:
-                            # For single file drop, check if it's a .url file
-                            is_url_file = False
-                            if mime_data.hasUrls():
-                                for url_obj in mime_data.urls():
-                                    if url_obj.isLocalFile() and url_obj.toLocalFile().lower().endswith('.url'):
-                                        is_url_file = True
-                                        break
-                            
-                            if is_url_file:
-                                # For .url files, just show a status message without error popup
-                                logging.info(f"Steam game with AppID {app_id} not installed, skipping .url file")
-                                mw.status_label.setText(f"Steam game (AppID: {app_id}) not installed. No profile created.")
-                                event.acceptProposedAction()
-                                return
-                            else:
-                                # For direct Steam URLs, use the normal handling with error popup
-                                handler_instance.original_steam_url_str = steam_url_str
-                                # Set flag to skip error popup for .url files
-                                handler_instance.skip_steam_error_popup = True
-                                handler_instance.handle_steam_url_drop(steam_url_str)
-                                # Reset flag after handling
-                                handler_instance.skip_steam_error_popup = False
-                                event.acceptProposedAction()
-                                return
+                            # Single drop (.url or direct Steam URL): show dialog via handle_steam_url_drop
+                            logging.info(f"Steam game with AppID {app_id} not installed")
+                            handler_instance.original_steam_url_str = steam_url_str
+                            handler_instance.handle_steam_url_drop(steam_url_str)
+                            event.acceptProposedAction()
+                            return
                     else:
                         # If it's a multi-file drop and the game is installed, we still want to process all files together
                         if multi_file_drop:

@@ -869,14 +869,16 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                 logger.warning(f"Steam game with AppID {app_id} not found in installed_steam_games_dict.")
                 self._hide_overlay_if_visible(mw)
             else:
-                # Show normal error popup
                 # Show normal error popup - make it non-modal
-                msg_box = QMessageBox(QMessageBox.Icon.Warning, "Steam Game Not Found", 
-                                     f"The Steam game with AppID {app_id} does not appear to be installed, "
-                                     "or its details could not be retrieved from your Steam library.\n\n"
-                                     "Please ensure the game is installed and that SaveState has correctly "
-                                     "identified your Steam installation.", 
+                msg_box = QMessageBox(QMessageBox.Icon.Warning, "Steam Game Not Found", "",
                                      QMessageBox.StandardButton.Ok, mw)
+                msg_box.setTextFormat(Qt.TextFormat.RichText)
+                msg_box.setText(
+                    f"<b>The Steam game with AppID {app_id} does not appear to be installed</b>, "
+                    "or its details could not be retrieved from your Steam library.<br><br>"
+                    "Please ensure the game is installed and that SaveState has correctly "
+                    "identified your Steam installation."
+                )
                 msg_box.setWindowModality(Qt.NonModal)
                 msg_box.show()
                 mw.status_label.setText(f"Steam game (AppID: {app_id}) not found or not installed.")
