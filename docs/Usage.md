@@ -15,13 +15,25 @@
    * Click **Backup** to back it up.
    * Click **Restore** to restore from a previous backup.
    * Click **Manage Backups** to view and delete specific backup archives for that profile.
-   * **Right-click** on a profile to access the context menu: edit profile settings or create a desktop shortcut for quick backups.
+   * **Right-click** on a profile to access the context menu: edit profile settings or create a desktop shortcut for quick backups (see below).
    * To delete a profile, select it and click the **trash icon** that appears on the right (this does not delete existing backup files).
 5. **Other Actions:**
    * Use **Open Backup Folder** to quickly open the base backup location in your file manager.
    * Double-click a profile to **open** the **save path** in your file manager.
    * Toggle the **Log Console** visibility using the terminal icon button.
    * Toggle the **Theme** using the sun/moon icon button.
+
+## Desktop shortcuts & silent backup
+
+Right-click a profile and choose the option to create a **desktop shortcut**. Double-clicking that shortcut runs a backup for that profile without opening the main window.
+
+Those shortcuts use a silent backup mode under the hood. You can invoke the same thing yourself from a terminal, Task Scheduler, or a script:
+
+```text
+SaveState.exe --backup "Profile Name"
+```
+
+Use the exact profile name as it appears in SaveState. From source, the equivalent is `python main.py --backup "Profile Name"`. The process exits when the backup finishes (no GUI).
 
 ## Supported Launchers
 
