@@ -408,10 +408,10 @@ def _build_hdd_outline(body: QRectF) -> QPainterPath:
 
 
 def _label_rect_for_body(body: QRect) -> QRect:
-    """Zona sticker: quasi tutto l'interno sotto la brand strip."""
+    """Zona sticker, con un footer dedicato al conteggio giochi."""
     inset_x = max(10, int(body.width() * 0.07))
     inset_top = max(28, int(body.height() * 0.09))
-    inset_bot = max(28, int(body.height() * 0.08))
+    inset_bot = max(40, int(body.height() * 0.12))
     return QRect(
         body.x() + inset_x,
         body.y() + inset_top,
@@ -687,29 +687,30 @@ class XemuHddPanel(QWidget):
         self.size_chip = QLabel(self._size_label, self)
         self.size_chip.hide()
 
-        self.count_badge = QLabel("0", self)
+        self.count_badge = QLabel("0 GAMES", self)
         self.count_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.count_badge.setStyleSheet(
             f"""
             QLabel {{
-                color: #FFFFFF;
-                background: {XBOX_GREEN};
-                border: 1px solid {XBOX_LIME};
+                color: {XBOX_LIME};
+                background: #141914;
+                border: 1px solid #367436;
                 border-radius: 10px;
                 font-weight: bold;
-                padding: 3px 8px;
+                font-size: 9px;
+                padding: 3px 10px;
             }}
             """
         )
-
-        self.count_caption = QLabel("games", self)
-        self.count_caption.setStyleSheet("color: #DDDDDD; font-size: 10px;")
+        self.count_badge.setAccessibleName("Games on live Xbox HDD")
 
     def set_hdd_info(self, size_text: str, game_count: int) -> None:
         self._size_label = size_text
         self._game_count = int(game_count)
         self.size_chip.setText(size_text)
-        self.count_badge.setText(str(self._game_count))
+        unit = "GAME" if self._game_count == 1 else "GAMES"
+        self.count_badge.setText(f"{self._game_count} {unit}")
+        self._layout_children()
         self.update()
 
     def bump_count_pulse(self) -> None:
@@ -722,10 +723,12 @@ class XemuHddPanel(QWidget):
                 border: 1px solid {XBOX_LIME};
                 border-radius: 10px;
                 font-weight: bold;
-                padding: 4px 10px;
+                font-size: 9px;
+                padding: 3px 10px;
             }}
             """
         )
+        self._layout_children()
         self.update()
 
         def _decay():
@@ -742,10 +745,12 @@ class XemuHddPanel(QWidget):
                         border: 1px solid {XBOX_LIME};
                         border-radius: 10px;
                         font-weight: bold;
-                        padding: 4px 10px;
+                        font-size: 9px;
+                        padding: 3px 10px;
                     }}
                     """
                 )
+                self._layout_children()
 
         QTimer.singleShot(40, _decay)
 
@@ -775,19 +780,15 @@ class XemuHddPanel(QWidget):
         )
 
         self.count_badge.adjustSize()
-        bw = max(32, self.count_badge.sizeHint().width() + 4)
+        bw = max(76, self.count_badge.sizeHint().width() + 4)
         bh = max(22, self.count_badge.sizeHint().height())
-        badge_x = self._body.right() - bw - max(8, int(self._body.width() * 0.06))
-        badge_y = self._body.bottom() - bh - max(6, int(self._body.height() * 0.035))
+        badge_x = self._body.center().x() - bw // 2
+        footer_top = self._label_area.bottom() + 4
+        footer_bottom = self._body.bottom() - 5
+        badge_y = footer_top + max(0, (footer_bottom - footer_top - bh) // 2)
+        badge_y = min(badge_y, self._body.bottom() - bh - 5)
         self.count_badge.setGeometry(badge_x, badge_y, bw, bh)
         self.count_badge.raise_()
-
-        self.count_caption.adjustSize()
-        self.count_caption.move(
-            badge_x - self.count_caption.width() - 6,
-            badge_y + (bh - self.count_caption.height()) // 2,
-        )
-        self.count_caption.raise_()
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
