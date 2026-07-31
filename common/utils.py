@@ -3,8 +3,30 @@ import os
 import sys
 import logging
 import re
+import ntpath
+import posixpath
 
 APP_NAME = "SaveState" # Same as in config.py, used for some utility functions if needed.
+
+# Keep the most specific Linux roots before their more general parents.  The
+# display aliases are intentionally short: the full path remains available in
+# the selection dialog's item data and tooltip.
+LINUX_SAVE_PATH_SHORTCUTS = (
+    ("~/.var/app/com.valvesoftware.Steam/.local/share/Steam", "Flatpak Steam"),
+    ("~/.var/app/com.valvesoftware.Steam/data/Steam", "Flatpak Steam"),
+    ("~/snap/steam/common/.local/share/Steam", "Snap Steam"),
+    ("~/.steam/debian-installation", "Steam"),
+    ("~/.local/share/Steam", "Steam"),
+    ("~/.steam/steam", "Steam"),
+    ("~/.steam/root", "Steam"),
+    ("~/.godot/app_userdata", "Godot"),
+    ("~/.local/share", "XDG data"),
+    ("~/.config", "XDG config"),
+    ("~/.var/app", "Flatpak"),
+    ("~/.wine", "Wine prefix"),
+    ("~/.renpy", "Ren'Py"),
+    ("~/snap", "Snap"),
+)
 
 def _is_nuitka_compiled():
     """Detect Nuitka at runtime. __compiled__ is replaced with True by the Nuitka
@@ -93,13 +115,17 @@ def shorten_save_path(path, game_install_dir=None):
         "C:\\Users\\Matteo842\\Documents\\Dolphin Emulator\\GC\\EUR\\Card A"
         -> ("Documents\\Dolphin Emulator\\GC\\EUR\\Card A", 9)  # 9 = length of "Documents"
         
-        "/home/username/.local/share/Steam/steamapps/common/GameName/saves"
-        -> ("~/.local/share/Steam/steamapps/common/GameName/saves", 1)  # 1 = length of "~"
+        "/home/username/.local/share/Steam/userdata/123/456/remote"
+        -> ("Steam/userdata/123/456/remote", 5)  # 5 = length of "Steam"
+
+        "/home/username/.var/app/com.example.Game/data/saves"
+        -> ("Flatpak/com.example.Game/data/saves", 7)  # 7 = length of "Flatpak"
     
     Args:
         path: The full path to shorten
-        game_install_dir: Optional path to the game's installation directory. 
-                         If provided, paths starting with this will be shortened to "game folder\..."
+        game_install_dir: Optional path to the game's installation directory.
+                         If provided, paths starting with this will be shortened
+                         to "game folder/..." (using the platform separator).
         
     Returns:
         tuple: (shortened_path, prefix_length) where prefix_length is the length of the shortened prefix
@@ -108,24 +134,30 @@ def shorten_save_path(path, game_install_dir=None):
     if not path or not isinstance(path, str):
         return path, 0
     
-    original_path = path
-    path = os.path.normpath(path)
-    
     # Platform detection
     is_windows = sys.platform.startswith('win')
+    path_module = ntpath if is_windows else posixpath
+
+    original_path = path
+    path = path_module.normpath(path)
     prefix_length = 0  # Track length of shortened prefix
     
     # --- Check if path starts with game_install_dir ---
     if game_install_dir:
-        norm_install_dir = os.path.normpath(game_install_dir).lower()
-        norm_path = os.path.normpath(path).lower()
+        norm_install_dir = path_module.normpath(game_install_dir)
+        norm_path = path_module.normpath(path)
+        compare_install_dir = norm_install_dir.lower() if is_windows else norm_install_dir
+        compare_path = norm_path.lower() if is_windows else norm_path
         
-        # Check if path starts with install dir
-        if norm_path.startswith(norm_install_dir):
+        # Check for the directory itself or one of its descendants.  A plain
+        # startswith would incorrectly treat "/games/foo" as a child of
+        # "/games/fo".
+        install_prefix = compare_install_dir.rstrip(path_module.sep) + path_module.sep
+        if compare_path == compare_install_dir or compare_path.startswith(install_prefix):
             # Get the part after the install dir
-            remaining = path[len(game_install_dir):].lstrip(os.sep)
+            remaining = path[len(norm_install_dir):].lstrip(path_module.sep)
             if remaining:
-                path = f"game folder{os.sep}{remaining}"
+                path = f"game folder{path_module.sep}{remaining}"
                 prefix_length = len("game folder")
                 return path, prefix_length
     
@@ -147,11 +179,42 @@ def shorten_save_path(path, game_install_dir=None):
     
     # --- Linux/Unix-specific shortcuts ---
     else:
-        # Replace /home/username with ~
-        home_dir = os.path.expanduser('~')
-        if path.startswith(home_dir):
-            path = '~' + path[len(home_dir):]
-            prefix_length = 1  # Length of "~"
+        home_dir = posixpath.normpath(posixpath.expanduser("~"))
+        linux_shortcuts = []
+
+        # XDG roots may be customized outside the user's home, so include the
+        # environment values in addition to the standard shortcut list.
+        xdg_data_home = os.environ.get("XDG_DATA_HOME")
+        xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
+        if xdg_data_home:
+            linux_shortcuts.append((posixpath.normpath(xdg_data_home), "XDG data"))
+        if xdg_config_home:
+            linux_shortcuts.append((posixpath.normpath(xdg_config_home), "XDG config"))
+
+        for shortcut_path, alias in LINUX_SAVE_PATH_SHORTCUTS:
+            expanded_path = shortcut_path
+            if shortcut_path == "~" or shortcut_path.startswith("~/"):
+                expanded_path = home_dir + shortcut_path[1:]
+            linux_shortcuts.append((posixpath.normpath(expanded_path), alias))
+
+        # Longest roots win, which also protects the Steam variants nested
+        # inside Flatpak, Snap, and XDG data directories.
+        for shortcut_path, alias in sorted(
+            linux_shortcuts, key=lambda item: len(item[0]), reverse=True
+        ):
+            shortcut_prefix = shortcut_path.rstrip("/") + "/"
+            if path == shortcut_path or path.startswith(shortcut_prefix):
+                remaining = path[len(shortcut_path):].lstrip("/")
+                path = alias if not remaining else f"{alias}/{remaining}"
+                prefix_length = len(alias)
+                break
+        else:
+            # Unknown home-relative locations still get the familiar "~/"
+            # abbreviation, matching the fallback behavior used previously.
+            home_prefix = home_dir.rstrip("/") + "/"
+            if path == home_dir or path.startswith(home_prefix):
+                path = "~" + path[len(home_dir):]
+                prefix_length = 1  # Length of "~"
     
     # If we shortened it too much (less than 10 chars), return original
     if len(path) < 10 and len(original_path) > 20:
