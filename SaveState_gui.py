@@ -15,11 +15,10 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QStatusBar, QFrame, QSizePolicy,
     QGroupBox, QLineEdit,
-    QStyle, QDockWidget, QPlainTextEdit, QTableWidget, QGraphicsOpacityEffect,
+    QStyle, QDockWidget, QPlainTextEdit, QTextEdit, QTableWidget, QGraphicsOpacityEffect,
     QDialog, QFileDialog, QMenu, QSpinBox, QComboBox, QCheckBox, QFormLayout,
     QSizeGrip, QMessageBox, QGridLayout, QSystemTrayIcon, QInputDialog
 )
-from PySide6.QtGui import QKeyEvent # Added for keyPressEvent
 from PySide6.QtCore import (
     Slot, Qt, QSize,
     QEvent, Signal,
@@ -292,6 +291,41 @@ class _DialogConfirmButtonStyler(_QObject):
                 if btn:
                     btn.setObjectName("SaveButton")
                     break
+
+
+class _MainSearchKeyFilter(_QObject):
+    """Route typing in the main profile view to its hidden search field.
+
+    QTableWidget implements its own keyboard search and can consume printable
+    key presses before they reach MainWindow.event(). Filtering at application
+    level lets SaveState claim the first character consistently, regardless of
+    which control received focus when the main window was shown.
+    """
+
+    def __init__(self, main_window):
+        super().__init__(main_window)
+        self._main_window = main_window
+
+    def eventFilter(self, watched, event):
+        if event.type() != QEvent.Type.KeyPress:
+            return False
+
+        main_window = self._main_window
+
+        # Only handle widgets in the main window itself. Child dialogs and
+        # pop-up windows must keep their normal keyboard behaviour.
+        if not isinstance(watched, QWidget) or watched.window() is not main_window:
+            return False
+
+        # Never steal input from editable controls. The search bar is the one
+        # exception so Escape can close it through the shared handler below.
+        search_bar = getattr(main_window, 'search_bar', None)
+        if watched is not search_bar and isinstance(
+            watched, (QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QComboBox)
+        ):
+            return False
+
+        return main_window._handle_main_search_key_event(event)
 
 
 # --- Finestra Principale ---
@@ -1442,6 +1476,12 @@ class MainWindow(QMainWindow):
         self.update_indicator.clicked_indicator.connect(self.show_update_dialog)
         self._update_dialog = None
 
+        # MainWindow.event() alone cannot see keys consumed by focused child
+        # widgets (notably QTableWidget's built-in type-ahead navigation).
+        # Keep a dedicated application filter alive for the window lifetime.
+        self._main_search_key_filter = _MainSearchKeyFilter(self)
+        QApplication.instance().installEventFilter(self._main_search_key_filter)
+
     def _on_update_state_changed(self, state: str):
         """Reflect UpdateManager state in the title-bar indicator."""
         try:
@@ -2061,34 +2101,67 @@ class MainWindow(QMainWindow):
             # Optionally, return focus to the table or main window if needed
             # self.profile_table_widget.setFocus()
 
+    def _handle_main_search_key_event(self, event_obj):
+        """Handle a key press that may activate or close profile search."""
+        if event_obj.type() != QEvent.Type.KeyPress:
+            return False
+
+        search_bar = getattr(self, 'search_bar', None)
+        profile_table = getattr(self, 'profile_table_widget', None)
+        if search_bar is None or profile_table is None:
+            return False
+
+        if search_bar.isVisible() and search_bar.hasFocus():
+            if event_obj.key() == Qt.Key.Key_Escape:
+                search_bar.clear()  # textChanged hides the empty search bar
+                profile_table.setFocus()
+                return True
+            return False
+
+        # Search belongs only to the main profiles view.
+        if (
+            getattr(self, '_edit_mode_active', False)
+            or getattr(self, '_settings_mode_active', False)
+            or getattr(self, '_controller_mode_active', False)
+            or getattr(self, '_cloud_mode_active', False)
+            or not profile_table.isVisible()
+        ):
+            return False
+
+        # Preserve application shortcuts and system input combinations. Shift
+        # is intentionally allowed so uppercase characters remain searchable.
+        blocked_modifiers = (
+            Qt.KeyboardModifier.ControlModifier
+            | Qt.KeyboardModifier.AltModifier
+            | Qt.KeyboardModifier.MetaModifier
+        )
+        if event_obj.modifiers() & blocked_modifiers:
+            return False
+
+        key_text = event_obj.text()
+        if (
+            not key_text
+            or not key_text.isprintable()
+            or not key_text.strip()
+            or event_obj.key() in (
+                Qt.Key.Key_Return,
+                Qt.Key.Key_Enter,
+                Qt.Key.Key_Tab,
+                Qt.Key.Key_Backtab,
+                Qt.Key.Key_Escape,
+            )
+        ):
+            return False
+
+        search_bar.show()
+        search_bar.setFocus()
+        search_bar.setText(key_text)
+        return True
+
     def event(self, event_obj):
-        """Handles events for the main window, specifically KeyPress to activate search bar."""
-        if event_obj.type() == QEvent.Type.KeyPress:
-            # Only act if the search bar is currently hidden and we're not in edit, settings, or cloud mode
-            if not self.search_bar.isVisible() and \
-               not getattr(self, '_edit_mode_active', False) and \
-               not getattr(self, '_settings_mode_active', False) and \
-               not getattr(self, '_cloud_mode_active', False):
-                key_text = event_obj.text()
-                # Check if the key produces a printable character and is not just whitespace
-                # Also exclude special keys
-                if key_text and key_text.isprintable() and key_text.strip() != '' and \
-                   event_obj.key() not in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab, 
-                                          Qt.Key.Key_Backtab, Qt.Key.Key_Escape):
-                    # Show the search bar, set focus to it, and input the typed character
-                    self.search_bar.show()
-                    self.search_bar.setFocus()
-                    self.search_bar.setText(key_text)  # This also triggers _on_search_text_changed
-                    return True  # Event handled, stop further processing
-            # Handle Escape key when search bar is visible and has focus
-            elif self.search_bar.isVisible() and self.search_bar.hasFocus() and \
-                 event_obj.key() == Qt.Key.Key_Escape:
-                self.search_bar.clear()  # This will trigger textChanged, which will hide it
-                self.profile_table_widget.setFocus()  # Return focus to table
-                return True  # Event handled
-        
-        # For all other events or if the key press wasn't handled above,
-        # call the base class's event handler
+        """Fallback key handling for events delivered directly to the window."""
+        if self._handle_main_search_key_event(event_obj):
+            return True
         return super().event(event_obj)
 
     # Enables or disables main UI controls, typically during background operations.
