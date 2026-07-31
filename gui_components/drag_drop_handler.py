@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt, Slot, QObject, QTimer, QThread
 
 # Importa utility e logica
 from gui.gui_utils import DetectionWorkerThread
+from common import shortcut_utils
 
 # Setup logging per questo modulo
 logger = logging.getLogger(__name__)
@@ -289,17 +290,37 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                     try:
                         parsed_exec = None
                         parsed_path_field = None
-                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as fdesk:
-                            for raw_line in fdesk:
-                                line = raw_line.strip()
-                                if not line or line.startswith('#'):
-                                    continue
-                                if line.startswith('Path=') and parsed_path_field is None:
-                                    parsed_path_field = line[len('Path='):].strip().strip('"')
-                                elif line.startswith('Exec=') and parsed_exec is None:
-                                    parsed_exec = line[len('Exec='):].strip()
-                                    # Rimuovi placeholder tipo %u, %U, %f, %F
-                                    parsed_exec = re.sub(r'%[fFuUdDnNkvVmMic]', '', parsed_exec).strip()
+                        desktop_entry = (
+                            shortcut_utils.parse_linux_desktop_entry(
+                                file_path
+                            )
+                        )
+                        parsed_path_field = desktop_entry.get('Path')
+                        if parsed_path_field:
+                            parsed_path_field = (
+                                parsed_path_field.strip().strip('"')
+                            )
+                        parsed_exec = desktop_entry.get('Exec')
+                        if parsed_exec:
+                            # Rimuovi placeholder tipo %u, %U, %f, %F
+                            parsed_exec = re.sub(
+                                r'%[fFuUdDnNkvVmMic]', '', parsed_exec
+                            ).strip()
+                        desktop_name = desktop_entry.get('Name')
+                        if desktop_name:
+                            detection_name = (
+                                shortcut_utils.sanitize_profile_name(
+                                    desktop_name
+                                )
+                            )
+                            if detection_name:
+                                name_for_detection_thread = detection_name
+                                logging.info(
+                                    "Using .desktop Name '%s' for save "
+                                    "detection (dialog profile: '%s')",
+                                    detection_name,
+                                    profile_name,
+                                )
                         if parsed_exec:
                             # Usa shlex per gestire quote/spazi
                             parts = shlex.split(parsed_exec)

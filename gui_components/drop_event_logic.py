@@ -968,6 +968,7 @@ class DropEventMixin:
         is_linux_desktop = file_path.lower().endswith('.desktop') and platform.system() == "Linux"
         # Ensure it's a file and executable, not a directory
         is_linux_executable = platform.system() == "Linux" and os.path.isfile(file_path) and os.access(file_path, os.X_OK)
+        desktop_display_name = None
         
         if is_windows_link:
             logging.debug("PCM.dropEvent (Fallback): Detected Windows .lnk file, attempting to resolve target...")
@@ -1005,26 +1006,23 @@ class DropEventMixin:
                 logging.debug("PCM.dropEvent (Fallback): Parsing Linux .desktop file inline...")
                 parsed_exec = None
                 parsed_path = None # Corrisponde a 'Path=' nel file .desktop
-                # Nessuna variabile parsed_icon qui, perché hai detto che non ti serve
-
-                with open(file_path, 'r', encoding='utf-8') as desktop_file:
-                    for line in desktop_file:
-                        line = line.strip()
-                        if line.startswith('Exec='):
-                            exec_cmd = line[5:].strip()
-                            if exec_cmd.startswith('"'):
-                                end_quote_idx = exec_cmd.find('"', 1)
-                                if end_quote_idx != -1:
-                                    parsed_exec = exec_cmd[1:end_quote_idx]
-                                else: 
-                                    parsed_exec = exec_cmd.split()[0]
-                            else:
-                                parsed_exec = exec_cmd.split()[0]
-
-                        elif line.startswith('Path='):
-                            parsed_path = line[5:].strip()
-                            if parsed_path.startswith('"') and parsed_path.endswith('"'):
-                                parsed_path = parsed_path[1:-1]
+                desktop_entry = (
+                    shortcut_utils.parse_linux_desktop_entry(file_path)
+                )
+                desktop_display_name = desktop_entry.get('Name')
+                exec_cmd = desktop_entry.get('Exec', '').strip()
+                parsed_path = desktop_entry.get('Path')
+                if parsed_path:
+                    parsed_path = parsed_path.strip().strip('"')
+                if exec_cmd:
+                    if exec_cmd.startswith('"'):
+                        end_quote_idx = exec_cmd.find('"', 1)
+                        if end_quote_idx != -1:
+                            parsed_exec = exec_cmd[1:end_quote_idx]
+                        else:
+                            parsed_exec = exec_cmd.split()[0]
+                    else:
+                        parsed_exec = exec_cmd.split()[0]
                 
                 if parsed_exec:
                     if not os.path.isabs(parsed_exec):
@@ -1326,7 +1324,9 @@ class DropEventMixin:
         # --- Get and Clean Profile Name (from original dropped file name) ---
         base_name = os.path.basename(file_path) # Use original file_path for name
         profile_name_temp, _ = os.path.splitext(base_name)
-        profile_name_original = profile_name_temp.replace('™', '').replace('®', '').strip()
+        profile_name_original = (
+            desktop_display_name or profile_name_temp
+        ).replace('™', '').replace('®', '').strip()
         profile_name = shortcut_utils.sanitize_profile_name(profile_name_original)
         logging.info(f"Original Name (basic clean): '{profile_name_original}', Sanitized Name: '{profile_name}'")
 

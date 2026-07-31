@@ -52,6 +52,46 @@ _PROFILE_NAME_STRIP_REGEX = re.compile(
     re.IGNORECASE
 )
 
+
+def parse_linux_desktop_entry(desktop_path: str):
+    """Read the standard fields from the [Desktop Entry] section."""
+    if not desktop_path or not os.path.isfile(desktop_path):
+        return {}
+
+    result = {}
+    in_desktop_entry = False
+    wanted_keys = {'Name', 'Exec', 'TryExec', 'Path', 'Icon'}
+    try:
+        with open(
+            desktop_path, 'r', encoding='utf-8', errors='ignore'
+        ) as desktop_file:
+            for raw_line in desktop_file:
+                line = raw_line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if line == '[Desktop Entry]':
+                    in_desktop_entry = True
+                    continue
+                if line.startswith('[') and line.endswith(']'):
+                    if in_desktop_entry:
+                        break
+                    continue
+                if not in_desktop_entry or '=' not in line:
+                    continue
+                key, _, value = line.partition('=')
+                key = key.strip()
+                if key in wanted_keys and key not in result:
+                    result[key] = value.strip()
+    except OSError as error:
+        logging.warning(
+            "Unable to parse Linux desktop file '%s': %s",
+            desktop_path,
+            error,
+        )
+        return {}
+    return result
+
+
 def sanitize_profile_name(name: str) -> str:
     """Pulisce un nome profilo da parole comuni e caratteri non validi."""
     if not name:

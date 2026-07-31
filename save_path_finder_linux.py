@@ -10,6 +10,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Any, Tuple, List, Set, Iterable
 from common import cancellation_utils
+import config
 
 # Importazione robusta di thefuzz
 _fuzz_module = None
@@ -21,9 +22,6 @@ try:
 except ImportError:
     _THEFUZZ_AVAILABLE = False
     logging.warning("'thefuzz' library not found. Fuzzy matching will be disabled for Linux path finding.")
-
-import config
-
 __all__ = [
     'LinuxSearchState',
     'LinuxGameContext',
@@ -2055,11 +2053,163 @@ def _discover_related_heroic_prefixes(
     return list(discovered.values())
 
 
-def _search_proton_for_non_steam_games(state: LinuxSearchState, cancellation_manager=None) -> None:
-    """Search only Wine prefixes structurally related to the game.
+def _discover_unowned_compatdata_prefixes(
+    state: LinuxSearchState,
+) -> List[Tuple[str, str]]:
+    """Find Proton prefixes when a shortcut does not provide an AppID.
 
-    Blindly scanning every Steam compatdata AppID attributes unrelated saves to
-    non-Steam shortcuts and can starve the later XDG/install searches.
+    The returned prefixes are not trusted game scopes. Candidates found inside
+    them still need an explicit title/alias component in their path, preventing
+    an unrelated compatdata prefix from being attributed to the current game.
+    """
+    home_dir = os.path.expanduser('~')
+    xdg_data_home = (
+        os.getenv('XDG_DATA_HOME')
+        or os.path.join(home_dir, '.local', 'share')
+    )
+    compatdata_roots = [
+        os.path.join(
+            home_dir, '.steam', 'steam', 'steamapps', 'compatdata'
+        ),
+        os.path.join(
+            home_dir, '.steam', 'root', 'steamapps', 'compatdata'
+        ),
+        os.path.join(
+            home_dir, '.steam', 'debian-installation',
+            'steamapps', 'compatdata',
+        ),
+        os.path.join(
+            home_dir, '.local', 'share', 'Steam',
+            'steamapps', 'compatdata',
+        ),
+        os.path.join(
+            xdg_data_home, 'Steam', 'steamapps', 'compatdata'
+        ),
+        os.path.join(
+            home_dir, '.var', 'app', 'com.valvesoftware.Steam',
+            '.local', 'share', 'Steam', 'steamapps', 'compatdata',
+        ),
+        os.path.join(
+            home_dir, '.var', 'app', 'com.valvesoftware.Steam',
+            'data', 'Steam', 'steamapps', 'compatdata',
+        ),
+        os.path.join(
+            home_dir, 'snap', 'steam', 'common', '.local', 'share',
+            'Steam', 'steamapps', 'compatdata',
+        ),
+    ]
+    for known_location in state.linux_known_save_locations.values():
+        if (
+            known_location
+            and os.path.basename(
+                os.path.normpath(known_location)
+            ).casefold() == 'compatdata'
+        ):
+            compatdata_roots.append(known_location)
+
+    roots_by_key: Dict[str, str] = {}
+    for root in compatdata_roots:
+        if os.path.isdir(root):
+            roots_by_key[_path_key(root)] = root
+
+    prefixes_by_key: Dict[str, Tuple[str, str]] = {}
+    for root in roots_by_key.values():
+        try:
+            appid_names = sorted(os.listdir(root), key=str.casefold)
+        except OSError:
+            continue
+        for appid_name in appid_names:
+            if not appid_name.isdigit():
+                continue
+            prefix = os.path.join(root, appid_name, 'pfx')
+            if not os.path.isdir(os.path.join(prefix, 'drive_c')):
+                continue
+            prefixes_by_key[_path_key(prefix)] = (prefix, appid_name)
+
+    def has_title_signal(prefix: str) -> bool:
+        """Prioritise prefixes with a title-shaped AppData/Documents path."""
+        users_root = os.path.join(prefix, 'drive_c', 'users')
+        try:
+            user_names = sorted(os.listdir(users_root), key=str.casefold)
+        except OSError:
+            return False
+
+        relative_roots = [
+            os.path.join('AppData', 'Local'),
+            os.path.join('AppData', 'LocalLow'),
+            os.path.join('AppData', 'Roaming'),
+            'Documents',
+            'Saved Games',
+            os.path.join('Documents', 'My Games'),
+        ]
+        for user_name in user_names[:20]:
+            user_dir = os.path.join(users_root, user_name)
+            if (
+                not os.path.isdir(user_dir)
+                or user_name.casefold() in {'public', 'all users'}
+            ):
+                continue
+            for relative_root in relative_roots:
+                search_root = os.path.join(user_dir, relative_root)
+                try:
+                    first_level = sorted(
+                        os.listdir(search_root), key=str.casefold
+                    )[:250]
+                except OSError:
+                    continue
+                for name in first_level:
+                    path = os.path.join(search_root, name)
+                    if not os.path.isdir(path):
+                        continue
+                    if (
+                        _component_matches_game(name, state)
+                        or _contains_direct_game_child(path, state)
+                    ):
+                        return True
+        return False
+
+    prefixes = list(prefixes_by_key.values())
+    relevance = {
+        _path_key(prefix): has_title_signal(prefix)
+        for prefix, _ in prefixes
+    }
+    prefixes.sort(
+        key=lambda item: (
+            0 if relevance.get(_path_key(item[0]), False) else 1,
+            int(item[1]),
+            item[0].casefold(),
+        )
+    )
+
+    max_prefixes = max(
+        0,
+        int(
+            getattr(
+                config, 'LINUX_MAX_COMPATDATA_APPIDS_NONSTEAM', 100
+            )
+        ),
+    )
+    selected = prefixes[:max_prefixes]
+    logging.info(
+        "Discovered %d Proton compatdata prefixes without an AppID; "
+        "scanning %d (%d contain a title-shaped path)",
+        len(prefixes),
+        len(selected),
+        sum(
+            1
+            for prefix, _ in selected
+            if relevance.get(_path_key(prefix), False)
+        ),
+    )
+    return selected
+
+
+def _search_proton_for_non_steam_games(state: LinuxSearchState, cancellation_manager=None) -> None:
+    """Search related Wine prefixes and strictly filtered Proton compatdata.
+
+    Compatdata discovered without an AppID is always untrusted: a result must
+    still contain the requested title/alias. This supports .desktop launchers
+    that expose only a generic command while avoiding cross-game candidates.
     """
     logging.info(
         f"Searching related Wine prefixes for non-Steam game "
@@ -2111,13 +2261,24 @@ def _search_proton_for_non_steam_games(state: LinuxSearchState, cancellation_man
         if os.path.isdir(default_wine):
             remember_prefix(default_wine, False)
 
+        discovered_compatdata = _discover_unowned_compatdata_prefixes(state)
+        compatdata_appids = {
+            _path_key(compat_prefix): compat_appid
+            for compat_prefix, compat_appid in discovered_compatdata
+        }
+        for compat_prefix, _ in discovered_compatdata:
+            remember_prefix(compat_prefix, False)
+
         for prefix, trusted_game_scope in prefixes.values():
             if _is_cancelled(cancellation_manager):
                 return
+            prefix_appid = compatdata_appids.get(
+                _path_key(prefix), 'nonsteam'
+            )
             state.directories_explored = 0
             _search_proton_prefix_deep(
                 prefix,
-                'nonsteam',
+                prefix_appid,
                 state,
                 cancellation_manager,
                 trusted_game_scope=trusted_game_scope,
