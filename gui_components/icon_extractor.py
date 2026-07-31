@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 ICON_CACHE_FOLDER = ".icon_cache"
 CUSTOM_ICON_FOLDER = "custom_icons"  # User-chosen icons (persisted in app data)
 DEFAULT_ICON_SIZE = 32  # Size for icons in profile list
+MIN_AUTO_ICON_CACHE_SIZE = 64  # Enough for 42/48 px previews without large cache files
 CUSTOM_ICON_STORE_SIZE = 128  # Max dimension at which custom icons are stored
 
 # Linux icon search paths (in order of preference)
@@ -382,6 +383,33 @@ def _get_cache_filename(exe_path: str) -> str:
     return f"{safe_name}_{path_hash}.png"
 
 
+def _auto_icon_cache_size(requested_size: int) -> int:
+    """Return the resolution used for automatically extracted cached icons.
+
+    Profile rows only need 32 px, but the same cached PNG is also displayed at
+    42 px in notifications and 48 px in Profile Edit.  Keeping one 64 px image
+    avoids upscaling in those views without storing oversized artwork.
+    """
+    try:
+        requested_size = max(1, int(requested_size))
+    except (TypeError, ValueError):
+        requested_size = DEFAULT_ICON_SIZE
+    return max(MIN_AUTO_ICON_CACHE_SIZE, requested_size)
+
+
+def _cached_icon_has_resolution(cache_path: str, requested_size: int) -> bool:
+    """Return whether a cached image is valid and large enough for the caller."""
+    if not os.path.isfile(cache_path):
+        return False
+
+    image = QImage(cache_path)
+    return (
+        not image.isNull()
+        and image.width() >= requested_size
+        and image.height() >= requested_size
+    )
+
+
 def _resolve_shortcut_target(shortcut_path: str) -> Optional[str]:
     """Resolve a .lnk shortcut (Windows) or .desktop file (Linux) to its target path."""
     
@@ -453,10 +481,10 @@ def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_I
     """Extract icon from a Windows executable / shortcut via the Win32 API.
 
     Strategy:
-      1. Try ``PrivateExtractIconsW`` requesting a HiDPI size
-         (``max(size, 128)``, capped at 256). Vista+ exposes the full set
-         of icon resources at any size through this call, so we get the
-         actual 128/256 frame instead of the 32x32 "system large" icon.
+      1. Try ``PrivateExtractIconsW`` at the requested size (capped at 256).
+         Vista+ exposes the full set of icon resources through this call, so
+         Windows can select the best available frame instead of always
+         returning the 32x32 "system large" icon.
       2. If that fails, fall back to the legacy ``ExtractIconExW`` (which
          only returns the 16/32 px system small/large icons).
 
@@ -470,6 +498,22 @@ def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_I
 
         shell32 = ctypes.windll.shell32
         user32 = ctypes.windll.user32
+        gdi32 = ctypes.windll.gdi32
+
+        # ctypes assumes C ``int`` arguments and return values when function
+        # signatures are omitted.  That truncates Win32 handles in a 64-bit
+        # process and can make an otherwise successful extraction fail with
+        # ``OverflowError: int too long to convert``.
+        shell32.ExtractIconExW.argtypes = [
+            wintypes.LPCWSTR,
+            ctypes.c_int,
+            ctypes.POINTER(wintypes.HICON),
+            ctypes.POINTER(wintypes.HICON),
+            wintypes.UINT,
+        ]
+        shell32.ExtractIconExW.restype = wintypes.UINT
+        user32.DestroyIcon.argtypes = [wintypes.HICON]
+        user32.DestroyIcon.restype = wintypes.BOOL
 
         # --- Pass 1: PrivateExtractIconsW @ the exact requested size ----
         # Windows itself selects the smallest icon resource >= cx/cy from
@@ -500,14 +544,14 @@ def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_I
             logger.debug(f"PrivateExtractIconsW failed for '{exe_path}': {e_priv}")
 
         # --- Pass 2: legacy ExtractIconExW fallback ---------------------
-        small_icon = ctypes.c_void_p()
+        small_icon = wintypes.HICON()
         if not hicon:
             num_icons = shell32.ExtractIconExW(exe_path, -1, None, None, 0)
             if num_icons <= 0:
                 logger.debug(f"No icons found in '{exe_path}'")
                 return False
 
-            large_icon = ctypes.c_void_p()
+            large_icon = wintypes.HICON()
             result = shell32.ExtractIconExW(
                 exe_path,
                 0,
@@ -520,8 +564,6 @@ def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_I
                 return False
             hicon = large_icon.value
 
-        gdi32 = ctypes.windll.gdi32
-        
         try:
             # Get icon info to determine size
             class ICONINFO(ctypes.Structure):
@@ -532,7 +574,12 @@ def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_I
                     ('hbmMask', wintypes.HBITMAP),
                     ('hbmColor', wintypes.HBITMAP),
                 ]
-            
+
+            user32.GetIconInfo.argtypes = [
+                wintypes.HICON, ctypes.POINTER(ICONINFO)
+            ]
+            user32.GetIconInfo.restype = wintypes.BOOL
+
             icon_info = ICONINFO()
             if not user32.GetIconInfo(hicon, ctypes.byref(icon_info)):
                 logger.debug(f"GetIconInfo failed for '{exe_path}'")
@@ -552,7 +599,12 @@ def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_I
                     ('bmBitsPixel', wintypes.WORD),
                     ('bmBits', ctypes.c_void_p),
                 ]
-            
+
+            gdi32.GetObjectW.argtypes = [
+                wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p
+            ]
+            gdi32.GetObjectW.restype = ctypes.c_int
+
             bmp = BITMAP()
             if icon_info.hbmColor:
                 gdi32.GetObjectW(icon_info.hbmColor, ctypes.sizeof(BITMAP), ctypes.byref(bmp))
@@ -562,6 +614,15 @@ def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_I
                 width, height = 32, 32
             
             # Create a device context and bitmap to draw the icon
+            user32.GetDC.argtypes = [wintypes.HWND]
+            user32.GetDC.restype = wintypes.HDC
+            user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+            user32.ReleaseDC.restype = ctypes.c_int
+            gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
+            gdi32.CreateCompatibleDC.restype = wintypes.HDC
+            gdi32.DeleteDC.argtypes = [wintypes.HDC]
+            gdi32.DeleteDC.restype = wintypes.BOOL
+
             hdc_screen = user32.GetDC(0)
             hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
             
@@ -594,7 +655,42 @@ def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_I
             bmi.bmiHeader.biPlanes = 1
             bmi.bmiHeader.biBitCount = 32
             bmi.bmiHeader.biCompression = 0  # BI_RGB
-            
+
+            gdi32.CreateDIBSection.argtypes = [
+                wintypes.HDC,
+                ctypes.POINTER(BITMAPINFO),
+                wintypes.UINT,
+                ctypes.POINTER(ctypes.c_void_p),
+                wintypes.HANDLE,
+                wintypes.DWORD,
+            ]
+            gdi32.CreateDIBSection.restype = wintypes.HBITMAP
+            gdi32.SelectObject.argtypes = [wintypes.HDC, wintypes.HANDLE]
+            gdi32.SelectObject.restype = wintypes.HANDLE
+            gdi32.DeleteObject.argtypes = [wintypes.HANDLE]
+            gdi32.DeleteObject.restype = wintypes.BOOL
+            gdi32.PatBlt.argtypes = [
+                wintypes.HDC,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                wintypes.DWORD,
+            ]
+            gdi32.PatBlt.restype = wintypes.BOOL
+            user32.DrawIconEx.argtypes = [
+                wintypes.HDC,
+                ctypes.c_int,
+                ctypes.c_int,
+                wintypes.HICON,
+                ctypes.c_int,
+                ctypes.c_int,
+                wintypes.UINT,
+                wintypes.HBRUSH,
+                wintypes.UINT,
+            ]
+            user32.DrawIconEx.restype = wintypes.BOOL
+
             bits = ctypes.c_void_p()
             hbm = gdi32.CreateDIBSection(hdc_mem, ctypes.byref(bmi), 0, ctypes.byref(bits), None, 0)
             
@@ -1454,6 +1550,11 @@ def extract_icon_from_executable(exe_path: str, size: int = DEFAULT_ICON_SIZE) -
     """
     if not exe_path or not os.path.exists(exe_path):
         return None
+
+    # A single cache file is shared by the 32 px profile list, the 42 px
+    # notification and the 48 px edit preview.  Store at least 64 px and
+    # transparently refresh older 32 px cache entries.
+    size = _auto_icon_cache_size(size)
     
     # Resolve shortcuts to their targets
     original_path = exe_path
@@ -1476,9 +1577,14 @@ def extract_icon_from_executable(exe_path: str, size: int = DEFAULT_ICON_SIZE) -
             cache_filename = _get_cache_filename(exe_path)
             cache_path = os.path.join(cache_dir, cache_filename)
             
-            if os.path.exists(cache_path):
+            if _cached_icon_has_resolution(cache_path, size):
                 logger.debug(f"extract_icon_from_executable: Using cached icon: {cache_path}")
                 return cache_path
+
+            if os.path.exists(cache_path):
+                logger.debug(
+                    f"Refreshing undersized or invalid cached icon: {cache_path}"
+                )
             
             if _convert_icon_to_png(icon_path, cache_path, size):
                 logger.info(f"Icon extracted from .desktop file and cached: {cache_path}")
@@ -1494,9 +1600,12 @@ def extract_icon_from_executable(exe_path: str, size: int = DEFAULT_ICON_SIZE) -
     cache_filename = _get_cache_filename(exe_path)
     cache_path = os.path.join(cache_dir, cache_filename)
     
-    if os.path.exists(cache_path):
+    if _cached_icon_has_resolution(cache_path, size):
         logger.debug(f"Using cached icon: {cache_path}")
         return cache_path
+
+    if os.path.exists(cache_path):
+        logger.debug(f"Refreshing undersized or invalid cached icon: {cache_path}")
     
     # Try extraction methods based on platform
     extracted = False
@@ -1831,6 +1940,7 @@ def get_profile_icon_path(profile_data: dict, profile_name: str,
             except Exception as e:
                 logger.debug(f"Error loading Minecraft icon: {e}")
 
+    size = _auto_icon_cache_size(size)
     is_linux = platform.system() != "Windows"
     exe_path = profile_data.get('game_executable')
 
@@ -1856,7 +1966,10 @@ def get_profile_icon_path(profile_data: dict, profile_name: str,
             if steam_icon:
                 cache_dir = get_icon_cache_dir()
                 cache_path = os.path.join(cache_dir, f"steam_{steam_appid}.png")
-                if os.path.exists(cache_path) or _convert_icon_to_png(steam_icon, cache_path, size):
+                if (
+                    _cached_icon_has_resolution(cache_path, size)
+                    or _convert_icon_to_png(steam_icon, cache_path, size)
+                ):
                     icon_path = cache_path
                     logger.debug(f"Using Steam library icon for '{profile_name}'")
 
@@ -1868,7 +1981,10 @@ def get_profile_icon_path(profile_data: dict, profile_name: str,
                 cache_path = os.path.join(
                     cache_dir, _get_cache_filename(f"name_{game_name}")
                 )
-                if os.path.exists(cache_path) or _convert_icon_to_png(name_icon, cache_path, size):
+                if (
+                    _cached_icon_has_resolution(cache_path, size)
+                    or _convert_icon_to_png(name_icon, cache_path, size)
+                ):
                     icon_path = cache_path
                     logger.debug(f"Found icon by game name for '{profile_name}'")
 
