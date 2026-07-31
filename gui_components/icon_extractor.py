@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 # --- Constants ---
 ICON_CACHE_FOLDER = ".icon_cache"
+ICON_CACHE_VERSION = 2  # v2 fixes Win32 premultiplied-alpha colour fringes
 CUSTOM_ICON_FOLDER = "custom_icons"  # User-chosen icons (persisted in app data)
 DEFAULT_ICON_SIZE = 32  # Size for icons in profile list
 MIN_AUTO_ICON_CACHE_SIZE = 64  # Enough for 42/48 px previews without large cache files
@@ -375,8 +376,10 @@ def get_custom_icon_path(profile_data: dict) -> Optional[str]:
 
 def _get_cache_filename(exe_path: str) -> str:
     """Generate a unique cache filename for an executable path."""
-    # Use hash of path for unique filename
-    path_hash = hashlib.md5(exe_path.encode('utf-8')).hexdigest()[:16]
+    # Include the format version so extraction fixes replace stale PNGs
+    # automatically instead of silently reusing their rendered pixels.
+    hash_source = f"v{ICON_CACHE_VERSION}|{exe_path}"
+    path_hash = hashlib.md5(hash_source.encode('utf-8')).hexdigest()[:16]
     # Also include filename for readability
     base_name = os.path.splitext(os.path.basename(exe_path))[0]
     safe_name = "".join(c if c.isalnum() or c in '-_' else '_' for c in base_name)[:30]
@@ -408,6 +411,41 @@ def _cached_icon_has_resolution(cache_path: str, requested_size: int) -> bool:
         and image.width() >= requested_size
         and image.height() >= requested_size
     )
+
+
+def _unpremultiply_rgba(image):
+    """Convert premultiplied RGBA pixels to straight alpha for PNG storage.
+
+    ``DrawIconEx`` renders into a 32-bit DIB using premultiplied colour
+    channels. PNG expects straight-alpha RGB; saving those bytes unchanged
+    makes Qt premultiply them again when displaying the PNG, producing dark,
+    harsh fringes around antialiased icon edges.
+    """
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
+
+    pixels = bytearray(image.tobytes())
+    for offset in range(0, len(pixels), 4):
+        alpha = pixels[offset + 3]
+        if alpha == 0:
+            pixels[offset] = 0
+            pixels[offset + 1] = 0
+            pixels[offset + 2] = 0
+        elif alpha < 255:
+            half_alpha = alpha // 2
+            pixels[offset] = min(
+                255, (pixels[offset] * 255 + half_alpha) // alpha
+            )
+            pixels[offset + 1] = min(
+                255, (pixels[offset + 1] * 255 + half_alpha) // alpha
+            )
+            pixels[offset + 2] = min(
+                255, (pixels[offset + 2] * 255 + half_alpha) // alpha
+            )
+
+    restored = image.copy()
+    restored.frombytes(bytes(pixels))
+    return restored
 
 
 def _resolve_shortcut_target(shortcut_path: str) -> Optional[str]:
@@ -722,6 +760,7 @@ def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_I
             
             # Create PIL Image
             image = Image.frombuffer('RGBA', (width, height), bytes(buffer), 'raw', 'BGRA', 0, 1)
+            image = _unpremultiply_rgba(image)
 
             # Only resample when needed; PrivateExtractIconsW frequently
             # already returns the exact requested size.
