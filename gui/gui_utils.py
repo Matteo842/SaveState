@@ -603,19 +603,23 @@ class NotificationPopup(QWidget):
         icon_label.setFixedSize(50, 50)
         style = QApplication.instance().style()
         icon_size = 42
+        icon_dpr = max(1.0, icon_label.devicePixelRatioF())
+        icon_pixel_size = max(
+            icon_size, int((icon_size * icon_dpr) + 0.5)
+        )
 
         custom_icon_loaded = False
         if icon_path and os.path.exists(icon_path):
             pixmap = QPixmap(icon_path)
             if not pixmap.isNull():
-                icon_label.setPixmap(
-                    pixmap.scaled(
-                        icon_size,
-                        icon_size,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
+                scaled_pixmap = pixmap.scaled(
+                    icon_pixel_size,
+                    icon_pixel_size,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
                 )
+                scaled_pixmap.setDevicePixelRatio(icon_dpr)
+                icon_label.setPixmap(scaled_pixmap)
                 custom_icon_loaded = True
             else:
                 logging.warning(f"NotificationPopup: Failed to load custom icon from {icon_path}")
@@ -626,7 +630,9 @@ class NotificationPopup(QWidget):
             else:
                 icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical)
             if not icon.isNull():
-                icon_label.setPixmap(icon.pixmap(icon_size, icon_size))
+                fallback_pixmap = icon.pixmap(icon_pixel_size, icon_pixel_size)
+                fallback_pixmap.setDevicePixelRatio(icon_dpr)
+                icon_label.setPixmap(fallback_pixmap)
         content_layout.addWidget(icon_label, alignment=Qt.AlignmentFlag.AlignTop)
 
         text_layout = QVBoxLayout()
