@@ -455,6 +455,7 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                 self.active_threads[thread_id] = {
                     'thread': detection_thread,
                     'profile_name': profile_name,
+                    'game_install_dir': game_install_dir,
                     'completed': False
                 }
                 
@@ -533,7 +534,12 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                 
                 # Update profile dialog
                 if self.profile_dialog:
-                    self.profile_dialog.update_profile(profile_name, best_path, best_score)
+                    self.profile_dialog.update_profile(
+                        profile_name,
+                        best_path,
+                        best_score,
+                        game_install_dir=thread_info.get('game_install_dir'),
+                    )
                 else:
                     logging.warning(f"Cannot update profile '{profile_name}' - profile dialog has been closed")
                 

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSizeP
 from PySide6.QtCore import Qt, Signal, QTimer, QRect, QSize, QEvent
 from PySide6.QtGui import QIcon, QFont, QCursor, QPainter, QPen, QColor
 
-from common.utils import resource_path
+from common.utils import resource_path, shorten_save_path
 
 # Helper function to sanitize display names
 def _sanitize_display_name(name):
@@ -72,11 +72,20 @@ class ProfileListItem(QWidget):
     
     deleteClicked = Signal(str)  # Segnale emesso quando si clicca sul pulsante di eliminazione
     
-    def __init__(self, profile_name, file_path, parent=None):
+    def __init__(
+        self,
+        profile_name,
+        file_path,
+        shorten_paths=True,
+        game_install_dir=None,
+        parent=None,
+    ):
         super().__init__(parent)
         
         self.profile_name = profile_name  # Original name for logic/keys
         self.file_path = file_path
+        self.shorten_paths = bool(shorten_paths)
+        self.game_install_dir = game_install_dir
         display_name = _sanitize_display_name(profile_name) # Sanitize for display
         self.save_path = ""  # Sarà impostato dopo la ricerca
         self.score = 0  # Sarà impostato dopo la ricerca
@@ -208,10 +217,12 @@ class ProfileListItem(QWidget):
         row_height = max(base_height, min_for_button)
         self.setFixedHeight(row_height)
     
-    def update_save_path(self, save_path, score):
+    def update_save_path(self, save_path, score, game_install_dir=None):
         """Aggiorna il percorso di salvataggio e lo score dopo l'analisi."""
         self.save_path = save_path
         self.score = score
+        if game_install_dir:
+            self.game_install_dir = game_install_dir
         self.analyzed = True
         
         # Update label text based on show_score flag
@@ -220,7 +231,14 @@ class ProfileListItem(QWidget):
     
     def update_label(self):
         """Update save_path_label text based on show_score flag."""
-        text = f"Save path: {self.save_path}" + (f" (Score: {self.score})" if self.show_score else "")
+        display_path = self.save_path
+        if self.shorten_paths:
+            display_path, _ = shorten_save_path(
+                self.save_path,
+                self.game_install_dir,
+            )
+        score_text = f" (Score: {self.score})" if self.show_score else ""
+        text = f"Save path: {display_path}{score_text}"
         self.save_path_label.setText(text)
         self.save_path_label.setToolTip(self.save_path)
         
@@ -246,7 +264,14 @@ class MultiProfileDialog(QDialog):
     profileAdded = Signal(dict)
     analysis_completed = Signal()
     
-    def __init__(self, files_to_process, parent=None, launcher_mode=False, steam_mode=False):
+    def __init__(
+        self,
+        files_to_process,
+        parent=None,
+        launcher_mode=False,
+        steam_mode=False,
+        shorten_paths=None,
+    ):
         """
         Initialize the dialog.
         
@@ -257,6 +282,8 @@ class MultiProfileDialog(QDialog):
             launcher_mode: If True, data is from a launcher (e.g., Playnite) with
                           game names and install directories already defined.
             steam_mode: If True, this is for Steam multi-game selection.
+            shorten_paths: Override for path shortening. If omitted, the value
+                           is read from the main window settings.
         """
         super().__init__(parent)
 
@@ -270,6 +297,13 @@ class MultiProfileDialog(QDialog):
         self.launcher_mode = launcher_mode
         self.steam_mode = steam_mode
         self.files_to_process = files_to_process
+        if shorten_paths is None:
+            settings = getattr(parent, "current_settings", {})
+            if isinstance(settings, dict):
+                shorten_paths = settings.get("shorten_paths_enabled", True)
+            else:
+                shorten_paths = True
+        self.shorten_paths = bool(shorten_paths)
         self.total_files = len(files_to_process)
         self.processed_files = 0
         self.profiles_data = {}  # Dictionary to store profile data (name -> data)
@@ -540,7 +574,13 @@ class MultiProfileDialog(QDialog):
                     profile_name = profile_name[:-4]
             
             # Create custom item
-            item_widget = ProfileListItem(profile_name, file_path)
+            game_install_dir = file_path if self.launcher_mode else None
+            item_widget = ProfileListItem(
+                profile_name,
+                file_path,
+                shorten_paths=self.shorten_paths,
+                game_install_dir=game_install_dir,
+            )
             item_widget.deleteClicked.connect(self.remove_profile)
             
             # Create list item
@@ -587,7 +627,13 @@ class MultiProfileDialog(QDialog):
         # Emetti un segnale per avviare l'analisi
         self.profileAdded.emit({'action': 'start_analysis'})
     
-    def update_profile(self, profile_name, save_path, score):
+    def update_profile(
+        self,
+        profile_name,
+        save_path,
+        score,
+        game_install_dir=None,
+    ):
         """Aggiorna un profilo con il percorso di salvataggio trovato."""
         # Aggiorna il dizionario dei profili
         if profile_name in self.profiles_data:
@@ -600,7 +646,11 @@ class MultiProfileDialog(QDialog):
                 item = self.profile_list.item(i)
                 widget = self.profile_list.itemWidget(item)
                 if widget.profile_name == profile_name:
-                    widget.update_save_path(save_path, score)
+                    widget.update_save_path(
+                        save_path,
+                        score,
+                        game_install_dir=game_install_dir,
+                    )
                     # Non ridimensioniamo più l'elemento perché ora ha un'altezza fissa
                     break
             
