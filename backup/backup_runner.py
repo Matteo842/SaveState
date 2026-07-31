@@ -11,8 +11,6 @@ import re
 # Specific imports for Qt notification
 try:
     from PySide6.QtWidgets import QApplication # Needed even just for the notification
-    from PySide6.QtGui import QScreen     # For positioning the notification
-    from PySide6.QtCore import QTimer       # QTimer is used inside NotificationPopup
     QT_AVAILABLE = True
 except ImportError as e_qt:
      QT_AVAILABLE = False
@@ -201,18 +199,16 @@ def show_notification(success, message, force=False, profile_name=None, profile_
         logging.debug("Showing popup...")
         popup.show()
 
-        # If we created the QApplication just for this notification, set a timer to close it
-        # shortly after the popup should have closed itself.
+        # If this notification owns the QApplication, keep its event loop alive
+        # until the popup has actually closed. This also supports a fourth toast
+        # waiting until one of the three visible stack slots becomes available.
         if created_app and app:
-            quit_delay_ms = popup.duration_ms + 500
-            logging.debug(f"Setting QTimer to call app.quit() after {quit_delay_ms} ms.")
-            QTimer.singleShot(quit_delay_ms, app.quit)
-            # Start the event loop, but it will exit automatically thanks to the timer
-            logging.debug("Starting app.exec() for notification (with exit timer)...")
+            popup.destroyed.connect(app.quit)
+            logging.debug("Starting app.exec() until notification closes...")
             app.exec()
-            logging.debug("Exited from app.exec() after timer or manual popup closure.")
+            logging.debug("Exited from app.exec() after notification closed.")
         else:
-            logging.debug("Pre-existing QApplication, not starting exec/timer here. Just showing popup.")
+            logging.debug("Pre-existing QApplication; notification shown without starting app.exec().")
 
     except Exception as e_main_show:
         logging.critical(f"Critical error in show_notification: {e_main_show}", exc_info=True)

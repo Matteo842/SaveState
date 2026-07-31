@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from PySide6.QtCore import QThread, Signal, QObject, Qt, QTimer
+from PySide6.QtCore import QThread, Signal, QObject, Qt, QTimer, QLockFile
 from PySide6.QtWidgets import (
     QWidget, QLabel, QHBoxLayout, QVBoxLayout, QFrame, QApplication, QStyle,
     QGraphicsDropShadowEffect,
@@ -510,6 +510,9 @@ class QtLogHandler(logging.Handler, QObject):
 # Default toast duration (ms). Auto-backup uses a longer value — see NotificationPopup.
 DEFAULT_NOTIFICATION_DURATION_MS = 12000
 AUTO_BACKUP_NOTIFICATION_DURATION_MS = 15000
+MAX_VISIBLE_NOTIFICATIONS = 3
+NOTIFICATION_STACK_GAP = 10
+NOTIFICATION_SCREEN_MARGIN = 15
 
 
 def elevate_notification_window(widget) -> None:
@@ -549,6 +552,15 @@ class NotificationPopup(QWidget):
             int(duration_ms if duration_ms is not None else DEFAULT_NOTIFICATION_DURATION_MS),
         )
         self.duration_ms = self._duration_ms
+        self._notification_stack_lock = None
+        self._notification_stack_slot = self._acquire_notification_stack_slot()
+        self._notification_stack_timer = QTimer(self)
+        self._notification_stack_timer.setInterval(250)
+        self._notification_stack_timer.timeout.connect(
+            self._refresh_notification_stack
+        )
+        self._notification_wait_logged = False
+        self._notification_written_height = None
 
         # ToolTip + no-focus: overlay fullscreen without stealing input from the game.
         self.setWindowFlags(
@@ -658,9 +670,150 @@ class NotificationPopup(QWidget):
         self.close_timer.timeout.connect(self.close)
         self.close_timer.start(self._duration_ms)
 
+    @staticmethod
+    def _notification_stack_dir():
+        """Return the shared runtime directory used by shortcut processes."""
+        try:
+            import config
+            base_dir = config.get_app_data_folder()
+        except Exception:
+            base_dir = os.path.abspath("SaveState")
+
+        stack_dir = os.path.join(base_dir, ".notification_stack")
+        os.makedirs(stack_dir, exist_ok=True)
+        return stack_dir
+
+    def _acquire_notification_stack_slot(self):
+        """Claim one of three cross-process notification positions."""
+        try:
+            stack_dir = self._notification_stack_dir()
+            for slot in range(MAX_VISIBLE_NOTIFICATIONS):
+                lock = QLockFile(
+                    os.path.join(stack_dir, f"slot_{slot}.lock")
+                )
+                # Do not expire a live 12/15-second toast based on age. QLockFile
+                # still removes a lock whose owning process no longer exists.
+                lock.setStaleLockTime(0)
+                if lock.tryLock(0):
+                    self._notification_stack_lock = lock
+                    return slot
+        except Exception as e:
+            logging.warning(f"Unable to acquire notification stack slot: {e}")
+            # Coordination is optional: never lose a notification merely
+            # because the runtime lock directory is unavailable.
+            return 0
+
+        return None
+
+    def _notification_height_path(self, slot):
+        return os.path.join(
+            self._notification_stack_dir(), f"slot_{slot}.height"
+        )
+
+    def _write_notification_height(self):
+        if self._notification_stack_slot is None:
+            return
+        current_height = max(1, self.height())
+        if self._notification_written_height == current_height:
+            return
+        try:
+            with open(
+                self._notification_height_path(self._notification_stack_slot),
+                "w",
+                encoding="ascii",
+            ) as height_file:
+                height_file.write(str(current_height))
+            self._notification_written_height = current_height
+        except OSError as e:
+            logging.debug(f"Unable to store notification height: {e}")
+
+    def _lower_notification_offset(self):
+        """Return the combined logical height of occupied lower slots."""
+        if self._notification_stack_slot is None:
+            return 0
+
+        offset = 0
+        fallback_height = max(1, self.height())
+        for slot in range(self._notification_stack_slot):
+            height = fallback_height
+            try:
+                with open(
+                    self._notification_height_path(slot),
+                    "r",
+                    encoding="ascii",
+                ) as height_file:
+                    height = max(1, int(height_file.read().strip()))
+            except (OSError, ValueError):
+                pass
+            offset += height + NOTIFICATION_STACK_GAP
+        return offset
+
+    def _position_in_notification_stack(self):
+        """Anchor this popup to its bottom-right cross-process stack slot."""
+        if self._notification_stack_slot is None:
+            return
+
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            return
+
+        self._write_notification_height()
+        screen_geometry = screen.availableGeometry()
+        popup_x = (
+            screen_geometry.right()
+            - self.width()
+            - NOTIFICATION_SCREEN_MARGIN
+            + 1
+        )
+        popup_y = (
+            screen_geometry.bottom()
+            - self.height()
+            - NOTIFICATION_SCREEN_MARGIN
+            - self._lower_notification_offset()
+            + 1
+        )
+        popup_y = max(
+            screen_geometry.top() + NOTIFICATION_SCREEN_MARGIN, popup_y
+        )
+        self.move(popup_x, popup_y)
+
+    def _refresh_notification_stack(self):
+        """Reposition an active toast or activate it when a slot becomes free."""
+        if self._notification_stack_slot is None:
+            slot = self._acquire_notification_stack_slot()
+            if slot is None:
+                return
+            self._notification_stack_slot = slot
+            self._notification_written_height = None
+            self.close_timer.start(self._duration_ms)
+            self.show()
+            return
+
+        self._position_in_notification_stack()
+
     def showEvent(self, event):
         super().showEvent(event)
+        if self._notification_stack_slot is None:
+            self.close_timer.stop()
+            self.hide()
+            if not self._notification_wait_logged:
+                logging.info(
+                    "Notification queued: all three stack slots are occupied"
+                )
+                self._notification_wait_logged = True
+            self._notification_stack_timer.start()
+            return
+
+        self._position_in_notification_stack()
+        self._notification_stack_timer.start()
         elevate_notification_window(self)
+
+    def closeEvent(self, event):
+        self._notification_stack_timer.stop()
+        if self._notification_stack_lock is not None:
+            self._notification_stack_lock.unlock()
+            self._notification_stack_lock = None
+        super().closeEvent(event)
 
     def mousePressEvent(self, event):
         """Chiude la notifica se l'utente ci clicca sopra."""

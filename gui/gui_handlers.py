@@ -4029,10 +4029,29 @@ class MainWindowHandlers:
                 duration_ms=duration_ms,
             )
 
-            # Keep a reference so the popup is not garbage-collected before the
-            # auto-close timer fires. Clear it when the widget is destroyed.
+            # Keep every visible popup alive; a single reference would discard
+            # the previous toast as soon as a second one is created.
+            active_popups = getattr(
+                self, '_active_notification_popups', None
+            )
+            if not isinstance(active_popups, list):
+                active_popups = []
+                self._active_notification_popups = active_popups
+            active_popups.append(popup)
             self._active_notification_popup = popup
-            popup.destroyed.connect(lambda: setattr(self, '_active_notification_popup', None))
+            popup_id = id(popup)
+
+            def release_popup_reference(*_args):
+                remaining = [
+                    item for item in self._active_notification_popups
+                    if id(item) != popup_id
+                ]
+                self._active_notification_popups = remaining
+                self._active_notification_popup = (
+                    remaining[-1] if remaining else None
+                )
+
+            popup.destroyed.connect(release_popup_reference)
 
             # Apply current theme QSS
             try:
@@ -4061,4 +4080,4 @@ class MainWindowHandlers:
 
 # --- FINE METODI HANDLERS ---
 
-# --- End of MainWindowHandlers class --- 
+# --- End of MainWindowHandlers class ---
