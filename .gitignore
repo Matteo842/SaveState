@@ -216,4 +216,4 @@ icons/webdav.png
 icons/git.png
 /scripts
 test_icon_cache_resolution.py
-test_linux_save_path_finder_regression.py
+log.txt

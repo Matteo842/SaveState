@@ -214,6 +214,14 @@ MANDATORY_TITLE_QUALIFIERS = {
     'cut',
 }
 
+GRAMMATICAL_TITLE_WORDS = {'a', 'an', 'the', 'of', 'and'}
+
+# A small directional allow-list for titles whose common store/desktop name is
+# the base game while the save directory includes a non-numbered release name.
+# This must stay narrow: generic suffix matching confuses distinct games such
+# as Resident Evil and Resident Evil Village.
+OPTIONAL_ON_DISK_VARIANT_SUFFIXES = {'afterbirth'}
+
 STRICT_SAVE_EXTENSIONS_FALLBACK = {
     'sav', 'save', 'slot', 'sl2', 'ess', 'fos', 'lsf', 'lsb', 'profile',
     'state', 'srm', 'gci', 'mcr', 'mc', 'eep', 'fla', 'ark', 'rws',
@@ -302,7 +310,13 @@ def _normalised_name_tokens(name: str) -> List[str]:
     result: List[str] = []
     for token in _tokenize_name(name):
         upper = token.upper()
-        result.append(ROMAN_TO_ARABIC.get(upper, token.casefold()))
+        normalized = ROMAN_TO_ARABIC.get(upper, token.casefold())
+        # Apostrophe-free directory names commonly spell "Don't" as either
+        # "Dont" or CamelCase "DoNot".  Give both forms the same token stream.
+        if normalized == 'dont':
+            result.extend(('do', 'not'))
+        else:
+            result.append(normalized)
     return result
 
 
@@ -385,18 +399,18 @@ def _iter_install_name_hints(
     game_install_dir: Optional[str], game_name: Optional[str] = None
 ) -> Iterable[str]:
     """Yield a bounded set of useful directory/executable names."""
-    if not game_install_dir or not os.path.isdir(game_install_dir):
+    if (
+        not game_install_dir
+        or not os.path.isdir(game_install_dir)
+        or _is_unsafe_install_root(game_install_dir)
+    ):
         return
 
-    candidate_dirs = [game_install_dir]
-    if len(_compact_name(game_name or '')) <= 5:
-        candidate_dirs.append(os.path.dirname(os.path.normpath(game_install_dir)))
-
-    for candidate_dir in candidate_dirs:
-        basename = os.path.basename(os.path.normpath(candidate_dir))
-        cleaned = clean_for_comparison(basename)
-        if cleaned and cleaned not in GENERIC_CONTAINER_FOLDERS | INSTALL_CONTAINER_FOLDERS:
-            yield re.sub(r'[\(\[\{].*?[\)\]\}]', '', basename).strip()
+    # Directory components are compared to the requested title directly.
+    # Turning an arbitrary install directory (or its parent launcher/library
+    # container) into a title alias makes that directory game-related by
+    # definition and defeats the strict candidate filter.  Only executable
+    # names are useful additional hints here.
 
     base_depth = os.path.normpath(game_install_dir).count(os.sep)
     files_seen = 0
@@ -416,7 +430,10 @@ def _iter_install_name_hints(
                 files_seen += 1
                 lower = filename.lower()
                 is_executable = (
-                    lower.endswith(('.exe', '.x86', '.x86_64', '.bin', '.run'))
+                    lower.endswith((
+                        '.exe', '.x86', '.x86_64', '.bin', '.run', '.sh',
+                        '.appimage',
+                    ))
                     or ('.' not in filename and os.access(os.path.join(root, filename), os.X_OK))
                 )
                 if is_executable:
@@ -585,6 +602,40 @@ def are_names_similar(name1_game_variant: str, name2_path_component: str,
         if token not in ignore_words and (len(token) > 1 or token.isdigit())
     ]
 
+    grammatical1 = [
+        token for token in tokens1
+        if token not in GRAMMATICAL_TITLE_WORDS
+    ]
+    grammatical2 = [
+        token for token in tokens2
+        if token not in GRAMMATICAL_TITLE_WORDS
+    ]
+
+    # Articles and conjunctions are frequently present only in the on-disk
+    # title ("Witcher3" -> "The Witcher 3"). Edition qualifiers deliberately
+    # remain significant here so matching stays directional.
+    if (
+        not version_mismatch
+        and grammatical1
+        and grammatical1 == grammatical2
+    ):
+        return True
+
+    # Handle the few established base-title -> on-disk-variant spellings
+    # without permitting arbitrary sequel subtitles.
+    on_disk_suffix = grammatical2[len(grammatical1):]
+    if (
+        not version_mismatch
+        and len(grammatical1) >= 2
+        and grammatical2[:len(grammatical1)] == grammatical1
+        and on_disk_suffix
+        and all(
+            token in OPTIONAL_ON_DISK_VARIANT_SUFFIXES
+            for token in on_disk_suffix
+        )
+    ):
+        return True
+
     # The on-disk folder may omit a suffix from the requested game title, but
     # only when a shared version number anchors it (DarkSoulsII) or the omitted
     # suffix consists exclusively of edition words.
@@ -696,7 +747,11 @@ def _build_search_state(game_name_raw: str, game_install_dir_raw: str,
     )
 
     # Load config values
-    known_companies_lower = [kc.lower() for kc in getattr(config, 'COMMON_PUBLISHERS', [])]
+    known_companies_lower = [
+        str(kc).strip().casefold()
+        for kc in getattr(config, 'COMMON_PUBLISHERS', [])
+        if str(kc).strip()
+    ]
     linux_common_save_subdirs_lower = {csd.lower() for csd in getattr(config, 'LINUX_COMMON_SAVE_SUBDIRS', [])}
     linux_banned_path_fragments_lower = {bps.lower() for bps in getattr(config, 'LINUX_BANNED_PATH_FRAGMENTS', getattr(config, 'BANNED_FOLDER_NAMES_LOWER', []))}
     common_save_extensions = {e.lower() for e in getattr(config, 'COMMON_SAVE_EXTENSIONS', set())}
@@ -843,6 +898,18 @@ def _component_matches_game(component: str, state: LinuxSearchState) -> bool:
     return False
 
 
+def _component_matches_company(component: str, state: LinuxSearchState) -> bool:
+    """Match publisher folders, including conventional hidden variants."""
+    cleaned = str(component or '').strip().casefold()
+    return bool(
+        cleaned
+        and (
+            cleaned in state.known_companies_lower
+            or cleaned.lstrip('.') in state.known_companies_lower
+        )
+    )
+
+
 def _flatpak_package_matches_game(component: str, state: LinuxSearchState) -> bool:
     """Use only the application part of a reverse-DNS Flatpak package ID."""
     package_parts = [
@@ -968,6 +1035,28 @@ def _path_has_appid_context(path: str, state: LinuxSearchState) -> bool:
 
 def _is_generic_container(path: str) -> bool:
     return os.path.basename(os.path.normpath(path)).lower() in GENERIC_CONTAINER_FOLDERS
+
+
+def _is_unsafe_install_root(path: str) -> bool:
+    """Reject launcher/system locations that cannot be a game's install tree."""
+    if not path:
+        return True
+    try:
+        normalized = _normalise_path_text(
+            os.path.realpath(os.path.abspath(path))
+        ).rstrip('/').casefold()
+    except (OSError, TypeError, ValueError):
+        normalized = _normalise_path_text(path).rstrip('/').casefold()
+
+    basename = os.path.basename(os.path.normpath(path)).casefold()
+    if basename in {'bin', 'sbin', 'lib', 'lib64', 'usr', 'etc'}:
+        return True
+
+    return normalized in {
+        '/bin', '/sbin', '/usr', '/usr/bin', '/usr/sbin', '/usr/lib',
+        '/usr/lib64', '/lib', '/lib64', '/etc', '/var', '/boot', '/dev',
+        '/proc', '/sys', '/run',
+    }
 
 
 def _is_cancelled(cancellation_manager) -> bool:
@@ -1366,7 +1455,6 @@ def _add_guess(state: LinuxSearchState, path_found: str, source_description: str
         path_has_game_context
         or is_proton_scope
         or is_related_wine_scope
-        or is_install_scope
     ):
         accepted = True
         reason = 'Save files with game-specific search context'
@@ -1495,8 +1583,8 @@ def _search_recursive(start_dir: str, depth: int, state: LinuxSearchState,
             )
         )
     )
-    current_path_name_match_company = (
-        basename_current_path_lower in state.known_companies_lower
+    current_path_name_match_company = _component_matches_company(
+        basename_current_path_raw, state
     )
     current_path_is_common_save_dir = (
         basename_current_path_lower in state.linux_common_save_subdirs_lower
@@ -1555,8 +1643,11 @@ def _search_recursive(start_dir: str, depth: int, state: LinuxSearchState,
         basename_current_path_lower in ENGINE_CONTAINER_FOLDERS
     )
     engine_child_matches: Dict[str, bool] = {}
-    if current_is_engine_container:
-        for name in filtered_dir_contents:
+    # At the top of a known save root, peek one directory below otherwise
+    # unknown publisher/container names.  This finds
+    # XDG_ROOT/UnknownPublisher/Game without broadly crawling every subtree.
+    if current_is_engine_container or depth < state.max_shallow_explore_depth_linux:
+        for name in sorted(filtered_dir_contents, key=str.casefold)[:200]:
             engine_child_matches[name] = _contains_direct_game_child(
                 os.path.join(start_dir, name),
                 state,
@@ -1579,7 +1670,7 @@ def _search_recursive(start_dir: str, depth: int, state: LinuxSearchState,
             priority = 0
         elif lower in state.linux_common_save_subdirs_lower or lower in SPECIFIC_SAVE_FOLDERS:
             priority = 1
-        elif lower in state.known_companies_lower:
+        elif _component_matches_company(name, state):
             priority = 2
         elif lower in {'unity3d', 'unreal', 'unrealengine', 'godot', 'gamemaker'}:
             priority = 3
@@ -1618,7 +1709,9 @@ def _search_recursive(start_dir: str, depth: int, state: LinuxSearchState,
             item_contains_direct_game_child = engine_child_matches.get(
                 item_name, False
             )
-            item_is_company_match = item_name_lower in state.known_companies_lower
+            item_is_company_match = _component_matches_company(
+                item_name, state
+            )
             item_is_common_save_dir = (
                 item_name_lower in state.linux_common_save_subdirs_lower
                 or item_name_lower in SPECIFIC_SAVE_FOLDERS
@@ -2422,6 +2515,12 @@ def _search_install_directory(state: LinuxSearchState, game_install_dir: str, ca
     """Search game installation directory for save paths."""
     if not game_install_dir or not os.path.isdir(game_install_dir):
         return
+    if _is_unsafe_install_root(game_install_dir):
+        logging.info(
+            "Skipping unsafe Linux install directory for save discovery: %s",
+            game_install_dir,
+        )
+        return
 
     state.is_exploring_install_dir = True
     state.install_dir_root = os.path.normpath(game_install_dir)
@@ -2482,7 +2581,7 @@ def _search_xdg_locations(state: LinuxSearchState, cancellation_manager=None) ->
 
 
 def _search_home_fallback(state: LinuxSearchState, cancellation_manager=None) -> None:
-    """Check title-shaped first-level home folders without crawling the home."""
+    """Check title/publisher-shaped home folders without crawling the home."""
     if getattr(config, 'LINUX_SKIP_HOME_FALLBACK', False):
         return
 
@@ -2496,9 +2595,14 @@ def _search_home_fallback(state: LinuxSearchState, cancellation_manager=None) ->
         if _is_cancelled(cancellation_manager):
             return
         path = os.path.join(user_home, entry)
-        if not os.path.isdir(path) or not _component_matches_game(entry, state):
+        if not os.path.isdir(path):
             continue
-        _add_guess(state, path, f"Home/ExactGameName/{entry}", False)
+        matches_game = _component_matches_game(entry, state)
+        matches_company = _component_matches_company(entry, state)
+        if not matches_game and not matches_company:
+            continue
+        if matches_game:
+            _add_guess(state, path, f"Home/ExactGameName/{entry}", False)
         state.directories_explored = 0
         _search_recursive(path, 0, state, cancellation_manager)
 
