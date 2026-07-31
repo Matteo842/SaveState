@@ -238,7 +238,7 @@ class ProfileListItem(QWidget):
                 self.game_install_dir,
             )
         score_text = f" (Score: {self.score})" if self.show_score else ""
-        text = f"Save path: {display_path}{score_text}"
+        text = f"{display_path}{score_text}"
         self.save_path_label.setText(text)
         self.save_path_label.setToolTip(self.save_path)
         
