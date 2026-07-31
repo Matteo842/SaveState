@@ -84,6 +84,71 @@ QPushButton#SaveButton:disabled {
     color: #6B8F7A;
     border-color: #2A4034;
 }
+QWidget#CustomTitleBar {
+    background-color: #1E1E1E;
+    border-bottom: 1px solid #3F3F46;
+}
+QLabel#TitleLabel {
+    color: #F2F2F2;
+    font-size: 14pt;
+    font-weight: 700;
+}
+QPushButton#CloseButton {
+    background-color: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 0px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+}
+QPushButton#CloseButton:hover {
+    background-color: #B00020;
+    border: none;
+}
+QListWidget#MultiProfileList {
+    background-color: #292929;
+    border: 1px solid #4A4A4A;
+    border-radius: 8px;
+    padding: 8px;
+}
+QListWidget#MultiProfileList::item {
+    background-color: transparent;
+    border: none;
+    padding: 0px;
+}
+QWidget#MultiProfileCard {
+    background-color: #363636;
+    border: 1px solid #4A4A4A;
+    border-radius: 8px;
+}
+QWidget#MultiProfileCard:hover {
+    background-color: #3C3C3C;
+    border-color: #666666;
+}
+QLabel#MultiProfileName {
+    color: #F2F2F2;
+    font-weight: 700;
+}
+QPushButton#CardDeleteButton {
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 6px;
+    min-width: 36px;
+    max-width: 36px;
+    min-height: 36px;
+    max-height: 36px;
+}
+QPushButton#CardDeleteButton:hover {
+    background-color: #542D2D;
+    border: none;
+}
+QPushButton#CardDeleteButton:pressed {
+    background-color: #6A3030;
+    border: none;
+}
 /* --- NUOVE REGOLE SEMPLIFICATE PER QGroupBox --- */
 QGroupBox {
     background-color: transparent; /* <-- AGGIUNGI (come tema chiaro) */
@@ -596,6 +661,71 @@ QPushButton#SaveButton:disabled {
     background-color: #E8F0E8;
     color: #A0B8A0;
     border-color: #C8D8C8;
+}
+QWidget#CustomTitleBar {
+    background-color: #FFFFFF;
+    border-bottom: 1px solid #D6D9DF;
+}
+QLabel#TitleLabel {
+    color: #1F2024;
+    font-size: 14pt;
+    font-weight: 700;
+}
+QPushButton#CloseButton {
+    background-color: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 0px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+}
+QPushButton#CloseButton:hover {
+    background-color: #E5484D;
+    border: none;
+}
+QListWidget#MultiProfileList {
+    background-color: #ECEDF0;
+    border: 1px solid #C9CCD3;
+    border-radius: 8px;
+    padding: 8px;
+}
+QListWidget#MultiProfileList::item {
+    background-color: transparent;
+    border: none;
+    padding: 0px;
+}
+QWidget#MultiProfileCard {
+    background-color: #FFFFFF;
+    border: 1px solid #D6D9DF;
+    border-radius: 8px;
+}
+QWidget#MultiProfileCard:hover {
+    background-color: #F8F9FB;
+    border-color: #A8ADB7;
+}
+QLabel#MultiProfileName {
+    color: #1F2024;
+    font-weight: 700;
+}
+QPushButton#CardDeleteButton {
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 6px;
+    min-width: 36px;
+    max-width: 36px;
+    min-height: 36px;
+    max-height: 36px;
+}
+QPushButton#CardDeleteButton:hover {
+    background-color: #FDEBEC;
+    border: none;
+}
+QPushButton#CardDeleteButton:pressed {
+    background-color: #F9D6D8;
+    border: none;
 }
 
 /* ---- Group boxes ---- */

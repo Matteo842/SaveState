@@ -11,8 +11,8 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSizeP
                               QPushButton, QListWidget, QListWidgetItem,
                               QWidget, QMessageBox, QProgressBar, QCheckBox, QLineEdit, QStyle,
                               QApplication)
-from PySide6.QtCore import Qt, Signal, QTimer, QRect, QSize, QEvent
-from PySide6.QtGui import QIcon, QFont, QCursor, QPainter, QPen, QColor
+from PySide6.QtCore import Qt, Signal, QTimer, QSize, QEvent
+from PySide6.QtGui import QIcon, QFont, QCursor, QFontMetrics
 
 from common.utils import resource_path, shorten_save_path
 
@@ -29,43 +29,7 @@ def _sanitize_display_name(name):
 
 # Custom progress bar with smooth segments equal to number of profiles
 class SegmentedProgressBar(QProgressBar):
-    """Progress bar with segment boundaries equal to number of profiles and smooth fill."""
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        rect = self.rect()
-        radius = 4
-        # Draw background
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor('#2D2D2D'))
-        painter.drawRoundedRect(rect, radius, radius)
-        # Draw segment dividers
-        segments = self.maximum() - self.minimum()
-        if segments > 1:
-            pen = QPen(QColor('#2D2D2D'))
-            pen.setWidth(1)
-            painter.setPen(pen)
-            w = rect.width()
-            h = rect.height()
-            for i in range(1, segments):
-                x = int(w * i / segments)
-                painter.drawLine(x, 0, x, h)
-        # Draw fill
-        value = self.value()
-        if self.maximum() > self.minimum():
-            ratio = (value - self.minimum()) / (self.maximum() - self.minimum())
-        else:
-            ratio = 0
-        fill_width = int(rect.width() * ratio)
-        if fill_width > 0:
-            fill_rect = QRect(rect.x(), rect.y(), fill_width, rect.height())
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor('#FF0000'))
-            painter.drawRoundedRect(fill_rect, radius, radius)
-        # Draw text
-        painter.setPen(QColor('#FFFFFF'))
-        painter.drawText(rect, Qt.AlignCenter, self.text())
-        painter.end()
+    """Theme-aware progress bar used by the batch analysis dialog."""
 
 class ProfileListItem(QWidget):
     """Widget personalizzato per rappresentare un elemento nella lista dei profili."""
@@ -81,6 +45,9 @@ class ProfileListItem(QWidget):
         parent=None,
     ):
         super().__init__(parent)
+        self.setObjectName("MultiProfileCard")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         
         self.profile_name = profile_name  # Original name for logic/keys
         self.file_path = file_path
@@ -94,7 +61,7 @@ class ProfileListItem(QWidget):
         
         # Layout principale orizzontale
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setContentsMargins(14, 10, 10, 10)
         # Impostiamo l'allineamento verticale al centro per tutto il contenuto
         layout.setAlignment(Qt.AlignVCenter)
         
@@ -107,6 +74,7 @@ class ProfileListItem(QWidget):
         
         # Nome del profilo (in grassetto e più grande)
         self.name_label = QLabel(display_name)
+        self.name_label.setObjectName("MultiProfileName")
         font = QFont()
         font.setBold(True)
         font.setPointSize(10)  # Increased from default (usually 9)
@@ -131,6 +99,7 @@ class ProfileListItem(QWidget):
         
         # Save path (initially hidden)
         self.save_path_label = QLabel("")
+        self.save_path_label.setObjectName("MultiProfilePath")
         self.save_path_label.setFont(path_font)
         self.save_path_label.setStyleSheet("color: #4CAF50;")
         # Enable wrapping for save path
@@ -154,41 +123,25 @@ class ProfileListItem(QWidget):
         
         # Delete button — icons/trash.png (same asset as main profile list)
         self.delete_button = QPushButton()
-        self.delete_button.setObjectName("MinecraftButton")  # Use same style as Minecraft button
+        self.delete_button.setObjectName("CardDeleteButton")
         self.delete_button.setToolTip("Remove this profile")
         self.delete_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         # Hit target ~40px; icon smaller than inner area so it isn’t clipped or “zoomed” (cf. profile table 16×16 in 24×24)
-        self.delete_button.setFixedSize(40, 40)
-        self.delete_button.setIconSize(QSize(22, 22))
-        trash_path = resource_path("icons/trash.png")
+        self.delete_button.setFixedSize(36, 36)
+        self.delete_button.setIconSize(QSize(20, 20))
         icon_set = False
-        if os.path.exists(trash_path):
-            trash_icon = QIcon(trash_path)
+        style = self.style()
+        if style:
+            trash_icon = style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
             if not trash_icon.isNull():
                 self.delete_button.setIcon(trash_icon)
                 icon_set = True
         if not icon_set:
-            style = QApplication.instance()
-            style = style.style() if style else None
-            if style:
-                self.delete_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
-        self.delete_button.setStyleSheet("""
-            QPushButton#MinecraftButton {
-                border: none;
-                padding: 6px;
-                background-color: transparent;
-                border-radius: 0px;
-            }
-            QPushButton#MinecraftButton:hover {
-                background-color: rgba(255, 0, 0, 0.1);
-                border-radius: 0px;
-            }
-            QPushButton#MinecraftButton:pressed {
-                background-color: rgba(255, 0, 0, 0.2);
-                border-radius: 0px;
-            }
-        """)
-        
+            trash_path = resource_path("icons/trash.png")
+            if os.path.exists(trash_path):
+                trash_icon = QIcon(trash_path)
+                if not trash_icon.isNull():
+                    self.delete_button.setIcon(trash_icon)
         # Connetti il segnale clicked al nostro segnale personalizzato
         self.delete_button.clicked.connect(lambda: self.deleteClicked.emit(self.profile_name))
         
@@ -352,17 +305,6 @@ class MultiProfileDialog(QDialog):
         # Make the title bar draggable
         self.title_bar.installEventFilter(self)
 
-        # Title bar styling (mirror main window look)
-        self.title_bar.setStyleSheet(
-            """
-            QWidget#CustomTitleBar { background-color: #0d0d0d; border-bottom: 1px solid #333333; }
-            QLabel#TitleLabel { color: #f2f2f2; font-size: 14pt; font-weight: 700; }
-            QPushButton#CloseButton {
-                border: none; background: transparent; min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; padding: 0px; border-radius: 4px;
-            }
-            QPushButton#CloseButton:hover { background-color: #b00020; }
-            """
-        )
         main_layout.addWidget(self.title_bar)
 
         # Content container with margins like main window
@@ -383,12 +325,13 @@ class MultiProfileDialog(QDialog):
                         "You can remove items you don't want before starting.")
         
         self.header_label = QLabel(header_text)
-        self.header_label.setObjectName("header_label")
+        self.header_label.setObjectName("MultiProfileHeader")
         self.header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.header_label)
         
         # Description
         self.description_label = QLabel(desc_text)
+        self.description_label.setObjectName("MultiProfileDescription")
         self.description_label.setWordWrap(True)
         self.description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.description_label)
@@ -408,62 +351,30 @@ class MultiProfileDialog(QDialog):
         
         # Progress bar (initially hidden)
         self.progress_bar = SegmentedProgressBar()
+        self.progress_bar.setObjectName("MultiProfileProgress")
         self.progress_bar.setRange(0, self.total_files if self.total_files > 0 else 1)  # Set range based on actual total files
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat("%v/%m file processed (%p%)")
         self.progress_bar.hide()
         layout.addWidget(self.progress_bar)
         
-        # Material design style for progress bar: solid fill, no segments
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: none;
-                border-radius: 4px;
-                background-color: #2D2D2D;
-                text-align: center;
-            }
-            QProgressBar::chunk {
-                background-color: #FF0000;
-                border-radius: 4px;
-                margin: 0px;
-            }
-        """)
-        
         # Current status label (initially hidden)
         self.status_label = QLabel("")
+        self.status_label.setObjectName("StatusLabel")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.hide()
         layout.addWidget(self.status_label)
         
         # Lista dei profili
         self.profile_list = QListWidget()
+        self.profile_list.setObjectName("MultiProfileList")
         # Remove alternating row colors that cause readability issues
         self.profile_list.setAlternatingRowColors(False)
         # Disable item selection - we'll handle clicks through custom widgets
         self.profile_list.setSelectionMode(QListWidget.NoSelection)
         # Use uniform item sizes to ensure all profile items have the same height
         self.profile_list.setUniformItemSizes(True)
-        # Set a consistent style with the dark theme
-        self.profile_list.setStyleSheet("""
-            QListWidget {
-                background-color: #2D2D2D;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-            QListWidget::item {
-                background-color: #2D2D2D;
-                color: #F0F0F0;
-                border-bottom: 1px solid #3F3F46;
-                padding: 5px;
-            }
-            QListWidget::item:selected {
-                background-color: #505050;
-                color: #FFFFFF;
-            }
-            QListWidget::item:hover {
-                background-color: #3F3F46;
-            }
-        """)
+        self.profile_list.setSpacing(6)
         layout.addWidget(self.profile_list)
         
         # Popola la lista con i file da processare
@@ -472,23 +383,60 @@ class MultiProfileDialog(QDialog):
         # Buttons
         buttons_layout = QHBoxLayout()
         
-        # Button to start analysis
-        self.start_analysis_button = QPushButton("Start Analysis")
-        self.start_analysis_button.clicked.connect(self.start_analysis)
-        
-        # Button to add profiles
-        self.add_button = QPushButton("Add Profiles")
-        self.add_button.setEnabled(False)  # Disabled until analysis is complete
-        self.add_button.setDefault(True)
-        self.add_button.clicked.connect(self.accept)
+        # One stable primary button morphs from scan to add. Its width is
+        # calculated once from the longest possible label, matching the Cloud
+        # UI pattern and preventing any layout jump during the transition.
+        self.primary_action_button = QPushButton("Start Analysis")
+        self.primary_action_button.setObjectName("StartAnalysisButton")
+        primary_labels = (
+            "Start Analysis",
+            "Analyzing...",
+            f"Add {self.total_files} profiles",
+        )
+        font_metrics = QFontMetrics(self.primary_action_button.font())
+        primary_width = max(
+            font_metrics.horizontalAdvance(text) for text in primary_labels
+        ) + 48
+        self.primary_action_button.setFixedWidth(max(180, primary_width))
+        self.primary_action_button.setSizePolicy(
+            QSizePolicy.Fixed,
+            QSizePolicy.Fixed,
+        )
+        self.primary_action_button.setDefault(True)
+        self.primary_action_button.clicked.connect(
+            self._handle_primary_action
+        )
+        self._primary_action_state = "scan"
+
+        # Compatibility aliases for code that still refers to the former two
+        # buttons. Both names deliberately point to this same widget.
+        self.start_analysis_button = self.primary_action_button
+        self.add_button = self.primary_action_button
         
         # Button to cancel
         self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setObjectName("DangerButton")
+        self.cancel_button.setFixedWidth(112)
+        self.cancel_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.cancel_button.clicked.connect(self.reject)
-        
-        buttons_layout.addWidget(self.cancel_button)
-        buttons_layout.addWidget(self.start_analysis_button)
-        buttons_layout.addWidget(self.add_button)
+
+        for button in (
+            self.cancel_button,
+            self.primary_action_button,
+        ):
+            button.setMinimumHeight(34)
+
+        # Destructive/cancel action stays compact on the left; workflow
+        # actions form a separate group on the right.
+        buttons_layout.setSpacing(10)
+        buttons_layout.addWidget(self.cancel_button, 0, Qt.AlignLeft)
+        buttons_layout.addStretch(1)
+        buttons_layout.addWidget(
+            self.primary_action_button,
+            0,
+            Qt.AlignRight,
+        )
+        self.buttons_layout = buttons_layout
         
         layout.addLayout(buttons_layout)
 
@@ -496,19 +444,48 @@ class MultiProfileDialog(QDialog):
         main_layout.addWidget(content_container, stretch=1)
         self.setLayout(main_layout)
 
+    def _repolish_primary_action_button(self):
+        """Refresh QSS after the primary button changes semantic role."""
+        style = self.primary_action_button.style()
+        style.unpolish(self.primary_action_button)
+        style.polish(self.primary_action_button)
+        self.primary_action_button.update()
+
+    def _set_primary_action_state(self, state):
+        """Morph the stable primary button without replacing its widget."""
+        self._primary_action_state = state
+        button = self.primary_action_button
+
+        if state == "scan":
+            button.setObjectName("StartAnalysisButton")
+            button.setText("Start Analysis")
+            button.setEnabled(self.profile_list.count() > 0)
+        elif state == "scanning":
+            button.setObjectName("StartAnalysisButton")
+            button.setText("Analyzing...")
+            button.setEnabled(False)
+        elif state == "add":
+            count = len(self.accepted_profiles)
+            label = f"Add {count} profile" if count == 1 else f"Add {count} profiles"
+            button.setObjectName("SaveButton")
+            button.setText(label)
+            button.setEnabled(count > 0)
+        else:
+            raise ValueError(f"Unknown primary action state: {state}")
+
+        self._repolish_primary_action_button()
+
+    def _handle_primary_action(self):
+        """Dispatch the action represented by the current button state."""
+        if self._primary_action_state == "scan":
+            self.start_analysis()
+        elif self._primary_action_state == "add":
+            self.accept()
+
     def _update_add_button_label(self):
-        """Update 'Add Profiles' button to include the number of profiles ready to add."""
-        try:
-            # Only meaningful when analysis is finished
-            if getattr(self, 'analysis_running', False):
-                return
-            if not hasattr(self, 'add_button') or self.add_button is None:
-                return
-            count = len(self.accepted_profiles) if hasattr(self, 'accepted_profiles') else 0
-            text = f"Add {count} profile" if count == 1 else f"Add {count} profiles"
-            self.add_button.setText(text)
-        except Exception:
-            pass
+        """Compatibility wrapper used after accepted-profile count changes."""
+        if self._primary_action_state in ("scan", "add"):
+            self._set_primary_action_state(self._primary_action_state)
     def eventFilter(self, watched, event):
         """Enable window dragging from the custom title bar and ignore double-click maximize."""
         try:
@@ -621,8 +598,7 @@ class MultiProfileDialog(QDialog):
         self.status_label.setText("Initializing...")
         self.status_label.show()
         
-        # Disable the start analysis button
-        self.start_analysis_button.setEnabled(False)
+        self._set_primary_action_state("scanning")
         
         # Emetti un segnale per avviare l'analisi
         self.profileAdded.emit({'action': 'start_analysis'})
@@ -676,12 +652,11 @@ class MultiProfileDialog(QDialog):
         # If all files are processed, enable the add button
         if current_file >= self.profile_list.count():
             self.analysis_running = False
-            self.add_button.setEnabled(True)
             self.header_label.setText(f"<b>Analysis complete</b>")
             self.description_label.setText("Profiles will be created with the detected save paths. "
                                           "You can still remove any you don't want.")
             self.status_label.setText("Analysis complete.")
-            self._update_add_button_label()
+            self._set_primary_action_state("add")
     
     def remove_profile(self, profile_name):
         """Remove a profile from the list."""
