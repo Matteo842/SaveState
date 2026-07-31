@@ -217,15 +217,38 @@ def _find_steam_windows() -> str:
 def _find_steam_linux() -> str:
     """Find Steam installation on Linux."""
     logging.info("Attempting to find Steam on Linux...")
-    
+
+    xdg_data_home = os.environ.get(
+        "XDG_DATA_HOME",
+        os.path.expanduser("~/.local/share"),
+    )
     common_linux_paths = [
         os.path.expanduser("~/.local/share/Steam"),
+        os.path.join(xdg_data_home, "Steam"),
         os.path.expanduser("~/.steam/steam"),
         os.path.expanduser("~/.steam/root"),
-        os.path.expanduser("~/.var/app/com.valvesoftware.Steam/data/Steam")  # Flatpak
+        os.path.expanduser("~/.steam/debian-installation"),
+        # Flatpak has used both layouts (often linked to one another).
+        os.path.expanduser(
+            "~/.var/app/com.valvesoftware.Steam/.local/share/Steam"
+        ),
+        os.path.expanduser(
+            "~/.var/app/com.valvesoftware.Steam/data/Steam"
+        ),
+        # Canonical Steam Snap user-data layout.
+        os.path.expanduser(
+            "~/snap/steam/common/.local/share/Steam"
+        ),
     ]
-    
+
+    seen_paths = set()
     for path_to_check in common_linux_paths:
+        path_to_check = os.path.normpath(path_to_check)
+        path_key = os.path.realpath(path_to_check)
+        if path_key in seen_paths:
+            continue
+        seen_paths.add(path_key)
+
         if not os.path.isdir(path_to_check):
             logging.debug(f"Path does not exist or is not a directory: {path_to_check}")
             continue
@@ -307,28 +330,70 @@ def find_steam_libraries() -> list:
     if os.path.isdir(main_lib_steamapps):
         libs.append(steam_path)
 
-    # Read libraryfolders.vdf for additional libraries
-    vdf_path = os.path.join(steam_path, 'config', 'libraryfolders.vdf')
-    logging.info(f"Reading libraries from: {vdf_path}")
-    data = _parse_vdf(vdf_path)
     added_libs_count = 0
 
-    if data:
-        lib_folders_data = data.get('libraryfolders', data)
-        if isinstance(lib_folders_data, dict):
-            for key, value in lib_folders_data.items():
-                if key.isdigit() or isinstance(value, dict):
-                    lib_info = value if isinstance(value, dict) else lib_folders_data.get(key)
-                    if isinstance(lib_info, dict) and 'path' in lib_info:
-                        lib_path_raw = lib_info['path']
-                        lib_path = os.path.normpath(lib_path_raw.replace('\\\\', '\\'))
-                        lib_steamapps_path = os.path.join(lib_path, 'steamapps')
-                        if os.path.isdir(lib_steamapps_path) and lib_path not in libs:
-                            libs.append(lib_path)
-                            added_libs_count += 1
+    # Current Steam stores this file in steamapps. Keep the old config path as
+    # a fallback for installations that have not migrated it.
+    vdf_candidates = [
+        os.path.join(steam_path, 'steamapps', 'libraryfolders.vdf'),
+        os.path.join(steam_path, 'config', 'libraryfolders.vdf'),
+    ]
+    seen_library_keys = {
+        os.path.realpath(os.path.normpath(lib_path))
+        for lib_path in libs
+    }
+
+    for vdf_path in vdf_candidates:
+        logging.info(f"Reading libraries from: {vdf_path}")
+        data = _parse_vdf(vdf_path)
+        if not data:
+            continue
+
+        lib_folders_data = next(
+            (
+                value
+                for key, value in data.items()
+                if str(key).casefold() == 'libraryfolders'
+            ),
+            data,
+        )
+        if not isinstance(lib_folders_data, dict):
+            continue
+
+        for key, value in lib_folders_data.items():
+            key_is_numeric = str(key).isdigit()
+            if not (key_is_numeric or isinstance(value, dict)):
+                continue
+
+            lib_path_raw = None
+            if key_is_numeric and isinstance(value, str):
+                # Legacy VDF: "1" "/mnt/games/SteamLibrary"
+                lib_path_raw = value
+            elif isinstance(value, dict):
+                lib_path_raw = next(
+                    (
+                        item_value
+                        for item_key, item_value in value.items()
+                        if str(item_key).casefold() == 'path'
+                    ),
+                    None,
+                )
+            if not isinstance(lib_path_raw, str) or not lib_path_raw.strip():
+                continue
+
+            lib_path = os.path.normpath(lib_path_raw.replace('\\\\', '\\'))
+            lib_steamapps_path = os.path.join(lib_path, 'steamapps')
+            lib_key = os.path.realpath(lib_path)
+            if (
+                os.path.isdir(lib_steamapps_path)
+                and lib_key not in seen_library_keys
+            ):
+                libs.append(lib_path)
+                seen_library_keys.add(lib_key)
+                added_libs_count += 1
 
     logging.info(f"Found {len(libs)} total Steam libraries ({added_libs_count} from VDF).")
-    _steam_libraries = list(dict.fromkeys(libs))  # Remove duplicates
+    _steam_libraries = libs
     return _steam_libraries
 
 

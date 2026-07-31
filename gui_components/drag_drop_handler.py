@@ -854,6 +854,7 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                 game_install_dir=self.game_install_dir,
                 current_settings=mw.current_settings,
                 installed_steam_games_dict=steam_games_dict,
+                steam_app_id=self.steam_app_id,
                 cancellation_manager=getattr(mw, 'cancellation_manager', None),  # <-- FIX: passa il cancellation_manager
                 game_executable=None  # Steam URL drops don't have direct exe path
             )
