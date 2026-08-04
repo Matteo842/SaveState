@@ -8,8 +8,22 @@ import string
 #import re # Added for Steam URL parsing
 #from pathlib import Path # Added for Path().stem usage
 
-from PySide6.QtWidgets import QMessageBox, QInputDialog, QApplication, QFileDialog, QHBoxLayout, QDialog, QLineEdit, QPushButton, QVBoxLayout, QLabel, QStyle, QDialogButtonBox
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Slot, Qt
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QSizePolicy,
+    QStyle,
+    QVBoxLayout,
+)
 #from PySide6.QtGui import QDropEvent
 
 from dialogs.minecraft_dialog import MinecraftWorldsDialog
@@ -77,6 +91,122 @@ class SavePathDialog(QDialog):
     def get_path(self):
         """Returns the entered path."""
         return self.path_edit.text()
+
+
+class AutomaticPathConfirmationDialog(QDialog):
+    """Theme-aware confirmation for a single automatically detected path."""
+
+    def __init__(self, detected_path, profile_name, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Confirm Automatic Path")
+        self.setMinimumWidth(620)
+        self._selected_button = QMessageBox.StandardButton.Cancel
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(24, 22, 24, 20)
+        main_layout.setSpacing(20)
+
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(18)
+
+        icon_label = QLabel()
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignTop)
+        icon = self.style().standardIcon(
+            QStyle.StandardPixmap.SP_MessageBoxQuestion
+        )
+        icon_label.setPixmap(icon.pixmap(36, 36))
+        content_layout.addWidget(icon_label, 0, Qt.AlignmentFlag.AlignTop)
+
+        message_layout = QVBoxLayout()
+        message_layout.setSpacing(14)
+
+        detected_label = QLabel("This path has been detected:")
+        message_layout.addWidget(detected_label)
+
+        self.path_label = QLabel(str(detected_path))
+        self.path_label.setWordWrap(True)
+        self.path_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        message_layout.addWidget(self.path_label)
+
+        prompt_label = QLabel(
+            f"Do you want to use it for the profile '{profile_name}'?"
+        )
+        prompt_label.setWordWrap(True)
+        message_layout.addWidget(prompt_label)
+
+        content_layout.addLayout(message_layout, 1)
+        main_layout.addLayout(content_layout)
+
+        # Keep Cancel independent on the left, with the decision controls
+        # grouped on the right, as required by the current dialog UI pattern.
+        self.buttons_layout = QHBoxLayout()
+        self.buttons_layout.setSpacing(10)
+
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        self.button_box.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Fixed,
+        )
+        self.cancel_button = self.button_box.button(
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        self.cancel_button.setObjectName("DangerButton")
+        self.button_box.rejected.connect(self.reject)
+
+        self.no_button = QPushButton("No")
+        self.no_button.clicked.connect(
+            lambda: self._finish(QMessageBox.StandardButton.No)
+        )
+
+        self.yes_button = QPushButton("Yes")
+        self.yes_button.setObjectName("SaveButton")
+        self.yes_button.setDefault(True)
+        self.yes_button.clicked.connect(
+            lambda: self._finish(QMessageBox.StandardButton.Yes)
+        )
+        # The application-wide controller badge handler recognises this alias.
+        self.ok_button = self.yes_button
+
+        for button in (
+            self.cancel_button,
+            self.no_button,
+            self.yes_button,
+        ):
+            button.setFixedWidth(112)
+            button.setMinimumHeight(34)
+
+        self.buttons_layout.addWidget(
+            self.button_box,
+            0,
+            Qt.AlignmentFlag.AlignLeft,
+        )
+        self.buttons_layout.addStretch(1)
+        self.buttons_layout.addWidget(self.no_button)
+        self.buttons_layout.addWidget(self.yes_button)
+        main_layout.addLayout(self.buttons_layout)
+
+        self.setTabOrder(self.cancel_button, self.no_button)
+        self.setTabOrder(self.no_button, self.yes_button)
+
+    def _finish(self, selected_button):
+        self._selected_button = selected_button
+        result = (
+            QDialog.DialogCode.Accepted
+            if selected_button == QMessageBox.StandardButton.Yes
+            else QDialog.DialogCode.Rejected
+        )
+        self.done(result)
+
+    def reject(self):
+        self._selected_button = QMessageBox.StandardButton.Cancel
+        super().reject()
+
+    def selected_button(self):
+        return self._selected_button
 
 
 class NewProfileDialog(QDialog):
@@ -660,11 +790,13 @@ class ProfileCreationManager:
                     final_path_to_use = None
                 else:
                     logging.debug(f"Single path detected: path='{single_path}', score='{single_score}', has_saves='{single_has_saves}'")
-                    reply = QMessageBox.question(mw, "Confirm Automatic Path",
-                                                  # Mostra solo il percorso nel messaggio
-                                                  f"This path has been detected:\n\n{single_path}\n\nDo you want to use it for the profile '{profile_name}'?",
-                                                  QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
-                                                  QMessageBox.StandardButton.Yes)
+                    path_confirmation = AutomaticPathConfirmationDialog(
+                        single_path,
+                        profile_name,
+                        mw,
+                    )
+                    path_confirmation.exec()
+                    reply = path_confirmation.selected_button()
                     if reply == QMessageBox.StandardButton.Yes:
                         final_path_to_use = single_path # Usa solo il percorso
                     elif reply == QMessageBox.StandardButton.No:
