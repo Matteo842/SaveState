@@ -364,6 +364,65 @@ class Threshold:
     EXPAND_ABBREV_NAME_LENGTH = 5
 
 
+def _compact_title(name: str) -> str:
+    """Normalize a title for exact alias comparisons across spaces/symbols."""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def _title_version_tokens(name: str) -> Set[str]:
+    """Extract normalized standalone version numbers from a game title."""
+    tokens: Set[str] = set()
+    for word in re.findall(r"[A-Za-z0-9]+", name):
+        word_upper = word.upper()
+        if word_upper in ROMAN_TO_ARABIC:
+            tokens.add(ROMAN_TO_ARABIC[word_upper])
+        elif word.isdigit() and len(word) <= 2:
+            tokens.add(str(int(word)))
+        else:
+            # Attached versions are valid for names such as DOOM2 or GTA5,
+            # not for hashes/IDs that merely happen to end with digits.
+            suffix = re.fullmatch(r"[A-Za-z]+(\d{1,2})", word)
+            if suffix:
+                tokens.add(str(int(suffix.group(1))))
+    return tokens
+
+
+def _title_versions_are_compatible(game_name: str, candidate_name: str) -> bool:
+    """Protect numbered games while allowing an unnumbered first installment."""
+    game_versions = _title_version_tokens(game_name)
+    candidate_versions = _title_version_tokens(candidate_name)
+    if game_versions == candidate_versions:
+        return True
+
+    # First entries are commonly stored without an explicit I/1 suffix.
+    return game_versions == {"1"} and not candidate_versions
+
+
+def _has_distinctive_title_extension(
+    name1: str, name2: str, ignored_words: Set[str]
+) -> bool:
+    """Return True when one title adds meaningful words to the other.
+
+    A fuzzy token-set comparison considers ``Hollow Knight`` and
+    ``Hollow Knight Silksong`` a perfect match because every word in the
+    shorter title is present in the longer one.  For save discovery that is
+    dangerous: the shorter title can be a different game in the same series.
+    Edition-only suffixes remain compatible (for example ``Deluxe Edition``).
+    """
+    words1 = re.findall(r"[a-z0-9]+", name1.lower())
+    words2 = re.findall(r"[a-z0-9]+", name2.lower())
+
+    if len(words1) == len(words2):
+        return False
+
+    shorter, longer = (words1, words2) if len(words1) < len(words2) else (words2, words1)
+    if longer[:len(shorter)] != shorter:
+        return False
+
+    extra_words = longer[len(shorter):]
+    return any(word not in ignored_words for word in extra_words)
+
+
 class PathCandidate(NamedTuple):
     """Rappresenta un percorso candidato per i salvataggi."""
     path: str
@@ -535,7 +594,7 @@ class PathScore:
         if basename_lower in SPECIFIC_SAVE_FOLDERS:
             score += ScoreWeight.SPECIFIC_SAVE_FOLDER.value
             
-        if (basename_lower in self.game_context.game_abbreviations_lower or
+        if (self.game_context.matches_game_abbreviation(basename) or
             self._matches_initial_sequence(basename) or
             'direct' in source_lower or 'gamenamelvl' in source_lower):
             score += ScoreWeight.DIRECT_MATCH.value
@@ -559,7 +618,8 @@ class PathScore:
         # Match perfetto (case-insensitive) - bonus massimo
         # Es: cartella "DOOM" per gioco "DOOM"
         game_name_lower = self.game_context.game_name.lower().strip()
-        if basename_lower == game_name_lower:
+        sanitized_name_lower = self.game_context.sanitized_name.lower().strip()
+        if basename_lower in {game_name_lower, sanitized_name_lower}:
             return ScoreWeight.PERFECT_NAME_MATCH.value
         
         # Match dopo pulizia (rimuove simboli speciali)
@@ -569,8 +629,31 @@ class PathScore:
         if not cleaned_folder or not cleaned_original:
             return 0
             
+        # Punctuation-only differences (for example the colon in a Steam
+        # title) are still an exact title match and deserve the full bonus.
         if cleaned_folder == cleaned_original:
+            return ScoreWeight.PERFECT_NAME_MATCH.value
+
+        # Executable/install-derived aliases are independent evidence of the
+        # real base title. Example: a shortcut named for a Sea of Stars DLC
+        # still launches SeaOfStars.exe and stores saves under "Sea of Stars".
+        if self.game_context.matches_game_abbreviation(basename_lower):
             return ScoreWeight.EXACT_NAME_MATCH.value
+
+        if not _title_versions_are_compatible(
+            self.game_context.sanitized_name,
+            basename_lower,
+        ):
+            return 0
+
+        # Do not let token_set_ratio turn a base title into a 100% match for a
+        # sequel/spin-off that adds a distinctive suffix.
+        if _has_distinctive_title_extension(
+            cleaned_folder,
+            cleaned_original,
+            self.game_context.ignore_words_lower,
+        ):
+            return 0
             
         if THEFUZZ_AVAILABLE:
             set_ratio = fuzz.token_set_ratio(cleaned_original, cleaned_folder)
@@ -648,7 +731,22 @@ class GameContext:
         self.game_abbreviations = self._generate_abbreviations()
         self.game_abbreviations_upper = set(a.upper() for a in self.game_abbreviations if a)
         self.game_abbreviations_lower = set(a.lower() for a in self.game_abbreviations if a)
+        self.game_abbreviations_compact = {
+            _compact_title(a) for a in self.game_abbreviations if _compact_title(a)
+        }
         self.game_title_sig_words = self._get_significant_words()
+
+    def matches_game_abbreviation(self, candidate_name: str) -> bool:
+        """Return True for an exact configured alias with a compatible version."""
+        if not candidate_name or not _title_versions_are_compatible(
+            self.sanitized_name,
+            candidate_name,
+        ):
+            return False
+        return (
+            candidate_name.upper() in self.game_abbreviations_upper or
+            _compact_title(candidate_name) in self.game_abbreviations_compact
+        )
         
     def _load_config(self):
         """Carica la configurazione dal modulo config."""
@@ -800,7 +898,7 @@ class GameContext:
                     acr_all_after = "".join(w[0] for w in all_words_after if w).upper()
                     if len(acr_all_after) >= Threshold.MIN_ABBREVIATION_LENGTH and acr_all_after not in abbreviations:
                         abbreviations.add(acr_all_after)
-                    
+
     def _add_exe_abbreviations(self, abbreviations: Set[str]):
         """Aggiunge abbreviazioni derivate dai file eseguibili."""
         exe_name = self._find_game_executable()
@@ -818,8 +916,15 @@ class GameContext:
                 if exe_name.lower().endswith(keyword):
                     exe_name = exe_name[:-len(keyword)]
                     break
-                    
-            exe_name = re.sub(r'[-_]+$', '', exe_name)
+
+            exe_name = re.sub(r'[-_]+$', '', exe_name).strip()
+            if not _title_versions_are_compatible(self.sanitized_name, exe_name):
+                logging.debug(
+                    "Skipping executable alias '%s' for versioned title '%s'",
+                    exe_name,
+                    self.sanitized_name,
+                )
+                return
             if len(exe_name) >= Threshold.MIN_ABBREVIATION_LENGTH:
                 abbreviations.add(exe_name)
     
@@ -856,6 +961,8 @@ class GameContext:
             
             added: Set[str] = set()
             for cand in candidates:
+                if not _title_versions_are_compatible(self.sanitized_name, cand):
+                    continue
                 # Versione originale (case-preserving)
                 abbreviations.add(cand)
                 added.add(cand)
@@ -1255,7 +1362,7 @@ class SavePathFinder:
             return True
             
         # Controlla abbreviazioni
-        if folder_name.upper() in self.context.game_abbreviations_upper:
+        if self.context.matches_game_abbreviation(folder_name):
             return True
             
         return False
@@ -1277,6 +1384,11 @@ class SavePathFinder:
         has_num1 = has_version_number(clean1)
         has_num2 = has_version_number(clean2)
         version_mismatch = has_num1 != has_num2
+
+        versions1 = _title_version_tokens(clean1)
+        versions2 = _title_version_tokens(clean2)
+        if versions1 and versions2 and versions1 != versions2:
+            return False
         
         # Normalizza numeri romani/arabi e ricontrolla (es: "DOOM II" vs "DOOM 2")
         # Ma solo se entrambi hanno numeri o entrambi non li hanno
@@ -1285,14 +1397,29 @@ class SavePathFinder:
         if not version_mismatch and norm1.replace(' ', '') == norm2.replace(' ', ''):
             logging.debug(f"Roman numeral match: '{clean1}' == '{clean2}' (normalized)")
             return True
+
+        distinctive_extension = _has_distinctive_title_extension(
+            clean1,
+            clean2,
+            self.context.ignore_words_lower,
+        )
             
         # Controlla prefisso - ma NON se c'è mismatch di versione
         # Es: "doom" non deve matchare "doom2" solo perché è prefisso
         no_space1 = clean1.replace(' ', '')
         no_space2 = clean2.replace(' ', '')
         if not version_mismatch and len(no_space1) >= Threshold.MIN_PREFIX_LENGTH and len(no_space2) >= Threshold.MIN_PREFIX_LENGTH:
-            if no_space1.startswith(no_space2) or no_space2.startswith(no_space1):
+            if ((no_space1.startswith(no_space2) or no_space2.startswith(no_space1))
+                    and not distinctive_extension):
                 return True
+
+        if distinctive_extension:
+            logging.debug(
+                "Rejected title-prefix match with distinctive suffix: '%s' vs '%s'",
+                clean1,
+                clean2,
+            )
+            return False
         
         # Controlla se un nome corto (singola parola) è contenuto come parola completa nell'altro
         # Questo aiuta con casi come "isaac" in "Binding of Isaac Repentance+"
@@ -1349,7 +1476,12 @@ class SavePathFinder:
             for variation in self.context.game_abbreviations:
                 if not variation:
                     continue
-                    
+                if not _title_versions_are_compatible(
+                    self.context.sanitized_name,
+                    variation,
+                ):
+                    continue
+
                 try:
                     # Percorso diretto
                     direct_path = os.path.join(base_folder, variation)
@@ -1411,7 +1543,7 @@ class SavePathFinder:
         """Verifica se il nome della cartella corrisponde al gioco."""
         folder_upper = folder_name.upper()
         
-        if folder_upper in self.context.game_abbreviations_upper:
+        if self.context.matches_game_abbreviation(folder_name):
             return True
             
         if self._are_names_similar(self.context.sanitized_name, folder_name):
@@ -1495,7 +1627,7 @@ class SavePathFinder:
         """
         w1 = self._core_words(game_name)
         w2 = self._core_words(folder_name)
-        if len(w1) < 2 or len(w2) < 2:
+        if len(w1) < 2 or len(w2) < 2 or len(w1) != len(w2):
             return False
         
         # Lunghezza del prefisso di parole condivise (in ordine)
@@ -1509,9 +1641,10 @@ class SavePathFinder:
         if prefix_len < 2:
             return False
         
-        # Devono divergere solo nell'ultima parola (edizione/sottotitolo)
-        shorter_len = min(len(w1), len(w2))
-        if prefix_len < shorter_len - 1:
+        # Devono avere la stessa lunghezza e divergere davvero solo nell'ultima
+        # parola. Un titolo che termina prima è spesso il gioco base della
+        # stessa serie, non una variante/edizione dello stesso gioco.
+        if prefix_len != len(w1) - 1:
             return False
         
         # Il core condiviso deve essere sufficientemente distintivo
@@ -1552,9 +1685,12 @@ class SavePathFinder:
                 is_match = False
                 if is_parent_related:
                     is_match = (self._are_names_similar(self.context.sanitized_name, lvl2_name) or
-                               lvl2_name.upper() in self.context.game_abbreviations_upper)
+                                self.context.matches_game_abbreviation(lvl2_name))
                 else:
-                    is_match = self._are_names_similar(self.context.sanitized_name, lvl2_name)
+                    is_match = (
+                        self._are_names_similar(self.context.sanitized_name, lvl2_name) or
+                        self.context.matches_game_abbreviation(lvl2_name)
+                    )
                     
                 if is_match:
                     self._add_guess(lvl2_path, f"{loc_name}/{lvl1_name}/GameNameLvl2/{lvl2_name}")
@@ -1985,6 +2121,9 @@ def final_sort_key(guess_tuple: Tuple[str, str, bool], outer_scope_data: Dict) -
     game_context.common_save_subdirs_lower = outer_scope_data.get('common_save_subdirs_lower', set())
     game_context.game_abbreviations = outer_scope_data.get('game_abbreviations', [])
     game_context.game_abbreviations_lower = outer_scope_data.get('game_abbreviations_lower', set())
+    game_context.game_abbreviations_compact = {
+        _compact_title(a) for a in game_context.game_abbreviations if _compact_title(a)
+    }
     game_context.game_title_sig_words = outer_scope_data.get('game_title_sig_words', [])
     
     scorer = PathScore(game_context)
