@@ -398,6 +398,26 @@ def _title_versions_are_compatible(game_name: str, candidate_name: str) -> bool:
     return game_versions == {"1"} and not candidate_versions
 
 
+def _filter_negative_results_when_enough_positive(
+    results: List[Tuple[str, int, bool]],
+    minimum_positive_results: int = 3,
+) -> List[Tuple[str, int, bool]]:
+    """Drop negative candidates only when enough positive alternatives exist."""
+    positive_count = sum(1 for _, score, _ in results if score > 0)
+    if positive_count < minimum_positive_results:
+        return results
+
+    filtered = [result for result in results if result[1] >= 0]
+    removed_count = len(results) - len(filtered)
+    if removed_count:
+        logging.info(
+            "Filtered %s negative save path result(s); %s positive candidates are available",
+            removed_count,
+            positive_count,
+        )
+    return filtered
+
+
 def _has_distinctive_title_extension(
     name1: str, name2: str, ignored_words: Set[str]
 ) -> bool:
@@ -2067,6 +2087,8 @@ class SavePathFinder:
                     results = new_results
                     results.sort(key=lambda x: (-x[1], x[0].lower()))
         
+        results = _filter_negative_results_when_enough_positive(results)
+
         logging.info(f"Found {len(results)} potential save paths")
         
         return results
