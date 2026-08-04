@@ -17,6 +17,9 @@ from gui_components.profile_list_manager import NotePopupWidget, NoteOverlayButt
 from common.utils import resource_path
 
 
+BACKUP_SEPARATOR_ROLE = Qt.ItemDataRole.UserRole + 2
+
+
 class RestoreSelectionDelegate(QStyledItemDelegate):
     """
     Custom Delegate for restore list selection with theme support:
@@ -43,6 +46,36 @@ class RestoreSelectionDelegate(QStyledItemDelegate):
     
     def paint(self, painter, option, index):
         painter.save()
+
+        # The separator is a real (but disabled) list item so it scrolls with
+        # the backups and remains correctly positioned with every theme.
+        if index.data(BACKUP_SEPARATOR_ROLE):
+            is_dark = self._is_dark_mode(option)
+            label_color = QColor("#A8A8A8") if is_dark else QColor("#62646A")
+            line_color = QColor("#555555") if is_dark else QColor("#C5C7CE")
+            label = "OLDER BACKUPS"
+            rect = option.rect.adjusted(12, 4, -12, -3)
+
+            font = painter.font()
+            font.setBold(True)
+            if font.pointSizeF() > 0:
+                font.setPointSizeF(max(8.0, font.pointSizeF() - 1.0))
+            painter.setFont(font)
+
+            painter.setPen(label_color)
+            painter.drawText(
+                rect,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                label,
+            )
+
+            line_start = rect.left() + painter.fontMetrics().horizontalAdvance(label) + 10
+            if line_start < rect.right():
+                painter.setPen(line_color)
+                painter.drawLine(line_start, rect.center().y(), rect.right(), rect.center().y())
+
+            painter.restore()
+            return
         
         # Check if the item is selected
         if option.state & QStyle.State_Selected:
@@ -91,6 +124,12 @@ class RestoreSelectionDelegate(QStyledItemDelegate):
             
         painter.restore()
 
+    def sizeHint(self, option, index):
+        if index.data(BACKUP_SEPARATOR_ROLE):
+            # Adds breathing room between the newest backup and the archive.
+            return QSize(0, 34)
+        return super().sizeHint(option, index)
+
 
 class _RestoreNoteViewportFilter(QObject):
     """Repositions restore note overlays once the list viewport has final geometry."""
@@ -114,7 +153,7 @@ class RestoreDialog(QDialog):
         self.loaded_manifest = None  # Store manifest from loaded ZIP
         self.selected_is_zip = False
         self._zip_list_item = None  # Reference to the synthetic list item representing the loaded ZIP
-        self._profile_items = []     # References to normal profile backup items
+        self._profile_items = []     # Profile backup items plus their visual separator
         self._original_window_title = None
         self._original_instruction_text = None
         
@@ -210,7 +249,18 @@ class RestoreDialog(QDialog):
 
             # --- Loop to populate the list WITH DATE FORMATTING ---
             # Now we iterate over (name, path, dt_obj)
-            for name, path, dt_obj in backups:
+            for backup_index, (name, path, dt_obj) in enumerate(backups):
+                if backup_index == 1:
+                    separator = QListWidgetItem()
+                    separator.setData(BACKUP_SEPARATOR_ROLE, True)
+                    separator.setFlags(
+                        separator.flags()
+                        & ~Qt.ItemFlag.ItemIsSelectable
+                        & ~Qt.ItemFlag.ItemIsEnabled
+                    )
+                    self.backup_list_widget.addItem(separator)
+                    self._profile_items.append(separator)
+
                 # Format the date using QLocale
                 date_str_formatted = "???" # Fallback
                 if dt_obj:
@@ -227,12 +277,23 @@ class RestoreDialog(QDialog):
                 item = QListWidgetItem(item_text)
                 item.setData(Qt.ItemDataRole.UserRole, path) # Save the full path
 
+                tooltip_lines = []
+                if backup_index == 0:
+                    latest_font = item.font()
+                    latest_font.setBold(True)
+                    item.setFont(latest_font)
+                    tooltip_lines.append("Most recent backup")
+
                 # Check if this backup is locked and add lock icon
                 if locked_backup_path:
                     is_locked = os.path.normcase(os.path.normpath(path)) == os.path.normcase(os.path.normpath(locked_backup_path))
-                    if is_locked and self.lock_icon:
-                        item.setIcon(self.lock_icon)
-                        item.setToolTip("This backup is locked (protected from deletion)")
+                    if is_locked:
+                        if self.lock_icon:
+                            item.setIcon(self.lock_icon)
+                        tooltip_lines.append("This backup is locked (protected from deletion)")
+
+                if tooltip_lines:
+                    item.setToolTip("\n".join(tooltip_lines))
 
                 self.backup_list_widget.addItem(item)
                 self._profile_items.append(item)
@@ -314,11 +375,20 @@ class RestoreDialog(QDialog):
 
         # Connect selection change signal
         self.backup_list_widget.currentItemChanged.connect(self.on_selection_change)
+        self.backup_list_widget.itemDoubleClicked.connect(self._restore_double_clicked_item)
         
         # Store reference to buttons
         self.button_box = buttons
         self.ok_button = ok_button
     # --- End of __init__ method ---
+
+    def _restore_double_clicked_item(self, item):
+        """Accept a valid backup directly when the user double-clicks it."""
+        if not item or item.data(Qt.ItemDataRole.UserRole) is None:
+            return
+        self.backup_list_widget.setCurrentItem(item)
+        if self.ok_button and self.ok_button.isEnabled():
+            self.accept()
 
     # --- Note overlay system ---------------------------------------------------
     def _clear_note_overlays(self):
