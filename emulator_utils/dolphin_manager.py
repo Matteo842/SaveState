@@ -10,81 +10,184 @@ import codecs # Needed for Wii banner parsing
 
 log = logging.getLogger(__name__)
 
-def get_dolphin_save_dirs(executable_path: str | None = None) -> list[str]:
-    """
-    Determines potential Dolphin save directories (GC and Wii).
-    Checks both portable (relative to executable) and standard locations.
-    Returns a list of existing save directory paths found.
-    """
-    save_dirs = []
-    potential_bases = []
 
-    # 1. Check for portable install ('User' directory next to exe)
-    if executable_path and os.path.isfile(executable_path):
-        exe_dir = os.path.dirname(executable_path)
-        user_dir = os.path.join(exe_dir, "User")
-        if os.path.isdir(user_dir):
-            log.debug(f"Found potential Dolphin portable base: {user_dir}")
-            potential_bases.append(user_dir)
-        else:
-            log.debug(f"No 'User' directory found next to executable: {exe_dir}")
+def _normalize_path(path: str | None) -> str | None:
+    """Expand environment/user variables and normalize a filesystem path."""
+    if not path:
+        return None
+    value = str(path).strip().strip('"')
+    if not value:
+        return None
+    return os.path.normpath(os.path.expandvars(os.path.expanduser(value)))
 
-    # 2. Check standard locations based on OS for the Global User Directory
+
+def _append_existing_dir(paths: list[str], candidate: str | None, source: str) -> None:
+    """Add an existing directory to *paths* once, with useful logging."""
+    normalized = _normalize_path(candidate)
+    if not normalized:
+        return
+
+    if os.path.isdir(normalized):
+        # normcase prevents duplicates on Windows with different path casing.
+        existing = {os.path.normcase(os.path.abspath(p)) for p in paths}
+        key = os.path.normcase(os.path.abspath(normalized))
+        if key not in existing:
+            log.info(f"Found Dolphin user directory ({source}): {normalized}")
+            paths.append(normalized)
+    else:
+        log.debug(f"Dolphin user directory candidate does not exist ({source}): {normalized}")
+
+
+def _get_windows_documents_dir() -> str:
+    """Return the real Windows Documents known-folder path, including redirection."""
+    fallback = os.path.join(os.path.expanduser("~"), "Documents")
+    try:
+        import winreg
+
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            documents, _ = winreg.QueryValueEx(key, "Personal")
+        return _normalize_path(documents) or fallback
+    except (OSError, ImportError, TypeError, ValueError) as exc:
+        log.debug(f"Could not resolve redirected Windows Documents folder: {exc}")
+        return fallback
+
+
+def _get_windows_dolphin_registry_settings() -> tuple[str | None, bool]:
+    """Read Dolphin's global-user-directory settings from HKCU on Windows."""
+    user_config_path = None
+    local_user_config = False
+
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Dolphin Emulator") as key:
+            try:
+                value, _ = winreg.QueryValueEx(key, "UserConfigPath")
+                user_config_path = _normalize_path(value)
+            except OSError:
+                pass
+
+            try:
+                value, _ = winreg.QueryValueEx(key, "LocalUserConfig")
+                local_user_config = str(value).strip().lower() in {"1", "true", "yes"}
+            except OSError:
+                pass
+    except (OSError, ImportError) as exc:
+        log.debug(f"Dolphin registry settings not available: {exc}")
+
+    return user_config_path, local_user_config
+
+
+def get_dolphin_user_dirs(executable_path: str | None = None) -> list[str]:
+    """
+    Return existing Dolphin Global User Directory candidates.
+
+    On Windows this includes portable/local installs, Dolphin's registry-configured
+    UserConfigPath, the modern AppData location, and the real (possibly redirected)
+    Documents known folder used by older installations.
+    """
+    potential_bases: list[str] = []
     system = platform.system()
     user_home = os.path.expanduser("~")
-    standard_user_data_dir = None # This is the directory expected to contain GC, Wii, etc.
+
+    exe_dir = None
+    if executable_path and os.path.isfile(executable_path):
+        exe_dir = os.path.dirname(os.path.abspath(executable_path))
+        local_user_dir = os.path.join(exe_dir, "User")
+        portable_marker = os.path.join(exe_dir, "portable.txt")
+
+        # Dolphin uses <exe>\User when portable.txt is present. We also accept an
+        # already-existing User folder because older/local builds may use it.
+        if os.path.isfile(portable_marker):
+            log.debug(f"Dolphin portable.txt detected next to executable: {portable_marker}")
+        _append_existing_dir(potential_bases, local_user_dir, "local/portable install")
 
     if system == "Windows":
-        # Dolphin on Windows can store user data in multiple locations:
-        #   - AppData\Roaming\Dolphin Emulator  (newer versions / default)
-        #   - Documents\Dolphin Emulator         (older versions / some configs)
-        # Check both and add all existing ones directly to potential_bases.
-        appdata = os.environ.get('APPDATA', os.path.join(user_home, "AppData", "Roaming"))
-        windows_standard_paths = [
+        registry_user_path, registry_local = _get_windows_dolphin_registry_settings()
+
+        # LocalUserConfig=1 forces the local User directory for all Dolphin builds.
+        if registry_local and exe_dir:
+            _append_existing_dir(
+                potential_bases,
+                os.path.join(exe_dir, "User"),
+                "registry LocalUserConfig",
+            )
+
+        # This is the important case for users who moved Dolphin's User directory
+        # to another drive (for example G:\...).
+        _append_existing_dir(
+            potential_bases,
+            registry_user_path,
+            "registry UserConfigPath",
+        )
+
+        appdata = os.environ.get("APPDATA", os.path.join(user_home, "AppData", "Roaming"))
+        _append_existing_dir(
+            potential_bases,
             os.path.join(appdata, "Dolphin Emulator"),
-            os.path.join(user_home, "Documents", "Dolphin Emulator"),
-        ]
-        for wp in windows_standard_paths:
-            if os.path.isdir(wp) and wp not in potential_bases:
-                log.info(f"Found standard Dolphin directory on Windows: {wp}")
-                potential_bases.append(wp)
-            else:
-                log.debug(f"Windows Dolphin path not found or already added: {wp}")
+            "Windows AppData default",
+        )
+
+        documents_dir = _get_windows_documents_dir()
+        _append_existing_dir(
+            potential_bases,
+            os.path.join(documents_dir, "Dolphin Emulator"),
+            "Windows Documents default",
+        )
+
+        # Keep the naive path as a compatibility fallback in case the Known Folder
+        # registry entry is missing or damaged.
+        naive_documents = os.path.join(user_home, "Documents", "Dolphin Emulator")
+        if os.path.normcase(os.path.abspath(naive_documents)) != os.path.normcase(
+            os.path.abspath(os.path.join(documents_dir, "Dolphin Emulator"))
+        ):
+            _append_existing_dir(
+                potential_bases,
+                naive_documents,
+                "Windows Documents fallback",
+            )
+
     elif system == "Linux":
-        # Paths that are expected to BE the "Global User Directory" containing GC, Wii, etc.
-        # Order: Standard XDG Data, Flatpak Data, Legacy home directory.
-        paths_to_check_linux_user_data = [
-            os.path.join(user_home, ".local", "share", "dolphin-emu"),                                   # Standard XDG Data
-            os.path.join(user_home, ".var", "app", "org.DolphinEmu.dolphin-emu", "data", "dolphin-emu"),  # Flatpak Data
-            os.path.join(user_home, ".dolphin-emu")                                                       # Legacy ~/.dolphin-emu
-        ]
-        for path_linux in paths_to_check_linux_user_data:
-            if os.path.isdir(path_linux):
-                log.debug(f"Found potential Dolphin Global User Directory on Linux: {path_linux}")
-                standard_user_data_dir = path_linux
-                break # Use the first valid path found in order of preference
+        # Dolphin supports DOLPHIN_EMU_USERPATH for a custom user directory.
+        _append_existing_dir(
+            potential_bases,
+            os.environ.get("DOLPHIN_EMU_USERPATH"),
+            "DOLPHIN_EMU_USERPATH",
+        )
+        for candidate in [
+            os.path.join(user_home, ".local", "share", "dolphin-emu"),
+            os.path.join(user_home, ".var", "app", "org.DolphinEmu.dolphin-emu", "data", "dolphin-emu"),
+            os.path.join(user_home, ".dolphin-emu"),
+        ]:
+            _append_existing_dir(potential_bases, candidate, "Linux default")
 
-    elif system == "Darwin": # macOS
-        # ~/Library/Application Support/Dolphin/
-        standard_user_data_dir = os.path.join(user_home, "Library", "Application Support", "Dolphin")
-
-    if standard_user_data_dir and os.path.isdir(standard_user_data_dir) and standard_user_data_dir not in potential_bases:
-        log.debug(f"Adding standard Global User Directory to potential bases: {standard_user_data_dir}")
-        potential_bases.append(standard_user_data_dir)
-    elif standard_user_data_dir in potential_bases:
-        log.debug(f"Standard Global User Directory already found (likely portable): {standard_user_data_dir}")
-    else:
-        log.debug(f"Standard Dolphin Global User Directory not found or invalid: {standard_user_data_dir}")
+    elif system == "Darwin":
+        _append_existing_dir(
+            potential_bases,
+            os.environ.get("DOLPHIN_EMU_USERPATH"),
+            "DOLPHIN_EMU_USERPATH",
+        )
+        _append_existing_dir(
+            potential_bases,
+            os.path.join(user_home, "Library", "Application Support", "Dolphin"),
+            "macOS default",
+        )
 
     if not potential_bases:
-        log.warning("Could not find any potential Dolphin Global User Directory (portable or standard).")
-        return []
+        log.warning("Could not find any Dolphin Global User Directory (portable, configured, or standard).")
 
-    # 3. Check for GC and Wii save directories within potential Global User Directories
-    for base_dir in potential_bases: # base_dir IS a "Global User Directory"
-        log.debug(f"Checking for save subdirectories in Global User Directory: {base_dir}")
+    return potential_bases
+
+
+def _get_dolphin_save_dirs_from_user_dirs(user_dirs: list[str]) -> list[str]:
+    """Return existing GC and Wii save roots from known Dolphin user directories."""
+    save_dirs: list[str] = []
+
+    for base_dir in user_dirs:
+        log.debug(f"Checking for save subdirectories in Dolphin user directory: {base_dir}")
         gc_path = os.path.join(base_dir, "GC")
-        wii_path = os.path.join(base_dir, "Wii", "title") # Wii saves are typically nested
+        wii_path = os.path.join(base_dir, "Wii", "title")
 
         if os.path.isdir(gc_path):
             log.info(f"Found Dolphin GC save directory: {gc_path}")
@@ -96,15 +199,120 @@ def get_dolphin_save_dirs(executable_path: str | None = None) -> list[str]:
         if os.path.isdir(wii_path):
             log.info(f"Found Dolphin Wii save directory: {wii_path}")
             if wii_path not in save_dirs:
-                 save_dirs.append(wii_path)
+                save_dirs.append(wii_path)
         else:
-             log.debug(f"Wii save directory ('{os.path.join('Wii', 'title')}') not found in base: {base_dir}")
+            log.debug(f"Wii save directory ('{os.path.join('Wii', 'title')}') not found in base: {base_dir}")
 
-    if not save_dirs:
+    if user_dirs and not save_dirs:
         log.warning("Found Dolphin Global User Directory(ies) but no GC or Wii save subdirectories within them.")
 
     return save_dirs
 
+
+def get_dolphin_save_dirs(executable_path: str | None = None) -> list[str]:
+    """
+    Determine existing Dolphin GC and Wii save directories.
+
+    Unlike the old implementation, this respects Dolphin's configured Windows
+    UserConfigPath and redirected Documents folder instead of assuming the default user profile Documents path.
+    """
+    return _get_dolphin_save_dirs_from_user_dirs(get_dolphin_user_dirs(executable_path))
+
+
+def _state_prefixes_for_profile(profile: dict) -> list[str]:
+    """Return filename prefixes used by Dolphin StateSaves for a detected profile."""
+    profile_id = str(profile.get("id", "")).strip()
+    profile_type = str(profile.get("type", "")).upper()
+    prefixes: list[str] = []
+
+    if not profile_id:
+        return prefixes
+
+    if profile_type == "GC":
+        # Standard GC profile IDs are 6-char game IDs. GCI-card grouping may only
+        # provide the first 4 chars; that is still useful as a conservative prefix.
+        prefixes.append(profile_id)
+
+    elif profile_type == "WII":
+        # Wii save folders are low title IDs such as 524d4750 -> ASCII "RMGP".
+        # Savestates use the normal game ID (e.g. RMGP01.s01), so the decoded
+        # 4-char title code is the common prefix we can reliably derive here.
+        try:
+            decoded = bytes.fromhex(profile_id).decode("ascii")
+            if len(decoded) == 4 and decoded.isprintable():
+                prefixes.append(decoded)
+        except (ValueError, UnicodeDecodeError):
+            pass
+
+    return [p.lower() for p in prefixes if p]
+
+
+def _attach_dolphin_state_saves(profiles: list[dict], user_dirs: list[str]) -> None:
+    """Attach matching files from StateSaves to each detected game profile."""
+    state_files: list[str] = []
+
+    for base_dir in user_dirs:
+        state_dir = os.path.join(base_dir, "StateSaves")
+        if not os.path.isdir(state_dir):
+            continue
+        try:
+            for entry in os.scandir(state_dir):
+                if entry.is_file():
+                    state_files.append(entry.path)
+        except OSError as exc:
+            log.error(f"Error scanning Dolphin StateSaves directory '{state_dir}': {exc}")
+
+    if not state_files:
+        return
+
+    for profile in profiles:
+        prefixes = _state_prefixes_for_profile(profile)
+        if not prefixes:
+            continue
+
+        paths = profile.setdefault("paths", [])
+        existing = {os.path.normcase(os.path.abspath(p)) for p in paths}
+
+        for state_path in state_files:
+            filename = os.path.basename(state_path).lower()
+            if any(filename.startswith(prefix) for prefix in prefixes):
+                key = os.path.normcase(os.path.abspath(state_path))
+                if key not in existing:
+                    paths.append(state_path)
+                    existing.add(key)
+                    log.debug(
+                        f"Attached Dolphin savestate '{state_path}' to profile "
+                        f"'{profile.get('name', profile.get('id', 'unknown'))}'"
+                    )
+
+
+def _merge_duplicate_profiles(profiles: list[dict]) -> list[dict]:
+    """Merge duplicate IDs found in multiple Dolphin user-directory candidates."""
+    merged: dict[tuple[str, str], dict] = {}
+
+    for profile in profiles:
+        key = (str(profile.get("type", "")), str(profile.get("id", "")))
+        if key not in merged:
+            merged[key] = {
+                **profile,
+                "paths": list(profile.get("paths", [])),
+            }
+            continue
+
+        target = merged[key]
+        target_paths = target.setdefault("paths", [])
+        known = {os.path.normcase(os.path.abspath(p)) for p in target_paths}
+        for path in profile.get("paths", []):
+            norm = os.path.normcase(os.path.abspath(path))
+            if norm not in known:
+                target_paths.append(path)
+                known.add(norm)
+
+        # Prefer a parsed human-readable name over a raw ID when available.
+        if target.get("name") == target.get("id") and profile.get("name") != profile.get("id"):
+            target["name"] = profile.get("name")
+
+    return list(merged.values())
 
 def _parse_gc_banner_bin(banner_path: str) -> str | None:
     """
@@ -251,7 +459,8 @@ def find_dolphin_profiles(executable_path: str | None = None) -> list[dict]:
     Attempts to parse banner.bin for GC game names. Uses directory names as fallback/for Wii.
     """
     log.info("Attempting to find Dolphin profiles...")
-    save_dirs = get_dolphin_save_dirs(executable_path)
+    user_dirs = get_dolphin_user_dirs(executable_path)
+    save_dirs = _get_dolphin_save_dirs_from_user_dirs(user_dirs)
     profiles = []
 
     if not save_dirs:
@@ -446,6 +655,9 @@ def find_dolphin_profiles(executable_path: str | None = None) -> list[dict]:
             log.error(f"Error scanning Dolphin save directory '{save_dir}': {e}")
         except Exception as e:
             log.error(f"Unexpected error scanning Dolphin directory '{save_dir}': {e}", exc_info=True)
+
+    profiles = _merge_duplicate_profiles(profiles)
+    _attach_dolphin_state_saves(profiles, user_dirs)
 
     log.info(f"Found {len(profiles)} Dolphin profiles (GC named via banner.bin where possible).")
     profiles.sort(key=lambda p: p.get('name', ''))
