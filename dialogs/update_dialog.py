@@ -428,8 +428,10 @@ class UpdateDialog(QDialog):
             return
         folder = os.path.dirname(path)
         try:
-            from PySide6.QtCore import QUrl
-            QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+            from gui.gui_utils import open_folder_in_file_manager
+            success, message = open_folder_in_file_manager(folder)
+            if not success:
+                logging.error(f"Failed to open download folder: {message}")
         except Exception:
             logging.exception("Failed to open download folder")
 

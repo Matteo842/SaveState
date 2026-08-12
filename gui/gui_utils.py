@@ -835,6 +835,288 @@ class NotificationPopup(QWidget):
 
 
 # --- Utility per Aprire Cartelle nel File Manager ---
+
+_HOST_BIN_DIRS = ("/usr/bin", "/usr/local/bin", "/bin")
+_FROZEN_ENV_KEYS_TO_STRIP = (
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "QT_PLUGIN_PATH",
+    "QT_QPA_PLATFORM_PLUGIN_PATH",
+    "QML2_IMPORT_PATH",
+    "QML_IMPORT_PATH",
+    "GST_PLUGIN_PATH",
+    "GST_PLUGIN_SYSTEM_PATH",
+    "GST_PLUGIN_SYSTEM_PATH_1_0",
+    "GSETTINGS_SCHEMA_DIR",
+    "TK_LIBRARY",
+    "TCL_LIBRARY",
+    "TIX_LIBRARY",
+)
+
+
+def _which_host(executable: str):
+    """Prefer a system binary over anything bundled inside the AppImage."""
+    import shutil
+
+    for directory in _HOST_BIN_DIRS:
+        candidate = os.path.join(directory, executable)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return shutil.which(executable)
+
+
+def _env_for_host_process():
+    """
+    Environment for launching host OS tools from a frozen/AppImage build.
+
+    PyInstaller sets LD_LIBRARY_PATH to the extracted bundle. AppImages can
+    also prepend their own share/bin paths. Host programs (xdg-open, Dolphin,
+    kioclient) then load the bundled Qt/GLib stack and exit immediately —
+    the usual failure on KDE (Bazzite, Plasma 6, etc.).
+    """
+    env = os.environ.copy()
+
+    orig_ld = env.get("LD_LIBRARY_PATH_ORIG")
+    if orig_ld:
+        env["LD_LIBRARY_PATH"] = orig_ld
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
+
+    for key in _FROZEN_ENV_KEYS_TO_STRIP:
+        orig = env.get(f"{key}_ORIG")
+        if orig:
+            env[key] = orig
+        else:
+            env.pop(key, None)
+
+    drop_prefixes = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        drop_prefixes.append(os.path.normpath(meipass))
+    appdir = env.get("APPDIR")
+    if appdir:
+        drop_prefixes.append(os.path.normpath(appdir))
+
+    if drop_prefixes:
+        path = env.get("PATH", "")
+        if path:
+            kept = []
+            for part in path.split(os.pathsep):
+                if not part:
+                    continue
+                normalized = os.path.normpath(part)
+                if any(
+                    normalized == prefix or normalized.startswith(prefix + os.sep)
+                    for prefix in drop_prefixes
+                ):
+                    continue
+                kept.append(part)
+            env["PATH"] = os.pathsep.join(kept) if kept else "/usr/bin:/bin"
+
+        xdg_data_dirs = env.get("XDG_DATA_DIRS")
+        if xdg_data_dirs:
+            kept_xdg = []
+            for part in xdg_data_dirs.split(":"):
+                if not part:
+                    continue
+                normalized = os.path.normpath(part)
+                if any(
+                    normalized == prefix or normalized.startswith(prefix + os.sep)
+                    for prefix in drop_prefixes
+                ):
+                    continue
+                kept_xdg.append(part)
+            if kept_xdg:
+                env["XDG_DATA_DIRS"] = ":".join(kept_xdg)
+            else:
+                env.pop("XDG_DATA_DIRS", None)
+
+    return env
+
+
+def _folder_file_uri(folder_path: str) -> str:
+    from pathlib import Path
+
+    return Path(folder_path).resolve().as_uri()
+
+
+def _run_host_command(cmd, env, timeout=3.0):
+    """Run a short-lived host helper and return (ok, error_text)."""
+    import subprocess
+
+    try:
+        completed = subprocess.run(
+            cmd,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=False,
+            close_fds=True,
+        )
+    except FileNotFoundError:
+        return False, f"{cmd[0]} not found"
+    except subprocess.TimeoutExpired:
+        return False, f"{cmd[0]} timed out"
+    except Exception as exc:
+        return False, str(exc)
+
+    if completed.returncode == 0:
+        return True, ""
+
+    stderr = (completed.stderr or b"").decode("utf-8", "replace").strip()
+    error = f"{cmd[0]} failed with exit code {completed.returncode}"
+    if stderr:
+        error = f"{error}: {stderr}"
+    return False, error
+
+
+def _spawn_host_command(cmd, env):
+    """
+    Start a file manager without blocking the UI.
+
+    A non-zero exit within 0.5s is treated as failure so the next method
+    can be tried. Still running after that is treated as success.
+    """
+    import subprocess
+
+    process = subprocess.Popen(
+        cmd,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        close_fds=True,
+    )
+    try:
+        return_code = process.wait(timeout=0.5)
+        if return_code != 0:
+            return False, f"{cmd[0]} failed with exit code {return_code}"
+        return True, ""
+    except subprocess.TimeoutExpired:
+        return True, ""
+
+
+def _open_folder_via_filemanager1_dbus(file_uri: str, env) -> tuple[bool, str]:
+    """Ask the already-running session file manager to show the folder."""
+    dbus_send = _which_host("dbus-send")
+    if dbus_send:
+        ok, error = _run_host_command(
+            [
+                dbus_send,
+                "--session",
+                "--print-reply",
+                "--reply-timeout=2000",
+                "--dest=org.freedesktop.FileManager1",
+                "/org/freedesktop/FileManager1",
+                "org.freedesktop.FileManager1.ShowFolders",
+                f"array:string:{file_uri}",
+                "string:",
+            ],
+            env,
+            timeout=3.0,
+        )
+        if ok:
+            return True, "Folder opened with FileManager1 D-Bus"
+        logging.debug(f"FileManager1 dbus-send failed: {error}")
+
+    gdbus = _which_host("gdbus")
+    if gdbus:
+        ok, error = _run_host_command(
+            [
+                gdbus,
+                "call",
+                "--session",
+                "--dest",
+                "org.freedesktop.FileManager1",
+                "--object-path",
+                "/org/freedesktop/FileManager1",
+                "--method",
+                "org.freedesktop.FileManager1.ShowFolders",
+                f"['{file_uri}']",
+                "",
+            ],
+            env,
+            timeout=3.0,
+        )
+        if ok:
+            return True, "Folder opened with FileManager1 D-Bus"
+        logging.debug(f"FileManager1 gdbus failed: {error}")
+
+    return False, "FileManager1 D-Bus unavailable"
+
+
+def _open_folder_linux(folder_path: str) -> tuple[bool, str]:
+    env = _env_for_host_process()
+    file_uri = _folder_file_uri(folder_path)
+
+    ok, message = _open_folder_via_filemanager1_dbus(file_uri, env)
+    if ok:
+        logging.info(f"Successfully opened folder via D-Bus: {folder_path}")
+        return True, message
+
+    methods = []
+
+    xdg_open = _which_host("xdg-open")
+    systemd_run = _which_host("systemd-run")
+    if systemd_run and xdg_open:
+        # Transient user unit runs with the session environment, not the AppImage's.
+        methods.append((
+            "systemd-run xdg-open",
+            [systemd_run, "--user", "--collect", "--quiet", xdg_open, folder_path],
+            True,
+        ))
+
+    for name, args in (
+        ("xdg-open", [xdg_open, folder_path] if xdg_open else None),
+        ("gio open", [_which_host("gio"), "open", folder_path]),
+        ("kde-open6", [_which_host("kde-open6"), folder_path]),
+        ("kde-open5", [_which_host("kde-open5"), folder_path]),
+        ("dolphin", [_which_host("dolphin"), folder_path]),
+        ("kioclient6", [_which_host("kioclient6"), "exec", file_uri]),
+        ("kioclient", [_which_host("kioclient"), "exec", file_uri]),
+        ("kioclient5", [_which_host("kioclient5"), "exec", file_uri]),
+        ("nautilus", [_which_host("nautilus"), folder_path]),
+        ("thunar", [_which_host("thunar"), folder_path]),
+        ("pcmanfm", [_which_host("pcmanfm"), folder_path]),
+        ("pcmanfm-qt", [_which_host("pcmanfm-qt"), folder_path]),
+        ("nemo", [_which_host("nemo"), folder_path]),
+        ("caja", [_which_host("caja"), folder_path]),
+    ):
+        if not args or not args[0]:
+            continue
+        methods.append((name, args, False))
+
+    if not methods:
+        return False, "No file manager found on this system"
+
+    last_error = None
+    for method_name, cmd, wait_for_exit in methods:
+        try:
+            logging.debug(f"Attempting to open folder with {method_name}: {folder_path}")
+            if wait_for_exit:
+                ok, error = _run_host_command(cmd, env, timeout=3.0)
+            else:
+                ok, error = _spawn_host_command(cmd, env)
+            if not ok:
+                logging.debug(f"{method_name} failed: {error}")
+                last_error = error
+                continue
+            logging.info(f"Successfully opened folder with {method_name}: {folder_path}")
+            return True, f"Folder opened with {method_name}"
+        except FileNotFoundError:
+            last_error = f"{method_name} not found"
+            continue
+        except Exception as exc:
+            last_error = str(exc)
+            logging.debug(f"{method_name} failed: {exc}, trying next method")
+            continue
+
+    error_msg = f"All file manager methods failed. Last error: {last_error}"
+    logging.error(error_msg)
+    return False, error_msg
+
+
 def open_folder_in_file_manager(folder_path: str) -> tuple[bool, str]:
     """
     Opens a folder in the system's default file manager.
@@ -842,7 +1124,8 @@ def open_folder_in_file_manager(folder_path: str) -> tuple[bool, str]:
     Uses platform-specific methods with fallbacks for maximum compatibility:
     - Windows: os.startfile() or explorer.exe
     - macOS: open command
-    - Linux: xdg-open with fallbacks for various desktop environments
+    - Linux: session D-Bus / xdg-open with a cleaned environment so AppImage
+      and PyInstaller library paths do not break host file managers
     
     Args:
         folder_path: The absolute path to the folder to open
@@ -852,7 +1135,6 @@ def open_folder_in_file_manager(folder_path: str) -> tuple[bool, str]:
     """
     import subprocess
     import platform
-    import shutil
     
     if not folder_path:
         return False, "No folder path provided"
@@ -883,91 +1165,7 @@ def open_folder_in_file_manager(folder_path: str) -> tuple[bool, str]:
             return True, "Folder opened successfully"
             
         else:
-            # Linux: try multiple methods for maximum compatibility
-            # This handles various desktop environments including KDE/Wayland
-            
-            methods = []
-            
-            # 1. xdg-open is the standard way (should work on most distros)
-            if shutil.which("xdg-open"):
-                methods.append(("xdg-open", ["xdg-open", folder_path]))
-            
-            # 2. gio open (GNOME, works well on modern systems)
-            if shutil.which("gio"):
-                methods.append(("gio open", ["gio", "open", folder_path]))
-            
-            # 3. Desktop-specific file managers as fallbacks
-            # KDE
-            if shutil.which("dolphin"):
-                methods.append(("dolphin", ["dolphin", folder_path]))
-            if shutil.which("kioclient5"):
-                methods.append(("kioclient5", ["kioclient5", "exec", folder_path]))
-            
-            # GNOME
-            if shutil.which("nautilus"):
-                methods.append(("nautilus", ["nautilus", folder_path]))
-            
-            # XFCE
-            if shutil.which("thunar"):
-                methods.append(("thunar", ["thunar", folder_path]))
-            
-            # LXQt/LXDE
-            if shutil.which("pcmanfm"):
-                methods.append(("pcmanfm", ["pcmanfm", folder_path]))
-            if shutil.which("pcmanfm-qt"):
-                methods.append(("pcmanfm-qt", ["pcmanfm-qt", folder_path]))
-            
-            # Cinnamon
-            if shutil.which("nemo"):
-                methods.append(("nemo", ["nemo", folder_path]))
-            
-            # MATE
-            if shutil.which("caja"):
-                methods.append(("caja", ["caja", folder_path]))
-            
-            if not methods:
-                return False, "No file manager found on this system"
-            
-            # Try xdg-open first (it's the standard)
-            last_error = None
-            for method_name, cmd in methods:
-                try:
-                    logging.debug(f"Attempting to open folder with {method_name}: {folder_path}")
-                    # Use Popen to not block, and don't wait for it
-                    process = subprocess.Popen(
-                        cmd,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        start_new_session=True  # Detach from parent process
-                    )
-                    # Give it a moment to fail immediately if there's an obvious error
-                    try:
-                        # Wait briefly to catch immediate failures
-                        return_code = process.wait(timeout=0.5)
-                        if return_code != 0:
-                            logging.debug(f"{method_name} returned non-zero exit code: {return_code}")
-                            last_error = f"{method_name} failed with exit code {return_code}"
-                            continue  # Try next method
-                    except subprocess.TimeoutExpired:
-                        # Process is still running, which is good - it means it started successfully
-                        pass
-                    
-                    logging.info(f"Successfully opened folder with {method_name}: {folder_path}")
-                    return True, f"Folder opened with {method_name}"
-                    
-                except FileNotFoundError:
-                    logging.debug(f"{method_name} not found, trying next method")
-                    last_error = f"{method_name} not found"
-                    continue
-                except Exception as e:
-                    logging.debug(f"{method_name} failed: {e}, trying next method")
-                    last_error = str(e)
-                    continue
-            
-            # All methods failed
-            error_msg = f"All file manager methods failed. Last error: {last_error}"
-            logging.error(error_msg)
-            return False, error_msg
+            return _open_folder_linux(folder_path)
             
     except Exception as e:
         error_msg = f"Error opening folder: {e}"
