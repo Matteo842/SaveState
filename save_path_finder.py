@@ -398,6 +398,31 @@ def _title_versions_are_compatible(game_name: str, candidate_name: str) -> bool:
     return game_versions == {"1"} and not candidate_versions
 
 
+def _is_numbered_title_acronym_alias(game_name: str, candidate_name: str) -> bool:
+    """Recognize numbered internal aliases derived from a multi-word title.
+
+    Some games keep an internal project number even when it is not part of the
+    public title.  For example, ``Lords of the Fallen`` uses ``LOTF2`` for both
+    its executable and its LocalAppData directory.  Treating every trailing
+    digit as a public sequel number makes that valid alias impossible to use.
+
+    This exception is deliberately narrow: the candidate must consist of the
+    exact initials of at least three title words followed by one or two digits.
+    Consequently ordinary sequel names such as ``DOOM2`` remain protected.
+    """
+    if not game_name or not candidate_name or _title_version_tokens(game_name):
+        return False
+
+    title_words = re.findall(r"[A-Za-z0-9]+", game_name)
+    if len(title_words) < 3:
+        return False
+
+    title_acronym = "".join(word[0] for word in title_words if word).lower()
+    candidate_compact = _compact_title(candidate_name)
+    match = re.fullmatch(r"([a-z]+)(\d{1,2})", candidate_compact)
+    return bool(match and match.group(1) == title_acronym)
+
+
 def _filter_negative_results_when_enough_positive(
     results: List[Tuple[str, int, bool]],
     minimum_positive_results: int = 3,
@@ -748,24 +773,32 @@ class GameContext:
         # Prima carica la configurazione
         self._load_config()
         # Poi genera abbreviazioni e altri dati che dipendono dalla config
+        self.trusted_numbered_aliases: Set[str] = set()
         self.game_abbreviations = self._generate_abbreviations()
         self.game_abbreviations_upper = set(a.upper() for a in self.game_abbreviations if a)
         self.game_abbreviations_lower = set(a.lower() for a in self.game_abbreviations if a)
         self.game_abbreviations_compact = {
             _compact_title(a) for a in self.game_abbreviations if _compact_title(a)
         }
+        self.trusted_numbered_aliases_compact = {
+            _compact_title(a) for a in self.trusted_numbered_aliases if _compact_title(a)
+        }
         self.game_title_sig_words = self._get_significant_words()
 
     def matches_game_abbreviation(self, candidate_name: str) -> bool:
         """Return True for an exact configured alias with a compatible version."""
-        if not candidate_name or not _title_versions_are_compatible(
-            self.sanitized_name,
-            candidate_name,
-        ):
+        if not candidate_name:
+            return False
+
+        candidate_compact = _compact_title(candidate_name)
+        if candidate_compact in self.trusted_numbered_aliases_compact:
+            return True
+
+        if not _title_versions_are_compatible(self.sanitized_name, candidate_name):
             return False
         return (
             candidate_name.upper() in self.game_abbreviations_upper or
-            _compact_title(candidate_name) in self.game_abbreviations_compact
+            candidate_compact in self.game_abbreviations_compact
         )
         
     def _load_config(self):
@@ -923,8 +956,11 @@ class GameContext:
         """Aggiunge abbreviazioni derivate dai file eseguibili."""
         exe_name = self._find_game_executable()
         if exe_name:
-            # Rimuovi suffissi comuni
-            common_suffixes = ['-Win64-Shipping', '-Win32-Shipping', '-Shipping', '.exe']
+            # Rimuovi prima l'estensione, quindi il suffisso di build.  Fare un
+            # solo passaggio lasciava ``-Win64-Shipping`` nei normali file
+            # ``*-Win64-Shipping.exe``.
+            exe_name = os.path.splitext(exe_name)[0]
+            common_suffixes = ['-Win64-Shipping', '-Win32-Shipping', '-Shipping']
             for suffix in common_suffixes:
                 if exe_name.lower().endswith(suffix.lower()):
                     exe_name = exe_name[:-len(suffix)]
@@ -939,12 +975,20 @@ class GameContext:
 
             exe_name = re.sub(r'[-_]+$', '', exe_name).strip()
             if not _title_versions_are_compatible(self.sanitized_name, exe_name):
-                logging.debug(
-                    "Skipping executable alias '%s' for versioned title '%s'",
-                    exe_name,
-                    self.sanitized_name,
-                )
-                return
+                if _is_numbered_title_acronym_alias(self.sanitized_name, exe_name):
+                    self.trusted_numbered_aliases.add(exe_name)
+                    logging.info(
+                        "Accepted numbered internal executable alias '%s' for title '%s'",
+                        exe_name,
+                        self.sanitized_name,
+                    )
+                else:
+                    logging.debug(
+                        "Skipping executable alias '%s' for versioned title '%s'",
+                        exe_name,
+                        self.sanitized_name,
+                    )
+                    return
             if len(exe_name) >= Threshold.MIN_ABBREVIATION_LENGTH:
                 abbreviations.add(exe_name)
     
@@ -1499,7 +1543,7 @@ class SavePathFinder:
                 if not _title_versions_are_compatible(
                     self.context.sanitized_name,
                     variation,
-                ):
+                ) and not self.context.matches_game_abbreviation(variation):
                     continue
 
                 try:

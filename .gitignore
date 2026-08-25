@@ -220,3 +220,4 @@ log.txt
 test_multi_profile_path_shortening.py
 test_shorten_save_path.py
 test_save_path_finder_title_regression.py
+test_numbered_save_path_alias.py
