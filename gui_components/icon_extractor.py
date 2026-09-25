@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # --- Constants ---
 ICON_CACHE_FOLDER = ".icon_cache"
-ICON_CACHE_VERSION = 2  # v2 fixes Win32 premultiplied-alpha colour fringes
+ICON_CACHE_VERSION = 3  # v3 replaces blank Win32 icon renders with a valid fallback
 CUSTOM_ICON_FOLDER = "custom_icons"  # User-chosen icons (persisted in app data)
 DEFAULT_ICON_SIZE = 32  # Size for icons in profile list
 MIN_AUTO_ICON_CACHE_SIZE = 64  # Enough for 42/48 px previews without large cache files
@@ -762,11 +762,17 @@ def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_I
             image = Image.frombuffer('RGBA', (width, height), bytes(buffer), 'raw', 'BGRA', 0, 1)
             image = _unpremultiply_rgba(image)
 
-            # Only resample when needed; PrivateExtractIconsW frequently
-            # already returns the exact requested size.
-            if (width, height) != (size, size):
-                image = image.resize((size, size), Image.Resampling.LANCZOS)
-            image.save(output_path, 'PNG')
+            # Some PE icons yield a valid HICON but DrawIconEx paints no
+            # visible pixels. Treat that as failure so the PE extractor can
+            # provide the actual game icon instead of caching a blank PNG.
+            has_visible_pixels = image.getchannel('A').getbbox() is not None
+            if has_visible_pixels:
+                # PrivateExtractIconsW often returns the requested size.
+                if (width, height) != (size, size):
+                    image = image.resize((size, size), Image.Resampling.LANCZOS)
+                image.save(output_path, 'PNG')
+            else:
+                logger.debug(f"Win32 rendered a blank icon for '{exe_path}'")
             
             # Cleanup
             gdi32.SelectObject(hdc_mem, old_bm)
@@ -781,7 +787,7 @@ def _extract_icon_windows(exe_path: str, output_path: str, size: int = DEFAULT_I
             if small_icon.value:
                 user32.DestroyIcon(small_icon)
             
-            return True
+            return has_visible_pixels
             
         except Exception as e_convert:
             logger.debug(f"Icon conversion failed for '{exe_path}': {e_convert}")
