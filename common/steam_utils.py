@@ -186,7 +186,7 @@ def _find_steam_windows() -> str:
         return None
     
     try:
-        key_path = r"Software\\Valve\\Steam"
+        key_path = r"Software\Valve\Steam"
         potential_hives = [
             (winreg_module.HKEY_CURRENT_USER, "HKCU"),
             (winreg_module.HKEY_LOCAL_MACHINE, "HKLM")
@@ -195,12 +195,16 @@ def _find_steam_windows() -> str:
         for hive, hive_name in potential_hives:
             try:
                 with winreg_module.OpenKey(hive, key_path) as hkey:
-                    path_value, _ = winreg_module.QueryValueEx(hkey, "SteamPath")
-                
-                norm_path = os.path.normpath(path_value.replace('/', '\\\\'))
-                if os.path.isdir(norm_path):
-                    logging.info(f"Found Steam installation ({hive_name}) via registry: {norm_path}")
-                    return norm_path
+                    for value_name in ("SteamPath", "InstallPath"):
+                        try:
+                            path_value, _ = winreg_module.QueryValueEx(hkey, value_name)
+                        except FileNotFoundError:
+                            continue
+                        if path_value:
+                            norm_path = os.path.normpath(path_value.replace('/', '\\\\'))
+                            if os.path.isdir(norm_path):
+                                logging.info(f"Found Steam installation ({hive_name}) via registry: {norm_path}")
+                                return norm_path
             except (FileNotFoundError, OSError):
                 logging.debug(f"SteamPath not found in registry hive: {hive_name}\\{key_path}")
                 continue

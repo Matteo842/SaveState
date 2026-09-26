@@ -30,6 +30,7 @@ except ImportError:
 class ScoreWeight(Enum):
     """Pesi per il calcolo del punteggio dei percorsi."""
     STEAM_REMOTE = 1500
+    STEAM_REMOTE_CONFIRMED_SAVE = 1250  # 1100 cap + bonus > cartella Saved Games esatta senza save (2200)
     STEAM_BASE_NO_SAVES = 150
     STEAM_BASE_WITH_SAVES = 650
     PRIME_USER_LOCATION = 1000
@@ -1097,6 +1098,7 @@ class SavePathFinder:
     def __init__(self, game_context: GameContext, cancellation_manager=None):
         self.context = game_context
         self.cancellation_manager = cancellation_manager
+        self._resolve_steam_userdata_path()
         self.path_scorer = PathScore(game_context)
         self.checked_paths: Set[str] = set()
         self.guesses_data: Dict[str, PathCandidate] = {}
@@ -1106,6 +1108,21 @@ class SavePathFinder:
     def _is_cancelled(self) -> bool:
         """Verifica se l'operazione è stata cancellata."""
         return bool(self.cancellation_manager and self.cancellation_manager.check_cancelled())
+
+    def _resolve_steam_userdata_path(self):
+        """Trova userdata per le ricerche Steam avviate senza selezione account."""
+        if not (self.context.is_steam_game and self.context.appid) or self.context.steam_userdata_path:
+            return
+        if self._is_cancelled():
+            return
+        from common.steam_utils import get_steam_install_path
+
+        steam_path = get_steam_install_path()
+        if steam_path:
+            userdata_path = os.path.join(steam_path, 'userdata')
+            if os.path.isdir(userdata_path):
+                self.context.steam_userdata_path = userdata_path
+                logging.info("Steam userdata found for AppID %s: %s", self.context.appid, userdata_path)
         
     def find_save_paths(self) -> List[Tuple[str, int]]:
         """Trova i possibili percorsi di salvataggio per il gioco."""
@@ -1378,32 +1395,45 @@ class SavePathFinder:
     def _check_steam_userdata(self):
         """Controlla la cartella userdata di Steam."""
         if not (self.context.is_steam_game and self.context.appid and 
-                self.context.steam_userdata_path and self.context.steam_id3_to_use):
+                self.context.steam_userdata_path):
             return
             
         logging.info(f"Checking Steam Userdata for AppID {self.context.appid}")
         
         try:
-            user_folder = os.path.join(self.context.steam_userdata_path, self.context.steam_id3_to_use)
-            if not os.path.isdir(user_folder):
-                return
-                
-            base_path = os.path.join(user_folder, self.context.appid)
-            remote_path = os.path.join(base_path, 'remote')
-            
-            # Aggiungi percorso remote
-            if self._add_guess(remote_path, f"Steam Userdata/{self.context.steam_id3_to_use}/{self.context.appid}/remote"):
-                # Cerca sottocartelle in remote
-                try:
-                    for entry in os.listdir(remote_path):
-                        sub_path = os.path.join(remote_path, entry)
-                        if os.path.isdir(sub_path) and self._is_relevant_subfolder(entry):
-                            self._add_guess(sub_path, f"Steam Userdata/.../remote/{entry}")
-                except Exception as e:
-                    logging.warning(f"Error scanning Steam remote subfolders: {e}")
-                    
-            # Aggiungi percorso base
-            self._add_guess(base_path, f"Steam Userdata/{self.context.steam_id3_to_use}/{self.context.appid}/Base")
+            if self.context.steam_id3_to_use:
+                account_ids = [str(self.context.steam_id3_to_use)]
+            else:
+                account_ids = sorted(
+                    entry for entry in os.listdir(self.context.steam_userdata_path)
+                    if entry.isdigit() and entry != '0'
+                )
+
+            for account_id in account_ids:
+                if self._is_cancelled():
+                    return
+                user_folder = os.path.join(self.context.steam_userdata_path, account_id)
+                if not os.path.isdir(user_folder):
+                    continue
+
+                base_path = os.path.join(user_folder, str(self.context.appid))
+                if not os.path.isdir(base_path):
+                    continue
+                remote_path = os.path.join(base_path, 'remote')
+
+                # Aggiungi percorso remote
+                if self._add_guess(remote_path, f"Steam Userdata/{account_id}/{self.context.appid}/remote"):
+                    # Cerca sottocartelle in remote
+                    try:
+                        for entry in os.listdir(remote_path):
+                            sub_path = os.path.join(remote_path, entry)
+                            if os.path.isdir(sub_path) and self._is_relevant_subfolder(entry):
+                                self._add_guess(sub_path, f"Steam Userdata/.../remote/{entry}")
+                    except OSError as e:
+                        logging.warning(f"Error scanning Steam remote subfolders: {e}")
+
+                # Aggiungi percorso base
+                self._add_guess(base_path, f"Steam Userdata/{account_id}/{self.context.appid}/Base")
             
         except Exception as e:
             logging.error(f"Error checking Steam userdata: {e}")
@@ -2040,6 +2070,22 @@ class SavePathFinder:
         except Exception:
             return False
 
+    def _has_direct_save_file(self, path: str) -> bool:
+        """Riconosce file di salvataggio affidabili direttamente in Steam remote."""
+        try:
+            with os.scandir(path) as entries:
+                for entry in entries:
+                    if not entry.is_file():
+                        continue
+                    stem, extension = os.path.splitext(entry.name.lower())
+                    if extension in STRICT_SAVE_EXTENSIONS:
+                        return True
+                    if extension in {'.bin', '.dat'} and ('save' in stem or 'slot' in stem):
+                        return True
+        except OSError as e:
+            logging.debug("Could not inspect Steam save files in '%s': %s", path, e)
+        return False
+
     def _finalize_results(self) -> List[Tuple[str, int, bool]]:
         """Finalizza e ordina i risultati.
         
@@ -2060,6 +2106,19 @@ class SavePathFinder:
              candidate.contains_saves)
             for candidate in self.guesses_data.values()
         ]
+
+        # Il limite di punteggio di Steam remote protegge dai falsi positivi.
+        # Superalo solo quando la cartella dell'AppID contiene un save verificabile.
+        confirmed_results = []
+        for path, score, contains_saves in results:
+            if (contains_saves and self._is_steam_userdata_path(path)
+                    and os.path.basename(path).lower() == 'remote'
+                    and os.path.basename(os.path.dirname(path)) == str(self.context.appid)
+                    and self._has_direct_save_file(path)):
+                score += ScoreWeight.STEAM_REMOTE_CONFIRMED_SAVE.value
+                logging.info("Confirmed Steam remote save for AppID %s: %s", self.context.appid, path)
+            confirmed_results.append((path, score, contains_saves))
+        results = confirmed_results
         
         # Bonus per struttura gamedata+savedata annidata (save reali, es. TLOU2 in Documents/<SteamID>/).
         # Applicato a tutti i candidati prima dell'ordinamento: spesso la cartella corretta non è
