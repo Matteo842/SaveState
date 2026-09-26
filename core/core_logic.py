@@ -3,6 +3,7 @@
 from datetime import datetime
 import logging
 import os
+import ntpath
 import json
 import config
 import re
@@ -2007,7 +2008,19 @@ def _preflight_generic_restore(zipf: zipfile.ZipFile, archive_path: str,
         return None, "ERROR: Restore archive contains no save files."
 
     if not is_multiple_paths:
-        return {'strategy': 'single'}, None
+        destination = paths_to_process[0]
+        if os.path.isfile(destination):
+            if len(payload_members) != 1:
+                return None, "ERROR: A single save file needs exactly one file in the backup."
+            return {'strategy': 'single_file', 'member': payload_members[0]}, None
+
+        # A single folder backup contains one top-level folder named after the
+        # source. Its name can differ from this device's Save Path, so strip it
+        # while extracting into the staged destination.
+        archive_root = payload_members[0].split('/', 1)[0]
+        if any(not member.startswith(archive_root + '/') for member in payload_members):
+            return None, "ERROR: A single save folder backup contains files outside its source folder."
+        return {'strategy': 'single_folder', 'archive_root': archive_root}, None
 
     destination_names = [os.path.basename(path) for path in paths_to_process]
     if len({os.path.normcase(name) for name in destination_names}) != len(destination_names):
@@ -2030,6 +2043,31 @@ def _preflight_generic_restore(zipf: zipfile.ZipFile, archive_path: str,
             if os.path.isdir(destination) and any(member == name for member in members):
                 return None, f"ERROR: Archive file '{name}' cannot replace a save folder."
         return {'strategy': 'folders', 'dest_map': dest_map}, None
+    # On another OS the selected folders may have different names. The
+    # manifest preserves the source path order; use it only when it maps every
+    # archive root exactly once to an existing local folder.
+    if all(os.path.isdir(path) for path in paths_to_process):
+        try:
+            manifest_info = zipf.getinfo('savestate/manifest.json')
+            if manifest_info.file_size <= 65536:
+                with zipf.open(manifest_info) as source:
+                    manifest = json.loads(source.read(65537))
+                source_paths = manifest.get('paths') if isinstance(manifest, dict) else None
+                if (isinstance(source_paths, list) and len(source_paths) == len(paths_to_process)
+                        and all(isinstance(path, str) and path for path in source_paths)):
+                    source_roots = [ntpath.basename(path.rstrip('\\/')) for path in source_paths]
+                    if (all(source_roots)
+                            and len({name.casefold() for name in source_roots}) == len(source_roots)
+                            and all('/' in member for member in payload_members)
+                            and {member.partition('/')[0] for member in payload_members}
+                            == set(source_roots)):
+                        return {
+                            'strategy': 'folders',
+                            'dest_map': dict(zip(source_roots, paths_to_process)),
+                        }, None
+        except (KeyError, OSError, ValueError, RuntimeError, zipfile.BadZipFile, UnicodeError):
+            pass
+
     if matched_names:
         return None, "ERROR: Restore archive does not contain files for every destination."
 
@@ -2344,18 +2382,19 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path, pr
             else:
                 # --- Single Path Extraction ---
                 single_dest_path = staging_paths[physical_paths[paths_to_process[0]]]
-                os.makedirs(single_dest_path, exist_ok=True)
-                logging.debug(f"Single path restore: Extracting all content to '{single_dest_path}'")
-
-                success, blocked, extract_errors = _safe_extractall(zipf, single_dest_path)
-                if blocked:
-                    error_messages.append(f"SECURITY: Blocked {len(blocked)} potentially malicious paths")
-                    extracted_successfully = False
-                if extract_errors:
-                    error_messages.extend(extract_errors)
-                    extracted_successfully = False
-                if success:
-                    logging.info(f"Content successfully extracted to '{single_dest_path}'")
+                if restore_plan['strategy'] == 'single_file':
+                    success, error = _extract_by_filename_matching(
+                        zipf, {single_dest_path: restore_plan['member']}
+                    )
+                    if not success:
+                        extracted_successfully = False
+                        error_messages.append(error or "File extraction failed.")
+                else:
+                    os.makedirs(single_dest_path, exist_ok=True)
+                    dest_map = {restore_plan['archive_root']: single_dest_path}
+                    for member_path in zip_members:
+                        if not _extract_member_to_destination(zipf, member_path, dest_map, error_messages):
+                            extracted_successfully = False
 
     except zipfile.BadZipFile:
         msg = f"ERROR: The file is not a valid ZIP archive or is corrupted: '{archive_to_restore_path}'"

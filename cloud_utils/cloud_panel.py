@@ -6,6 +6,7 @@ Similar to the settings panel, this is embedded in the main window.
 """
 
 import os
+import platform
 import logging
 import time
 from cloud_utils.cloud_sync_availability import AUTO_UPLOAD_COOLDOWN_SEC
@@ -14,7 +15,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox,
     QProgressBar, QCheckBox, QComboBox, QLineEdit, QStackedWidget,
     QMessageBox, QApplication, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QDialog,
-    QDialogButtonBox
+    QDialogButtonBox, QFileDialog, QScrollArea
 )
 from PySide6.QtCore import Qt, QSize, Signal, QTimer, QThread, Slot, QObject, QEvent
 from PySide6.QtGui import QIcon, QPixmap, QMovie, QColor, QPalette, QPainter
@@ -70,7 +71,11 @@ from cloud_utils.cloud_settings_panel import CloudSettingsPanel
 from . import cloud_settings_manager
 from common.utils import resource_path
 from gui_components import favorites_manager
-from core.core_logic import sanitize_foldername, is_group_profile, get_group_member_profiles
+from core.core_logic import sanitize_foldername, is_group_profile, get_group_member_profiles, get_backup_folder_name
+from cloud_utils.profile_linking import (
+    prepare_profile_link, ProfileLinkError, latest_backup_manifest,
+    valid_backup_folder_name, profile_has_local_save_paths, profile_matches_manifest_shape,
+)
 
 
 class AuthWorker(QObject):
@@ -266,15 +271,14 @@ class DownloadWorker(QObject):
     """Worker thread for downloading backups to avoid blocking UI."""
     progress = Signal(int, int, str)  # current, total, message
     progress_detailed = Signal(int, int, str)  # bytes_current, bytes_total, message
-    finished = Signal(int, int, dict)  # success_count, total_count, summary_stats (includes 'profiles_to_create')
+    finished = Signal(int, int, dict)  # success_count, total_count, summary_stats
     cancelled = Signal()  # Emitted when operation is cancelled
     
-    def __init__(self, provider, backup_list, backup_base_dir, existing_profiles):
+    def __init__(self, provider, backup_list, backup_base_dir):
         super().__init__()
         self.provider = provider  # Can be any StorageProvider
         self.backup_list = backup_list
         self.backup_base_dir = backup_base_dir
-        self.existing_profiles = existing_profiles  # Dict of existing profiles
         self._cancelled = False
         self._current_file_msg = ""
 
@@ -312,7 +316,8 @@ class DownloadWorker(QObject):
                 'skipped': 0,
                 'failed': 0,
                 'files_total': 0,
-                'profiles_to_create': []  # List of (profile_name, backup_path) tuples
+                'downloaded_folders': [],
+                'manifests': {},
             }
             
             for idx, backup_name in enumerate(self.backup_list, 1):
@@ -321,11 +326,22 @@ class DownloadWorker(QObject):
                     logging.info(f"Download cancelled by user at {idx}/{total}")
                     self.cancelled.emit()
                     return
+
+                if not valid_backup_folder_name(backup_name):
+                    logging.error("Ignoring unsafe cloud backup folder name: %r", backup_name)
+                    stats['failed'] += 1
+                    continue
                 
                 self._current_file_msg = f"Downloading {backup_name} ({idx}/{total})"
                 self.progress.emit(idx, total, self._current_file_msg)
                 
                 backup_path = os.path.join(self.backup_base_dir, backup_name)
+                backup_root_real = os.path.normcase(os.path.realpath(self.backup_base_dir))
+                backup_path_real = os.path.normcase(os.path.realpath(backup_path))
+                if os.path.dirname(backup_path_real) != backup_root_real:
+                    logging.error("Ignoring cloud backup folder outside backup directory: %r", backup_name)
+                    stats['failed'] += 1
+                    continue
                 
                 try:
                     # download_backup now returns a dict with stats
@@ -354,11 +370,8 @@ class DownloadWorker(QObject):
                     if ok:
                         success_count += 1
                         logging.info(f"Successfully downloaded: {backup_name}")
-                        
-                        # Check if profile exists, if not, add to list of profiles to create
-                        if backup_name not in self.existing_profiles:
-                            logging.info(f"Profile '{backup_name}' does not exist, will create it after download completes")
-                            stats['profiles_to_create'].append((backup_name, backup_path))
+                        stats['downloaded_folders'].append(backup_name)
+                        stats['manifests'][backup_name] = latest_backup_manifest(backup_path)
                     else:
                         logging.error(f"Failed to download: {backup_name}")
                 except Exception as e:
@@ -500,6 +513,157 @@ class BackupScannerWorker(QObject):
 
 
 
+class CloudProfileLinkDialog(QDialog):
+    """Choose this device's save locations for a downloaded backup."""
+
+    def __init__(self, folder_name, backup_base_dir, profiles, parent=None, manifest=None):
+        super().__init__(parent)
+        self.folder_name = folder_name
+        self.backup_base_dir = backup_base_dir
+        self.profiles = profiles
+        self.updated_profiles = None
+        manifest = manifest if isinstance(manifest, dict) else {}
+        source_paths = manifest.get('paths')
+        self.source_paths = (
+            source_paths if isinstance(source_paths, list)
+            and source_paths and all(isinstance(path, str) for path in source_paths)
+            else [None]
+        )
+        self.multiple_paths = bool(manifest.get('multiple_paths')) or len(self.source_paths) > 1
+        source_platform = manifest.get('platform')
+        suggested_name = manifest.get('profile_name')
+        if not isinstance(suggested_name, str) or not suggested_name.strip():
+            suggested_name = folder_name
+        self.setWindowTitle("Set Up Downloaded Backup")
+        self.setMinimumWidth(540)
+
+        layout = QVBoxLayout(self)
+        origin = f" (created on {source_platform})" if isinstance(source_platform, str) else ""
+        description = QLabel(
+            f"Backups for '{folder_name}'{origin} are on this device. Choose where "
+            "this device keeps the game's saves. No backup will be restored now."
+        )
+        description.setTextFormat(Qt.TextFormat.PlainText)
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        self.profile_combo = QComboBox()
+        self.profile_combo.addItem("Create a new profile", None)
+        for name, data in sorted(profiles.items(), key=lambda item: item[0].casefold()):
+            if not is_group_profile(data):
+                self.profile_combo.addItem(f"Use existing profile: {name}", name)
+        self.profile_combo.currentIndexChanged.connect(self._update_mode)
+        layout.addWidget(self.profile_combo)
+
+        self.name_label = QLabel("Profile name")
+        layout.addWidget(self.name_label)
+        self.name_edit = QLineEdit(suggested_name)
+        layout.addWidget(self.name_edit)
+
+        paths_container = QWidget()
+        paths_layout = QVBoxLayout(paths_container)
+        paths_layout.setContentsMargins(0, 0, 0, 0)
+        self.path_edits = []
+        for index, source_path in enumerate(self.source_paths, 1):
+            label = QLabel(
+                f"Save Path {index} on this device (original: {source_path})"
+                if source_path and len(self.source_paths) > 1
+                else "Save Path on this device (file or folder)"
+            )
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            label.setWordWrap(True)
+            paths_layout.addWidget(label)
+            row = QHBoxLayout()
+            path_edit = QLineEdit()
+            path_edit.setPlaceholderText("Choose the game's local save file or folder")
+            row.addWidget(path_edit)
+            folder_button = QPushButton("Folder…")
+            folder_button.clicked.connect(lambda _=False, edit=path_edit: self._browse_folder(edit))
+            row.addWidget(folder_button)
+            file_button = QPushButton("File…")
+            file_button.clicked.connect(lambda _=False, edit=path_edit: self._browse_file(edit))
+            row.addWidget(file_button)
+            paths_layout.addLayout(row)
+            self.path_edits.append(path_edit)
+        self.path_edit = self.path_edits[0]
+        if len(self.source_paths) > 2:
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setMaximumHeight(280)
+            scroll.setWidget(paths_container)
+            layout.addWidget(scroll)
+        else:
+            layout.addWidget(paths_container)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self._update_mode()
+
+        preferred_name = next(
+            (name for name, data in profiles.items()
+             if not is_group_profile(data) and get_backup_folder_name(name, data) == folder_name),
+            suggested_name,
+        )
+        for index in range(1, self.profile_combo.count()):
+            name = self.profile_combo.itemData(index)
+            if name.casefold() == preferred_name.casefold():
+                self.profile_combo.setCurrentIndex(index)
+                break
+
+    def _update_mode(self):
+        existing_name = self.profile_combo.currentData()
+        self.name_label.setVisible(existing_name is None)
+        self.name_edit.setVisible(existing_name is None)
+        if existing_name is None:
+            for edit in self.path_edits:
+                edit.clear()
+            return
+        data = self.profiles[existing_name]
+        configured = data.get('paths') or [data.get('path', '')]
+        for index, edit in enumerate(self.path_edits):
+            value = configured[index] if index < len(configured) else ''
+            edit.setText(value if isinstance(value, str) else '')
+
+    def _browse_folder(self, edit):
+        path = QFileDialog.getExistingDirectory(self, "Select Game Save Folder", edit.text())
+        if path:
+            edit.setText(path)
+
+    def _browse_file(self, edit):
+        path, _ = QFileDialog.getOpenFileName(self, "Select Game Save File", edit.text())
+        if path:
+            edit.setText(path)
+
+    def accept(self):
+        existing_name = self.profile_combo.currentData()
+        profile_name = existing_name if existing_name is not None else self.name_edit.text()
+        if existing_name is not None:
+            data = self.profiles[existing_name]
+            configured = data.get('paths') or [data.get('path', '')]
+            if len(configured) > len(self.path_edits):
+                QMessageBox.warning(
+                    self, "Cannot Link Backup",
+                    "This profile has more Save Paths than the downloaded backup. "
+                    "Choose another profile or edit this one first."
+                )
+                return
+        paths = [edit.text() for edit in self.path_edits]
+        save_path = paths if self.multiple_paths else paths[0]
+        try:
+            self.updated_profiles = prepare_profile_link(
+                self.profiles, self.backup_base_dir, self.folder_name,
+                profile_name, save_path, create_new=existing_name is None,
+            )
+        except (ProfileLinkError, OSError) as exc:
+            QMessageBox.warning(self, "Cannot Link Backup", str(exc))
+            return
+        super().accept()
+
+
 class CloudSavePanel(QWidget):
     """
     Inline panel for Cloud Save management.
@@ -540,6 +704,7 @@ class CloudSavePanel(QWidget):
         
         # Local backups cache (raw scan results)
         self.cached_local_backups = {}
+        self._setup_required_folders = set()
         
         # Cloud settings (will be loaded from settings panel)
         self.cloud_settings = {}
@@ -867,6 +1032,7 @@ class CloudSavePanel(QWidget):
         self.backup_table.verticalHeader().setVisible(False)
         self.backup_table.verticalHeader().setDefaultSectionSize(40)  # Increase row height for better icon visibility
         self.backup_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Remove focus rectangle
+        self.backup_table.cellDoubleClicked.connect(self._on_backup_double_clicked)
         
         # Set column widths
         header = self.backup_table.horizontalHeader()
@@ -941,7 +1107,7 @@ class CloudSavePanel(QWidget):
         self.download_button.setEnabled(False)
         self.download_button.clicked.connect(self._on_download_clicked)
         actions_layout.addWidget(self.download_button)
-        
+
         self.delete_button = QPushButton("Delete Selected from Cloud")
         self.delete_button.setObjectName("DangerButton")
         self.delete_button.setEnabled(False)
@@ -1271,12 +1437,8 @@ class CloudSavePanel(QWidget):
             # Check if this backup folder matches a profile
             # Use the sanitized_to_profile mapping to handle sanitized folder names
             # (e.g., backup folder "Hollow Knight Silksong" matches profile "Hollow Knight: Silksong")
-            if backup_name in self.profiles:
-                # Direct match (folder name == profile name)
-                profile_name = backup_name
-                is_known_profile = True
-            elif backup_name in sanitized_to_profile:
-                # Match via sanitized name lookup
+            if backup_name in sanitized_to_profile:
+                # Match by stable backup folder identity, not display name.
                 profile_name = sanitized_to_profile[backup_name]
                 is_known_profile = True
             else:
@@ -1286,7 +1448,7 @@ class CloudSavePanel(QWidget):
             
             # Filter: if not showing all, skip non-profile backups UNLESS they have cloud sync
             has_cloud = backup.get('has_cloud', False)
-            if not show_all and not is_known_profile and not has_cloud:
+            if not show_all and not is_known_profile and not has_cloud and not backup.get('local_file_count', 0):
                 continue
             
             # Search filter
@@ -1296,6 +1458,13 @@ class CloudSavePanel(QWidget):
             # Add profile name to backup info
             backup['profile'] = profile_name
             backup['is_known_profile'] = is_known_profile
+            backup['needs_setup'] = backup.get('local_file_count', 0) > 0 and (
+                backup_name in self._setup_required_folders or not (
+                    is_known_profile and profile_has_local_save_paths(
+                        self.profiles[profile_name], self.backup_base_dir
+                    )
+                )
+            )
             # Use original profile name for favorites lookup (favorites are stored with original names)
             backup['is_favorite'] = favorites.get(profile_name, False)
             
@@ -1402,6 +1571,7 @@ class CloudSavePanel(QWidget):
         profile_name = backup_info['profile']
         folder_name = backup_info.get('name', profile_name)  # Actual folder name on disk (sanitized)
         is_known = backup_info.get('is_known_profile', False)
+        needs_setup = backup_info.get('needs_setup', False)
         is_favorite = backup_info.get('is_favorite', False)
         is_group = backup_info.get('is_group', False)
         
@@ -1410,8 +1580,12 @@ class CloudSavePanel(QWidget):
             display_name = "📁 " + profile_name  # Folder icon for groups
         elif is_favorite:
             display_name = "★ " + profile_name
+        if needs_setup:
+            display_name += " (Needs setup)"
         
         profile_item = QTableWidgetItem(display_name)
+        if needs_setup:
+            profile_item.setToolTip("Double-click to choose a local Save Path")
         # Store the actual folder name as UserRole data for use in operations
         profile_item.setData(Qt.ItemDataRole.UserRole, folder_name)
         # Store group flag and member names for checkbox sync
@@ -1421,6 +1595,8 @@ class CloudSavePanel(QWidget):
         profile_item.setFlags(profile_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         if is_group:
             profile_item.setForeground(QColor("#FFA500"))  # Orange for groups
+        elif needs_setup:
+            profile_item.setForeground(QColor("#FFA500"))
         elif is_known:
             profile_item.setForeground(QColor("#4CAF50"))  # Green for known profiles
         else:
@@ -1464,13 +1640,6 @@ class CloudSavePanel(QWidget):
     
     def _update_action_buttons_state(self):
         """Update the state of action buttons based on current selection."""
-        if not self._is_any_provider_connected():
-            # If not connected, disable all buttons
-            self.upload_button.setEnabled(False)
-            self.download_button.setEnabled(False)
-            self.delete_button.setEnabled(False)
-            return
-        
         # Get selected backups
         selected_backups = []
         for row in range(self.backup_table.rowCount()):
@@ -1491,6 +1660,12 @@ class CloudSavePanel(QWidget):
                         if backup_info:
                             selected_backups.append(backup_info)
         
+        if not self._is_any_provider_connected():
+            self.upload_button.setEnabled(False)
+            self.download_button.setEnabled(False)
+            self.delete_button.setEnabled(False)
+            return
+
         # Update button states based on selection
         if not selected_backups:
             # No selection - disable all buttons
@@ -1667,7 +1842,12 @@ class CloudSavePanel(QWidget):
         elif action == "manage_backups":# Default Y button: Download
             if self.download_button.isEnabled():
                 self.download_button.click()
-                
+
+        elif action == "backup_all":   # Default LT+RT: resume setup on focused row
+            row = self.backup_table.currentRow()
+            if row >= 0:
+                self._on_backup_double_clicked(row, 2)
+
         elif action == "delete":        # Delete button: Delete from cloud
             if self.delete_button.isEnabled():
                 self.delete_button.click()
@@ -3087,6 +3267,116 @@ class CloudSavePanel(QWidget):
         # Only disable refresh if it's showing the button (not the search bar)
         if self.refresh_search_stack.currentIndex() == 0:
             self.refresh_button.setEnabled(False)
+
+    def _on_backup_double_clicked(self, row, _column):
+        """Let the user resume setup later if they closed the automatic dialog."""
+        if self._current_worker is not None or self._current_operation is not None or self.progress_bar.isVisible():
+            return
+        item = self.backup_table.item(row, 2)
+        if item is None or item.data(Qt.ItemDataRole.UserRole + 1):
+            return
+        folder_name = item.data(Qt.ItemDataRole.UserRole)
+        backup = next((b for b in self.local_backups if b.get('name') == folder_name), None)
+        if not backup or not backup.get('needs_setup') or not backup.get('local_file_count', 0):
+            return
+        manifest = latest_backup_manifest(os.path.join(self.backup_base_dir, folder_name))
+        self._setup_downloaded_folder(folder_name, manifest, announce=True)
+
+    def _save_linked_profiles(self, updated_profiles, folder_name=None):
+        from core import core_logic
+        if not core_logic.save_profiles(updated_profiles):
+            QMessageBox.critical(self, "Cannot Save Profile", "The profile could not be saved. Nothing was linked.")
+            return False
+        self.profiles = updated_profiles
+        if folder_name is not None:
+            self._setup_required_folders.discard(folder_name)
+        if self.main_window is not None:
+            self.main_window.profiles = updated_profiles
+            try:
+                if hasattr(self.main_window, 'profile_table_manager'):
+                    self.main_window.profile_table_manager.update_profile_table()
+                if hasattr(self.main_window, 'update_action_button_states'):
+                    self.main_window.update_action_button_states()
+            except Exception:
+                logging.exception("Profile saved but the main profile table could not be refreshed")
+        self._repopulate_table()
+        return True
+
+    def _setup_downloaded_folder(self, folder_name, manifest=None, announce=False):
+        if isinstance(manifest, dict) and manifest.get('emulator') in ('xemu', 'Ymir'):
+            QMessageBox.warning(
+                self, "Special Backup",
+                "This backup uses an emulator-specific restore format. Set up its emulator "
+                "profile on this device before linking the downloaded backups."
+            )
+            return False
+        paths = manifest.get('paths') if isinstance(manifest, dict) else None
+        if not isinstance(paths, list) or not paths or not all(isinstance(path, str) for path in paths):
+            QMessageBox.warning(
+                self, "Backup Manifest Unavailable",
+                "SaveState could not read the original save paths from this backup. "
+                "Configure a local profile for this game before restoring it."
+            )
+            return False
+        dialog = CloudProfileLinkDialog(
+            folder_name, self.backup_base_dir, self.profiles, self, manifest=manifest
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return False
+        if not self._save_linked_profiles(dialog.updated_profiles, folder_name):
+            return False
+        if announce:
+            QMessageBox.information(
+                self, "Profile Ready",
+                "The backup is linked to this device's Save Path. Exit Cloud, then use "
+                "Manage Backups to choose a backup to restore."
+            )
+        return True
+
+    def _try_auto_link_downloaded_folder(self, folder_name, manifest):
+        """Use an existing local profile or a valid same-OS manifest path."""
+        if not isinstance(manifest, dict):
+            return "needs_setup"
+        if manifest.get('emulator') in ('xemu', 'Ymir'):
+            return "needs_setup"
+        source_name = manifest.get('profile_name')
+        if not isinstance(source_name, str) or not source_name.strip():
+            return "needs_setup"
+        existing_name = next(
+            (name for name, data in self.profiles.items()
+             if not is_group_profile(data) and get_backup_folder_name(name, data) == folder_name),
+            None,
+        )
+        if existing_name is None:
+            existing_name = next(
+                (name for name, data in self.profiles.items()
+                 if name.casefold() == source_name.casefold() and not is_group_profile(data)),
+                None,
+            )
+        try:
+            if existing_name is not None:
+                if not profile_matches_manifest_shape(self.profiles[existing_name], manifest):
+                    return "needs_setup"
+                updated = prepare_profile_link(
+                    self.profiles, self.backup_base_dir, folder_name, existing_name
+                )
+            elif manifest.get('platform') == platform.system():
+                paths = manifest.get('paths')
+                if not isinstance(paths, list) or not paths or not all(isinstance(p, str) for p in paths):
+                    return "needs_setup"
+                save_path = paths if manifest.get('multiple_paths') or len(paths) > 1 else paths[0]
+                updated = prepare_profile_link(
+                    self.profiles, self.backup_base_dir, folder_name, source_name,
+                    save_path, create_new=True,
+                )
+            else:
+                return "needs_setup"
+        except (ProfileLinkError, OSError) as exc:
+            logging.info("Downloaded backup '%s' needs local setup: %s", folder_name, exc)
+            return "needs_setup"
+        if not self._save_linked_profiles(updated, folder_name):
+            return "save_failed"
+        return "linked"
     
     def _enable_buttons_after_operation(self):
         """Re-enable buttons after cloud operations complete."""
@@ -3499,7 +3789,6 @@ class CloudSavePanel(QWidget):
             provider, 
             selected, 
             self.backup_base_dir,
-            self.profiles  # Pass existing profiles
         )
         self.download_worker.moveToThread(self.download_thread)
         
@@ -3565,33 +3854,6 @@ class CloudSavePanel(QWidget):
         # Refresh list in case some files were downloaded before cancellation
         self.refresh_local_backups()
     
-    def _on_profile_auto_created(self, profile_name, backup_path):
-        """Handle automatic profile creation after download."""
-        try:
-            logging.info(f"Auto-creating profile '{profile_name}' with path '{backup_path}'")
-            
-            # Add profile to main window's profiles dict
-            if self.main_window and hasattr(self.main_window, 'profiles'):
-                self.main_window.profiles[profile_name] = {'path': backup_path}
-                
-                # Save profiles to disk
-                from core import core_logic
-                if core_logic.save_profiles(self.main_window.profiles):
-                    logging.info(f"Profile '{profile_name}' created and saved successfully")
-                    
-                    # Update local profiles reference
-                    self.profiles = self.main_window.profiles
-                    
-                    # DON'T update GUI here - it will be updated in _on_download_finished
-                    # The profile table will be refreshed after all downloads complete
-                else:
-                    logging.error(f"Failed to save profile '{profile_name}'")
-            else:
-                logging.error("Cannot create profile: main_window or profiles not available")
-                
-        except Exception as e:
-            logging.error(f"Error auto-creating profile '{profile_name}': {e}", exc_info=True)
-    
     def _on_download_finished(self, success_count, total_count, stats=None):
         """Handle download completion."""
         self.progress_bar.setVisible(False)
@@ -3604,40 +3866,12 @@ class CloudSavePanel(QWidget):
         # Restore delete button
         self._set_delete_button_to_delete_mode()
         
-        # Create profiles for downloaded backups that don't have profiles yet
-        profiles_created = []
-        if stats and isinstance(stats, dict):
-            profiles_to_create = stats.get('profiles_to_create', [])
-            if profiles_to_create:
-                try:
-                    from core import core_logic
-                    for profile_name, backup_path in profiles_to_create:
-                        logging.info(f"Creating profile '{profile_name}' with path '{backup_path}'")
-                        if self.main_window and hasattr(self.main_window, 'profiles'):
-                            self.main_window.profiles[profile_name] = {'path': backup_path}
-                            profiles_created.append(profile_name)
-                    
-                    # Save all profiles at once
-                    if profiles_created and core_logic.save_profiles(self.main_window.profiles):
-                        logging.info(f"Created {len(profiles_created)} new profiles: {', '.join(profiles_created)}")
-                        # Update local profiles reference
-                        self.profiles = self.main_window.profiles
-                except Exception as e:
-                    logging.error(f"Error creating profiles: {e}", exc_info=True)
-        
-        # Update profile table in main window (in case new profiles were created)
-        if profiles_created:
-            try:
-                if self.main_window and hasattr(self.main_window, 'profile_table_manager'):
-                    self.main_window.profile_table_manager.update_profile_table()
-                    logging.info("Profile table updated after download")
-            except Exception as e:
-                logging.error(f"Error updating profile table: {e}")
-        
         # Determine message based on stats
         title = "Download Complete"
         msg = f"Successfully processed {success_count} of {total_count} backups."
         
+        unlinked = []
+        manifests = {}
         if stats and isinstance(stats, dict):
             downloaded = stats.get('downloaded', 0)
             skipped = stats.get('skipped', 0)
@@ -3654,17 +3888,70 @@ class CloudSavePanel(QWidget):
             if failed > 0:
                 msg += f"\n\nWarning: {failed} file(s) failed to download or verify."
             
-            # Add info about created profiles
-            if profiles_created:
-                msg += f"\n\nCreated {len(profiles_created)} new profile(s)."
+            manifests = stats.get('manifests') or {}
+            linked_profiles = {
+                get_backup_folder_name(name, data): data
+                for name, data in self.profiles.items() if not is_group_profile(data)
+            }
+            unlinked = [
+                name for name in stats.get('downloaded_folders', [])
+                if name not in linked_profiles
+                or not profile_has_local_save_paths(linked_profiles[name], self.backup_base_dir)
+                or not profile_matches_manifest_shape(linked_profiles[name], manifests.get(name))
+            ]
+            self._setup_required_folders.update(unlinked)
 
-        # Show notification
-        self._show_notification(title, msg)
-        
-        QMessageBox.information(self, title, msg)
-        
-        # Refresh local list
+        # Refresh the list before any setup dialog. The manifest was read by
+        # DownloadWorker, so this path does not open large ZIPs on the UI thread.
         self.refresh_local_backups()
+        if unlinked:
+            QTimer.singleShot(
+                0, lambda: self._resolve_downloaded_profiles(unlinked, manifests, msg)
+            )
+        else:
+            self._show_notification(title, msg)
+            QMessageBox.information(self, title, msg)
+
+    def _resolve_downloaded_profiles(self, folder_names, manifests, download_message):
+        """Complete setup immediately after download when no local profile exists."""
+        linked_count = 0
+        pending_count = 0
+        for folder_name in dict.fromkeys(folder_names):
+            backup_folder = os.path.join(self.backup_base_dir, folder_name)
+            try:
+                with os.scandir(backup_folder) as entries:
+                    has_archive = any(
+                        entry.is_file(follow_symlinks=False) and entry.name.lower().endswith('.zip')
+                        for entry in entries
+                    )
+            except OSError:
+                has_archive = False
+            if not has_archive:
+                pending_count += 1
+                continue
+
+            manifest = manifests.get(folder_name)
+            outcome = self._try_auto_link_downloaded_folder(folder_name, manifest)
+            if outcome == "linked":
+                linked_count += 1
+            elif outcome == "needs_setup":
+                if self._setup_downloaded_folder(folder_name, manifest):
+                    linked_count += 1
+                else:
+                    pending_count += 1
+            else:
+                pending_count += 1
+
+        message = download_message
+        if linked_count:
+            message += f"\n{linked_count} profile(s) linked to this device."
+        if pending_count:
+            message += (
+                f"\n{pending_count} backup folder(s) still need setup. "
+                "Double-click a 'Needs setup' row to resume."
+            )
+        self._show_notification("Download Complete", message)
+        self._repopulate_table()
     
     def _on_delete_clicked(self):
         """Handle delete selected backups from cloud."""

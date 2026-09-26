@@ -2046,9 +2046,9 @@ class MainWindow(QMainWindow):
         self.restore_button.setEnabled(True)
         self.manage_backups_button.setEnabled(has_selection)
         # create_shortcut_button removed - functionality available in context menu
-        # Cloud and Open Backup Folder require at least one profile to exist
+        # Cloud must also be available on a new device with no local profiles.
         if hasattr(self, 'cloud_button'):
-            self.cloud_button.setEnabled(has_profiles)
+            self.cloud_button.setEnabled(True)
         if hasattr(self, 'open_backup_dir_button'):
             self.open_backup_dir_button.setEnabled(has_profiles)
 
@@ -2192,10 +2192,10 @@ class MainWindow(QMainWindow):
         self.theme_button.setEnabled(enabled)
         # minecraft_button removed - functionality moved to new_profile_menu
         self.toggle_log_button.setEnabled(enabled)
-        # Cloud and Open Backup Folder require at least one profile
+        # Opening the backup folder still requires a profile; Cloud does not.
         self.open_backup_dir_button.setEnabled(enabled and has_profiles)
         if hasattr(self, 'cloud_button'):
-            self.cloud_button.setEnabled(enabled and has_profiles)
+            self.cloud_button.setEnabled(enabled)
         busy = not enabled
         self.progress_bar.setVisible(busy)
         # Hide status text while the full-width snake runs
