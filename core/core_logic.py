@@ -10,6 +10,7 @@ import platform
 import glob
 import zipfile
 import shutil
+import uuid
 
 # Import the appropriate guess_save_path function based on platform
 if platform.system() == "Linux":
@@ -1956,99 +1957,228 @@ def _cleanup_all_destination_paths(paths_to_process: list) -> tuple:
     return True, None
 
 
-def _find_zip_base_folders(zipf: zipfile.ZipFile, dest_map: dict) -> bool:
+def _preflight_generic_restore(zipf: zipfile.ZipFile, archive_path: str,
+                               paths_to_process: list, is_multiple_paths: bool) -> tuple:
+    """Choose a restore strategy before any destination is removed.
+
+    A normal backup stores files below each source path's basename. Legacy
+    single-file backups may instead need the filename-matching fallback.
+    Neither strategy is safe if it would restore only some destinations.
     """
-    Check if the ZIP contains base folders matching the destination map.
-    
-    Args:
-        zipf: Open ZipFile object
-        dest_map: Dictionary mapping base folder names to destination paths
-        
-    Returns:
-        True if matching base folders found, False otherwise
-    """
-    for member in zipf.namelist():
-        normalized_path = member.replace('/', os.sep)
-        path_parts = normalized_path.split(os.sep, 1)
-        if len(path_parts) > 0:
-            base_folder = path_parts[0]
-            if base_folder in dest_map:
-                logging.debug(f"Found matching base folder: '{base_folder}' in ZIP member: '{member}'")
-                return True
-    return False
+    if not paths_to_process or any(not isinstance(p, str) or not p for p in paths_to_process):
+        return None, "ERROR: No valid restore destination was provided."
+
+    archive_real = os.path.normcase(os.path.realpath(archive_path))
+    destination_reals = [os.path.normcase(os.path.realpath(p)) for p in paths_to_process]
+    for index, destination in enumerate(destination_reals):
+        if destination == os.path.dirname(destination):
+            return None, "ERROR: A filesystem root cannot be used as a restore destination."
+        try:
+            if os.path.commonpath((archive_real, destination)) == destination:
+                return None, "ERROR: The restore archive is inside a destination and would be deleted."
+        except ValueError:
+            # Different drives cannot contain one another.
+            pass
+        for other in destination_reals[index + 1:]:
+            try:
+                common = os.path.commonpath((destination, other))
+                if common == destination or common == other:
+                    return None, "ERROR: Restore destinations overlap."
+            except ValueError:
+                pass
+
+    payload_members = []
+    seen_members = set()
+    for info in zipf.infolist():
+        member = info.filename.replace('\\', '/')
+        parts = member.rstrip('/').split('/')
+        if ('\\' in info.filename or any(part in ('', '.', '..') for part in parts)
+                or member.startswith('/') or re.match(r'^[A-Za-z]:', member)
+                or not _is_safe_zip_path(member, paths_to_process[0])):
+            return None, f"SECURITY: Unsafe path in restore archive: '{info.filename}'"
+        member_key = os.path.normcase(member)
+        if member_key in seen_members:
+            return None, f"ERROR: Duplicate path in restore archive: '{info.filename}'"
+        seen_members.add(member_key)
+        if not info.is_dir() and member != 'savestate/manifest.json':
+            payload_members.append(member)
+
+    if not payload_members:
+        return None, "ERROR: Restore archive contains no save files."
+
+    if not is_multiple_paths:
+        return {'strategy': 'single'}, None
+
+    destination_names = [os.path.basename(path) for path in paths_to_process]
+    if len({os.path.normcase(name) for name in destination_names}) != len(destination_names):
+        return None, "ERROR: Restore destinations have duplicate names."
+    dest_map = dict(zip(destination_names, paths_to_process))
+    matched_names = {
+        member.split('/', 1)[0]
+        for member in payload_members
+        if member.split('/', 1)[0] in dest_map
+    }
+    if len(matched_names) == len(dest_map):
+        if any(member.split('/', 1)[0] not in dest_map for member in payload_members):
+            return None, "ERROR: Restore archive contains save files outside the selected destinations."
+        for name, destination in dest_map.items():
+            members = [member for member in payload_members if member.split('/', 1)[0] == name]
+            if any(member == name for member in members) and any(member != name for member in members):
+                return None, f"ERROR: Archive mixes a file and a folder named '{name}'."
+            if os.path.isfile(destination) and any(member != name for member in members):
+                return None, f"ERROR: Archive folder '{name}' cannot replace a save file."
+            if os.path.isdir(destination) and any(member == name for member in members):
+                return None, f"ERROR: Archive file '{name}' cannot replace a save folder."
+        return {'strategy': 'folders', 'dest_map': dest_map}, None
+    if matched_names:
+        return None, "ERROR: Restore archive does not contain files for every destination."
+
+    # The old fallback is only meaningful for individual files, and it must
+    # match each destination to exactly one distinct archive member.
+    if any(os.path.isdir(path) for path in paths_to_process):
+        return None, "ERROR: Backup folders do not match the restore destinations."
+    filename_matches = {}
+    for destination in paths_to_process:
+        filename = os.path.basename(destination)
+        candidates = [member for member in payload_members if member.rsplit('/', 1)[-1] == filename]
+        if len(candidates) != 1:
+            return None, f"ERROR: Expected one archive file for destination '{filename}', found {len(candidates)}."
+        filename_matches[destination] = candidates[0]
+    if len(set(filename_matches.values())) != len(filename_matches):
+        return None, "ERROR: Multiple restore destinations match the same archive file."
+    if set(filename_matches.values()) != set(payload_members):
+        return None, "ERROR: Restore archive has additional save files that cannot be mapped."
+    return {'strategy': 'filenames', 'matches': filename_matches}, None
 
 
-def _find_zip_matching_filenames(zipf: zipfile.ZipFile, paths_to_process: list) -> bool:
-    """
-    Check if the ZIP contains files matching destination filenames directly.
-    
-    Args:
-        zipf: Open ZipFile object
-        paths_to_process: List of destination paths
-        
-    Returns:
-        True if matching filenames found, False otherwise
-    """
-    zip_members = zipf.namelist()
-    for dest_path in paths_to_process:
-        dest_filename = os.path.basename(dest_path)
-        for member in zip_members:
-            normalized_m = member.replace('/', os.sep)
-            if normalized_m.endswith(os.sep + dest_filename) or normalized_m == dest_filename:
-                logging.debug(f"Found matching filename: '{dest_filename}' in ZIP member: '{member}'")
-                return True
-    return False
+def _remove_restore_path(path: str) -> None:
+    """Remove a partially restored path without following a symbolic link."""
+    if os.path.islink(path) or os.path.isfile(path):
+        os.remove(path)
+    elif os.path.isdir(path):
+        shutil.rmtree(path)
 
 
-def _extract_by_filename_matching(zipf: zipfile.ZipFile, paths_to_process: list) -> tuple:
+def _prepare_restore_staging(paths_to_process: list) -> tuple:
+    """Reserve sibling paths where the archive can be extracted once."""
+    staging_paths = {}
+    try:
+        for destination in paths_to_process:
+            parent = os.path.dirname(destination) or os.curdir
+            os.makedirs(parent, exist_ok=True)
+            while True:
+                staging = os.path.join(
+                    parent,
+                    f".savestate-pending-{uuid.uuid4().hex[:12]}"
+                )
+                if not os.path.lexists(staging):
+                    break
+            staging_paths[destination] = staging
+        return staging_paths, None
+    except Exception as e:
+        return None, f"ERROR: Could not prepare restore staging paths: {e}"
+
+
+def _remove_staged_restore(staging_paths: dict) -> list:
+    """Discard incomplete extraction; the current saves were not touched."""
+    errors = []
+    for staging in staging_paths.values():
+        try:
+            _remove_restore_path(staging)
+        except Exception as e:
+            errors.append(f"Could not remove partial restore '{staging}': {e}")
+    return errors
+
+
+def _commit_staged_restore(staging_paths: dict) -> tuple:
+    """Swap fully extracted saves into place, rolling back failed swaps."""
+    previous_paths = []
+    installed = []
+    try:
+        for destination, staging in staging_paths.items():
+            if not os.path.lexists(staging):
+                raise OSError(f"No extracted save data for '{destination}'")
+        for destination, staging in staging_paths.items():
+            parent = os.path.dirname(destination) or os.curdir
+            if os.path.lexists(destination):
+                while True:
+                    previous = os.path.join(
+                        parent,
+                        f".savestate-previous-{uuid.uuid4().hex[:12]}"
+                    )
+                    if not os.path.lexists(previous):
+                        break
+                os.rename(destination, previous)
+                previous_paths.append((destination, previous))
+            os.rename(staging, destination)
+            installed.append(destination)
+        return previous_paths, None
+    except Exception as e:
+        errors = []
+        for destination in reversed(installed):
+            try:
+                _remove_restore_path(destination)
+            except Exception as rollback_error:
+                errors.append(f"Could not remove new saves at '{destination}': {rollback_error}")
+        for destination, previous in reversed(previous_paths):
+            try:
+                if os.path.lexists(destination):
+                    errors.append(f"Old saves remain at '{previous}' because '{destination}' is occupied")
+                    continue
+                os.rename(previous, destination)
+            except Exception as rollback_error:
+                errors.append(f"Old saves remain at '{previous}': {rollback_error}")
+        errors.extend(_remove_staged_restore(staging_paths))
+        message = f"ERROR: Could not install restored saves: {e}"
+        if errors:
+            message += "\n" + "\n".join(errors)
+        return None, message
+
+
+def _discard_previous_destinations(previous_paths: list) -> list:
+    """Remove renamed old saves only after every destination was installed."""
+    warnings = []
+    for _, previous in previous_paths:
+        try:
+            _remove_restore_path(previous)
+        except Exception as e:
+            warnings.append(f"Previous saves remain at '{previous}': {e}")
+    return warnings
+
+
+def _extract_by_filename_matching(zipf: zipfile.ZipFile, filename_matches: dict) -> tuple:
     """
     Extract files from ZIP by matching filenames to destination paths.
     Used as fallback when base folder matching fails.
     
     Args:
         zipf: Open ZipFile object
-        paths_to_process: List of destination paths
+        filename_matches: Preflighted mapping from destination to archive member
         
     Returns:
         Tuple (success: bool, error_message: str or None)
     """
     logging.warning("Base folders not found in ZIP. Trying alternative extraction method based on filenames.")
     
-    filename_to_dest = {os.path.basename(p): p for p in paths_to_process}
-    logging.debug(f"Filename to destination map: {filename_to_dest}")
-    
-    zip_filename_to_path = {os.path.basename(m.replace('/', os.sep)): m for m in zipf.namelist()}
-    logging.debug(f"ZIP filename to path map: {zip_filename_to_path}")
-    
-    matches_found = False
-    for filename, dest_path in filename_to_dest.items():
-        if filename in zip_filename_to_path:
-            matches_found = True
-            zip_path = zip_filename_to_path[filename]
-            logging.info(f"Found match: {filename} in ZIP as {zip_path}")
-            
-            # Security check: verify zip_path doesn't contain path traversal
-            if '..' in zip_path or zip_path.startswith('/') or zip_path.startswith('\\'):
-                msg = f"SECURITY: Blocked suspicious ZIP path: '{zip_path}'"
-                logging.error(msg)
-                return False, msg
-            
-            try:
-                dest_dir = os.path.dirname(dest_path)
-                if dest_dir and not os.path.exists(dest_dir):
-                    os.makedirs(dest_dir, exist_ok=True)
-                
-                with zipf.open(zip_path) as source, open(dest_path, 'wb') as target:
-                    shutil.copyfileobj(source, target)
-                logging.info(f"Successfully extracted {zip_path} to {dest_path}")
-            except Exception as e:
-                logging.error(f"Error extracting {zip_path} to {dest_path}: {e}")
-                return False, f"Error during alternative extraction method: {e}"
-    
-    if matches_found:
-        return True, None
-    
-    return False, "No matching files found"
+    for dest_path, zip_path in filename_matches.items():
+        if not _is_safe_zip_path(zip_path.replace('\\', '/'), os.path.dirname(dest_path)):
+            msg = f"SECURITY: Blocked suspicious ZIP path: '{zip_path}'"
+            logging.error(msg)
+            return False, msg
+
+        try:
+            dest_dir = os.path.dirname(dest_path)
+            if dest_dir and not os.path.exists(dest_dir):
+                os.makedirs(dest_dir, exist_ok=True)
+
+            with zipf.open(zip_path) as source, open(dest_path, 'wb') as target:
+                shutil.copyfileobj(source, target)
+            logging.info(f"Successfully extracted {zip_path} to {dest_path}")
+        except Exception as e:
+            logging.error(f"Error extracting {zip_path} to {dest_path}: {e}")
+            return False, f"Error during alternative extraction method: {e}"
+
+    return True, None
 
 
 def _extract_member_to_destination(zipf: zipfile.ZipFile, member_path: str, 
@@ -2065,6 +2195,9 @@ def _extract_member_to_destination(zipf: zipfile.ZipFile, member_path: str,
     Returns:
         True if extraction succeeded, False otherwise
     """
+    if member_path == 'savestate/manifest.json':
+        return True
+
     normalized_member_path = member_path.replace('/', os.sep)
     
     try:
@@ -2158,59 +2291,59 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path, pr
             logging.info(f"Using Ymir specialized restore for '{profile_name}'")
             return _perform_ymir_restore(profile_name, profile_data, archive_to_restore_path)
 
-    # --- Clean destination paths ---
-    cleanup_ok, cleanup_error = _cleanup_all_destination_paths(paths_to_process)
-    if not cleanup_ok:
-        return False, cleanup_error
-
-    # --- Archive Extraction ---
-    logging.info(f"Starting extraction from '{archive_to_restore_path}'...")
+    # --- Preflight and extraction ---
+    # Keep the archive open while checking it and restoring, so the ZIP used
+    # for extraction is the same one that passed the checks.
     extracted_successfully = True
     error_messages = []
+    staging_paths = {}
+    staging_ready = False
+    # Stage the actual target of a symlink/junction, leaving the link itself in place.
+    physical_paths = {path: os.path.realpath(path) for path in paths_to_process}
 
     try:
         with zipfile.ZipFile(archive_to_restore_path, 'r') as zipf:
+            restore_plan, preflight_error = _preflight_generic_restore(
+                zipf, archive_to_restore_path, paths_to_process, is_multiple_paths
+            )
+            if preflight_error:
+                logging.error(preflight_error)
+                return False, preflight_error
+
+            staging_paths, staging_error = _prepare_restore_staging(list(physical_paths.values()))
+            if staging_error:
+                logging.error(staging_error)
+                return False, staging_error
+            staging_ready = True
+
+            logging.info(f"Starting extraction from '{archive_to_restore_path}'...")
             zip_members = zipf.namelist()
             logging.debug(f"ZIP contains {len(zip_members)} members. First 10: {zip_members[:10]}")
 
             if is_multiple_paths:
                 # --- Multi-Path Extraction ---
-                logging.debug("Multi-path restore: Mapping zip content to destination paths.")
-                dest_map = {os.path.basename(p): p for p in paths_to_process}
-                logging.debug(f"Destination map created: {dest_map}")
-
-                # Check extraction strategy
-                zip_has_base_folders = _find_zip_base_folders(zipf, dest_map)
-                zip_has_matching_filenames = _find_zip_matching_filenames(zipf, paths_to_process)
-
-                logging.debug(f"ZIP has base folders: {zip_has_base_folders}, has matching filenames: {zip_has_matching_filenames}")
-
-                # Try alternative filename-based extraction if base folders not found
-                if not zip_has_base_folders and zip_has_matching_filenames:
-                    alt_success, alt_error = _extract_by_filename_matching(zipf, paths_to_process)
-                    if alt_success:
-                        return True, "Restore completed successfully using alternative extraction method."
-                    elif alt_error and alt_error != "No matching files found":
-                        return False, alt_error
-                    # If no matches found, fall through to error below
-
-                # If we can't find base folders, fail with clear error
-                if not zip_has_base_folders:
-                    msg = ("ERROR: Multi-path restore failed. ZIP does not contain expected "
-                           "base folders nor matching filenames for destinations.")
-                    logging.error(msg)
-                    logging.error(f"Archive members (sample): {zip_members[:10]}")
-                    logging.error(f"Expected destinations: {list(dest_map.keys())}")
-                    return False, msg
-
-                # Standard multi-path extraction
-                for member_path in zip_members:
-                    if not _extract_member_to_destination(zipf, member_path, dest_map, error_messages):
+                if restore_plan['strategy'] == 'filenames':
+                    staged_matches = {
+                        staging_paths[physical_paths[destination]]: member
+                        for destination, member in restore_plan['matches'].items()
+                    }
+                    alt_success, alt_error = _extract_by_filename_matching(zipf, staged_matches)
+                    if not alt_success:
                         extracted_successfully = False
+                        error_messages.append(alt_error or "File extraction failed.")
+                else:
+                    # Standard multi-path extraction
+                    dest_map = {
+                        name: staging_paths[physical_paths[destination]]
+                        for name, destination in restore_plan['dest_map'].items()
+                    }
+                    for member_path in zip_members:
+                        if not _extract_member_to_destination(zipf, member_path, dest_map, error_messages):
+                            extracted_successfully = False
 
             else:
                 # --- Single Path Extraction ---
-                single_dest_path = paths_to_process[0]
+                single_dest_path = staging_paths[physical_paths[paths_to_process[0]]]
                 os.makedirs(single_dest_path, exist_ok=True)
                 logging.debug(f"Single path restore: Extracting all content to '{single_dest_path}'")
 
@@ -2227,7 +2360,8 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path, pr
     except zipfile.BadZipFile:
         msg = f"ERROR: The file is not a valid ZIP archive or is corrupted: '{archive_to_restore_path}'"
         logging.error(msg)
-        return False, msg
+        error_messages.append(msg)
+        extracted_successfully = False
     except (IOError, OSError) as e: # Catch IO/OS errors
         msg = f"ERROR IO/OS during extraction: {e}"
         logging.error(msg, exc_info=True)
@@ -2236,12 +2370,20 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path, pr
     except Exception as e:
         msg = f"FATAL ERROR unexpected during the restore process: {e}"
         logging.error(msg, exc_info=True)
-        # Make sure to return accumulated errors if present
-        final_message = msg
-        if error_messages:
-            final_message += "\n\nAdditional errors encountered during extraction:\n" + "\n".join(error_messages)
-        return False, final_message
+        error_messages.append(msg)
+        extracted_successfully = False
     # --- END Archive Extraction ---
+
+    if staging_ready:
+        if extracted_successfully:
+            previous_paths, install_error = _commit_staged_restore(staging_paths)
+            if install_error:
+                error_messages.append(install_error)
+                extracted_successfully = False
+            else:
+                error_messages.extend(_discard_previous_destinations(previous_paths))
+        else:
+            error_messages.extend(_remove_staged_restore(staging_paths))
 
     # --- Risultato Finale ---
     if extracted_successfully:
