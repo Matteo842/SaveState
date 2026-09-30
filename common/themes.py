@@ -315,11 +315,17 @@ QPushButton#ExitButton {
     max-height: 32px;
     padding: 4px;
 }
-QPushButton#ExitButton:hover {
+QPushButton#PathBrowseButton {
+    min-width: 0px;
+    padding: 3px;
+}
+QPushButton#ExitButton:hover,
+QPushButton#PathBrowseButton:hover {
     background-color: #5A5A5A;
     border: 1px solid #888888;
 }
-QPushButton#ExitButton:pressed {
+QPushButton#ExitButton:pressed,
+QPushButton#PathBrowseButton:pressed {
     background-color: #404040;
 }
 
@@ -986,11 +992,17 @@ QPushButton#ExitButton {
     max-height: 32px;
     padding: 4px;
 }
-QPushButton#ExitButton:hover {
+QPushButton#PathBrowseButton {
+    min-width: 0px;
+    padding: 3px;
+}
+QPushButton#ExitButton:hover,
+QPushButton#PathBrowseButton:hover {
     background-color: #F4F5F7;
     border: 1px solid #A8ADB7;
 }
-QPushButton#ExitButton:pressed {
+QPushButton#ExitButton:pressed,
+QPushButton#PathBrowseButton:pressed {
     background-color: #E5E7EB;
 }
 

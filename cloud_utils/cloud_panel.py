@@ -513,6 +513,43 @@ class BackupScannerWorker(QObject):
 
 
 
+class CloudSavePathDialog(QFileDialog):
+    """Select an existing save file or folder in the same browser."""
+
+    def __init__(self, path='', parent=None):
+        super().__init__(parent)
+        self.setOption(QFileDialog.Option.DontUseNativeDialog)
+        self.setWindowTitle("Select Game Save File or Folder")
+        self.setFileMode(QFileDialog.FileMode.AnyFile)
+        self.setLabelText(QFileDialog.DialogLabel.FileName, "File or folder:")
+        if os.path.isdir(path):
+            self.setDirectory(path)
+        elif path:
+            self.selectFile(path)
+
+        # Qt's Open button navigates into folders. A separate Select action
+        # confirms either a selected entry or the currently displayed folder.
+        buttons = self.findChild(QDialogButtonBox)
+        open_button = buttons.button(QDialogButtonBox.StandardButton.Open)
+        open_button.setAutoDefault(False)
+        open_button.setDefault(False)
+        open_button.hide()
+        select_button = buttons.addButton("Select", QDialogButtonBox.ButtonRole.ActionRole)
+        select_button.setObjectName("SaveButton")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setObjectName("DangerButton")
+        select_button.setDefault(True)
+        select_button.clicked.connect(self.accept)
+
+    def accept(self):
+        paths = self.selectedFiles()
+        if paths and (os.path.isfile(paths[0]) or os.path.isdir(paths[0])):
+            QDialog.accept(self)
+        else:
+            QMessageBox.warning(
+                self, "Invalid Save Path", "Choose an existing save file or folder."
+            )
+
+
 class CloudProfileLinkDialog(QDialog):
     """Choose this device's save locations for a downloaded backup."""
 
@@ -564,6 +601,7 @@ class CloudProfileLinkDialog(QDialog):
         paths_layout = QVBoxLayout(paths_container)
         paths_layout.setContentsMargins(0, 0, 0, 0)
         self.path_edits = []
+        self._path_browse_buttons = {}
         for index, source_path in enumerate(self.source_paths, 1):
             label = QLabel(
                 f"Save Path {index} on this device (original: {source_path})"
@@ -577,12 +615,17 @@ class CloudProfileLinkDialog(QDialog):
             path_edit = QLineEdit()
             path_edit.setPlaceholderText("Choose the game's local save file or folder")
             row.addWidget(path_edit)
-            folder_button = QPushButton("Folder…")
-            folder_button.clicked.connect(lambda _=False, edit=path_edit: self._browse_folder(edit))
-            row.addWidget(folder_button)
-            file_button = QPushButton("File…")
-            file_button.clicked.connect(lambda _=False, edit=path_edit: self._browse_file(edit))
-            row.addWidget(file_button)
+            browse_button = QPushButton()
+            browse_button.setObjectName("PathBrowseButton")
+            browse_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
+            browse_button.setIconSize(QSize(16, 16))
+            browse_button.setToolTip("Browse for a save file or folder")
+            browse_button.setAccessibleName("Browse for a save file or folder")
+            browse_button.setAutoDefault(False)
+            browse_button.clicked.connect(lambda _=False, edit=path_edit: self._browse_path(edit))
+            self._path_browse_buttons[path_edit] = browse_button
+            path_edit.installEventFilter(self)
+            row.addWidget(browse_button)
             paths_layout.addLayout(row)
             self.path_edits.append(path_edit)
         self.path_edit = self.path_edits[0]
@@ -598,6 +641,8 @@ class CloudProfileLinkDialog(QDialog):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setObjectName("SaveButton")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setObjectName("DangerButton")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -614,6 +659,12 @@ class CloudProfileLinkDialog(QDialog):
                 self.profile_combo.setCurrentIndex(index)
                 break
 
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.Resize and watched in self._path_browse_buttons:
+            side = event.size().height()
+            self._path_browse_buttons[watched].setFixedSize(side, side)
+        return super().eventFilter(watched, event)
+
     def _update_mode(self):
         existing_name = self.profile_combo.currentData()
         self.name_label.setVisible(existing_name is None)
@@ -628,15 +679,10 @@ class CloudProfileLinkDialog(QDialog):
             value = configured[index] if index < len(configured) else ''
             edit.setText(value if isinstance(value, str) else '')
 
-    def _browse_folder(self, edit):
-        path = QFileDialog.getExistingDirectory(self, "Select Game Save Folder", edit.text())
-        if path:
-            edit.setText(path)
-
-    def _browse_file(self, edit):
-        path, _ = QFileDialog.getOpenFileName(self, "Select Game Save File", edit.text())
-        if path:
-            edit.setText(path)
+    def _browse_path(self, edit):
+        dialog = CloudSavePathDialog(edit.text(), self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            edit.setText(dialog.selectedFiles()[0])
 
     def accept(self):
         existing_name = self.profile_combo.currentData()
