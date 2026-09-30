@@ -223,3 +223,4 @@ test_save_path_finder_title_regression.py
 test_numbered_save_path_alias.py
 test_cloud_profile_linking.py
 test_windows_steam_userdata_regression.py
+test_codeql_security_regressions.py
