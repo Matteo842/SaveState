@@ -21,6 +21,7 @@ import threading
 import urllib.parse
 from typing import Optional, List, Dict, Callable, Any
 from pathlib import Path
+from wsgiref.simple_server import WSGIRequestHandler
 from PySide6.QtCore import QObject, Signal
 
 # Lazy loading helpers for Google APIs to optimize startup time
@@ -68,6 +69,14 @@ CLOUD_BACKUPS_LIST_CACHE_TTL_SEC = 45
 OAUTH_CALLBACK_HOST = "127.0.0.1"
 OAUTH_CALLBACK_TIMEOUT_SEC = 180
 OAUTH_SERVER_POLL_SEC = 0.5
+
+
+class _OAuthWSGIRequestHandler(WSGIRequestHandler):
+    """Keep OAuth query strings out of the HTTP server's stderr access log."""
+
+    def log_message(self, format, *args):
+        # The default handler includes the request URL, including code and state.
+        logging.debug("Google OAuth callback HTTP request handled")
 
 
 class _OAuthCallbackHandler:
@@ -215,7 +224,7 @@ class GoogleDriveManager:
                         creds = pickle.load(token)
                     logging.info("Loaded existing Google Drive credentials")
                 except Exception as e:
-                    logging.warning(f"Error loading token file: {e}")
+                    logging.warning("Error loading Google Drive token file (%s)", type(e).__name__)
                     creds = None
             
             # If there are no (valid) credentials available, let the user log in
@@ -226,7 +235,7 @@ class GoogleDriveManager:
                         creds.refresh(Request())
                         logging.info("Credentials refreshed successfully")
                     except Exception as e:
-                        logging.error(f"Error refreshing credentials: {e}")
+                        logging.error("Error refreshing Google Drive credentials (%s)", type(e).__name__)
                         creds = None
                 
                 # If still no valid creds, start OAuth flow
@@ -256,7 +265,7 @@ class GoogleDriveManager:
                             OAUTH_CALLBACK_HOST,
                             0,
                             wsgi_app,
-                            handler_class=wsgiref.simple_server.WSGIRequestHandler,
+                            handler_class=_OAuthWSGIRequestHandler,
                         )
                         try:
                             port = local_server.server_port
@@ -278,14 +287,14 @@ class GoogleDriveManager:
                                 try:
                                     auth_url_callback(auth_url)
                                 except Exception as e_cb:
-                                    logging.warning(f"Error in auth_url_callback: {e_cb}")
+                                    logging.warning("Error displaying Google authorization URL (%s)", type(e_cb).__name__)
 
                             try:
                                 opened = webbrowser.open(auth_url, new=1)
                                 if not opened:
                                     logging.warning("Default browser did not confirm that it opened")
                             except Exception as e_browser:
-                                logging.warning(f"Could not open browser: {e_browser}")
+                                logging.warning("Could not open Google authorization browser (%s)", type(e_browser).__name__)
 
                             authorization_response = self._wait_for_oauth_callback(
                                 local_server, wsgi_app, state, port
@@ -302,8 +311,7 @@ class GoogleDriveManager:
                             urllib.parse.urlparse(authorization_response).query
                         )
                         if "error" in params:
-                            oauth_error = params.get("error_description", params["error"])[0]
-                            self.last_auth_error = f"Google authorization was not completed: {oauth_error}"
+                            self.last_auth_error = "Google authorization was not completed. Please try connecting again."
                             logging.warning(self.last_auth_error)
                             return False
 
@@ -312,8 +320,8 @@ class GoogleDriveManager:
                         logging.info("OAuth2 flow completed successfully")
                         
                     except Exception as e:
-                        self.last_auth_error = f"Google OAuth failed: {e}"
-                        logging.error(self.last_auth_error, exc_info=True)
+                        self.last_auth_error = f"Google OAuth failed ({type(e).__name__}). Please try connecting again."
+                        logging.error(self.last_auth_error)
                         return False
                 
                 # Save the credentials for the next run
@@ -327,7 +335,7 @@ class GoogleDriveManager:
                         os.chmod(self.token_file, 0o600)
                     logging.info("Google Drive credentials saved in app data")
                 except Exception as e:
-                    logging.warning(f"Error saving token file: {e}")
+                    logging.warning("Error saving Google Drive token file (%s)", type(e).__name__)
                 else:
                     if (
                         token_to_load == self._legacy_token_file
@@ -370,13 +378,13 @@ class GoogleDriveManager:
                 return True
                 
             except Exception as e:
-                self.last_auth_error = f"Google Drive API initialization failed: {e}"
-                logging.error(self.last_auth_error, exc_info=True)
+                self.last_auth_error = f"Google Drive API initialization failed ({type(e).__name__}). Please try connecting again."
+                logging.error(self.last_auth_error)
                 return False
                 
         except Exception as e:
-            self.last_auth_error = f"Unexpected Google Drive authentication error: {e}"
-            logging.error(self.last_auth_error, exc_info=True)
+            self.last_auth_error = f"Unexpected Google Drive authentication error ({type(e).__name__}). Please try connecting again."
+            logging.error(self.last_auth_error)
             return False
         finally:
             self._oauth_callback_port = None

@@ -5,6 +5,7 @@ import re
 import configparser
 from pathlib import Path
 from common import shortcut_utils  # Import shortcut utilities
+from common.launcher_urls import get_steam_app_id, is_steam_url
 
 from PySide6.QtWidgets import QMessageBox, QApplication, QDialog  # Import QApplication and QDialog
 from PySide6.QtGui import QDropEvent, QGuiApplication
@@ -320,7 +321,7 @@ class DropEventMixin:
             # Controlla prima il testo
             if mime_data.hasText():
                 text = mime_data.text()
-                if "store.steampowered.com" in text or "steam://" in text:
+                if is_steam_url(text):
                     steam_url_str = text
                     logging.debug(f"PCM.dropEvent: Found Steam URL in text: {steam_url_str}")
             
@@ -330,7 +331,7 @@ class DropEventMixin:
                     url_str = url_obj.toString()
                     
                     # Controlla se è un URL Steam diretto
-                    if "store.steampowered.com" in url_str or "steam://" in url_str:
+                    if is_steam_url(url_str):
                         steam_url_str = url_str
                         logging.debug(f"PCM.dropEvent: Found Steam URL in URL: {steam_url_str}")
                         break
@@ -344,7 +345,7 @@ class DropEventMixin:
                             if 'InternetShortcut' in config and 'URL' in config['InternetShortcut']:
                                 url_from_file = config['InternetShortcut']['URL']
                                 # Controlla se è un URL Steam
-                                if "store.steampowered.com" in url_from_file or "steam://" in url_from_file:
+                                if is_steam_url(url_from_file):
                                     steam_url_str = url_from_file
                                     logging.debug(f"PCM.dropEvent: Found Steam URL in .url file: {steam_url_str}")
                                     break
@@ -368,9 +369,8 @@ class DropEventMixin:
                     multi_file_drop = file_count > 1
                 
                 # Extract the AppID
-                app_id_match = re.search(r'steam://rungameid/(\d+)', steam_url_str)
-                if app_id_match:
-                    app_id = app_id_match.group(1)
+                app_id = get_steam_app_id(steam_url_str)
+                if app_id:
                     game_details = handler_instance._get_steam_game_details(app_id)
                     
                     # Check if the game is installed
@@ -889,14 +889,12 @@ class DropEventMixin:
                         config.read(file_path)
                         if 'InternetShortcut' in config and 'URL' in config['InternetShortcut']:
                             url_from_file = config['InternetShortcut']['URL']
-                            if "steam://" in url_from_file:
-                                app_id_match = re.search(r'steam://rungameid/(\d+)', url_from_file)
-                                if app_id_match:
-                                    app_id = app_id_match.group(1)
-                                    game_details = handler_instance._get_steam_game_details(app_id)
-                                    if not game_details:
-                                        logging.info(f"DragDropHandler.dropEvent: Skipping uninstalled Steam game (AppID: {app_id}): {file_path}")
-                                        is_uninstalled_steam_game = True
+                            app_id = get_steam_app_id(url_from_file)
+                            if app_id:
+                                game_details = handler_instance._get_steam_game_details(app_id)
+                                if not game_details:
+                                    logging.info(f"DragDropHandler.dropEvent: Skipping uninstalled Steam game (AppID: {app_id}): {file_path}")
+                                    is_uninstalled_steam_game = True
                     except Exception as e:
                         logging.error(f"Error checking Steam URL in .url file: {e}")
                 

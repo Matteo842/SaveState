@@ -13,6 +13,7 @@ from PySide6.QtCore import Qt, Slot, QObject, QTimer, QThread
 # Importa utility e logica
 from gui.gui_utils import DetectionWorkerThread
 from common import shortcut_utils
+from common.launcher_urls import get_steam_app_id, is_known_launcher_url, is_steam_url
 
 # Setup logging per questo modulo
 logger = logging.getLogger(__name__)
@@ -148,25 +149,19 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                             if 'InternetShortcut' in config and 'URL' in config['InternetShortcut']:
                                 url_from_file = config['InternetShortcut']['URL']
                                 
-                                is_steam_url = "store.steampowered.com" in url_from_file or "steam://" in url_from_file
+                                steam_url = is_steam_url(url_from_file)
                                 # Aggiungi altri launcher qui per il riconoscimento
-                                is_known_launcher = is_steam_url or any(proto in url_from_file for proto in [
-                                    "com.epicgames.launcher://", "uplay://", "goggalaxy://", "battlenet://", "origin://"
-                                ])
+                                is_known_launcher = is_known_launcher_url(url_from_file)
 
                                 if not is_known_launcher:
                                     # Salta i file .url non riconosciuti
                                     continue
 
                                 # Se è un URL Steam, esegui il controllo di installazione
-                                if is_steam_url:
+                                if steam_url:
                                     # --- INIZIO LOGICA CONTROLLO INSTALLAZIONE STEAM GAME ---
-                                    app_id = None
                                     # Estrai AppID (gestisce entrambi i formati di URL)
-                                    match = re.search(r'steam://rungameid/(\d+)|store\.steampowered\.com/app/(\d+)', url_from_file)
-
-                                    if match:
-                                        app_id = match.group(1) or match.group(2)
+                                    app_id = get_steam_app_id(url_from_file)
                                     
                                     if app_id:
                                         game_details = self._get_steam_game_details(app_id)
@@ -378,17 +373,14 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                         config.read(file_path)
                         if 'InternetShortcut' in config and 'URL' in config['InternetShortcut']:
                             url_from_file = config['InternetShortcut']['URL']
-                            is_steam_url = "store.steampowered.com" in url_from_file or "steam://" in url_from_file
+                            steam_url = is_steam_url(url_from_file)
                             
-                            if is_steam_url:
+                            if steam_url:
                                 is_steam_game = True
                                 # Estrai AppID (gestisce entrambi i formati di URL)
-                                match = re.search(r'steam://rungameid/(\d+)|store\.steampowered\.com/app/(\d+)', url_from_file)
-                                if match:
-                                    # group(1) è per rungameid, group(2) per store/app.
-                                    steam_app_id = match.group(1) or match.group(2)
-                                    if steam_app_id:
-                                        logging.info(f"Detected Steam game in multi-profile: {profile_name} (AppID: {steam_app_id})")
+                                steam_app_id = get_steam_app_id(url_from_file)
+                                if steam_app_id:
+                                    logging.info(f"Detected Steam game in multi-profile: {profile_name} (AppID: {steam_app_id})")
                                 else:
                                     logging.warning(f"Could not extract AppID from Steam URL '{url_from_file}' in multi-profile analysis.")
                             # Per altri URL di launcher (Epic, Ubi, etc.), is_steam_game rimane False.
@@ -795,8 +787,8 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
 
         mw = self.main_window
 
-        app_id_match = re.search(r'steam://rungameid/(\d+)', steam_url_str)
-        if not app_id_match:
+        app_id = get_steam_app_id(steam_url_str)
+        if not app_id:
             # Usa un messaggio non modale invece di QMessageBox.warning
             msg_box = QMessageBox(QMessageBox.Icon.Warning, "Invalid Steam URL", 
                                  "The provided Steam URL is not valid or could not be parsed.", 
@@ -808,7 +800,6 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
             self._hide_overlay_if_visible(mw)
             return
 
-        app_id = app_id_match.group(1)
         logger.debug(f"Extracted AppID: {app_id} from URL.")
 
         game_details = self._get_steam_game_details(app_id)
