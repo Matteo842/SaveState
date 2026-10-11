@@ -67,6 +67,31 @@ NON_SAVE_FILENAME_EXTENSIONS = {
     '.txt', '.html', '.htm', '.css', '.js', '.dll', '.exe', '.pak', '.cache',
 }
 
+# Parole generiche che, da sole, non identificano un gioco: una cartella "Games"
+# o "Video" altrimenti corrisponderebbe a ogni titolo che contiene quella parola
+# (es. "Beijing 2008 - The Official Video Game of the Olympic Games").
+GENERIC_FOLDER_WORDS = {
+    'game', 'games', 'video', 'videos', 'music', 'pictures', 'documents',
+    'downloads', 'desktop', 'data', 'save', 'saves', 'saved', 'config',
+    'settings', 'cache', 'logs', 'temp', 'user', 'users', 'profile',
+    'profiles', 'common', 'shared',
+}
+
+# Eseguibili generici di engine/emulatori (es. Game.exe di RPG Maker, nw.exe di
+# NW.js, dosbox.exe): non sono un alias del gioco e farebbero corrispondere le
+# cartelle di altri programmi (es. %LOCALAPPDATA%\DOSBox).
+GENERIC_EXECUTABLE_NAMES = {
+    'game', 'nw', 'dosbox', 'rpg_rt', 'scummvm', 'main', 'start', 'play',
+    'run', 'app', 'launch', 'autorun', 'java', 'javaw', 'python', 'pythonw',
+    'electron', 'love', 'renpy',
+}
+
+# Suffissi di lingua/regione nei nomi delle cartelle (es. "East_Tower_Akio_en", "TTGH-DSG_JP")
+LANGUAGE_SUFFIX_RE = re.compile(
+    r'[_-](en|eng|fr|de|ge|ger|it|es|ja|jp|jpn|na|eu|us|uk|cn|zh|kr|ko|ru|pl|pt|br)$',
+    re.IGNORECASE,
+)
+
 
 # Estensioni "sicure" per file di salvataggio - versione ristretta per deep scan
 # Queste sono estensioni che indicano quasi certamente un file di salvataggio
@@ -351,7 +376,7 @@ class Threshold:
     """Soglie e costanti numeriche usate nel modulo."""
     MIN_ABBREVIATION_LENGTH = 2
     MIN_WORD_LENGTH_FOR_CONTAINMENT = 4
-    MIN_PREFIX_LENGTH = 3
+    MIN_PREFIX_LENGTH = 4  # 3 lasciava passare "com" come prefisso di "Command ..."
     FUZZY_MIN_RATIO = 85
     FUZZY_HIGH_RATIO = 95
     FUZZY_TOKEN_SORT_THRESHOLD = 88
@@ -373,8 +398,12 @@ def _compact_title(name: str) -> str:
 def _title_version_tokens(name: str) -> Set[str]:
     """Extract normalized standalone version numbers from a game title."""
     tokens: Set[str] = set()
-    for word in re.findall(r"[A-Za-z0-9]+", name):
+    words = re.findall(r"[A-Za-z0-9]+", name)
+    for index, word in enumerate(words):
         word_upper = word.upper()
+        # "I" iniziale è un pronome ("I Walk Among Zombies"), non il numero 1
+        if index == 0 and word_upper == "I" and len(words) > 1:
+            continue
         if word_upper in ROMAN_TO_ARABIC:
             tokens.add(ROMAN_TO_ARABIC[word_upper])
         elif word.isdigit() and len(word) <= 2:
@@ -467,6 +496,24 @@ def _has_distinctive_title_extension(
 
     extra_words = longer[len(shorter):]
     return any(word not in ignored_words for word in extra_words)
+
+
+def _folder_name_variants(folder_name: str) -> List[str]:
+    """Nomi alternativi con cui confrontare una cartella, oltre al nome originale.
+
+    - senza suffisso di lingua/regione: "East_Tower_Akio_en" -> "East_Tower_Akio"
+    - ultima parte di un identificatore di pacchetto: "com.hg.deadlydesert" -> "deadlydesert"
+    """
+    variants = []
+    without_language = LANGUAGE_SUFFIX_RE.sub('', folder_name)
+    if without_language != folder_name:
+        variants.append(without_language)
+    package_parts = folder_name.split('.')
+    if len(package_parts) >= 3 and package_parts[0].lower() in {'com', 'net', 'org', 'io'}:
+        variants.append(package_parts[-1])
+    # Almeno 4 caratteri: una cartella di sola lingua (es. "it-IT") diventerebbe
+    # "it", che corrisponde a qualsiasi titolo contenente quella parola.
+    return [variant for variant in variants if len(variant) >= 4]
 
 
 class PathCandidate(NamedTuple):
@@ -855,6 +902,13 @@ class GameContext:
         abbreviations.add(re.sub(r'\s+', '', self.sanitized_name))
         abbreviations.add(re.sub(r'[^a-zA-Z0-9]', '', self.sanitized_name))
         
+        # Variante senza genitivo sassone, spesso omesso nel nome della cartella:
+        # "Hirotonfa's American Revolution Smuggler" -> "HIROTONFA_AmericanRevolutionSmuggler"
+        without_possessive = re.sub(r"['’]s\b", '', self.sanitized_name)
+        if without_possessive != self.sanitized_name:
+            abbreviations.add(without_possessive)
+            abbreviations.add(re.sub(r'[^a-zA-Z0-9]', '', without_possessive))
+
         # Aggiungi varianti con numeri romani/arabi (es: "DOOM II" -> "DOOM 2")
         for variant in get_numeral_variants(self.sanitized_name):
             abbreviations.add(variant)
@@ -975,6 +1029,9 @@ class GameContext:
                     break
 
             exe_name = re.sub(r'[-_]+$', '', exe_name).strip()
+            if exe_name.lower() in GENERIC_EXECUTABLE_NAMES:
+                logging.debug("Skipping generic executable alias '%s'", exe_name)
+                return
             if not _title_versions_are_compatible(self.sanitized_name, exe_name):
                 if _is_numbered_title_acronym_alias(self.sanitized_name, exe_name):
                     self.trusted_numbered_aliases.add(exe_name)
@@ -1169,6 +1226,8 @@ class SavePathFinder:
             "AppData/Local": localappdata,
             "AppData/LocalLow": os.path.join(localappdata, '..', 'LocalLow') if localappdata else None,
             "Public Documents": public_docs,
+            # Alcuni giochi usano %USERPROFILE%\My Games invece di Documents\My Games
+            "User Profile/My Games": os.path.join(user_profile, 'My Games'),
         }
         
         programdata = os.getenv('ProgramData')
@@ -1474,6 +1533,10 @@ class SavePathFinder:
         if clean1.replace(' ', '') == clean2.replace(' ', ''):
             return True
         
+        # Una parola generica da sola (es. cartella "Games") non identifica il gioco
+        if clean1 in GENERIC_FOLDER_WORDS or clean2 in GENERIC_FOLDER_WORDS:
+            return False
+
         # Controlla se uno ha un numero di versione e l'altro no
         # Es: "DOOM" non deve matchare "DOOM 2" o "DOOM II"
         has_num1 = has_version_number(clean1)
@@ -1563,6 +1626,12 @@ class SavePathFinder:
         """Esegue controlli diretti sui percorsi."""
         logging.info("Performing direct path checks...")
         
+        # Alcuni giochi salvano direttamente nel profilo utente (es. %USERPROFILE%\Klang).
+        # La radice del profilo si controlla solo con i nomi del gioco: esplorarla
+        # entrerebbe in Desktop, Download, ecc.
+        locations = dict(locations)
+        locations["User Profile"] = os.path.expanduser('~')
+
         for loc_name, base_folder in locations.items():
             # Controlla cancellazione
             if self.cancellation_manager and self.cancellation_manager.check_cancelled():
@@ -1681,6 +1750,11 @@ class SavePathFinder:
                          f"'{self.context.sanitized_name}' ~ folder '{folder_name}'")
             return True
             
+        # Nomi alternativi della cartella (suffisso di lingua, identificatore di pacchetto)
+        for variant in _folder_name_variants(folder_name):
+            if self._is_game_match(variant):
+                return True
+
         return False
     
     def _core_words(self, name: str) -> List[str]:
@@ -1788,10 +1862,12 @@ class SavePathFinder:
 
                 lvl2_lower = lvl2_name.lower()
 
-                # Verifica match
-                is_match = (
-                    self._are_names_similar(self.context.sanitized_name, lvl2_name) or
-                    self.context.matches_game_abbreviation(lvl2_name)
+                # Verifica match (anche sui nomi alternativi, es. "zombie2_en" -> "zombie2")
+                names_to_check = [lvl2_name] + _folder_name_variants(lvl2_name)
+                is_match = any(
+                    self._are_names_similar(self.context.sanitized_name, name) or
+                    self.context.matches_game_abbreviation(name)
+                    for name in names_to_check
                 )
 
                 if is_match:

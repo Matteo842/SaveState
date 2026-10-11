@@ -146,6 +146,7 @@ COMMON_SAVE_SUBDIRS = [
     'Save Data', # Con spazio
     'savedata',
     'save_data', # Con underscore
+    'SavesDir', # Nella cartella di installazione di alcuni giochi indie
 
     # Legati a profili/slot
     'Profiles',
