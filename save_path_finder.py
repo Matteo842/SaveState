@@ -549,11 +549,7 @@ def _install_folder_name(install_dir: str) -> Optional[str]:
     Es. ".../steamapps/common/Cargo!/bin/win32" -> "Cargo!".
     Restituisce None per le cartelle contenitore (Desktop, steamapps, D:\\Games, ...).
     """
-    current = os.path.normpath(install_dir)
-    for _ in range(3):
-        if os.path.basename(current).lower() not in GENERIC_INSTALL_SUBDIRS:
-            break
-        current = os.path.dirname(current)
+    current = _install_root(install_dir)
     if os.path.normcase(current) == os.path.normcase(os.path.expanduser('~')):
         return None
     # Toglie il testo tra parentesi (anni, traduzioni): "Leon's crusade (La cruzada de León)"
@@ -561,6 +557,20 @@ def _install_folder_name(install_dir: str) -> Optional[str]:
     if len(name) < 3 or name.lower() in GENERIC_INSTALL_SUBDIRS | GENERIC_INSTALL_ROOTS:
         return None
     return name
+
+
+def _install_root(install_dir: str) -> str:
+    """Cartella del gioco, risalendo le sottocartelle tecniche dell'exe (bin, Win32, ...).
+
+    Es. ".../steamapps/common/Cargo!/bin/win32" -> ".../steamapps/common/Cargo!",
+    ".../Little Nightmares/Atlas/Binaries/Win64" -> ".../Little Nightmares/Atlas".
+    """
+    current = os.path.normpath(install_dir)
+    for _ in range(3):
+        if os.path.basename(current).lower() not in GENERIC_INSTALL_SUBDIRS:
+            break
+        current = os.path.dirname(current)
+    return current
 
 
 class PathCandidate(NamedTuple):
@@ -1985,6 +1995,17 @@ class SavePathFinder:
         self._unreal_project_names = names
         return names
     
+    def _get_install_root(self) -> str:
+        """Cartella principale del gioco che contiene la cartella dell'exe.
+
+        Risale le sottocartelle tecniche dell'exe (es. "Atlas\\Binaries\\Win64" -> "Atlas"),
+        ma resta nella cartella dell'exe se sopra c'è un contenitore (Desktop, steamapps,
+        D:\\Games, ...).
+        """
+        install_dir = os.path.normpath(self.context.game_install_dir)
+        install_root = _install_root(install_dir)
+        return install_root if _install_folder_name(install_root) else install_dir
+
     def _search_install_directory(self):
         """Cerca nella directory di installazione del gioco."""
         if not self.context.game_install_dir or not os.path.isdir(self.context.game_install_dir):
@@ -1992,6 +2013,10 @@ class SavePathFinder:
             
         logging.info(f"Searching in install directory: {self.context.game_install_dir}")
         
+        # Le cartelle riconosciute dai soli file di salvataggio si cercano solo in una
+        # vera installazione: un collegamento a un exe che non esiste più usa come
+        # "installazione" la cartella del collegamento stesso.
+        is_real_install = bool(self.context._find_game_executable())
         install_depth = self.context.game_install_dir.rstrip(os.sep).count(os.sep)
         
         try:
@@ -2031,6 +2056,10 @@ class SavePathFinder:
                         self._add_guess(dir_path, source_desc)
                         # Cerca anche sotto-cartelle di salvataggio
                         self._check_nested_save_subdirs(dir_path, source_desc)
+                    elif is_real_install and self._has_direct_save_file(dir_path):
+                        # Cartella con file di salvataggio veri, qualunque sia il nome
+                        # (es. "partida\world.save", "Bird_Data\1.sav")
+                        self._add_guess(dir_path, f"InstallDirWalk/SaveFiles/{relative_path}")
                     
         except Exception as e:
             logging.error(f"Error walking install directory: {e}")
@@ -2068,6 +2097,7 @@ class SavePathFinder:
         boundary_dirs = self._get_profile_boundary_dirs()
         
         current_dir = os.path.normpath(self.context.game_install_dir)
+        game_folder = os.path.normcase(self._get_install_root())
         levels_searched = 0
         
         while levels_searched < Threshold.MAX_PARENT_DIR_LEVELS:
@@ -2088,9 +2118,12 @@ class SavePathFinder:
                 logging.debug(f"Skipping parent directory search: reached user profile/AppData boundary: {parent_dir}")
                 break
                 
-            # Verifica che non siamo in cartelle di sistema
+            # Verifica che non siamo in cartelle di sistema. Le cartelle tecniche dentro
+            # la cartella del gioco si attraversano: da "Atlas\Binaries\Win64" la ricerca
+            # si fermava subito su "Binaries" e non vedeva i save qualche livello sopra.
             parent_basename = os.path.basename(parent_dir).lower()
-            if parent_basename in self.context.banned_folder_names_lower:
+            inside_game_folder = os.path.normcase(parent_dir).startswith(game_folder + os.sep)
+            if parent_basename in self.context.banned_folder_names_lower and not inside_game_folder:
                 logging.debug(f"Skipping banned parent folder: {parent_basename}")
                 break
                 
