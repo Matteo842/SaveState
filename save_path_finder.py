@@ -92,6 +92,29 @@ LANGUAGE_SUFFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Suffissi che indicano la cartella dei salvataggi o la piattaforma di un gioco
+# (es. "MM3_Saves", "Avernum 6 Saved Games", "The Club Game Save Data", "HeroesOfSteel.win32")
+SAVE_FOLDER_SUFFIX_RE = re.compile(
+    r'[\s_.-]+(game\s?save\s?data|save\s?data|saved?\s?games|saves?|win32|win64)$',
+    re.IGNORECASE,
+)
+
+# Sottocartelle tecniche dell'installazione: il nome del gioco è nella cartella
+# sopra (es. "Cargo!\bin\win32", "Fable Anniversary\binaries\Win32")
+GENERIC_INSTALL_SUBDIRS = {
+    'bin', 'bin32', 'bin64', 'binaries', 'win32', 'win64', 'x86', 'x64',
+    'x86_64', 'system', 'program', 'exe', 'release', 'retail', 'dosbox', 'base',
+    'windows', 'win', 'pc', 'game',
+}
+
+# Cartelle che contengono giochi o file dell'utente: il loro nome non è quello
+# di un gioco (es. un exe messo direttamente in "D:\Games" o sul Desktop)
+GENERIC_INSTALL_ROOTS = {
+    'steamapps', 'common', 'program files', 'program files (x86)', 'games',
+    'giochi', 'steam library', 'steamlibrary', 'gog games', 'epic games',
+    'desktop', 'downloads', 'documents', 'onedrive', 'users',
+}
+
 
 # Estensioni "sicure" per file di salvataggio - versione ristretta per deep scan
 # Queste sono estensioni che indicano quasi certamente un file di salvataggio
@@ -502,18 +525,42 @@ def _folder_name_variants(folder_name: str) -> List[str]:
     """Nomi alternativi con cui confrontare una cartella, oltre al nome originale.
 
     - senza suffisso di lingua/regione: "East_Tower_Akio_en" -> "East_Tower_Akio"
+    - senza suffisso di salvataggio/piattaforma: "MM3_Saves" -> "MM3"
     - ultima parte di un identificatore di pacchetto: "com.hg.deadlydesert" -> "deadlydesert"
     """
     variants = []
     without_language = LANGUAGE_SUFFIX_RE.sub('', folder_name)
     if without_language != folder_name:
         variants.append(without_language)
+    without_save_suffix = SAVE_FOLDER_SUFFIX_RE.sub('', folder_name)
+    if without_save_suffix != folder_name:
+        variants.append(without_save_suffix)
     package_parts = folder_name.split('.')
     if len(package_parts) >= 3 and package_parts[0].lower() in {'com', 'net', 'org', 'io'}:
         variants.append(package_parts[-1])
-    # Almeno 4 caratteri: una cartella di sola lingua (es. "it-IT") diventerebbe
+    # Almeno 3 caratteri: una cartella di sola lingua (es. "it-IT") diventerebbe
     # "it", che corrisponde a qualsiasi titolo contenente quella parola.
-    return [variant for variant in variants if len(variant) >= 4]
+    return [variant for variant in variants if len(variant) >= 3]
+
+
+def _install_folder_name(install_dir: str) -> Optional[str]:
+    """Nome della cartella del gioco, risalendo le sottocartelle tecniche (bin, Win32, ...).
+
+    Es. ".../steamapps/common/Cargo!/bin/win32" -> "Cargo!".
+    Restituisce None per le cartelle contenitore (Desktop, steamapps, D:\\Games, ...).
+    """
+    current = os.path.normpath(install_dir)
+    for _ in range(3):
+        if os.path.basename(current).lower() not in GENERIC_INSTALL_SUBDIRS:
+            break
+        current = os.path.dirname(current)
+    if os.path.normcase(current) == os.path.normcase(os.path.expanduser('~')):
+        return None
+    # Toglie il testo tra parentesi (anni, traduzioni): "Leon's crusade (La cruzada de León)"
+    name = re.sub(r'\s*[\(\[\{].*?[\)\]\}]', '', os.path.basename(current)).strip()
+    if len(name) < 3 or name.lower() in GENERIC_INSTALL_SUBDIRS | GENERIC_INSTALL_ROOTS:
+        return None
+    return name
 
 
 class PathCandidate(NamedTuple):
@@ -948,6 +995,7 @@ class GameContext:
         # Aggiungi abbreviazioni da executable
         if self.game_install_dir:
             self._add_exe_abbreviations(abbreviations)
+            self._add_install_folder_alias(abbreviations)
         
         # Se il nome rilevato sembra un diminutivo, arricchisci le varianti
         # usando i nomi delle cartelle di installazione
@@ -958,9 +1006,11 @@ class GameContext:
         except Exception as e:
             logging.warning(f"Error expanding abbreviations from install dir: {e}")
             
+        # A parità di lunghezza ordina alfabeticamente: l'ordine di un set cambia a
+        # ogni avvio e con lui le maiuscole del percorso trovato (es. "mcc" / "MCC")
         return sorted(
             [x for x in abbreviations if x and len(x) >= Threshold.MIN_ABBREVIATION_LENGTH],
-            key=len, reverse=True
+            key=lambda x: (-len(x), x)
         )
     
     def _add_colon_abbreviations(self, abbreviations: Set[str]):
@@ -1050,6 +1100,21 @@ class GameContext:
             if len(exe_name) >= Threshold.MIN_ABBREVIATION_LENGTH:
                 abbreviations.add(exe_name)
     
+    def _add_install_folder_alias(self, abbreviations: Set[str]) -> None:
+        """Aggiunge il nome della cartella di installazione come alias del gioco.
+
+        La cartella del gioco ha quasi sempre il nome reale anche quando collegamento
+        ed eseguibile no (es. "dmcLauncher.exe" in "Devil May Cry HD Collection").
+        Solo se nella cartella c'è davvero un eseguibile: un collegamento a un exe che
+        non esiste più usa come "installazione" la cartella del collegamento stesso.
+        """
+        if not self._find_game_executable():
+            return
+        folder_name = _install_folder_name(self.game_install_dir)
+        if (folder_name and folder_name.lower() not in self.banned_folder_names_lower
+                and _title_versions_are_compatible(self.sanitized_name, folder_name)):
+            abbreviations.add(folder_name)
+
     def _add_install_dir_abbreviations(self, abbreviations: Set[str]) -> None:
         """Aggiunge varianti del nome derivate dalle cartelle di installazione quando il titolo è molto corto.
         
@@ -1722,11 +1787,14 @@ class SavePathFinder:
         
         # Controlla anche similarità con le abbreviazioni lunghe (es. nome espanso dalla cartella di install)
         # Questo aiuta quando il nome del gioco è corto ma abbiamo un'espansione dalla directory
+        # La cartella non deve avere un numero diverso dal gioco: per "DOOM II"
+        # l'alias "DOOM_II_Classic_2019" non deve trovare "DOOM_Classic_2019"
+        folder_versions_ok = _title_versions_are_compatible(self.context.sanitized_name, folder_name)
         for abbrev in self.context.game_abbreviations:
             # Salta abbreviazioni corte, già controllate sopra
             if not abbrev or len(abbrev) <= len(self.context.sanitized_name):
                 continue
-            if self._are_names_similar(abbrev, folder_name):
+            if folder_versions_ok and self._are_names_similar(abbrev, folder_name):
                 logging.debug(f"Match found via abbreviation '{abbrev}' for folder '{folder_name}'")
                 return True
         

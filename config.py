@@ -509,6 +509,7 @@ BANNED_FOLDER_NAMES_LOWER = {
 
      # Launcher / Store Giochi (le cartelle principali, non le librerie giochi)
      "steam", "epic games", "epicgameslauncher", "ubisoft game launcher", "uplay",
+     "epic", # ProgramData\Epic (dati del launcher Epic)
      "battle.net", "blizzard entertainment", # A volte usato anche per saves, ma spesso separato
      "origin", "ea desktop", "gog galaxy", "itch", "xboxgames", "gamingservices",
 
