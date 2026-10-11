@@ -1102,6 +1102,7 @@ class SavePathFinder:
         self.path_scorer = PathScore(game_context)
         self.checked_paths: Set[str] = set()
         self.guesses_data: Dict[str, PathCandidate] = {}
+        self._unreal_project_names: Optional[Set[str]] = None
         # Cache per-istanza per reverse matching (invariante durante la ricerca)
         self._game_name_upper_nospace = game_context.sanitized_name.upper().replace(' ', '')
     
@@ -1615,17 +1616,24 @@ class SavePathFinder:
                 if not os.path.isdir(lvl1_path):
                     continue
                     
-                # Verifica se è rilevante
-                is_publisher = lvl1_name.lower() in self.context.common_publishers_set
-                is_related = is_publisher or self._are_names_similar(self.context.sanitized_name, lvl1_name)
-                
+                is_lvl1_game_match = self._is_game_match(lvl1_name)
+
                 # Controlla livello 1
-                if self._is_game_match(lvl1_name):
+                if is_lvl1_game_match:
                     self._add_guess(lvl1_path, f"{loc_name}/GameNameLvl1/{lvl1_name}")
                     self._check_save_subdirs(lvl1_path, f"{loc_name}/GameNameLvl1/{lvl1_name}")
-                    
+
+                # Una cartella publisher (es. 'Sandfall') è condivisa da più giochi:
+                # le sue sottocartelle di salvataggio dirette (es. 'Sandfall/Saved')
+                # appartengono al gioco solo se la cartella corrisponde al gioco
+                # o al progetto Unreal presente nella sua cartella di installazione.
+                is_publisher = lvl1_name.lower() in self.context.common_publishers_set
+                parent_owns_saves = is_lvl1_game_match or (
+                    is_publisher and lvl1_name.lower() in self._get_unreal_project_names()
+                )
+
                 # Controlla livello 2
-                self._explore_level2(loc_name, lvl1_path, lvl1_name, is_related)
+                self._explore_level2(loc_name, lvl1_path, lvl1_name, parent_owns_saves)
                 
                 if self._is_cancelled():
                     return
@@ -1762,40 +1770,76 @@ class SavePathFinder:
         except OSError:
             pass
     
-    def _explore_level2(self, loc_name: str, lvl1_path: str, lvl1_name: str, is_parent_related: bool):
-        """Esplora il secondo livello di cartelle."""
+    def _explore_level2(self, loc_name: str, lvl1_path: str, lvl1_name: str, parent_owns_saves: bool):
+        """Esplora il secondo livello di cartelle.
+
+        ``parent_owns_saves`` indica che la cartella di livello 1 appartiene al
+        gioco: solo in quel caso le sue sottocartelle di salvataggio generiche
+        (Saves, Saved, ...) vengono proposte.
+        """
         try:
             for lvl2_name in os.listdir(lvl1_path):
                 if self._is_cancelled():
                     return
-                    
+
                 lvl2_path = os.path.join(lvl1_path, lvl2_name)
                 if not os.path.isdir(lvl2_path):
                     continue
-                    
+
                 lvl2_lower = lvl2_name.lower()
-                
+
                 # Verifica match
-                is_match = False
-                if is_parent_related:
-                    is_match = (self._are_names_similar(self.context.sanitized_name, lvl2_name) or
-                                self.context.matches_game_abbreviation(lvl2_name))
-                else:
-                    is_match = (
-                        self._are_names_similar(self.context.sanitized_name, lvl2_name) or
-                        self.context.matches_game_abbreviation(lvl2_name)
-                    )
-                    
+                is_match = (
+                    self._are_names_similar(self.context.sanitized_name, lvl2_name) or
+                    self.context.matches_game_abbreviation(lvl2_name)
+                )
+
                 if is_match:
                     self._add_guess(lvl2_path, f"{loc_name}/{lvl1_name}/GameNameLvl2/{lvl2_name}")
                     self._check_save_subdirs(lvl2_path, f"{loc_name}/.../GameNameLvl2/{lvl2_name}")
-                    
-                elif lvl2_lower in self.context.common_save_subdirs_lower:
-                    if is_parent_related or self._is_game_match(lvl1_name):
-                        self._add_guess(lvl2_path, f"{loc_name}/{lvl1_name}/SaveSubdirLvl2/{lvl2_name}")
-                        
+
+                elif lvl2_lower in self.context.common_save_subdirs_lower and parent_owns_saves:
+                    self._add_guess(lvl2_path, f"{loc_name}/{lvl1_name}/SaveSubdirLvl2/{lvl2_name}")
+
         except OSError:
             pass
+
+    def _get_unreal_project_names(self) -> Set[str]:
+        """Nomi (minuscoli) dei progetti Unreal nella cartella di installazione.
+
+        I giochi Unreal salvano in ``%LOCALAPPDATA%/<Progetto>/Saved`` e
+        installano ``<install>/<Progetto>/Binaries`` (es. Expedition 33 ->
+        'Sandfall'). Serve a collegare una cartella publisher al gioco.
+        """
+        if self._unreal_project_names is not None:
+            return self._unreal_project_names
+
+        names: Set[str] = set()
+        install_dir = self.context.game_install_dir
+        if install_dir and os.path.isdir(install_dir):
+            ue_markers = ('Binaries', 'Content')
+            install_dir = os.path.normpath(install_dir)
+
+            # install_dir punta dentro il progetto (es. .../Sandfall/Binaries/Win64)
+            parts = install_dir.split(os.sep)
+            for i, part in enumerate(parts[:-1]):
+                if parts[i + 1].lower() == 'binaries':
+                    names.add(part.lower())
+
+            # install_dir è il progetto stesso o la cartella che lo contiene
+            candidates = [install_dir]
+            try:
+                candidates += [
+                    entry.path for entry in os.scandir(install_dir) if entry.is_dir()
+                ]
+            except OSError:
+                pass
+            for candidate in candidates:
+                if any(os.path.isdir(os.path.join(candidate, m)) for m in ue_markers):
+                    names.add(os.path.basename(candidate).lower())
+
+        self._unreal_project_names = names
+        return names
     
     def _search_install_directory(self):
         """Cerca nella directory di installazione del gioco."""
