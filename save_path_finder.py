@@ -521,6 +521,28 @@ def _has_distinctive_title_extension(
     return any(word not in ignored_words for word in extra_words)
 
 
+def _folder_adds_words_to_name(
+    game_name: str, folder_name: str, ignored_words: Set[str]
+) -> bool:
+    """Come _has_distinctive_title_extension, ma anche per un nome senza spazi.
+
+    Un collegamento "CrashBandicoot" non deve corrispondere alla cartella
+    "Crash Bandicoot N. Sane Trilogy": le prime parole della cartella, unite,
+    formano il nome cercato e le parole in più indicano un altro gioco.
+    Vale solo in questa direzione: la cartella "AgeOfDarkness" resta valida
+    per il gioco "Age of Darkness - Final Stand".
+    """
+    compact_name = _compact_title(game_name)
+    folder_words = re.findall(r"[a-z0-9]+", folder_name.lower())
+    joined = ""
+    for index, word in enumerate(folder_words):
+        joined += word
+        if joined == compact_name:
+            extra_words = folder_words[index + 1:]
+            return any(word not in ignored_words for word in extra_words)
+    return False
+
+
 def _folder_name_variants(folder_name: str) -> List[str]:
     """Nomi alternativi con cui confrontare una cartella, oltre al nome originale.
 
@@ -1598,6 +1620,10 @@ class SavePathFinder:
     
     def _are_names_similar(self, name1: str, name2: str) -> bool:
         """Verifica se due nomi sono simili."""
+        # I marchi "(TM)" e "(R)" non devono attaccarsi alla parola precedente
+        # (es. "Crash Bandicoot(TM)" diventerebbe "bandicoottm")
+        name1 = re.sub(r'\((?:tm|r)\)', ' ', name1, flags=re.IGNORECASE)
+        name2 = re.sub(r'\((?:tm|r)\)', ' ', name2, flags=re.IGNORECASE)
         # Pulisci i nomi
         clean1 = re.sub(r'[^a-zA-Z0-9\s]', '', name1).lower()
         clean2 = re.sub(r'[^a-zA-Z0-9\s]', '', name2).lower()
@@ -1632,6 +1658,10 @@ class SavePathFinder:
             return True
 
         distinctive_extension = _has_distinctive_title_extension(
+            clean1,
+            clean2,
+            self.context.ignore_words_lower,
+        ) or _folder_adds_words_to_name(
             clean1,
             clean2,
             self.context.ignore_words_lower,
