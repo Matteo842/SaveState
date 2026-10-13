@@ -4,7 +4,9 @@
 import os
 import re
 import sys
+import json
 import logging
+import platform
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
@@ -23,6 +25,13 @@ PARAM_TITLE_SIZE = 128
 
 # PS5 (PPSA01234) and PS4 (CUSA01234) style title IDs
 TITLE_ID_PATTERN = re.compile(r'^[A-Z]{4}\d{5}$')
+
+# The save title is chosen by the game and is often not the game name
+# (e.g. 'GoW_SoS_Save_Data_999'). This strips a trailing 'Save Data 999' / 'Save 01' / 'Slot 2'.
+SAVE_SUFFIX_PATTERN = re.compile(r'[\s\-:#]*\b(save\s*data|savedata|save|slot)[\s\-:#]*\d*$', re.IGNORECASE)
+
+# Safety limit when searching the launcher's game folders for installed games
+MAX_GAME_SCAN_DEPTH = 6
 
 
 def get_kytyps5_savedata_path(executable_path: str | None = None) -> str | None:
@@ -72,7 +81,147 @@ def read_param_bin_title(param_path: str) -> str | None:
     return title or None
 
 
-def get_game_title(title_dir: str) -> str | None:
+def clean_save_title(title: str) -> str | None:
+    """'GoW_SoS_Save_Data_999' -> 'GoW SoS'. Returns None if nothing is left."""
+    cleaned = ' '.join(title.replace('_', ' ').split())
+    cleaned = SAVE_SUFFIX_PATTERN.sub('', cleaned).strip()
+    return cleaned or None
+
+
+def get_kyty_ini_path(install_dir: str) -> str | None:
+    """
+    Returns the KytyPS5 launcher settings file (Kyty.ini).
+
+    The launcher uses Kyty.ini next to itself if it exists, otherwise
+    %PROGRAMDATA%/Kyty/Kyty.ini on Windows and ~/.config/Kyty/Kyty.ini on Linux.
+    """
+    candidates = [os.path.join(install_dir, "Kyty.ini")]
+    if platform.system() == "Windows":
+        programdata = os.getenv('PROGRAMDATA')
+        if programdata:
+            candidates.append(os.path.join(programdata, "Kyty", "Kyty.ini"))
+    else:
+        config_home = os.getenv('XDG_CONFIG_HOME') or os.path.join(os.path.expanduser("~"), ".config")
+        candidates.append(os.path.join(config_home, "Kyty", "Kyty.ini"))
+
+    for ini_path in candidates:
+        if os.path.isfile(ini_path):
+            log.debug(f"Found KytyPS5 settings file: {ini_path}")
+            return ini_path
+    return None
+
+
+def _parse_qt_ini_list(value: str) -> list[str]:
+    """Splits a Qt INI string list ('a, "b,c", d') into items, undoing Qt's escaping."""
+    items = []
+    current = ''
+    in_quotes = False
+    i = 0
+    while i < len(value):
+        ch = value[i]
+        if ch == '"':
+            in_quotes = not in_quotes
+        elif ch == '\\' and i + 1 < len(value):
+            i += 1
+            next_ch = value[i]
+            if next_ch == 'x':
+                hex_digits = re.match(r'[0-9a-fA-F]{1,4}', value[i + 1:])
+                if hex_digits:
+                    current += chr(int(hex_digits.group(), 16))
+                    i += len(hex_digits.group())
+            else:
+                current += {'n': '\n', 't': '\t', 'r': '\r', '0': '\0'}.get(next_ch, next_ch)
+        elif ch == ',' and not in_quotes:
+            items.append(current.strip())
+            current = ''
+        else:
+            current += ch
+        i += 1
+    items.append(current.strip())
+    return [item for item in items if item]
+
+
+def read_kyty_game_dirs(ini_path: str) -> list[str]:
+    """Reads the game folders configured in the KytyPS5 launcher ([Launcher] game_dirs)."""
+    section = None
+    values = {}
+    try:
+        with open(ini_path, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith('[') and line.endswith(']'):
+                    section = line[1:-1]
+                elif section == 'Launcher' and '=' in line:
+                    key, value = line.split('=', 1)
+                    values[key.strip()] = value.strip()
+    except OSError as e:
+        log.debug(f"Could not read {ini_path}: {e}")
+        return []
+
+    # 'game_dir' is the older single-folder setting
+    raw_value = values.get('game_dirs') or values.get('game_dir') or ''
+    return [os.path.normpath(d) for d in _parse_qt_ini_list(raw_value)]
+
+
+def read_param_json_title(param_json_path: str) -> tuple[str | None, str | None]:
+    """
+    Reads (titleId, titleName) from a PS5 game's sce_sys/param.json.
+    Language order is the same as the KytyPS5 launcher: default language, en-US, then any.
+    """
+    try:
+        with open(param_json_path, 'r', encoding='utf-8-sig') as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        log.debug(f"Could not read {param_json_path}: {e}")
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+
+    title_id = str(data.get('titleId', '')).strip() or None
+    localized = data.get('localizedParameters')
+    if not isinstance(localized, dict):
+        return title_id, None
+
+    def title_for(language):
+        entry = localized.get(language)
+        return str(entry.get('titleName', '')).strip() if isinstance(entry, dict) else ''
+
+    title_name = title_for(localized.get('defaultLanguage', '')) or title_for('en-US')
+    if not title_name:
+        for language in localized:
+            title_name = title_for(language)
+            if title_name:
+                break
+    return title_id, title_name or None
+
+
+def find_installed_game_titles(game_dirs: list[str], wanted_ids: list[str]) -> dict[str, str]:
+    """
+    Maps TITLE_ID -> game name for installed games, reading sce_sys/param.json of each
+    game folder (a folder with eboot.bin) inside the launcher's game folders.
+    .zar archives are not read: those games fall back to the save title.
+    """
+    titles = {}
+    wanted = set(wanted_ids)
+    for game_dir in game_dirs:
+        if not os.path.isdir(game_dir):
+            continue
+        base_depth = game_dir.rstrip(os.sep).count(os.sep)
+        for root, dirnames, filenames in os.walk(game_dir):
+            if any(name.lower() == 'eboot.bin' for name in filenames):
+                dirnames[:] = []  # game folder found: no need to go deeper
+                title_id, title_name = read_param_json_title(os.path.join(root, "sce_sys", "param.json"))
+                if title_id in wanted and title_name and title_id not in titles:
+                    titles[title_id] = title_name
+                    log.debug(f"KytyPS5 installed game: {title_id} = '{title_name}' ({root})")
+                    if wanted.issubset(titles):
+                        return titles
+            elif root.count(os.sep) - base_depth >= MAX_GAME_SCAN_DEPTH:
+                dirnames[:] = []
+    return titles
+
+
+def get_save_title(title_dir: str) -> str | None:
     """Looks through a game's save folders and returns the first save title found."""
     try:
         entries = sorted(os.listdir(title_dir))
@@ -120,33 +269,46 @@ def find_kytyps5_profiles(executable_path: str | None = None) -> list[dict]:
     if not savedata_dir:
         return []
 
-    profiles = []
+    title_ids = []
     try:
         for title_id in sorted(os.listdir(savedata_dir)):
-            title_dir = os.path.join(savedata_dir, title_id)
-            if not os.path.isdir(title_dir):
+            if not os.path.isdir(os.path.join(savedata_dir, title_id)):
                 continue
 
             # Skips "UNKNOWN" (game without a TITLE_ID) and anything else that is not a title ID
             if not TITLE_ID_PATTERN.match(title_id):
                 log.debug(f"Skipping non-standard folder in {SAVE_DATA_DIR}: {title_id}")
                 continue
-
-            game_title = get_game_title(title_dir)
-            if not game_title:
-                log.debug(f"No save title found for {title_id}. Using the title ID as name.")
-                game_title = title_id
-
-            profiles.append({
-                'id': title_id,
-                'name': game_title,
-                'paths': [title_dir]
-            })
-            log.debug(f"Added KytyPS5 profile: ID='{title_id}', Name='{game_title}', Path='{title_dir}'")
-
+            title_ids.append(title_id)
     except OSError as e:
         log.error(f"Error scanning KytyPS5 save directory '{savedata_dir}': {e}")
         return []
+
+    # Real game names come from the games installed in the launcher's game folders
+    installed_titles = {}
+    ini_path = get_kyty_ini_path(os.path.dirname(savedata_dir)) if title_ids else None
+    if ini_path:
+        installed_titles = find_installed_game_titles(read_kyty_game_dirs(ini_path), title_ids)
+
+    profiles = []
+    for title_id in title_ids:
+        title_dir = os.path.join(savedata_dir, title_id)
+
+        # Name order: installed game name, cleaned save title, title ID
+        game_title = installed_titles.get(title_id)
+        if not game_title:
+            save_title = get_save_title(title_dir)
+            game_title = clean_save_title(save_title) if save_title else None
+        if not game_title:
+            log.debug(f"No game name found for {title_id}. Using the title ID as name.")
+            game_title = title_id
+
+        profiles.append({
+            'id': title_id,
+            'name': game_title,
+            'paths': [title_dir]
+        })
+        log.debug(f"Added KytyPS5 profile: ID='{title_id}', Name='{game_title}', Path='{title_dir}'")
 
     log.info(f"Found {len(profiles)} KytyPS5 profiles.")
     profiles.sort(key=lambda p: p.get('name', '').lower())
