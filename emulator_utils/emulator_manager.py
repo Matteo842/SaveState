@@ -31,6 +31,7 @@ from .ares_manager import find_ares_profiles
 # RetroArch support (core-based front-end)
 from .retroarch_manager import list_retroarch_cores, find_retroarch_profiles
 from .xemu_manager import find_xemu_profiles
+from .kytyps5_manager import find_kytyps5_profiles
 # Eden è un fork di Yuzu, quindi utilizza lo stesso codice
 
 # Configure basic logging for this module
@@ -48,7 +49,7 @@ KNOWN_EMULATORS = [
     'rpcs3', 'yuzu', 'eden', 'citron', 'ppsspp', 'citra', 'azahar', 'ryujinx', 'dolphin',
     'duckstation', 'mgba', 'snes9x', 'desmume', 'melonds', 'cemu', 'flycast', 'shadps4',
     'sameboy', 'xenia', 'pcsx2', 'gopher64', 'vita3k', 'mednafen', 'mednaffe', 'ymir', 
-    'ares', 'retroarch', 'xemu', 
+    'ares', 'retroarch', 'xemu', 'kyty',
 ]
 
 UNKNOWN_EMULATORS = [
@@ -184,6 +185,12 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
         'name': 'xemu',
         'profile_finder': lambda path: find_xemu_profiles(path)
     },
+    # Key is 'kyty' (not 'kytyps5') so both launcher.exe in a KytyPS5 folder
+    # and kyty_emulator.exe in any folder are matched by path keyword.
+    'kyty': {
+        'name': 'KytyPS5',
+        'profile_finder': lambda path: find_kytyps5_profiles(path)
+    },
 }
 
 def get_emulator_display_name(emulator_key: str) -> Optional[str]:
@@ -225,6 +232,19 @@ def find_profiles_for_emulator(emulator_key: str, custom_path: Optional[str] = N
         log.exception(f"Error finding profiles for {emulator_config.get('name', emulator_key)}: {e}")
         return {}
 
+def _is_kyty_launcher(path: str | None) -> bool:
+    """
+    KytyPS5 starts from a generic 'launcher.exe', so its path may not contain 'kyty'.
+    It counts as KytyPS5 only when the file is named exactly 'launcher(.exe)' AND
+    'kyty_emulator(.exe)' sits in the same folder. Game launchers are never matched.
+    """
+    if not path or not os.path.isfile(path):
+        return False
+    if os.path.basename(path).lower() not in ('launcher.exe', 'launcher'):
+        return False
+    folder = os.path.dirname(path)
+    return any(os.path.isfile(os.path.join(folder, exe)) for exe in ('kyty_emulator.exe', 'kyty_emulator'))
+
 def is_known_emulator(file_path: str) -> tuple[str, str | None]:
     """
     Verifica se il file è un emulatore conosciuto e il suo stato di supporto.
@@ -256,7 +276,12 @@ def is_known_emulator(file_path: str) -> tuple[str, str | None]:
             except Exception as e:
                 log.error(f"Error resolving shortcut in is_known_emulator: {e}")
                 return 'not_found', None
-        
+
+        # KytyPS5: 'launcher.exe' riconosciuto solo se accanto c'è kyty_emulator
+        if _is_kyty_launcher(target_path):
+            log.info(f"Detected supported emulator 'kyty' (launcher next to kyty_emulator): {target_path}")
+            return 'supported', 'kyty'
+
         # Verifica se il percorso contiene uno degli emulatori conosciuti
         target_path_lower = target_path.lower()
         file_name = os.path.basename(target_path_lower)
@@ -308,6 +333,11 @@ def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] 
     if os.path.isfile(target_path):
         executable_dir = os.path.dirname(target_path)
         log.debug(f"Derived executable directory (may not be used by all finders): {executable_dir}")
+
+    # --- KytyPS5 'launcher.exe' (path may not contain 'kyty') ---
+    if _is_kyty_launcher(target_path):
+        log.info(f"Detected KytyPS5 launcher (kyty_emulator found in the same folder): {target_path}")
+        return EMULATORS['kyty']['name'], find_kytyps5_profiles(target_path)
 
     # --- Explicit Check for Azahar First --- START ---
     if 'azahar' in target_path_lower:

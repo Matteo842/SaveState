@@ -39,7 +39,7 @@ SaveState automatically detects save data locations for a wide range of emulator
 | DeSmuME | Cemu | Flycast | ShadPs4 |
 | SameBoy | PCSX2 \* | Xenia | Eden (yuzu) |
 | melonDS | Gopher64 | Citron | Vita3K |
-| Mednafen/Mednaffe | ymir | **xemu** † |  |
+| Mednafen/Mednaffe | ymir | **xemu** † | KytyPS5 |
 
 ★ *Enhanced integration with guided setup*
 
