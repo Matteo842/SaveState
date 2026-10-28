@@ -57,6 +57,7 @@ else:
 
 from gui.gui_utils import QtLogHandler
 from common.utils import resource_path
+from common import autostart_utils
 from gui_components.profile_list_manager import ProfileListManager
 from gui_components.theme_manager import ThemeManager
 from gui_components.profile_creation_manager import ProfileCreationManager
@@ -1161,6 +1162,10 @@ class MainWindow(QMainWindow):
         tray_settings_layout.setSpacing(6)
         self.settings_minimize_to_tray_checkbox = QCheckBox("Minimize to tray on close")
         tray_settings_layout.addWidget(self.settings_minimize_to_tray_checkbox)
+        # Off by default; state lives in the Windows "Run" registry key.
+        self.settings_start_with_windows_checkbox = QCheckBox("Start with Windows (minimized to tray)")
+        self.settings_start_with_windows_checkbox.setVisible(autostart_utils.is_supported())
+        tray_settings_layout.addWidget(self.settings_start_with_windows_checkbox)
         tray_settings_group.setLayout(tray_settings_layout)
         settings_grid.addWidget(tray_settings_group, 4, 0)
         
@@ -3358,7 +3363,8 @@ class MainWindow(QMainWindow):
             self.settings_shorten_paths_checkbox.setChecked(self.current_settings.get("shorten_paths_enabled", True))
             self.settings_check_updates_checkbox.setChecked(self.current_settings.get("check_updates_on_startup", False))
             self.settings_show_icons_checkbox.setChecked(self.current_settings.get("show_profile_icons", True))
-            
+            self.settings_start_with_windows_checkbox.setChecked(autostart_utils.is_enabled())
+
             # Minimize to tray: check if periodic sync or auto-backup forces this behavior
             try:
                 cloud_settings = cloud_settings_manager.load_cloud_settings()

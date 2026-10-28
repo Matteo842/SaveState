@@ -673,6 +673,17 @@ class MainWindowHandlers:
                 except Exception:
                     logging.warning("Unable to update global drag listener state after settings save.")
                 
+                # Start with Windows: only touch the registry when the choice changed
+                try:
+                    from common import autostart_utils
+                    want_autostart = self.main_window.settings_start_with_windows_checkbox.isChecked()
+                    if autostart_utils.is_supported() and want_autostart != autostart_utils.is_enabled():
+                        if not autostart_utils.set_enabled(want_autostart):
+                            QMessageBox.warning(self.main_window, "Start with Windows",
+                                               "Could not update the Windows startup entry.")
+                except Exception as e_autostart:
+                    logging.warning(f"Start with Windows update failed: {e_autostart}")
+
                 # Close settings panel
                 self.main_window.exit_settings_panel()
             else:
