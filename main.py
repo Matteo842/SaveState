@@ -302,7 +302,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='SaveState GUI or Backup Runner.')
     parser.add_argument("--backup", help="Nome del profilo per cui eseguire un backup silenzioso.")
     parser.add_argument("--minimized", action="store_true",
-                        help="Start hidden in the system tray (used by Start with Windows).")
+                        help="Start hidden in the system tray (used by Start on login).")
     args = parser.parse_args()
 
     # --- Execution Mode Check ---
@@ -674,7 +674,7 @@ if __name__ == "__main__":
                     logging.debug("Connected local server newConnection signal to window.activateExistingInstance slot.")
 
 
-                    # --minimized (Start with Windows): stay in the tray. Fall back to a
+                    # --minimized (Start on login): stay in the tray. Fall back to a
                     # minimized window if the tray is not available yet.
                     if args.minimized and not is_first_launch:
                         if getattr(window, 'tray_icon', None):

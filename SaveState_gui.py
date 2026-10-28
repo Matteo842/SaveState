@@ -1162,8 +1162,8 @@ class MainWindow(QMainWindow):
         tray_settings_layout.setSpacing(6)
         self.settings_minimize_to_tray_checkbox = QCheckBox("Minimize to tray on close")
         tray_settings_layout.addWidget(self.settings_minimize_to_tray_checkbox)
-        # Off by default; state lives in the Windows "Run" registry key.
-        self.settings_start_with_windows_checkbox = QCheckBox("Start with Windows (minimized to tray)")
+        # Off by default; state lives in the Windows "Run" key / Linux autostart file.
+        self.settings_start_with_windows_checkbox = QCheckBox(autostart_utils.checkbox_label())
         self.settings_start_with_windows_checkbox.setVisible(autostart_utils.is_supported())
         tray_settings_layout.addWidget(self.settings_start_with_windows_checkbox)
         tray_settings_group.setLayout(tray_settings_layout)
