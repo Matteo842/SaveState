@@ -623,6 +623,18 @@ AUTO_BACKUP_PROCESS_BLACKLIST_KEYWORDS = {
     "ss_conn_service", "ctxsvc", "sbcommand", "fg64",
     "githubdesktop", "github", "rundll32", "lsaiso", "gamesdk", "kpm",
     "mbhal", "dramhal", "aac3572",
+
+    # AI assistants / coding agents
+    "claude", "cowork-svc", "codex-", "chatgpt", "copilot", "ollama",
+
+    # Hyper-V / WSL
+    "vmcompute", "vmmem", "vmwp.exe",
+
+    # Processi di supporto dei giochi (crash reporter, anti-cheat, overlay):
+    # girano accanto al gioco ma non sono il gioco
+    "unitycrashhandler", "crashreportclient", "unrealcefsubprocess",
+    "easyanticheat", "battleye", "beservice", "eosoverlayrenderer",
+    "cefsharp", "qtwebengineprocess",
 }
 
 # Nomi processo esatti (minuscoli) da escludere sempre dal picker auto-backup.
@@ -641,6 +653,15 @@ AUTO_BACKUP_PROCESS_BLACKLIST_EXACT = {
     "uplay.exe",
     "battlenet.exe",
     "hyp.exe",
+    # Utility con nomi corti/generici (come keyword nasconderebbero anche giochi)
+    "update.exe",           # updater generico (es. Squirrel di Discord)
+    "fdm.exe",              # Free Download Manager
+    "bash.exe", "sh.exe", "mintty.exe", "git.exe",
+    "openvoice.exe",
+    "pulseservice.exe",
+    "wenativehost.exe",
+    "plugins_nms.exe",
+    "helperservice.exe",
 }
 
 # Set di parole (minuscole) da ignorare durante il confronto di similarità
