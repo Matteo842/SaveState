@@ -5,6 +5,7 @@ import os
 import logging
 import platform
 import math
+import threading
 import configparser
 import re  # Per espressioni regolari
 from core import core_logic # Added import
@@ -335,7 +336,10 @@ class _MainSearchKeyFilter(_QObject):
 class MainWindow(QMainWindow):
     # Segnali per la gestione dell'overlay dal thread principale della GUI
     request_show_overlay = Signal()
-    request_hide_overlay = Signal()  
+    request_hide_overlay = Signal()
+    # Running programs for the auto-backup process picker, sent by the
+    # background scan thread: (scan generation, process names)
+    running_processes_ready = Signal(int, list)
 
     # --- Initialization ---
     # Initializes the main window, sets up UI elements, managers, and connects signals.
@@ -1444,6 +1448,7 @@ class MainWindow(QMainWindow):
         self.auto_backup_enable_checkbox.toggled.connect(self.handlers.handle_auto_backup_enabled_toggled)
         self.auto_backup_mode_combo.currentIndexChanged.connect(self.handlers.handle_auto_backup_mode_changed)
         self.auto_backup_process_refresh_button.clicked.connect(self._populate_running_processes)
+        self.running_processes_ready.connect(self._on_running_processes_ready)
         self.auto_backup_sync_online_checkbox.toggled.connect(self._on_sync_online_checkbox_toggled)
 
         # Stato Iniziale e Tema
@@ -2853,7 +2858,8 @@ class MainWindow(QMainWindow):
             overrides = {}
             if isinstance(data, dict):
                 use_overrides = bool(data.get('use_profile_overrides', False))
-                if isinstance(data.get('overrides'), dict):
+                # Overrides off: show the global values the backup really uses
+                if use_overrides and isinstance(data.get('overrides'), dict):
                     overrides = data.get('overrides') or {}
             # Defaults from global settings
             global_max_backups = self.current_settings.get('max_backups', 5)
@@ -3172,10 +3178,14 @@ class MainWindow(QMainWindow):
         """Fill the process combo with running programs, highlighting the
         executable auto-detected from the current profile in green so it is
         easy to recognize among the others. The combo stays freely selectable.
+
+        The combo is filled at once with the detected entry only, so the
+        profile editor opens instantly. Scanning the running programs takes
+        about half a second, so it runs in a background thread and the list
+        is completed by _on_running_processes_ready() when the scan ends.
         """
         try:
             from common import process_watch_utils
-            from PySide6.QtGui import QColor, QFont
 
             # Detect this profile's executable name.
             profile_data = {}
@@ -3183,41 +3193,90 @@ class MainWindow(QMainWindow):
             if name and name in self.profiles and isinstance(self.profiles[name], dict):
                 profile_data = self.profiles[name]
             detected = self._detect_profile_process_name(profile_data)
+            self._process_picker_detected = detected
 
             current_text = self.auto_backup_process_combo.currentText() if preserve_text else ""
-
-            running = process_watch_utils.list_running_processes_for_picker()
-            # Build the item list: detected entry first (even if not running now),
-            # then the running programs (avoiding a duplicate of the detected one).
-            items = []
-            detected_lower = detected.lower() if detected else None
-            if detected:
-                items.append(detected)
-            for n in running:
-                if detected_lower and n.lower() == detected_lower:
-                    continue
-                items.append(n)
-
-            self.auto_backup_process_combo.blockSignals(True)
-            self.auto_backup_process_combo.clear()
-            self.auto_backup_process_combo.addItems(items)
-            # Colour the auto-detected entry green + bold to make it stand out.
-            if detected:
-                green = QColor("#4CAF50")
-                bold = QFont()
-                bold.setBold(True)
-                self.auto_backup_process_combo.setItemData(0, green, Qt.ItemDataRole.ForegroundRole)
-                self.auto_backup_process_combo.setItemData(0, bold, Qt.ItemDataRole.FontRole)
-            # Restore selection: keep prior text, otherwise default to detected.
-            self.auto_backup_process_combo.setEditText(current_text or (detected or ""))
-            self.auto_backup_process_combo.blockSignals(False)
+            # Keep prior text, otherwise default to detected.
+            self._fill_process_combo(detected, [], current_text or (detected or ""))
 
             if not process_watch_utils.is_process_watching_supported():
                 self.auto_backup_process_combo.setToolTip(
                     "Process detection is not supported on this platform."
                 )
+
+            # A newer scan (editor reopened, Refresh pressed) makes older
+            # results obsolete: each scan gets a number and only the latest counts.
+            self._process_scan_generation = getattr(self, '_process_scan_generation', 0) + 1
+            generation = self._process_scan_generation
+            # Start the scan shortly after the editor is drawn: the scan holds
+            # Python's GIL for most of its run and would slow down the drawing.
+            QTimer.singleShot(150, lambda: self._start_process_scan(generation))
         except Exception as e:
             logging.error(f"Error populating process list: {e}")
+
+    def _start_process_scan(self, generation):
+        """Start the background scan, unless a newer one was requested meanwhile."""
+        if generation != getattr(self, '_process_scan_generation', 0):
+            return
+        threading.Thread(
+            target=self._scan_running_processes,
+            args=(generation,),
+            name="ProcessPickerScan",
+            daemon=True,
+        ).start()
+
+    def _scan_running_processes(self, generation):
+        """Background thread: list the running programs and send them to the GUI thread."""
+        try:
+            from common import process_watch_utils
+            running = process_watch_utils.list_running_processes_for_picker()
+        except Exception as e:
+            logging.error(f"Error scanning running processes: {e}")
+            running = []
+        try:
+            self.running_processes_ready.emit(generation, running)
+        except RuntimeError:
+            pass  # Main window already closed
+
+    @Slot(int, list)
+    def _on_running_processes_ready(self, generation, running):
+        """Add the scanned programs to the process combo (runs in the GUI thread)."""
+        if generation != getattr(self, '_process_scan_generation', 0):
+            return  # Results of an older scan
+        try:
+            # Keep whatever is in the field now (the user may have typed meanwhile).
+            current_text = self.auto_backup_process_combo.currentText()
+            detected = getattr(self, '_process_picker_detected', None)
+            self._fill_process_combo(detected, running, current_text)
+        except Exception as e:
+            logging.error(f"Error updating process list: {e}")
+
+    def _fill_process_combo(self, detected, running, edit_text):
+        """Put the detected entry first (even if not running now), then the
+        running programs (avoiding a duplicate of the detected one)."""
+        from PySide6.QtGui import QColor, QFont
+
+        items = []
+        detected_lower = detected.lower() if detected else None
+        if detected:
+            items.append(detected)
+        for n in running:
+            if detected_lower and n.lower() == detected_lower:
+                continue
+            items.append(n)
+
+        self.auto_backup_process_combo.blockSignals(True)
+        self.auto_backup_process_combo.clear()
+        self.auto_backup_process_combo.addItems(items)
+        # Colour the auto-detected entry green + bold to make it stand out.
+        if detected:
+            green = QColor("#4CAF50")
+            bold = QFont()
+            bold.setBold(True)
+            self.auto_backup_process_combo.setItemData(0, green, Qt.ItemDataRole.ForegroundRole)
+            self.auto_backup_process_combo.setItemData(0, bold, Qt.ItemDataRole.FontRole)
+        self.auto_backup_process_combo.setEditText(edit_text)
+        self.auto_backup_process_combo.blockSignals(False)
 
     def _update_edit_icon_preview(self, profile_name, profile_data):
         """Refresh the small icon preview shown in the Edit Profile section.

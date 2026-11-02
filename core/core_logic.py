@@ -586,8 +586,10 @@ def get_effective_profile_settings(profile_name: str, profile_data: dict,
         'compression_mode': global_settings.get('compression_mode', 'standard'),
     }
     
-    # Apply profile-level overrides (if any)
-    profile_overrides = profile_data.get('overrides', {})
+    # Apply profile-level overrides only when "Use profile-specific settings" is on.
+    # The editor stores the overrides values even when it is off, so without this
+    # check old values would hide later changes to the global settings.
+    profile_overrides = profile_data.get('overrides', {}) if profile_data.get('use_profile_overrides') else {}
     if profile_overrides:
         for key in effective:
             if key in profile_overrides and profile_overrides[key] is not None:
