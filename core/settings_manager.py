@@ -298,6 +298,26 @@ def is_portable_mode() -> bool:
 _cached_settings = None
 _cached_first_launch = None
 
+# At Windows startup the backup drive can take a few seconds to become readable.
+PORTABLE_SETTINGS_WAIT_SECONDS = 15
+
+
+def _wait_for_file(path: str, timeout_seconds: float) -> bool:
+    """Return True as soon as path exists, False if still missing after timeout_seconds."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        time.sleep(1)
+        if os.path.exists(path):
+            return True
+    return False
+
+
+def clear_settings_cache():
+    """Forget cached settings so the next load_settings() reads the disk again."""
+    global _cached_settings, _cached_first_launch
+    _cached_settings = None
+    _cached_first_launch = None
+
 
 def load_settings():
     """Load settings from the active settings file path. Results are cached to avoid repeated disk I/O."""
@@ -318,6 +338,14 @@ def load_settings():
         logging.info(f"Standard mode: Configuration loaded from '{active_config_dir}'")
     
     first_launch = not os.path.exists(settings_file_path)
+    if first_launch and is_portable_mode():
+        # Portable mode was set up before, so settings.json should be here.
+        # The drive may not be ready yet (e.g. right after Windows starts).
+        logging.warning(f"Portable settings not found at '{settings_file_path}'. Waiting up to {PORTABLE_SETTINGS_WAIT_SECONDS}s for the drive...")
+        first_launch = not _wait_for_file(settings_file_path, PORTABLE_SETTINGS_WAIT_SECONDS)
+        if not first_launch:
+            logging.info("Portable settings found after waiting.")
+
     defaults = {
         "backup_base_dir": config.BACKUP_BASE_DIR,
         "max_backups": config.MAX_BACKUPS,

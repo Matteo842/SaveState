@@ -547,6 +547,28 @@ if __name__ == "__main__":
                     logging.info("Loading settings...")
                     current_settings, is_first_launch = settings_manager.load_settings()
                     logging.info("Settings loaded.")
+
+                    # Portable mode is set up but settings.json can't be found (e.g. the
+                    # drive isn't ready yet). Ask the user instead of opening the setup wizard.
+                    while is_first_launch and settings_manager.is_portable_mode():
+                        settings_path = os.path.join(settings_manager.get_active_config_dir(), settings_manager.SETTINGS_FILENAME)
+                        missing_box = QMessageBox(QMessageBox.Icon.Warning, "SaveState - Settings Not Found",
+                                                  "SaveState is in portable mode, but its settings file can't be found:\n\n"
+                                                  f"{settings_path}\n\n"
+                                                  "The drive may not be ready yet. Make sure it's connected, then click Retry.")
+                        retry_button = missing_box.addButton("Retry", QMessageBox.ButtonRole.AcceptRole)
+                        setup_button = missing_box.addButton("Set Up Again", QMessageBox.ButtonRole.DestructiveRole)
+                        missing_box.addButton("Quit", QMessageBox.ButtonRole.RejectRole)
+                        missing_box.exec()
+                        if missing_box.clickedButton() is retry_button:
+                            settings_manager.clear_settings_cache()
+                            current_settings, is_first_launch = settings_manager.load_settings()
+                        elif missing_box.clickedButton() is setup_button:
+                            break # Continue to the setup wizard below
+                        else:
+                            logging.info("Exit requested by user: portable settings not found.")
+                            cleanup_instance_lock(local_server, shared_memory)
+                            sys.exit(0)
                     # Ensure secondary mirror (.savestate) is up-to-date when not in portable mode
                     try:
                         settings_manager.sync_secondary_config_mirror(current_settings)
