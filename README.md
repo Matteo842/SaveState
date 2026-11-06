@@ -4,7 +4,6 @@
 [![Latest Release](https://img.shields.io/github/v/release/Matteo842/SaveState)](https://github.com/Matteo842/SaveState/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Matteo842/SaveState/total.svg)](https://github.com/Matteo842/SaveState/releases)
 [![Discord](https://img.shields.io/badge/Discord-Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/6d7Qv4hAky)
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/V7V61GBYAX)
 
 A user-friendly GUI for **Windows** and **Linux** to back up and restore video game save files. Perfect for games without cloud saves, managing multiple save locations, or syncing progress across devices.
 
