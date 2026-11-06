@@ -7,7 +7,6 @@ a = Analysis(
     binaries=[], # File binari non Python da includere (lascia vuoto se non necessario)
     datas=[
          ('icons', 'icons'),              # Copia la cartella 'icons' nella root dell'output [cite: 11]
-         ('splash.png', '.'),
 		 ('icon.png', '.'),
 		 ('backup/backup_runner.py', '.'),
          ('emulator_utils/citra_titles_map.pkl', 'emulator_utils'), # Include il DB dei titoli 3ds
@@ -49,28 +48,13 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-splash = Splash(
-    'splash.png',
-    binaries=a.binaries,
-    datas=a.datas,
-    # --- Aggiungi parametri extra dal minimale ---
-    text_pos=None,
-    text_size=12,
-    minify_script=True,
-    always_on_top=False,
-    # --- Fine parametri extra ---
-)
 
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
     a.datas,
-    splash,
-    splash.binaries,
-    # splash.datas,
     [],
-    #splash=splash,
     name='SaveState',
     debug=False,
     bootloader_ignore_signals=False,

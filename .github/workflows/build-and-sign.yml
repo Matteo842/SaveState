@@ -174,7 +174,9 @@ jobs:
   # =========================================================
   build-linux:
     if: github.event_name == 'workflow_dispatch' && inputs.post_release_only != true
-    runs-on: ubuntu-latest
+    # Build on the oldest supported LTS: the AppImage only runs on systems with
+    # a glibc at least as new as the build machine's (22.04 = glibc 2.35).
+    runs-on: ubuntu-22.04
     steps:
     - name: ⬇️ Checkout Repository
       uses: actions/checkout@v4

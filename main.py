@@ -17,11 +17,6 @@ from config import SHARED_MEM_KEY, LOCAL_SERVER_NAME
 # from PySide6.QtCore import QSharedMemory
 # from PySide6.QtNetwork import QLocalSocket, QLocalServer
 
-try:
-    import pyi_splash  # type: ignore # This module only exists when the app is packaged with PyInstaller
-except ImportError:
-    pyi_splash = None # Set to None if not found (e.g. when not running from a bundle)
-
 # NOTE: Heavy imports (QApplication, MainWindow, settings_manager, etc.) 
 # are deferred until after single-instance check to speed up second instance detection
 
@@ -312,13 +307,7 @@ if __name__ == "__main__":
         from backup import backup_runner
         
         profile_to_backup = args.backup
-        logging.info(f"Detected argument --backup '{profile_to_backup}'. Closing splash and starting silent backup...")
-
-        if pyi_splash:
-            try:
-                pyi_splash.close()
-            except Exception:
-                pass
+        logging.info(f"Detected argument --backup '{profile_to_backup}'. Starting silent backup...")
 
         try:
             backup_success = backup_runner.run_silent_backup(profile_to_backup)
@@ -469,9 +458,8 @@ if __name__ == "__main__":
             root_logger.addHandler(qt_log_handler)
             logging.info("Heavy modules loaded. Starting application...")
 
-            # --- Initialize QApplication and Splash Screen EARLY ---
+            # --- Initialize QApplication EARLY ---
             app = None # Initialize to None
-            splash = None # Initialize splash to None
             try:
                 # QApplication initialization
                 app = QApplication.instance() # Check if it already exists (e.g. from backup_runner)
@@ -511,7 +499,6 @@ if __name__ == "__main__":
                  if not shared_memory.attach():
                       logging.critical(f"Failed to attach to own shared memory: {shared_memory.errorString()}")
                       # We cannot continue without shared memory
-                      # if splash: splash.close() # Close splash before exit
                       sys.exit(1)
 
             # Create local server to receive signals from other instances
@@ -541,9 +528,6 @@ if __name__ == "__main__":
                     app.aboutToQuit.connect(lambda: cleanup_instance_lock(local_server, shared_memory))
 
                     # --- Caricamento Impostazioni (senza applicazione traduttore qui) ---
-                    # if splash: # Aggiorna messaggio se lo splash è attivo
-                    #     splash.showMessage("Caricamento impostazioni...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
-                    #     app.processEvents()
                     logging.info("Loading settings...")
                     current_settings, is_first_launch = settings_manager.load_settings()
                     logging.info("Settings loaded.")
@@ -619,9 +603,6 @@ if __name__ == "__main__":
                     # --- End Validate Backup Directory ---
 
                     # --- Creazione Finestra Principale e gestione primo avvio ---
-                    # if splash: # Aggiorna messaggio
-                    #      splash.showMessage("Creazione interfaccia utente...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
-                    #      app.processEvents()
                     # Crea la finestra principale, passando gli handler log
                     # qt_log_handler è già definito sopra
                     # console_handler è definito sopra
@@ -633,9 +614,6 @@ if __name__ == "__main__":
                     # Language handling removed - application is now English-only
 
                     if is_first_launch:
-                        # if splash: # Update message
-                        #      splash.showMessage("Configurazione iniziale...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
-                        #      app.processEvents()
                         logging.info("First launch detected, showing settings dialog.")
                         # Import SettingsDialog here to avoid circular module dependencies
                         from dialogs.settings_dialog import SettingsDialog
@@ -739,10 +717,6 @@ if __name__ == "__main__":
                     logging.info(f"System locale: {locale_name} - Using {date_format_type} date format")
                     
                     logging.info("Starting Qt application event loop...")
-                    if pyi_splash:
-                        logging.debug("Closing PyInstaller splash screen...")
-                        pyi_splash.close()
-                        logging.debug("Splash screen close command sent.")
                     exit_code = app.exec() # Avvia loop eventi GUI
                     logging.info(f"Qt application event loop finished with exit code: {exit_code}")
 
