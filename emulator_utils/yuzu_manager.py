@@ -12,6 +12,24 @@ from .obfuscation_utils import xor_bytes
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
+# --- Eden family (Eden and the Eden-based forks) ---
+# Data folders to scan for each emulator, in priority order.
+# Eglantine has its own data folder. Lichii is a rebrand of Eglantine that keeps
+# the Eglantine/Eden data folders; a 'lichii' folder is also checked in case
+# future builds create one. The Yuzu folder is always the last fallback.
+EDEN_FAMILY_FOLDERS = {
+    'eden': ['eden', 'yuzu'],
+    'eglantine': ['eglantine', 'eden', 'yuzu'],
+    'lichii': ['lichii', 'eglantine', 'eden', 'yuzu'],
+}
+
+# The emulator's own folders: their saves are shown without a "(... Folder)" suffix.
+EDEN_FAMILY_HOME_FOLDERS = {
+    'eden': {'eden'},
+    'eglantine': {'eglantine'},
+    'lichii': {'lichii', 'eglantine'},
+}
+
 # --- Yuzu Specific Helper Functions ---
 
 def parse_nacp(filepath: str):
@@ -249,15 +267,17 @@ def get_yuzu_game_title_map(yuzu_appdata_dir: str):
 
     return title_map
 
-def scan_yuzu_save_directory(save_root_dir: str, game_title_map: dict, folder_label: str = ""):
+def scan_yuzu_save_directory(save_root_dir: str, game_title_map: dict, folder_label: str = "",
+                             hide_label: bool = False):
     """
     Scans a Yuzu/Citron/Eden save directory and returns found profiles.
-    
+
     Args:
         save_root_dir: The root save directory to scan (e.g., .../nand/user/save/0000000000000000)
         game_title_map: Dictionary mapping Title IDs to game names
         folder_label: Label to append to game names (e.g., "Yuzu Folder", "Eden Folder")
-    
+        hide_label: If True, the label is not added to the game name (the emulator's own folder).
+
     Returns:
         List of profile dicts
     """
@@ -302,7 +322,8 @@ def scan_yuzu_save_directory(save_root_dir: str, game_title_map: dict, folder_la
 
                             # Add folder label to distinguish between Eden and Yuzu folders
                             # User request: Only show label for Yuzu folders. Eden folder (default) should have no label.
-                            if folder_label == "Eden Folder":
+                            # Same for Eden forks (Eglantine, Lichii): their own folder has no label.
+                            if hide_label:
                                 display_name = game_name
                             else:
                                 display_name = f"{game_name} ({folder_label})" if folder_label else game_name
@@ -329,15 +350,131 @@ def scan_yuzu_save_directory(save_root_dir: str, game_title_map: dict, folder_la
     return profiles
 
 
-def find_yuzu_profiles(executable_dir: str | None = None, is_eden: bool = False):
+def _get_standard_data_dirs(folder_name: str) -> list[str]:
+    """Returns the standard data folder locations for a Yuzu-family folder name on this OS."""
+    system = platform.system()
+    user_home = os.path.expanduser("~")
+    if system == "Windows":
+        appdata = os.getenv('APPDATA')
+        return [os.path.join(appdata, folder_name)] if appdata else []
+    if system == "Linux":
+        xdg_config_home = os.getenv('XDG_CONFIG_HOME', os.path.join(user_home, ".config"))
+        return [
+            os.path.join(xdg_config_home, folder_name),
+            os.path.join(user_home, ".local", "share", folder_name),
+        ]
+    if system == "Darwin":  # macOS
+        return [os.path.join(user_home, "Library", "Application Support", folder_name)]
+    return []
+
+
+def _read_custom_nand_dir(data_dir: str) -> str | None:
+    """
+    Reads a custom NAND folder from <data_dir>/config/qt-config.ini.
+
+    Yuzu-based emulators let the user move the NAND folder in the settings.
+    Eglantine, for example, can point it to the Yuzu NAND folder.
+    Returns the custom NAND folder if it is set and exists, otherwise None.
+    """
+    config_path = os.path.join(data_dir, "config", "qt-config.ini")
+    if not os.path.isfile(config_path):
+        return None
+
+    in_data_section = False
+    uses_default = True
+    nand_dir = ""
+    try:
+        with open(config_path, 'r', encoding='utf-8', errors='replace') as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if line.startswith('[') and line.endswith(']'):
+                    in_data_section = (line == "[Data%20Storage]")
+                    continue
+                if not in_data_section or '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                key = key.strip().lower()
+                value = value.strip().strip('"')
+                if key == "nand_directory\\default":
+                    uses_default = (value.lower() != "false")
+                elif key == "nand_directory":
+                    nand_dir = value
+    except OSError as e:
+        log.warning(f"Could not read emulator config '{config_path}': {e}")
+        return None
+
+    if uses_default or not nand_dir:
+        return None
+    nand_dir = os.path.normpath(os.path.expanduser(nand_dir))
+    if os.path.isdir(nand_dir):
+        log.info(f"Custom NAND folder set in '{config_path}': {nand_dir}")
+        return nand_dir
+    log.warning(f"Custom NAND folder set in '{config_path}' does not exist: {nand_dir}")
+    return None
+
+
+def _find_eden_family_profiles(executable_dir: str | None, emulator_key: str, game_title_map: dict) -> list:
+    """
+    Finds saves for Eden and its forks (Eglantine, Lichii).
+    Scans the portable folder, the standard data folders listed in EDEN_FAMILY_FOLDERS
+    and any custom NAND folder set in their config files. Each NAND folder is scanned once.
+    """
+    folder_names = EDEN_FAMILY_FOLDERS[emulator_key]
+    home_folders = EDEN_FAMILY_HOME_FOLDERS[emulator_key]
+    own_label = f"{emulator_key.capitalize()} Folder"
+    log.info(f"{emulator_key.capitalize()} detected: Searching in {', '.join(f.capitalize() for f in folder_names)} folders...")
+
+    # (data_dir, label, hide_label) in priority order
+    data_dirs = []
+
+    # Portable installation first: 'nand' next to the executable or inside a 'user' folder
+    if executable_dir:
+        for portable_dir in (executable_dir, os.path.join(executable_dir, "user")):
+            if os.path.isdir(os.path.join(portable_dir, "nand")):
+                log.info(f"Found {emulator_key.capitalize()} portable installation at: {portable_dir}")
+                data_dirs.append((portable_dir, own_label, True))
+                break
+
+    for folder_name in folder_names:
+        for data_dir in _get_standard_data_dirs(folder_name):
+            if os.path.isdir(data_dir):
+                data_dirs.append((data_dir, f"{folder_name.capitalize()} Folder", folder_name in home_folders))
+
+    # NAND folders to scan: standard ones first, then custom ones from the config files.
+    # Standard folders win on duplicates, so their labels stay the same.
+    nand_dirs = [(os.path.join(d, "nand"), label, hide) for d, label, hide in data_dirs]
+    for data_dir, label, hide in data_dirs:
+        custom_nand = _read_custom_nand_dir(data_dir)
+        if custom_nand:
+            nand_dirs.append((custom_nand, label, hide))
+
+    all_profiles = []
+    scanned = set()
+    for nand_path, label, hide in nand_dirs:
+        nand_key = os.path.normcase(os.path.realpath(nand_path))
+        if nand_key in scanned:
+            continue
+        scanned.add(nand_key)
+        user_save_root = os.path.join(nand_path, "user", "save", "0000000000000000")
+        if os.path.isdir(user_save_root):
+            all_profiles.extend(scan_yuzu_save_directory(user_save_root, game_title_map, label, hide_label=hide))
+
+    if not all_profiles:
+        log.warning(f"No profiles found in {', '.join(f.capitalize() for f in folder_names)} folders.")
+    return all_profiles
+
+
+def find_yuzu_profiles(executable_dir: str | None = None, is_eden: bool = False,
+                       eden_fork: str | None = None):
     """
     Finds Yuzu/Citron/Eden game profiles/saves by scanning the save directory structure.
-    For Eden, searches in both Eden and Yuzu folders to find all available saves.
+    For Eden and its forks, searches in the fork, Eden and Yuzu folders to find all available saves.
     NOTE: Currently uses TitleID as the profile name if JSON lookup fails.
 
     Args:
         executable_dir: Path to Yuzu/Citron/Eden executable directory for portable installations.
         is_eden: If True, searches in both Eden and Yuzu folders.
+        eden_fork: 'eglantine' or 'lichii' for the Eden-based forks (implies is_eden).
 
     Returns:
         List of profile dicts: [{'id': unique_id, 'paths': [full_path_to_titleid_folder], 'name': GameName (Folder Label), 'title_id': TitleID}, ...]
@@ -346,58 +483,15 @@ def find_yuzu_profiles(executable_dir: str | None = None, is_eden: bool = False)
     log.info("Attempting to find Yuzu/Citron/Eden profiles...")
 
     # Get the game title map (only need to load once)
-    system = platform.system()
     user_home = os.path.expanduser("~")
-    
+
     # Determine a reference directory for loading the game title map
     reference_dir = executable_dir if executable_dir else user_home
     game_title_map = get_yuzu_game_title_map(reference_dir)
 
-    if is_eden:
-        # For Eden, search in both Eden and Yuzu folders
-        log.info("Eden detected: Searching in both Eden and Yuzu folders...")
-        
-        folders_to_check = []
-        
-        # Check for portable installation first
-        if executable_dir:
-            portable_nand_path = os.path.join(executable_dir, "nand")
-            if os.path.isdir(portable_nand_path):
-                log.info(f"Found Eden portable installation at: {executable_dir}")
-                folders_to_check.append((executable_dir, "Eden Folder"))
-        
-        # Add standard Eden and Yuzu paths based on OS
-        if system == "Windows":
-            appdata = os.getenv('APPDATA')
-            if appdata:
-                folders_to_check.extend([
-                    (os.path.join(appdata, "eden"), "Eden Folder"),
-                    (os.path.join(appdata, "yuzu"), "Yuzu Folder")
-                ])
-        elif system == "Linux":
-            xdg_config_home = os.getenv('XDG_CONFIG_HOME', os.path.join(user_home, ".config"))
-            folders_to_check.extend([
-                (os.path.join(xdg_config_home, "eden"), "Eden Folder"),
-                (os.path.join(user_home, ".local", "share", "eden"), "Eden Folder"),
-                (os.path.join(xdg_config_home, "yuzu"), "Yuzu Folder"),
-                (os.path.join(user_home, ".local", "share", "yuzu"), "Yuzu Folder")
-            ])
-        elif system == "Darwin":  # macOS
-            folders_to_check.extend([
-                (os.path.join(user_home, "Library", "Application Support", "eden"), "Eden Folder"),
-                (os.path.join(user_home, "Library", "Application Support", "yuzu"), "Yuzu Folder")
-            ])
-        
-        # Scan each folder that exists
-        for base_path, label in folders_to_check:
-            if os.path.isdir(base_path):
-                nand_path = os.path.join(base_path, "nand")
-                user_save_root = os.path.join(nand_path, "user", "save", "0000000000000000")
-                profiles = scan_yuzu_save_directory(user_save_root, game_title_map, label)
-                all_profiles.extend(profiles)
-        
-        if not all_profiles:
-            log.warning("No profiles found in either Eden or Yuzu folders.")
+    if eden_fork or is_eden:
+        # For Eden and its forks, search in the fork, Eden and Yuzu folders
+        all_profiles = _find_eden_family_profiles(executable_dir, eden_fork or 'eden', game_title_map)
     else:
         # For Yuzu/Citron, use the original single-folder logic
         yuzu_appdata_dir = get_yuzu_appdata_path(executable_dir, is_eden=False)

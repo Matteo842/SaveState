@@ -46,7 +46,8 @@ ProfileFinder = Callable[[Optional[str]], Dict[str, str]]
 KNOWN_EMULATORS = [
     # Emulatori supportati (presenti in EMULATORS)
     # Questi devono corrispondere esattamente alle chiavi in EMULATORS
-    'rpcs3', 'yuzu', 'eden', 'citron', 'ppsspp', 'citra', 'azahar', 'ryujinx', 'dolphin',
+    # 'lichii' and 'eglantine' come before 'eden': their install folders often contain 'eden'
+    'rpcs3', 'yuzu', 'lichii', 'eglantine', 'eden', 'citron', 'ppsspp', 'citra', 'azahar', 'ryujinx', 'dolphin',
     'duckstation', 'mgba', 'snes9x', 'desmume', 'melonds', 'cemu', 'flycast', 'shadps4',
     'sameboy', 'xenia', 'pcsx2', 'gopher64', 'vita3k', 'mednafen', 'mednaffe', 'ymir', 
     'ares', 'retroarch', 'xemu', 'kyty',
@@ -77,6 +78,19 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'yuzu': {
         'name': 'Yuzu',
         'profile_finder': lambda path: find_yuzu_profiles(path)
+    },
+    # Eden-based forks that run Switch 2 games. They must stay before 'eden':
+    # detection stops at the first key found in the path, and their install
+    # folders often contain 'eden' (e.g. 'eden-windows-msvc\Lichii\lichii.exe').
+    # 'lichii' is before 'eglantine': Lichii is a rebrand of Eglantine and its
+    # repository folder may still be named 'Eglantine'.
+    'lichii': {
+        'name': 'Lichii',
+        'profile_finder': lambda path: find_yuzu_profiles(path, eden_fork='lichii')
+    },
+    'eglantine': {
+        'name': 'Eglantine',
+        'profile_finder': lambda path: find_yuzu_profiles(path, eden_fork='eglantine')
     },
     'eden': {
         'name': 'Eden',
