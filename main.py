@@ -300,6 +300,24 @@ if __name__ == "__main__":
                         help="Start hidden in the system tray (used by Start on login).")
     args = parser.parse_args()
 
+    # Packaged builds: run from the folder that contains SaveState.exe, like our
+    # shortcuts do. Windows starts login apps in System32, so a relative backup
+    # folder (e.g. "." for a portable setup inside OneDrive) would point there.
+    try:
+        _ = __compiled__  # Defined only in Nuitka builds
+        is_packaged_build = True
+    except NameError:
+        is_packaged_build = getattr(sys, "frozen", False)
+    if is_packaged_build:
+        try:
+            from core.settings_manager import _get_executable_dir
+            exe_dir = _get_executable_dir()
+            if os.path.normcase(os.getcwd()) != os.path.normcase(exe_dir):
+                logging.info(f"Changing working directory from '{os.getcwd()}' to '{exe_dir}'")
+                os.chdir(exe_dir)
+        except Exception as e_cwd:
+            logging.warning(f"Could not change working directory to the executable folder: {e_cwd}")
+
     # --- Execution Mode Check ---
     if args.backup:
         # === Silent Backup Mode ===
