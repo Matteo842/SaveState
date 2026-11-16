@@ -17,21 +17,22 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 
 from gui_components.controller_shortcuts_panel import ControllerShortcutsPanel
+from common.i18n import tr
 
 # Re-exported so other modules only need to import from here
 CTRL_BUTTONS = ["A", "B", "X", "Y", "Start", "View/Select", "LB", "RB", "LT+RT"]
 
 CTRL_ACTIONS = [
-    ("",               "(None — disabled)"),
-    ("backup",         "Backup"),
-    ("restore",        "Restore"),
-    ("manage_backups", "Manage Backups"),
-    ("backup_all",     "Backup all profiles"),
-    ("context_menu",   "Open context menu"),
-    ("back",           "Back / Close panel"),
-    ("delete",         "Delete profile"),
-    ("page_up",        "Page up"),
-    ("page_down",      "Page down"),
+    ("",               tr("(None — disabled)")),
+    ("backup",         tr("Backup")),
+    ("restore",        tr("Restore")),
+    ("manage_backups", tr("Manage Backups")),
+    ("backup_all",     tr("Backup all profiles")),
+    ("context_menu",   tr("Open context menu")),
+    ("back",           tr("Back / Close panel")),
+    ("delete",         tr("Delete profile")),
+    ("page_up",        tr("Page up")),
+    ("page_down",      tr("Page down")),
 ]
 
 CTRL_DEFAULT_MAPPINGS: dict[str, str] = {
@@ -114,7 +115,7 @@ class ControllerPanel(QGroupBox):
     exit_requested = Signal()
 
     def __init__(self, parent=None):
-        super().__init__("Controller Settings", parent)
+        super().__init__(tr("Controller Settings"), parent)
         self._build_ui()
         self.setVisible(False)
 
@@ -135,12 +136,12 @@ class ControllerPanel(QGroupBox):
     def update_connection_status(self, connected: bool):
         """Update the controller connection indicator (like Cloud panel)."""
         if connected:
-            self._conn_status_label.setText("● Controller connected")
+            self._conn_status_label.setText(tr("● Controller connected"))
             self._conn_status_label.setStyleSheet(
                 "color: #55FF55; font-size: 9pt; font-weight: bold;"
             )
         else:
-            self._conn_status_label.setText("● No controller detected")
+            self._conn_status_label.setText(tr("● No controller detected"))
             self._conn_status_label.setStyleSheet(
                 "color: #FF5555; font-size: 9pt; font-weight: bold;"
             )
@@ -187,7 +188,7 @@ class ControllerPanel(QGroupBox):
         toggle_row = QHBoxLayout()
         toggle_row.setSpacing(12)
         self.controller_enabled_switch = QCheckBox(
-            "Enable controller compatibility"
+            tr("Enable controller compatibility")
         )
         self.controller_enabled_switch.setObjectName("ControllerSwitch")
         self.controller_enabled_switch.setStyleSheet("""
@@ -204,7 +205,7 @@ class ControllerPanel(QGroupBox):
         toggle_row.addStretch(1)
 
         # Connection status indicator (like Cloud panel)
-        self._conn_status_label = QLabel("● No controller detected")
+        self._conn_status_label = QLabel(tr("● No controller detected"))
         self._conn_status_label.setStyleSheet(
             "color: #FF5555; font-size: 9pt; font-weight: bold;"
         )
@@ -219,11 +220,11 @@ class ControllerPanel(QGroupBox):
         tab_bar_row.setContentsMargins(0, 0, 0, 0)
         tab_bar_row.setSpacing(4)
 
-        self._tab_btn_mapping = QPushButton("Button Mapping")
+        self._tab_btn_mapping = QPushButton(tr("Button Mapping"))
         self._tab_btn_mapping.setCursor(Qt.CursorShape.PointingHandCursor)
         self._tab_btn_mapping.clicked.connect(lambda: self._switch_tab(0))
 
-        self._tab_btn_shortcuts = QPushButton("Shortcuts")
+        self._tab_btn_shortcuts = QPushButton(tr("Shortcuts"))
         self._tab_btn_shortcuts.setCursor(Qt.CursorShape.PointingHandCursor)
         self._tab_btn_shortcuts.clicked.connect(lambda: self._switch_tab(1))
 
@@ -250,12 +251,12 @@ class ControllerPanel(QGroupBox):
         page_mapping_layout.setContentsMargins(0, 0, 0, 0)
         page_mapping_layout.setSpacing(4)
 
-        mapping_group = QGroupBox("Button Mapping")
+        mapping_group = QGroupBox(tr("Button Mapping"))
         mapping_outer = QVBoxLayout()
         mapping_outer.setContentsMargins(8, 6, 8, 6)
         mapping_outer.setSpacing(4)
 
-        nav_label = QLabel("  D-pad / Left stick  →  Navigate profile list  (always)")
+        nav_label = QLabel(tr("  D-pad / Left stick  →  Navigate profile list  (always)"))
         nav_label.setStyleSheet("color: #888; font-style: italic; font-size: 9pt;")
         mapping_outer.addWidget(nav_label)
 
@@ -297,11 +298,11 @@ class ControllerPanel(QGroupBox):
         # ── Long Press LB info label ──────────────────────────────────
         lp_row = QHBoxLayout()
         lp_row.setSpacing(12)
-        lp_badge = QLabel("Hold LT")
+        lp_badge = QLabel(tr("Hold LT"))
         lp_badge.setStyleSheet(_badge_ss.format(bg=CTRL_BADGE_COLOR.get("LT+RT", "#784212")))
         lp_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lp_badge.setFixedWidth(80)
-        lp_label = QLabel("Toggle General / Actions  (always)")
+        lp_label = QLabel(tr("Toggle General / Actions  (always)"))
         lp_label.setStyleSheet("color: #888; font-style: italic; font-size: 9pt;")
         lp_row.addWidget(lp_badge)
         lp_row.addWidget(lp_label, 1)
@@ -331,9 +332,9 @@ class ControllerPanel(QGroupBox):
         # ── Reset / Exit / Save buttons ───────────────────────────────
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
-        self.reset_button = QPushButton("Reset defaults")
+        self.reset_button = QPushButton(tr("Reset defaults"))
         self.reset_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.reset_button.setToolTip("Reset all button mappings to their default values")
+        self.reset_button.setToolTip(tr("Reset all button mappings to their default values"))
         self.reset_button.setStyleSheet("""
             QPushButton {
                 background-color: #2a2a2a;
@@ -353,8 +354,8 @@ class ControllerPanel(QGroupBox):
             }
         """)
         self.reset_button.clicked.connect(self._reset_to_defaults)
-        self.exit_button = QPushButton("Exit")
-        self.save_button = QPushButton("Save")
+        self.exit_button = QPushButton(tr("Exit"))
+        self.save_button = QPushButton(tr("Save"))
         self.save_button.setObjectName("SaveButton")
         btn_row.addWidget(self.reset_button)
         btn_row.addStretch(1)

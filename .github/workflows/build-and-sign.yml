@@ -104,6 +104,7 @@ jobs:
           --include-module=configparser `
           --include-package-data=googleapiclient `
           --include-data-dir=icons=icons `
+          --include-data-dir=lang=lang `
           --include-data-file=icon.png=icon.png `
           --include-data-file=backup/backup_runner.py=backup_runner.py `
           --include-data-file=emulator_utils/citra_titles_map.pkl=emulator_utils/citra_titles_map.pkl `

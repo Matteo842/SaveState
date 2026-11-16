@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import socket
 from typing import Any, Tuple
+from common.i18n import tr
 
 # (available, user-facing reason when unavailable)
 Availability = Tuple[bool, str]
@@ -55,37 +56,37 @@ def is_provider_configured(
 
     if provider_type == "google_drive":
         if drive_manager is None:
-            return False, "Google Drive is not available"
+            return False, tr("Google Drive is not available")
         try:
             if not drive_manager.client_secret_file.exists():
-                return False, "Google Drive is not set up (connect once in the Cloud panel)"
+                return False, tr("Google Drive is not set up (connect once in the Cloud panel)")
         except Exception:
-            return False, "Google Drive is not set up"
+            return False, tr("Google Drive is not set up")
         return True, ""
 
     if provider_type == "smb":
         if not (settings.get("smb_path") or "").strip():
-            return False, "SMB/network folder is not configured (Cloud panel → Configure)"
+            return False, tr("SMB/network folder is not configured (Cloud panel → Configure)")
         return True, ""
 
     if provider_type == "ftp":
         if not (settings.get("ftp_host") or "").strip():
-            return False, "FTP server is not configured (Cloud panel → Configure)"
+            return False, tr("FTP server is not configured (Cloud panel → Configure)")
         return True, ""
 
     if provider_type == "webdav":
         if not (settings.get("webdav_url") or "").strip():
-            return False, "WebDAV server is not configured (Cloud panel → Configure)"
+            return False, tr("WebDAV server is not configured (Cloud panel → Configure)")
         return True, ""
 
     if provider_type == "git":
         repo = (settings.get("git_repo_path") or "").strip()
         remote = (settings.get("git_remote_url") or "").strip()
         if not repo and not remote:
-            return False, "Git repository is not configured (Cloud panel → Configure)"
+            return False, tr("Git repository is not configured (Cloud panel → Configure)")
         return True, ""
 
-    return False, f"Unknown cloud provider '{provider_type}'"
+    return False, tr("Unknown cloud provider '{0}'", provider_type)
 
 
 def evaluate_online_sync_availability(
@@ -113,14 +114,14 @@ def evaluate_online_sync_availability(
         return False, reason
 
     if check_network and not _has_network():
-        return False, "no internet connection detected"
+        return False, tr("no internet connection detected")
 
     if provider is None:
-        return False, "no cloud provider is available"
+        return False, tr("no cloud provider is available")
 
     if require_connection and not getattr(provider, "is_connected", False):
         label = provider_type.replace("_", " ").title()
-        return False, f"{label} is not connected (open the Cloud panel and connect)"
+        return False, tr("{0} is not connected (open the Cloud panel and connect)", label)
 
     return True, ""
 

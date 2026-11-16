@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
 )
 from PySide6.QtCore import Qt, Signal, QTimer
+from common.i18n import tr
 
 
 # ── Button name mapping (XInput bitmask → friendly label) ─────────
@@ -59,13 +60,13 @@ _BADGE_COLORS = {
 
 # Actions available for shortcuts (subset from controller_panel)
 SHORTCUT_ACTIONS = [
-    ("",               "(None — choose action)"),
-    ("backup",         "Backup"),
-    ("restore",        "Restore"),
-    ("manage_backups", "Manage Backups"),
-    ("backup_all",     "Backup all profiles"),
-    ("context_menu",   "Open context menu"),
-    ("delete",         "Delete profile"),
+    ("",               tr("(None — choose action)")),
+    ("backup",         tr("Backup")),
+    ("restore",        tr("Restore")),
+    ("manage_backups", tr("Manage Backups")),
+    ("backup_all",     tr("Backup all profiles")),
+    ("context_menu",   tr("Open context menu")),
+    ("delete",         tr("Delete profile")),
 ]
 
 MAX_BUTTONS_PER_SHORTCUT = 3
@@ -131,7 +132,7 @@ class ShortcutProfileRow(QFrame):
             self.background_check.setChecked(False)
             self.background_check.setEnabled(False)
             self.background_check.setToolTip(
-                "Enable 'Minimize to tray on close' in Settings first"
+                tr("Enable 'Minimize to tray on close' in Settings first")
             )
         else:
             self.background_check.setEnabled(True)
@@ -142,7 +143,7 @@ class ShortcutProfileRow(QFrame):
         if 0 <= slot_index < MAX_BUTTONS_PER_SHORTCUT:
             self._capturing_slot = slot_index
             btn = self._slot_buttons[slot_index]
-            btn.setText("Press …")
+            btn.setText(tr("Press …"))
             btn.setStyleSheet(self._capture_active_ss())
 
     def finish_capture(self, button_label: str):
@@ -192,7 +193,7 @@ class ShortcutProfileRow(QFrame):
                 plus_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 top_row.addWidget(plus_lbl)
 
-            slot_btn = QPushButton("Assign")
+            slot_btn = QPushButton(tr("Assign"))
             slot_btn.setFixedHeight(32)
             slot_btn.setMinimumWidth(80)
             slot_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -223,7 +224,7 @@ class ShortcutProfileRow(QFrame):
         remove_btn = QPushButton("✕")
         remove_btn.setFixedSize(28, 28)
         remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        remove_btn.setToolTip("Remove this shortcut")
+        remove_btn.setToolTip(tr("Remove this shortcut"))
         remove_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
@@ -254,7 +255,7 @@ class ShortcutProfileRow(QFrame):
         self.profile_combo.setVisible(False)
         bottom_row.addWidget(self.profile_combo)
 
-        self.background_check = QCheckBox("Active when app is closed (system tray)")
+        self.background_check = QCheckBox(tr("Active when app is closed (system tray)"))
         self.background_check.setStyleSheet("font-size: 9pt; color: #aaa;")
         self.background_check.setEnabled(False)  # disabled until tray confirmed
         bottom_row.addWidget(self.background_check)
@@ -292,7 +293,7 @@ class ShortcutProfileRow(QFrame):
                 f"QPushButton:hover {{ background-color: {colour}; opacity: 0.85; }}"
             )
         else:
-            btn.setText("Assign")
+            btn.setText(tr("Assign"))
             btn.setStyleSheet(self._slot_default_ss())
 
     def _load_from_data(self, data: dict):
@@ -412,7 +413,7 @@ class ControllerShortcutsPanel(QWidget):
         # Header row
         header = QHBoxLayout()
         header.setSpacing(8)
-        title = QLabel("Controller Shortcuts")
+        title = QLabel(tr("Controller Shortcuts"))
         title.setStyleSheet(
             "font-size: 10pt; font-weight: bold; color: #e0e0e0;"
         )
@@ -422,7 +423,7 @@ class ControllerShortcutsPanel(QWidget):
         self._add_btn = QPushButton("+")
         self._add_btn.setFixedSize(30, 30)
         self._add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._add_btn.setToolTip("Add new shortcut profile")
+        self._add_btn.setToolTip(tr("Add new shortcut profile"))
         self._add_btn.setStyleSheet("""
             QPushButton {
                 background-color: #1E8449;
@@ -461,7 +462,7 @@ class ControllerShortcutsPanel(QWidget):
         root.addWidget(scroll, stretch=1)
 
         # Empty-state label
-        self._empty_label = QLabel("No shortcut profiles yet. Press + to create one.")
+        self._empty_label = QLabel(tr("No shortcut profiles yet. Press + to create one."))
         self._empty_label.setStyleSheet(
             "color: #666; font-style: italic; font-size: 9pt; padding: 16px;"
         )

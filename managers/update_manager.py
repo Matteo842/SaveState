@@ -42,6 +42,7 @@ from typing import Optional
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
 import config
+from common.i18n import tr
 
 
 # --- Public state strings (also used as UI hints) ---
@@ -202,22 +203,22 @@ def _is_on_desktop(path: str) -> bool:
 def detect_install_type() -> tuple[str, str]:
     """Return (type, reason). `reason` is empty when auto-install is ok."""
     if _is_flatpak():
-        return (INSTALL_MANAGED, "Flatpak install (use Flathub to update)")
+        return (INSTALL_MANAGED, tr("Flatpak install (use Flathub to update)"))
     if _is_snap():
-        return (INSTALL_MANAGED, "Snap install (use snap refresh)")
+        return (INSTALL_MANAGED, tr("Snap install (use snap refresh)"))
     if not _is_frozen():
         root = _get_source_project_root()
         if not os.access(root, os.W_OK):
-            return (INSTALL_MANAGED, "Source folder is not writable")
+            return (INSTALL_MANAGED, tr("Source folder is not writable"))
         return (INSTALL_SOURCE, "")
     exe = _get_executable_path()
     if not exe or not os.path.isfile(exe):
-        return (INSTALL_MANAGED, "Executable path could not be determined")
+        return (INSTALL_MANAGED, tr("Executable path could not be determined"))
     target_dir = os.path.dirname(exe) or "."
     if not os.access(target_dir, os.W_OK):
-        return (INSTALL_MANAGED, "Install folder is not writable (system install?)")
+        return (INSTALL_MANAGED, tr("Install folder is not writable (system install?)"))
     if os.path.isfile(exe) and not os.access(exe, os.W_OK):
-        return (INSTALL_MANAGED, "Executable file is not writable")
+        return (INSTALL_MANAGED, tr("Executable file is not writable"))
     return (INSTALL_FROZEN, "")
 
 
@@ -473,16 +474,16 @@ class _CheckWorker(QThread):
             }
             resp = requests.get(url, headers=headers, timeout=15)
             if resp.status_code == 404:
-                self.finished_err.emit("No releases published yet")
+                self.finished_err.emit(tr("No releases published yet"))
                 return
             resp.raise_for_status()
             self.finished_ok.emit(resp.json())
         except requests.Timeout:
-            self.finished_err.emit("Request timed out")
+            self.finished_err.emit(tr("Request timed out"))
         except requests.ConnectionError:
-            self.finished_err.emit("No internet connection")
+            self.finished_err.emit(tr("No internet connection"))
         except Exception as e:
-            self.finished_err.emit(f"Check failed: {e}")
+            self.finished_err.emit(tr("Check failed: {0}", e))
 
 
 class _DownloadWorker(QThread):
@@ -542,9 +543,9 @@ class _DownloadWorker(QThread):
             except Exception:
                 pass
             if str(e) == "cancelled":
-                self.finished_err.emit("Download cancelled")
+                self.finished_err.emit(tr("Download cancelled"))
             else:
-                self.finished_err.emit(f"Download failed: {e}")
+                self.finished_err.emit(tr("Download failed: {0}", e))
 
 
 # ---------------------------------------------------------------------------
@@ -643,7 +644,7 @@ class UpdateManager(QObject):
         if self._state in (STATE_CHECKING, STATE_DOWNLOADING):
             return
         if not self._repo:
-            self._last_error = "GitHub repo not configured"
+            self._last_error = tr("GitHub repo not configured")
             self._set_state(STATE_ERROR)
             self.error.emit(self._last_error)
             return
@@ -659,7 +660,7 @@ class UpdateManager(QObject):
             tag = str(release.get("tag_name", "")).strip()
             current_tag = str(getattr(config, "APP_RELEASE_TAG", "")).strip()
             if not tag:
-                self._last_error = "Release missing tag_name"
+                self._last_error = tr("Release missing tag_name")
                 self._set_state(STATE_ERROR)
                 self.error.emit(self._last_error)
                 return
@@ -689,7 +690,7 @@ class UpdateManager(QObject):
                 )
             asset = _pick_release_asset(release, self._install_type)
             if not asset:
-                self._last_error = f"No compatible asset in release {tag}"
+                self._last_error = tr("No compatible asset in release {0}", tag)
                 self._set_state(STATE_ERROR)
                 self.error.emit(self._last_error)
                 return
@@ -718,7 +719,7 @@ class UpdateManager(QObject):
         name = self._asset.get("name", "update.bin")
         size = int(self._asset.get("size", 0) or 0)
         if not url:
-            self._last_error = "Asset has no download URL"
+            self._last_error = tr("Asset has no download URL")
             self._set_state(STATE_ERROR)
             self.error.emit(self._last_error)
             return
@@ -764,8 +765,8 @@ class UpdateManager(QObject):
             return False
         if not self.can_auto_install():
             self._last_error = (
-                f"Cannot auto-install on this install: {self._install_reason}. "
-                "Please install the downloaded file manually."
+                tr("Cannot auto-install on this install: {0}. "
+                "Please install the downloaded file manually.", self._install_reason)
             )
             self._set_state(STATE_ERROR)
             self.error.emit(self._last_error)
@@ -790,7 +791,7 @@ class UpdateManager(QObject):
             return self._apply_frozen_linux(exe_path, downloaded, kind)
         except Exception as e:
             logging.exception("apply_and_restart failed")
-            self._last_error = f"Apply failed: {e}"
+            self._last_error = tr("Apply failed: {0}", e)
             self._set_state(STATE_ERROR)
             self.error.emit(self._last_error)
             return False
@@ -847,7 +848,7 @@ class UpdateManager(QObject):
                 restart_cmd=[exe_path],
                 cleanup_paths=[downloaded, staging],
             )
-        self._last_error = f"Unsupported asset type for Windows: {kind}"
+        self._last_error = tr("Unsupported asset type for Windows: {0}", kind)
         self._set_state(STATE_ERROR)
         self.error.emit(self._last_error)
         return False
@@ -1083,7 +1084,7 @@ rm -- "$0"
                 cleanup_paths=[downloaded, staging],
             )
         else:
-            self._last_error = f"Unsupported asset type for Linux: {kind}"
+            self._last_error = tr("Unsupported asset type for Linux: {0}", kind)
             self._set_state(STATE_ERROR)
             self.error.emit(self._last_error)
             return False

@@ -14,6 +14,7 @@ from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
 from dialogs.retroarch_dialog import RetroArchCoreSelectionDialog
 from gui.gui_utils import DetectionWorkerThread  # Import DetectionWorkerThread
 from common.shortcut_utils import sanitize_profile_name  # Import sanitize_profile_name
+from common.i18n import tr
 # Note: MultiProfileDialog is imported locally where needed to avoid import issues in Flatpak
 
 # It's assumed that DetectionWorkerThread, shortcut_utils, emulator_manager, 
@@ -170,7 +171,7 @@ class DropEventMixin:
         if not pending_profiles:
             if skipped_existing:
                 mw.status_label.setText(
-                    f"No profiles added; skipped {skipped_existing} existing profile(s)."
+                    tr("No profiles added; skipped {0} existing profile(s).", skipped_existing)
                 )
             return [], skipped_existing
 
@@ -179,7 +180,7 @@ class DropEventMixin:
         if not mw.core_logic.save_profiles(profiles_to_save):
             logging.error("Failed to save bulk emulator profiles.")
             QMessageBox.critical(
-                mw, "Save Error", "Failed to save the profiles. Check the log for details."
+                mw, tr("Save Error"), tr("Failed to save the profiles. Check the log for details.")
             )
             return [], skipped_existing
 
@@ -189,9 +190,9 @@ class DropEventMixin:
             mw.profile_table_manager.update_profile_table()
             mw.profile_table_manager.select_profile_in_table(added_names[-1])
 
-        status = f"Added {len(added_names)} emulator profile(s)."
+        status = tr("Added {0} emulator profile(s).", len(added_names))
         if skipped_existing:
-            status += f" Skipped {skipped_existing} existing profile(s)."
+            status += tr(" Skipped {0} existing profile(s).", skipped_existing)
         mw.status_label.setText(status)
         logging.info(status)
         return added_names, skipped_existing
@@ -424,8 +425,8 @@ class DropEventMixin:
                     import pythoncom
                 except ImportError:
                     logging.error("The 'winshell' or 'pywin32' library is not installed. Cannot read .lnk files.")
-                    QMessageBox.critical(handler_instance.main_window, "Dependency Error",
-                                        "The 'winshell' and 'pywin32' libraries are required to read shortcuts (.lnk) on Windows.")
+                    QMessageBox.critical(handler_instance.main_window, tr("Dependency Error"),
+                                        tr("The 'winshell' and 'pywin32' libraries are required to read shortcuts (.lnk) on Windows."))
                     return
 
         # Lista per raccogliere i file da processare
@@ -452,9 +453,9 @@ class DropEventMixin:
                         logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
                 
                 if is_dir_shortcut:
-                    QMessageBox.warning(mw, "Folder Shortcut Not Supported",
-                                        "Shortcuts pointing to folders are not supported.\n\n"
-                                        "Please drag and drop the game's executable, its shortcut, or a launcher's .url file directly.")
+                    QMessageBox.warning(mw, tr("Folder Shortcut Not Supported"),
+                                        tr("Shortcuts pointing to folders are not supported.\n\n"
+                                        "Please drag and drop the game's executable, its shortcut, or a launcher's .url file directly."))
                     event.ignore()
                     return False
 
@@ -469,16 +470,16 @@ class DropEventMixin:
                         logging.warning(f"DragDropHandler.dropEvent: No executables found in directory: {path}")
                         msg_box = QMessageBox(mw)
                         msg_box.setIcon(QMessageBox.Icon.Warning)
-                        msg_box.setWindowTitle("No Executable Found")
+                        msg_box.setWindowTitle(tr("No Executable Found"))
                         msg_box.setTextFormat(Qt.TextFormat.RichText)
                         msg_box.setText(
-                            "The dropped folder does not contain any executable or shortcut.<br><br>"
+                            tr("The dropped folder does not contain any executable or shortcut.<br><br>"
                             "<b>To add a profile, drag and drop the game's or emulator's executable "
                             "(.exe) or its shortcut — not a save folder or other data directory.</b><br><br>"
-                            f"Folder:<br>{path}"
+                            "Folder:<br>{0}", path)
                         )
                         msg_box.exec()
-                        mw.status_label.setText("No executable found in dropped folder.")
+                        mw.status_label.setText(tr("No executable found in dropped folder."))
                         event.ignore()
                         return False
                 else:
@@ -528,9 +529,9 @@ class DropEventMixin:
             emulator_status, emulator_name = handler_instance._is_known_emulator(file_path)
             if emulator_status == 'unsupported':
                 QMessageBox.information(handler_instance.main_window,
-                                        "Emulator Recognized",
-                                        f"The emulator '{emulator_name}' is recognized but not yet supported by SaveState.\n\n"
-                                        "Support for new emulators is added regularly.")
+                                        tr("Emulator Recognized"),
+                                        tr("The emulator '{0}' is recognized but not yet supported by SaveState.\n\n"
+                                        "Support for new emulators is added regularly.", emulator_name))
                 event.acceptProposedAction()
                 return
 
@@ -538,10 +539,10 @@ class DropEventMixin:
             launcher_status, launcher_name = handler_instance._is_known_launcher(file_path)
             if launcher_status == 'unsupported':
                 QMessageBox.information(handler_instance.main_window,
-                                        "Launcher Recognized",
-                                        f"The launcher '{launcher_name}' is recognized but not yet supported by SaveState.\n\n"
+                                        tr("Launcher Recognized"),
+                                        tr("The launcher '{0}' is recognized but not yet supported by SaveState.\n\n"
                                         "Games from this launcher can still be added manually or via shortcuts.\n"
-                                        "Direct launcher integration is added regularly.")
+                                        "Direct launcher integration is added regularly.", launcher_name))
                 event.acceptProposedAction()
                 return
             
@@ -554,12 +555,12 @@ class DropEventMixin:
                     from launcher_utils.playnite_manager import PlayniteDatabaseLockedException
                     if isinstance(e_launcher, PlayniteDatabaseLockedException):
                         mw = handler_instance.main_window
-                        display_name = launcher_name.capitalize() if launcher_name else "Launcher"
+                        display_name = launcher_name.capitalize() if launcher_name else tr("Launcher")
                         logging.warning(f"{display_name} database is locked: {e_launcher}")
-                        QMessageBox.warning(mw, f"{display_name} Library",
-                            f"Cannot read the {display_name} library because {display_name} is currently running.\n\n"
-                            f"The database file is locked:\n{e_launcher.db_path}\n\n"
-                            f"Please close {display_name} and try again.")
+                        QMessageBox.warning(mw, tr("{0} Library", display_name),
+                            tr("Cannot read the {0} library because {0} is currently running.\n\n"
+                            "The database file is locked:\n{1}\n\n"
+                            "Please close {0} and try again.", display_name, e_launcher.db_path))
                         self._hide_overlay_if_visible(mw)
                         mw.set_controls_enabled(True)
                         QApplication.restoreOverrideCursor()
@@ -585,7 +586,7 @@ class DropEventMixin:
                             parent=mw, 
                             launcher_mode=True
                         )
-                        multi_dialog.setWindowTitle(f"{launcher_key} Library")
+                        multi_dialog.setWindowTitle(tr("{0} Library", launcher_key))
                         
                         # Imposta il riferimento al dialog per _handle_profile_analysis
                         handler_instance.profile_dialog = multi_dialog
@@ -618,16 +619,16 @@ class DropEventMixin:
                             if accepted:
                                 mw._save_profiles()
                                 mw.update_profile_table()
-                                mw.status_label.setText(f"Added {len(accepted)} profiles from {launcher_key}")
+                                mw.status_label.setText(tr("Added {0} profiles from {1}", len(accepted), launcher_key))
                         else:
                             logging.info(f"User cancelled {launcher_key} profile creation")
                     else:
-                        QMessageBox.warning(mw, f"{launcher_key} Library",
-                            f"No games were found in the {launcher_key} library.\n\n"
+                        QMessageBox.warning(mw, tr("{0} Library", launcher_key),
+                            tr("No games were found in the {0} library.\n\n"
                             "This could be because:\n"
                             "- The library is empty\n"
                             "- The launcher is installed in a non-standard location\n"
-                            "- The database format is not compatible")
+                            "- The database format is not compatible", launcher_key))
                     
                     # Nascondi l'overlay e ripristina i controlli
                     self._hide_overlay_if_visible(mw)
@@ -668,17 +669,17 @@ class DropEventMixin:
                     except Exception as e:
                         logging.error(f"Error finding SameBoy profiles: {e}")
                         QMessageBox.warning(
-                            mw, "SameBoy Detection Error",
-                            f"An error occurred while trying to detect SameBoy profiles: {e}\n"
-                            "You can try adding the emulator again or set the path manually via settings (if available).")
+                            mw, tr("SameBoy Detection Error"),
+                            tr("An error occurred while trying to detect SameBoy profiles: {0}\n"
+                            "You can try adding the emulator again or set the path manually via settings (if available).", e))
                         emulator_error_already_shown = True
 
                 # Special handling for ares emulator: saves path not configured
                 if emulator_key == 'ares' and profiles_data is None:
                     logging.warning("ares detected, but no custom save path is configured in settings.bml.")
                     QMessageBox.warning(
-                        mw, "ares - Save Path Not Configured",
-                        "ares was detected, but no custom save path is configured.\n\n"
+                        mw, tr("ares - Save Path Not Configured"),
+                        tr("ares was detected, but no custom save path is configured.\n\n"
                         "When no custom path is set, ares stores saves alongside your ROM files, "
                         "making automatic detection impossible.\n\n"
                         "To enable SaveState integration:\n"
@@ -687,7 +688,7 @@ class DropEventMixin:
                         "3. Click 'Assign' and choose a dedicated folder\n"
                         "4. Drag & drop ares into SaveState again\n\n"
                         "After setting a custom path, ares will organize saves by system "
-                        "and SaveState will be able to detect them automatically.")
+                        "and SaveState will be able to detect them automatically."))
                     # Hide overlay and restore controls, then return
                     self._hide_overlay_if_visible(mw)
                     mw.set_controls_enabled(True)
@@ -736,7 +737,7 @@ class DropEventMixin:
 
                         systems = list_ares_systems(ares_hint)
                         if not systems:
-                            QMessageBox.warning(mw, "ares", "No systems with saves detected for ares.")
+                            QMessageBox.warning(mw, "ares", tr("No systems with saves detected for ares."))
                         else:
                             from dialogs.ares_dialog import AresSetupDialog
                             setup_dialog = AresSetupDialog(ares_hint, systems, mw)
@@ -759,7 +760,7 @@ class DropEventMixin:
                                     )
                     except Exception as e_ares:
                         logging.error(f"ares flow error: {e_ares}", exc_info=True)
-                        QMessageBox.critical(mw, "ares Error", f"An error occurred while scanning ares: {e_ares}")
+                        QMessageBox.critical(mw, tr("ares Error"), tr("An error occurred while scanning ares: {0}", e_ares))
                     # Finish handling for ares
                     self._hide_overlay_if_visible(mw)
                     mw.set_controls_enabled(True)
@@ -790,7 +791,7 @@ class DropEventMixin:
 
                         cores = list_retroarch_cores(ra_hint)
                         if not cores:
-                            QMessageBox.warning(mw, "RetroArch", "No cores with saves detected under RetroArch paths.")
+                            QMessageBox.warning(mw, "RetroArch", tr("No cores with saves detected under RetroArch paths."))
                         else:
                             # Unified single-dialog flow
                             from dialogs.retroarch_dialog import RetroArchSetupDialog
@@ -814,7 +815,7 @@ class DropEventMixin:
                         # end cores empty/else
                     except Exception as e_ra:
                         logging.error(f"RetroArch flow error: {e_ra}", exc_info=True)
-                        QMessageBox.critical(mw, "RetroArch Error", f"An error occurred while scanning RetroArch: {e_ra}")
+                        QMessageBox.critical(mw, tr("RetroArch Error"), tr("An error occurred while scanning RetroArch: {0}", e_ra))
                     # Regardless, finish handling for RetroArch
                     self._hide_overlay_if_visible(mw)
                     mw.set_controls_enabled(True)
@@ -852,12 +853,12 @@ class DropEventMixin:
                     if not rom_directory_prompted and not emulator_error_already_shown:
                         logging.warning(f"{emulator_key} detected, but no profiles found in its standard directory.")
                         QMessageBox.warning(
-                            mw, f"{emulator_key.capitalize()} Profiles",
-                            f"No game profiles were found for {emulator_key.capitalize()}.\n\n"
+                            mw, tr("{0} Profiles", emulator_key.capitalize()),
+                            tr("No game profiles were found for {0}.\n\n"
                             "This could be because:\n"
                             "- You haven't played any games yet\n"
                             "- The emulator is installed in a non-standard location\n"
-                            "- The save files are stored in a custom location")
+                            "- The save files are stored in a custom location", emulator_key.capitalize()))
                     
                     # Hide the overlay if it's visible
                     self._hide_overlay_if_visible(mw)
@@ -908,7 +909,7 @@ class DropEventMixin:
             # If no files left after filtering, show message and return
             if not files_to_process:
                 logging.warning("DragDropHandler.dropEvent: No valid files to process")
-                mw.status_label.setText("No valid game files found (emulators were filtered out).")
+                mw.status_label.setText(tr("No valid game files found (emulators were filtered out)."))
                 event.ignore()
                 return False
             
@@ -937,9 +938,9 @@ class DropEventMixin:
             # Mostra overlay persistente e disabilita i controlli della MainWindow finché la dialog è attiva
             try:
                 if hasattr(mw, 'lock_overlay'):
-                    mw.lock_overlay("Multi‑Profile UI is active")
+                    mw.lock_overlay(tr("Multi‑Profile UI is active"))
                 elif hasattr(mw, 'show_overlay_message'):
-                    mw.show_overlay_message("Multi-Profile UI is active")
+                    mw.show_overlay_message(tr("Multi-Profile UI is active"))
             except Exception:
                 pass
             try:
@@ -977,8 +978,8 @@ class DropEventMixin:
 
                 if not resolved_target or not os.path.exists(resolved_target):
                         logging.error(f"Could not resolve .lnk target or target does not exist: {resolved_target}")
-                        QMessageBox.critical(mw, "Shortcut Error",
-                                            f"Unable to resolve the shortcut path or the target file/folder does not exist:\n'{resolved_target or 'N/A'}'")
+                        QMessageBox.critical(mw, tr("Shortcut Error"),
+                                            tr("Unable to resolve the shortcut path or the target file/folder does not exist:\n'{0}'", resolved_target or 'N/A'))
                         event.ignore()
                         return
 
@@ -1003,7 +1004,7 @@ class DropEventMixin:
                 logging.debug(f"PCM.dropEvent (Fallback): Game folder from resolved shortcut: {game_install_dir}")
             except Exception as e_lnk:
                 logging.error(f"Error reading .lnk file: {e_lnk}", exc_info=True)
-                QMessageBox.critical(mw, "Shortcut Error", f"Unable to read the .lnk file:\n{e_lnk}")
+                QMessageBox.critical(mw, tr("Shortcut Error"), tr("Unable to read the .lnk file:\n{0}", e_lnk))
                 event.ignore()
                 return
             
@@ -1056,7 +1057,7 @@ class DropEventMixin:
 
                 if not parsed_exec or not os.path.exists(parsed_exec):
                     logging.error(f"Could not parse 'Exec' from .desktop or resolved path does not exist: {parsed_exec}")
-                    QMessageBox.critical(mw, "Desktop File Error", f"Unable to parse executable path from .desktop or the path doesn't exist:\n'{parsed_exec or 'N/A'}'")
+                    QMessageBox.critical(mw, tr("Desktop File Error"), tr("Unable to parse executable path from .desktop or the path doesn't exist:\n'{0}'", parsed_exec or 'N/A'))
                     event.ignore(); return
 
                 target_path = parsed_exec 
@@ -1071,7 +1072,7 @@ class DropEventMixin:
 
             except Exception as e_desktop: 
                 logging.error(f"Error processing .desktop file '{file_path}': {e_desktop}", exc_info=True)
-                QMessageBox.critical(mw, "Desktop File Error", f"Unable to process .desktop file:\n{file_path}\nError: {e_desktop}")
+                QMessageBox.critical(mw, tr("Desktop File Error"), tr("Unable to process .desktop file:\n{0}\nError: {1}", file_path, e_desktop))
                 event.ignore(); return
 
         elif is_linux_executable: # Already checked it's not a .desktop and is a file
@@ -1094,9 +1095,9 @@ class DropEventMixin:
         # Se è un file ma non è un tipo supportato, lo rifiutiamo per motivi di sicurezza
         elif os.path.isfile(file_path):
             logging.warning(f"PCM.dropEvent: File type not allowed: {file_path}")
-            QMessageBox.warning(mw, "File Type Not Supported", 
-                                f"Only Windows shortcuts (.lnk), Linux desktop files (.desktop), Linux executables, or Steam links are supported.\n\n"
-                                f"The file '{os.path.basename(file_path)}' is not a valid shortcut or executable.")
+            QMessageBox.warning(mw, tr("File Type Not Supported"), 
+                                tr("Only Windows shortcuts (.lnk), Linux desktop files (.desktop), Linux executables, or Steam links are supported.\n\n"
+                                "The file '{0}' is not a valid shortcut or executable.", os.path.basename(file_path)))
             event.ignore()
             return
         elif os.path.isdir(file_path):
@@ -1151,17 +1152,17 @@ class DropEventMixin:
                     except Exception as e:
                         logging.error(f"Error finding SameBoy profiles: {e}")
                         QMessageBox.warning(
-                            mw, "SameBoy Detection Error",
-                            f"An error occurred while trying to detect SameBoy profiles: {e}\n"
-                            "You can try adding the emulator again or set the path manually via settings (if available).")
+                            mw, tr("SameBoy Detection Error"),
+                            tr("An error occurred while trying to detect SameBoy profiles: {0}\n"
+                            "You can try adding the emulator again or set the path manually via settings (if available).", e))
                         emulator_error_already_shown = True
                 
                 # Special handling for ares emulator: saves path not configured
                 if emulator_key == 'ares' and profiles_data is None:
                     logging.warning("ares detected (fallback), but no custom save path is configured in settings.bml.")
                     QMessageBox.warning(
-                        mw, "ares - Save Path Not Configured",
-                        "ares was detected, but no custom save path is configured.\n\n"
+                        mw, tr("ares - Save Path Not Configured"),
+                        tr("ares was detected, but no custom save path is configured.\n\n"
                         "When no custom path is set, ares stores saves alongside your ROM files, "
                         "making automatic detection impossible.\n\n"
                         "To enable SaveState integration:\n"
@@ -1170,7 +1171,7 @@ class DropEventMixin:
                         "3. Click 'Assign' and choose a dedicated folder\n"
                         "4. Drag & drop ares into SaveState again\n\n"
                         "After setting a custom path, ares will organize saves by system "
-                        "and SaveState will be able to detect them automatically.")
+                        "and SaveState will be able to detect them automatically."))
                     # Hide overlay and restore controls, then return
                     self._hide_overlay_if_visible(mw)
                     mw.set_controls_enabled(True)
@@ -1188,7 +1189,7 @@ class DropEventMixin:
 
                         systems = list_ares_systems(ares_hint)
                         if not systems:
-                            QMessageBox.warning(mw, "ares", "No systems with saves detected for ares.")
+                            QMessageBox.warning(mw, "ares", tr("No systems with saves detected for ares."))
                         else:
                             from dialogs.ares_dialog import AresSetupDialog
                             setup_dialog = AresSetupDialog(ares_hint, systems, mw)
@@ -1209,7 +1210,7 @@ class DropEventMixin:
                                     )
                     except Exception as e_ares:
                         logging.error(f"ares flow error (fallback): {e_ares}", exc_info=True)
-                        QMessageBox.critical(mw, "ares Error", f"An error occurred while scanning ares: {e_ares}")
+                        QMessageBox.critical(mw, tr("ares Error"), tr("An error occurred while scanning ares: {0}", e_ares))
                     self._hide_overlay_if_visible(mw)
                     mw.set_controls_enabled(True)
                     QApplication.restoreOverrideCursor()
@@ -1226,7 +1227,7 @@ class DropEventMixin:
                         )
                         cores = list_retroarch_cores(target_path)
                         if not cores:
-                            QMessageBox.warning(mw, "RetroArch", "No cores with saves detected under RetroArch paths.")
+                            QMessageBox.warning(mw, "RetroArch", tr("No cores with saves detected under RetroArch paths."))
                         else:
                             core_dialog = RetroArchCoreSelectionDialog(cores, mw)
                             if core_dialog.exec():
@@ -1251,7 +1252,7 @@ class DropEventMixin:
                                             )
                     except Exception as e_ra:
                         logging.error(f"RetroArch flow error: {e_ra}", exc_info=True)
-                        QMessageBox.critical(mw, "RetroArch Error", f"An error occurred while scanning RetroArch: {e_ra}")
+                        QMessageBox.critical(mw, tr("RetroArch Error"), tr("An error occurred while scanning RetroArch: {0}", e_ra))
                     # Hide the overlay if it's visible
                     self._hide_overlay_if_visible(mw)
                     mw.set_controls_enabled(True)
@@ -1286,8 +1287,8 @@ class DropEventMixin:
                 elif emulator_key: # Emulator detected but no profiles found
                     logging.warning(f"{emulator_key} detected, but no profiles found in its standard directory.")
                     if not emulator_error_already_shown:
-                        QMessageBox.warning(mw, f"Emulator Detected ({emulator_key})",
-                                        f"Detected link to {emulator_key}, but no profiles found in its standard folder.\nCheck the emulator's save location.")
+                        QMessageBox.warning(mw, tr("Emulator Detected ({0})", emulator_key),
+                                        tr("Detected link to {0}, but no profiles found in its standard folder.\nCheck the emulator's save location.", emulator_key))
                 return # IMPORTANT: Stop further processing if an emulator was detected
 
             # self.game_name_input.setText(game_name) # Temporarily commented out
@@ -1319,7 +1320,7 @@ class DropEventMixin:
             event.acceptProposedAction()
         else:
             logging.warning(f"PCM.dropEvent (Fallback): Target path '{target_path or 'N/A'}' invalid or non-existent. Ignoring drop.")
-            QMessageBox.warning(mw, "Path Error", f"Dropped item or target ('{target_path or 'N/A'}') is invalid/not found.")
+            QMessageBox.warning(mw, tr("Path Error"), tr("Dropped item or target ('{0}') is invalid/not found.", target_path or 'N/A'))
             event.ignore()
 
             # This section was removed as it duplicated code from earlier in the method
@@ -1339,17 +1340,17 @@ class DropEventMixin:
 
         if not profile_name:
             logging.error(f"Sanitized profile name for '{profile_name_original}' became empty!")
-            QMessageBox.warning(mw, "Profile Name Error",
-                                "Unable to generate a valid profile name from the dragged shortcut.")
+            QMessageBox.warning(mw, tr("Profile Name Error"),
+                                tr("Unable to generate a valid profile name from the dragged shortcut."))
             return
 
         if profile_name in mw.profiles:
-            reply = QMessageBox.question(mw, "Existing Profile",
-                                        f"A profile named '{profile_name}' already exists. Overwrite it?",
+            reply = QMessageBox.question(mw, tr("Existing Profile"),
+                                        tr("A profile named '{0}' already exists. Overwrite it?", profile_name),
                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                         QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.No:
-                mw.status_label.setText("Profile creation cancelled.")
+                mw.status_label.setText(tr("Profile creation cancelled."))
                 return
             else:
                 logging.warning(f"Overwriting existing profile: {profile_name}")
@@ -1357,11 +1358,11 @@ class DropEventMixin:
         # --- Start Heuristic Path Search Thread ---
         logging.debug(f"Preparing DetectionWorkerThread for single file: game_install_dir='{game_install_dir}', profile_name_suggestion='{profile_name}', current emulator_result='{emulator_result}'")
         if self.detection_thread is not None and self.detection_thread.isRunning():
-            QMessageBox.information(mw, "Operation in Progress", "Another path search is already in progress. Please wait.")
+            QMessageBox.information(mw, tr("Operation in Progress"), tr("Another path search is already in progress. Please wait."))
             return
 
         mw.set_controls_enabled(False)
-        mw.status_label.setText(f"Searching...")
+        mw.status_label.setText(tr("Searching..."))
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         
         # Create cancellation manager for this search
@@ -1397,7 +1398,7 @@ class DropEventMixin:
                 # Utilizziamo lo stesso approccio del metodo start_steam_configuration
                 # che funziona correttamente con il fade effect
                 if hasattr(mw, 'loading_label') and mw.loading_label:
-                    mw.loading_label.setText("Searching...") # Set text for search
+                    mw.loading_label.setText(tr("Searching...")) # Set text for search
                     mw.loading_label.setStyleSheet("QLabel { color: white; background-color: transparent; font-size: 24pt; font-weight: bold; }")
                     mw.loading_label.adjustSize() # Ensure label resizes to content
                 
@@ -1465,17 +1466,17 @@ class DropEventMixin:
                     if hasattr(mw, 'profile_table_manager'):
                         mw.profile_table_manager.update_profile_table()
                     if hasattr(mw, 'status_label'):
-                        mw.status_label.setText(f"Added {added_count} profile(s).")
+                        mw.status_label.setText(tr("Added {0} profile(s).", added_count))
                     logging.info(f"Saved {added_count} profiles.")
                 else:
                     if hasattr(mw, 'status_label'):
-                        mw.status_label.setText("Error saving profiles.")
+                        mw.status_label.setText(tr("Error saving profiles."))
                     logging.error("Failed to save profiles.")
-                    QMessageBox.critical(mw, "Error", "Unable to save profiles.")
+                    QMessageBox.critical(mw, tr("Error"), tr("Unable to save profiles."))
             else:
                 # Rejected or closed
                 if hasattr(mw, 'status_label'):
-                    mw.status_label.setText("Profile creation cancelled.")
+                    mw.status_label.setText(tr("Profile creation cancelled."))
                 logging.info("MultiProfileDialog: Profile creation cancelled by user.")
         except Exception as e:
             logging.error(f"Error finalizing multi-profile dialog: {e}", exc_info=True)

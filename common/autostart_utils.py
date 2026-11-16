@@ -13,6 +13,7 @@ import logging
 import os
 import platform
 import sys
+from common.i18n import tr
 
 RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 RUN_VALUE_NAME = "SaveState"
@@ -33,8 +34,8 @@ def is_supported() -> bool:
 
 def checkbox_label() -> str:
     if platform.system() == "Windows":
-        return "Start with Windows (minimized to tray)"
-    return "Start on login (minimized to tray)"
+        return tr("Start with Windows (minimized to tray)")
+    return tr("Start on login (minimized to tray)")
 
 
 def _command_parts() -> list:

@@ -33,6 +33,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple
 
 from cloud_utils.storage_provider import StorageProvider, ProviderType, select_zip_files_for_upload
+from common.i18n import tr
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +139,7 @@ class SMBProvider(StorageProvider):
     
     @property
     def name(self) -> str:
-        return "Network Folder"
+        return tr("Network Folder")
     
     @property
     def icon_name(self) -> str:
@@ -267,7 +268,7 @@ class SMBProvider(StorageProvider):
         }
         
         if not self._base_path:
-            result['message'] = 'No path configured'
+            result['message'] = tr('No path configured')
             return result
         
         try:
@@ -276,7 +277,7 @@ class SMBProvider(StorageProvider):
                 # Resolve on-demand if not yet connected.
                 resolved, err = self._resolve_base_path(self._base_path)
                 if resolved is None:
-                    result['message'] = err or f'Path not accessible: {self._base_path}'
+                    result['message'] = err or tr('Path not accessible: {0}', self._base_path)
                     return result
                 self._resolved_base_path = resolved
                 result['details']['resolved_path'] = resolved
@@ -290,11 +291,11 @@ class SMBProvider(StorageProvider):
                 os.remove(test_file)
                 result['details']['writable'] = True
             except (PermissionError, OSError):
-                result['message'] = 'Path is read-only'
+                result['message'] = tr('Path is read-only')
                 return result
             
             result['success'] = True
-            result['message'] = 'Connection successful'
+            result['message'] = tr('Connection successful')
             return result
             
         except Exception as e:
@@ -328,7 +329,7 @@ class SMBProvider(StorageProvider):
 
             if os.path.isdir(candidate):
                 return candidate, None
-            return None, f"Path not accessible: {candidate}"
+            return None, tr("Path not accessible: {0}", candidate)
 
         # --- Linux / macOS path handling ------------------------------------------
         # If it's a plain local path (no server/share), just check it directly.
@@ -337,7 +338,7 @@ class SMBProvider(StorageProvider):
             # Linux; normpath would mangle it. raw_path here is a local path.
             if os.path.isdir(raw_path):
                 return raw_path, None
-            return None, f"Path not accessible: {raw_path}"
+            return None, tr("Path not accessible: {0}", raw_path)
 
         # SMB share on Linux: resolve via GVFS.
         return self._resolve_linux_gvfs(share_info)
@@ -351,7 +352,7 @@ class SMBProvider(StorageProvider):
         try:
             uid = os.getuid()  # type: ignore[attr-defined]
         except AttributeError:
-            return None, "GVFS is only available on Linux"
+            return None, tr("GVFS is only available on Linux")
 
         gvfs_root = f"/run/user/{uid}/gvfs"
         server = info['server']
@@ -372,8 +373,8 @@ class SMBProvider(StorageProvider):
         gio = shutil.which('gio')
         if not gio:
             return None, (
-                "SMB share is not mounted and the 'gio' command is not available. "
-                "Install gvfs or mount the share in your file manager first."
+                tr("SMB share is not mounted and the 'gio' command is not available. "
+                "Install gvfs or mount the share in your file manager first.")
             )
 
         smb_uri = f"smb://{server}/{share}"
@@ -396,8 +397,8 @@ class SMBProvider(StorageProvider):
             time.sleep(0.2)
 
         if existing:
-            return None, f"Mounted share but subfolder not found: {subpath or '/'}"
-        return None, "Mount reported success but no GVFS mount was found"
+            return None, tr("Mounted share but subfolder not found: {0}", subpath or '/')
+        return None, tr("Mount reported success but no GVFS mount was found")
 
     @staticmethod
     def _find_gvfs_mount(gvfs_root: str, server: str, share: str) -> Optional[str]:
@@ -470,9 +471,9 @@ class SMBProvider(StorageProvider):
                 timeout=30,
             )
         except subprocess.TimeoutExpired:
-            return "Mount operation timed out"
+            return tr("Mount operation timed out")
         except OSError as e:
-            return f"Failed to run gio: {e}"
+            return tr("Failed to run gio: {0}", e)
 
         if proc.returncode == 0:
             return None
@@ -489,9 +490,9 @@ class SMBProvider(StorageProvider):
         # Detect auth failures to give a clearer message.
         low = err_out.lower()
         if any(tok in low for tok in ('permission denied', 'password', 'authentication', 'logon failure')):
-            return "Authentication failed. Check username and password."
+            return tr("Authentication failed. Check username and password.")
         if 'failed to resolve' in low or 'host is down' in low or 'no route' in low:
-            return f"Cannot reach server '{smb_uri}'. Check the hostname and network."
+            return tr("Cannot reach server '{0}'. Check the hostname and network.", smb_uri)
         return err_out
     
     # -------------------------------------------------------------------------
@@ -523,11 +524,11 @@ class SMBProvider(StorageProvider):
         }
         
         if not self.is_connected:
-            result['error'] = 'Not connected'
+            result['error'] = tr('Not connected')
             return result
         
         if not os.path.isdir(local_path):
-            result['error'] = f'Local path not found: {local_path}'
+            result['error'] = tr('Local path not found: {0}', local_path)
             return result
         
         try:
@@ -635,7 +636,7 @@ class SMBProvider(StorageProvider):
         }
         
         if not self.is_connected:
-            result['error'] = 'Not connected'
+            result['error'] = tr('Not connected')
             return result
         
         try:
@@ -643,7 +644,7 @@ class SMBProvider(StorageProvider):
             profile_folder = os.path.join(self._app_folder_path, profile_name)
             
             if not os.path.isdir(profile_folder):
-                result['error'] = f'Profile not found: {profile_name}'
+                result['error'] = tr('Profile not found: {0}', profile_name)
                 return result
             
             # Create local directory if needed

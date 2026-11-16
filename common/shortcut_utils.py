@@ -9,6 +9,7 @@ import platform
 import shutil
 from common.utils import resource_path
 from core.core_logic import sanitize_foldername
+from common.i18n import tr
 
 # Determina il sistema operativo
 IS_WINDOWS = platform.system() == 'Windows'
@@ -419,7 +420,7 @@ def generate_heroic_script(profile_name: str) -> tuple:
         backup_base_dir = settings.get("backup_base_dir", getattr(_cfg, "BACKUP_BASE_DIR", ""))
         
         if not backup_base_dir:
-            return False, "Backup directory not configured. Please configure it in Settings first."
+            return False, tr("Backup directory not configured. Please configure it in Settings first.")
         
         # Create scripts directory
         scripts_dir = os.path.join(backup_base_dir, ".savestate", "scripts")
@@ -486,7 +487,7 @@ def generate_heroic_script(profile_name: str) -> tuple:
         
     except Exception as e:
         logging.error(f"Error generating Heroic script for '{profile_name}': {e}", exc_info=True)
-        return False, f"Error creating script: {e}"
+        return False, tr("Error creating script: {0}", e)
 
 def create_backup_shortcut(profile_name):
     """
@@ -495,12 +496,12 @@ def create_backup_shortcut(profile_name):
     Supporta sia Windows (.lnk) che Linux (.desktop).
     """
     if IS_WINDOWS and not WINSHELL_AVAILABLE:
-        msg = "Librerie necessarie (winshell, pywin32) non trovate per creare collegamenti su Windows."
+        msg = tr("Required libraries (winshell, pywin32) not found: cannot create shortcuts on Windows.")
         logging.error(msg)
         return False, msg
     
     if IS_LINUX and not LINUX_DESKTOP_SUPPORT:
-        msg = "Supporto per file .desktop non disponibile su questo sistema Linux."
+        msg = tr("Support for .desktop files is not available on this Linux system.")
         logging.error(msg)
         return False, msg
 
@@ -510,7 +511,7 @@ def create_backup_shortcut(profile_name):
         desktop_path = get_desktop_path()
         if not desktop_path or not os.path.isdir(desktop_path):
              logging.error("Unable to find Desktop folder.")
-             return False, "Unable to find Desktop folder."
+             return False, tr("Unable to find Desktop folder.")
         safe_link_name = sanitize_shortcut_filename(profile_name)
         
         # Crea il percorso del collegamento in base al sistema operativo
@@ -562,7 +563,7 @@ def create_backup_shortcut(profile_name):
                 logging.info(f"Main script path found: {main_script_path}")
             except Exception as e_path:
                 logging.error(f"Error in determining main script path 'main.py': {e_path}", exc_info=True)
-                msg = f"Unable to determine/find the script ('main.py') needed for the shortcut.\nVerify that it exists in the project directory.\n({e_path})"
+                msg = tr("Unable to determine/find the script ('main.py') needed for the shortcut.\nVerify that it exists in the project directory.\n({0})", e_path)
                 return False, msg
             
             # Trova l'interprete pythonw.exe o python.exe
@@ -590,7 +591,7 @@ def create_backup_shortcut(profile_name):
             shortcut.Targetpath = target_exe
             shortcut.Arguments = arguments
             shortcut.WorkingDirectory = working_dir
-            shortcut.Description = f"Esegue il backup Game Saver per il profilo '{profile_name}'"
+            shortcut.Description = tr("Runs the SaveState backup for the profile '{0}'", profile_name)
         else:  # Linux
             logging.debug("Phase 4: Creating Linux .desktop file...")
             # Crea il contenuto del file .desktop
@@ -598,7 +599,7 @@ def create_backup_shortcut(profile_name):
                 "[Desktop Entry]",
                 "Type=Application",
                 f"Name=Backup {safe_link_name}",
-                f"Comment=Esegue il backup Game Saver per il profilo '{profile_name}'",
+                "Comment=" + tr("Runs the SaveState backup for the profile '{0}'", profile_name),
                 f"Exec={target_exe} {arguments}",
                 f"Path={working_dir}",
                 "Terminal=false",
@@ -661,25 +662,25 @@ def create_backup_shortcut(profile_name):
                 logging.debug("Phase 6: Linux desktop file created and made executable.")
             except Exception as e_desktop:
                 logging.error(f"Error creating desktop file: {e_desktop}", exc_info=True)
-                return False, f"Error creating desktop file: {e_desktop}"
+                return False, tr("Error creating desktop file: {0}", e_desktop)
 
         if IS_WINDOWS:
-            msg = f"Collegamento per '{profile_name}' creato con successo sul desktop."
+            msg = tr("Shortcut for '{0}' created successfully on the desktop.", profile_name)
         else:  # Linux
-            msg = f"File desktop per '{profile_name}' creato con successo sul desktop."
+            msg = tr("Desktop file for '{0}' created successfully on the desktop.", profile_name)
         logging.info(msg)
         return True, msg
 
     except Exception as e:
         logging.error(f"Error in create_backup_shortcut function for '{profile_name}': {type(e).__name__} - {e}", exc_info=True)
-        error_message = f"Shortcut creation error: {type(e).__name__}."
+        error_message = tr("Shortcut creation error: {0}.", type(e).__name__)
         
         if IS_WINDOWS:
             if isinstance(e, AttributeError) and 'Dispatch' in str(e):
-                error_message = f"Shortcut creation error: missing dependency (pywin32?).\n{e}"
+                error_message = tr("Shortcut creation error: missing dependency (pywin32?).\n{0}", e)
             else:
-                error_message = f"Shortcut creation error: {e}"
+                error_message = tr("Shortcut creation error: {0}", e)
         else:  # Linux
-            error_message = f"Desktop file creation error: {e}"
+            error_message = tr("Desktop file creation error: {0}", e)
             
         return False, error_message

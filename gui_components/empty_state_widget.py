@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QPainter, QPen, QColor, QPalette
+from common.i18n import tr
 
 
 class DropZoneIcon(QFrame):
@@ -103,20 +104,20 @@ class EmptyStateWidget(QWidget):
         layout.addWidget(self.drop_icon, 0, Qt.AlignmentFlag.AlignHCenter)
         
         # Main instruction text
-        self.title_label = QLabel("Drop your first game here")
+        self.title_label = QLabel(tr("Drop your first game here"))
         self.title_label.setObjectName("EmptyStateTitle")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.title_label)
         
         # Instructions text - keywords only, bold and larger
         instructions_text = (
-            '<span style="font-size: 13pt; font-weight: bold;">Steam link</span>'
+            tr('<span style="font-size: 13pt; font-weight: bold;">Steam link</span>'
             '  •  '
             '<span style="font-size: 13pt; font-weight: bold;">Shortcut</span>'
             '  •  '
             '<span style="font-size: 13pt; font-weight: bold;">Folder</span>'
             '<br>— or —<br>'
-            'Click "Manage Steam" to add games from your Steam library'
+            'Click "Manage Steam" to add games from your Steam library')
         )
         self.instructions_label = QLabel(instructions_text)
         self.instructions_label.setTextFormat(Qt.TextFormat.RichText)
@@ -125,7 +126,7 @@ class EmptyStateWidget(QWidget):
         layout.addWidget(self.instructions_label)
         
         # Additional hint about emulators
-        hint_text = "💡 Tip: You can also drag emulator/game shortcuts!"
+        hint_text = tr("💡 Tip: You can also drag emulator/game shortcuts!")
         self.hint_label = QLabel(hint_text)
         self.hint_label.setObjectName("EmptyStateHint")
         self.hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)

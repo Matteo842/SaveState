@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QFrame, QSpinBox
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject
+from common.i18n import tr
 
 
 class FTPConnectionTestWorker(QObject):
@@ -51,7 +52,7 @@ class FTPConnectionTestWorker(QObject):
             else:
                 self.finished.emit({
                     'success': False,
-                    'message': 'Failed to connect to FTP server',
+                    'message': tr('Failed to connect to FTP server'),
                     'details': None
                 })
                 
@@ -92,7 +93,7 @@ class FTPConfigDialog(QDialog):
         self.test_thread = None
         self.test_worker = None
         
-        self.setWindowTitle("FTP Server Configuration")
+        self.setWindowTitle(tr("FTP Server Configuration"))
         self.setModal(True)
         self.setMinimumWidth(450)
         
@@ -105,79 +106,79 @@ class FTPConfigDialog(QDialog):
         layout.setSpacing(12)
         
         # --- Server Settings Group ---
-        server_group = QGroupBox("Server Settings")
+        server_group = QGroupBox(tr("Server Settings"))
         server_layout = QFormLayout()
         server_layout.setSpacing(8)
         
         # Host
         self.host_edit = QLineEdit()
-        self.host_edit.setPlaceholderText("192.168.1.100 or myserver.com")
+        self.host_edit.setPlaceholderText(tr("192.168.1.100 or myserver.com"))
         self.host_edit.setToolTip(
-            "Enter only the server address (IP or hostname).\n"
-            "Do NOT include ftp:// or any protocol prefix."
+            tr("Enter only the server address (IP or hostname).\n"
+            "Do NOT include ftp:// or any protocol prefix.")
         )
-        server_layout.addRow("Server Address:", self.host_edit)
+        server_layout.addRow(tr("Server Address:"), self.host_edit)
         
         # Port
         self.port_spin = QSpinBox()
         self.port_spin.setRange(1, 65535)
         self.port_spin.setValue(21)
-        server_layout.addRow("Port:", self.port_spin)
+        server_layout.addRow(tr("Port:"), self.port_spin)
         
         # Base path
         self.path_edit = QLineEdit()
-        self.path_edit.setPlaceholderText("/ (root directory)")
+        self.path_edit.setPlaceholderText(tr("/ (root directory)"))
         self.path_edit.setText("/")
-        server_layout.addRow("Remote Path:", self.path_edit)
+        server_layout.addRow(tr("Remote Path:"), self.path_edit)
         
         server_group.setLayout(server_layout)
         layout.addWidget(server_group)
         
         # --- Authentication Group ---
-        auth_group = QGroupBox("Authentication")
+        auth_group = QGroupBox(tr("Authentication"))
         auth_layout = QFormLayout()
         auth_layout.setSpacing(8)
         
         # Username
         self.username_edit = QLineEdit()
         self.username_edit.setPlaceholderText("anonymous")
-        auth_layout.addRow("Username:", self.username_edit)
+        auth_layout.addRow(tr("Username:"), self.username_edit)
         
         # Password
         self.password_edit = QLineEdit()
         self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password_edit.setPlaceholderText("Leave empty for anonymous")
-        auth_layout.addRow("Password:", self.password_edit)
+        self.password_edit.setPlaceholderText(tr("Leave empty for anonymous"))
+        auth_layout.addRow(tr("Password:"), self.password_edit)
         
         auth_group.setLayout(auth_layout)
         layout.addWidget(auth_group)
         
         # --- Connection Options Group ---
-        options_group = QGroupBox("Connection Options")
+        options_group = QGroupBox(tr("Connection Options"))
         options_layout = QVBoxLayout()
         options_layout.setSpacing(8)
         
         # Use TLS/SSL
-        self.tls_checkbox = QCheckBox("Use FTPS (TLS/SSL encryption)")
+        self.tls_checkbox = QCheckBox(tr("Use FTPS (TLS/SSL encryption)"))
         self.tls_checkbox.setToolTip(
-            "Enable secure FTP connection.\n"
-            "Recommended for connections over the internet."
+            tr("Enable secure FTP connection.\n"
+            "Recommended for connections over the internet.")
         )
         options_layout.addWidget(self.tls_checkbox)
         
         # Passive mode
-        self.passive_checkbox = QCheckBox("Passive mode (recommended)")
+        self.passive_checkbox = QCheckBox(tr("Passive mode (recommended)"))
         self.passive_checkbox.setChecked(True)
         self.passive_checkbox.setToolTip(
-            "Use passive mode for FTP connections.\n"
-            "This is recommended for most setups, especially behind firewalls."
+            tr("Use passive mode for FTP connections.\n"
+            "This is recommended for most setups, especially behind firewalls.")
         )
         options_layout.addWidget(self.passive_checkbox)
         
         # Auto-connect
-        self.auto_connect_checkbox = QCheckBox("Auto-connect on startup")
+        self.auto_connect_checkbox = QCheckBox(tr("Auto-connect on startup"))
         self.auto_connect_checkbox.setToolTip(
-            "Automatically connect to this FTP server when SaveState starts"
+            tr("Automatically connect to this FTP server when SaveState starts")
         )
         options_layout.addWidget(self.auto_connect_checkbox)
         
@@ -189,7 +190,7 @@ class FTPConfigDialog(QDialog):
         test_layout = QHBoxLayout(test_frame)
         test_layout.setContentsMargins(0, 0, 0, 0)
         
-        self.test_button = QPushButton("Test Connection")
+        self.test_button = QPushButton(tr("Test Connection"))
         self.test_button.clicked.connect(self._on_test_clicked)
         test_layout.addWidget(self.test_button)
         
@@ -203,11 +204,11 @@ class FTPConfigDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch(1)
         
-        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button = QPushButton(tr("Cancel"))
         self.cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(self.cancel_button)
         
-        self.save_button = QPushButton("Save")
+        self.save_button = QPushButton(tr("Save"))
         self.save_button.setObjectName("SaveButton")
         self.save_button.clicked.connect(self._on_save_clicked)
         button_layout.addWidget(self.save_button)
@@ -235,13 +236,13 @@ class FTPConfigDialog(QDialog):
         if not host:
             QMessageBox.warning(
                 self,
-                "Missing Information",
-                "Please enter a server address."
+                tr("Missing Information"),
+                tr("Please enter a server address.")
             )
             return
         
         # Update status
-        self.test_status_label.setText("Testing connection...")
+        self.test_status_label.setText(tr("Testing connection..."))
         self.test_status_label.setStyleSheet("color: #AAAAAA;")
         self.test_button.setEnabled(False)
         
@@ -269,7 +270,7 @@ class FTPConfigDialog(QDialog):
         self.test_button.setEnabled(True)
         
         if result.get('success'):
-            self.test_status_label.setText("✓ Connection successful!")
+            self.test_status_label.setText(tr("✓ Connection successful!"))
             self.test_status_label.setStyleSheet("color: #55FF55;")
         else:
             message = result.get('message', 'Connection failed')
@@ -283,8 +284,8 @@ class FTPConfigDialog(QDialog):
         if not host:
             QMessageBox.warning(
                 self,
-                "Missing Information",
-                "Please enter a server address."
+                tr("Missing Information"),
+                tr("Please enter a server address.")
             )
             return
         

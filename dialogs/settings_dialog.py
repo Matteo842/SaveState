@@ -9,6 +9,7 @@ from PySide6.QtCore import Slot, QEvent
 
 # Import the module to save/load settings
 import logging
+from common.i18n import tr
 # Import config to access the MIN_FREE_SPACE_GB constant
 try:
     import config
@@ -23,7 +24,7 @@ class SettingsDialog(QDialog):
 
     def __init__(self, current_settings, parent=None, is_initial_setup: bool = False):
         super().__init__(parent)
-        self.setWindowTitle("Application Settings")
+        self.setWindowTitle(tr("Application Settings"))
         self.setMinimumWidth(600)  # Wider for two-column layout
         self.settings = current_settings.copy()
         # Flag: true only for the very first configuration dialog shown at app startup
@@ -35,7 +36,7 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # --- Backup Base Path Group (full width at top) ---
-        self.path_group = QGroupBox("Backup Base Path") # Saved reference
+        self.path_group = QGroupBox(tr("Backup Base Path")) # Saved reference
         path_group_layout = QVBoxLayout()
         path_layout = QHBoxLayout()
         self.path_edit = QLineEdit(self.settings.get("backup_base_dir", ""))
@@ -107,7 +108,7 @@ class SettingsDialog(QDialog):
             ("50 MB", 50), ("100 MB", 100), ("250 MB", 250), ("500 MB", 500),
             ("1 GB (1024 MB)", 1024), ("2 GB (2048 MB)", 2048),
             ("5 GB (5120 MB)", 5120),
-            ("No Limit", -1)
+            (tr("No Limit"), -1)
         ]
         self.max_src_combobox = QComboBox()
         for display_text, _ in self.size_options:
@@ -163,7 +164,7 @@ class SettingsDialog(QDialog):
         restore_json_layout = QVBoxLayout()
         
         # Add info label
-        info_label = QLabel("If you lose your profiles or settings, you can restore them from the backup directory.")
+        info_label = QLabel(tr("If you lose your profiles or settings, you can restore them from the backup directory."))
         info_label.setWordWrap(True)
         restore_json_layout.addWidget(info_label)
         
@@ -215,33 +216,33 @@ class SettingsDialog(QDialog):
     def updateUiText(self):
         """Updates the text of translatable widgets in the dialog."""
         logging.debug("SettingsDialog.updateUiText() called")
-        self.setWindowTitle("Application Settings")
-        self.path_group.setTitle("Backup Base Path")
-        self.max_src_group.setTitle("Maximum Source Size for Backup")
-        self.max_group.setTitle("Maximum Number of Backups per Profile")
-        self.comp_group.setTitle("Backup Compression (.zip)")
-        self.space_check_group.setTitle("Space check/update")
-        self.space_check_checkbox.setText(f"Enable space check before backup (minimum {config.MIN_FREE_SPACE_GB} GB)")
+        self.setWindowTitle(tr("Application Settings"))
+        self.path_group.setTitle(tr("Backup Base Path"))
+        self.max_src_group.setTitle(tr("Maximum Source Size for Backup"))
+        self.max_group.setTitle(tr("Maximum Number of Backups per Profile"))
+        self.comp_group.setTitle(tr("Backup Compression (.zip)"))
+        self.space_check_group.setTitle(tr("Space check/update"))
+        self.space_check_checkbox.setText(tr("Enable space check before backup (minimum {0} GB)", config.MIN_FREE_SPACE_GB))
 
         # UI Settings Texts
-        self.ui_settings_group.setTitle("UI Settings")
-        self.enable_global_drag_checkbox.setText("Enable global mouse drag-to-show effect")
-        self.shorten_paths_checkbox.setText("Shorten save paths in selection dialogs")
+        self.ui_settings_group.setTitle(tr("UI Settings"))
+        self.enable_global_drag_checkbox.setText(tr("Enable global mouse drag-to-show effect"))
+        self.shorten_paths_checkbox.setText(tr("Shorten save paths in selection dialogs"))
         # Portable Mode Texts
-        self.portable_group.setTitle("Portable Mode")
-        self.portable_checkbox.setText("Use only JSONs in backup folder (.savestate)")
+        self.portable_group.setTitle(tr("Portable Mode"))
+        self.portable_checkbox.setText(tr("Use only JSONs in backup folder (.savestate)"))
         
         # Restore JSON Texts
-        self.restore_json_group.setTitle("Restore Configuration Backups")
-        self.restore_json_button.setText("Restore Profiles and Settings from Backup")
+        self.restore_json_group.setTitle(tr("Restore Configuration Backups"))
+        self.restore_json_button.setText(tr("Restore Profiles and Settings from Backup"))
 
         # Update texts in the compression combobox
         current_key_comp = self.comp_combobox.currentData() # Save current key
         self.comp_combobox.clear()
         self.compression_options = { # Recreate map with translated texts
-             "standard": "Standard (Recommended)",
-             "maximum": "Maximum (Slower)",
-             "stored": "None (Faster)"
+             "standard": tr("Standard (Recommended)"),
+             "maximum": tr("Maximum (Slower)"),
+             "stored": tr("None (Faster)")
         }
         for key, text in self.compression_options.items(): # Repopulate
             self.comp_combobox.addItem(text, key)
@@ -250,11 +251,11 @@ class SettingsDialog(QDialog):
             self.comp_combobox.setCurrentIndex(index_to_select_comp)
 
         # Update button texts
-        self.browse_button.setText("Browse...")
+        self.browse_button.setText(tr("Browse..."))
         save_button = self.buttons.button(QDialogButtonBox.StandardButton.Save)
-        if save_button: save_button.setText("Save")
+        if save_button: save_button.setText(tr("Save"))
         cancel_button = self.buttons.button(QDialogButtonBox.StandardButton.Cancel)
-        if cancel_button: cancel_button.setText("Cancel")
+        if cancel_button: cancel_button.setText(tr("Cancel"))
 
     # --- Event handling ---
     def changeEvent(self, event):
@@ -268,7 +269,7 @@ class SettingsDialog(QDialog):
     def browse_backup_dir(self):
         """Opens dialog to select backup folder."""
         directory = QFileDialog.getExistingDirectory(
-            self, "Select Base Folder for Backups", self.path_edit.text()
+            self, tr("Select Base Folder for Backups"), self.path_edit.text()
         )
         if directory:
              self.path_edit.setText(os.path.normpath(directory))
@@ -292,8 +293,8 @@ class SettingsDialog(QDialog):
         if new_path and not os.path.isdir(new_path):
             reply = QMessageBox.question(
                 self,
-                "Create Directory?",
-                f"The path '{new_path}' does not exist.\nDo you want to create it?",
+                tr("Create Directory?"),
+                tr("The path '{0}' does not exist.\nDo you want to create it?", new_path),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.Yes
             )
@@ -304,8 +305,8 @@ class SettingsDialog(QDialog):
                 except OSError as e:
                     QMessageBox.critical(
                         self,
-                        "Creation Failed",
-                        f"Failed to create directory '{new_path}'.\n\nError: {e}"
+                        tr("Creation Failed"),
+                        tr("Failed to create directory '{0}'.\n\nError: {1}", new_path, e)
                     )
                     return  # Stop processing
             else:
@@ -321,7 +322,7 @@ class SettingsDialog(QDialog):
            not main_window.profile_creation_manager or \
            not hasattr(main_window.profile_creation_manager, 'validate_save_path'):
             logging.error("Unable to validate path: main_window or profile_creation_manager or method missing.")
-            QMessageBox.critical(self, "Internal Error", "Unable to validate path.")
+            QMessageBox.critical(self, tr("Internal Error"), tr("Unable to validate path."))
             return
 
         context_name = "Settings"
@@ -357,10 +358,10 @@ class SettingsDialog(QDialog):
                 if appdata_has_configs:
                     reply = QMessageBox.question(
                         self,
-                        "Remove AppData Configuration?",
-                        ("You enabled portable mode and a configuration folder was found in AppData:\n\n"
-                         f"{appdata_dir}\n\n"
-                         "Do you want to delete the AppData configuration after migrating files to the backup folder?"),
+                        tr("Remove AppData Configuration?"),
+                        (tr("You enabled portable mode and a configuration folder was found in AppData:\n\n"
+                         "{0}\n\n"
+                         "Do you want to delete the AppData configuration after migrating files to the backup folder?", appdata_dir)),
                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                         QMessageBox.StandardButton.Yes
                     )
@@ -422,7 +423,7 @@ class SettingsDialog(QDialog):
         self.existing_config_label.setVisible(config_found)
         if config_found:
             self.existing_config_label.setText(
-                "✓ Existing configuration found! Your profiles and settings will be restored automatically."
+                tr("✓ Existing configuration found! Your profiles and settings will be restored automatically.")
             )
         
         # Disable/enable other settings groups with visual feedback
@@ -442,7 +443,7 @@ class SettingsDialog(QDialog):
         try:
             btn = self.buttons.button(QDialogButtonBox.StandardButton.Save)
             if btn:
-                btn.setText("Restore && Continue" if config_found else "Save")
+                btn.setText(tr("Restore && Continue") if config_found else tr("Save"))
         except Exception:
             pass
 
@@ -462,7 +463,7 @@ class SettingsDialog(QDialog):
                 # Don't override if existing config is found
                 if self.is_initial_setup and self._is_portable_ready():
                     return
-                btn.setText("Continue" if (self.is_initial_setup and enabled and ready) else "Save")
+                btn.setText(tr("Continue") if (self.is_initial_setup and enabled and ready) else tr("Save"))
         except Exception:
             pass
     
@@ -479,10 +480,10 @@ class SettingsDialog(QDialog):
         # Ask for confirmation
         reply = QMessageBox.question(
             self,
-            "Restore Configuration Backups",
-            "This will restore your profiles, settings, and favorites from the backup directory.\n\n"
+            tr("Restore Configuration Backups"),
+            tr("This will restore your profiles, settings, and favorites from the backup directory.\n\n"
             "Current files will be backed up before restoration.\n\n"
-            "Do you want to proceed?",
+            "Do you want to proceed?"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -531,8 +532,8 @@ class SettingsDialog(QDialog):
 
                 QMessageBox.information(
                     self,
-                    "Restore Successful",
-                    "Configuration files have been restored and applied."
+                    tr("Restore Successful"),
+                    tr("Configuration files have been restored and applied.")
                 )
 
                 # Close the dialog as 'Accepted' to continue normal startup
@@ -542,14 +543,14 @@ class SettingsDialog(QDialog):
             else:
                 QMessageBox.warning(
                     self,
-                    "Restore Failed",
-                    "Could not restore configuration files.\n\n"
-                    "Please check that backup files exist in the .savestate folder."
+                    tr("Restore Failed"),
+                    tr("Could not restore configuration files.\n\n"
+                    "Please check that backup files exist in the .savestate folder.")
                 )
         except Exception as e:
             logging.error(f"Error restoring JSON backups: {e}", exc_info=True)
             QMessageBox.critical(
                 self,
-                "Error",
-                f"An error occurred while restoring backups:\n\n{str(e)}"
+                tr("Error"),
+                tr("An error occurred while restoring backups:\n\n{0}", str(e))
             )

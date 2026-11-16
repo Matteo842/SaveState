@@ -25,6 +25,7 @@ from managers.update_manager import (
     STATE_ERROR,
     STATE_UPDATE_AVAILABLE,
 )
+from common.i18n import tr
 
 
 _GREEN = QColor(76, 175, 80)
@@ -88,13 +89,13 @@ class UpdateIndicator(QPushButton):
         )
         self.setVisible(visible)
         if state == STATE_UPDATE_AVAILABLE:
-            self.setToolTip("Update available - click for details")
+            self.setToolTip(tr("Update available - click for details"))
         elif state == STATE_DOWNLOADING:
-            self.setToolTip("Downloading update - click to view progress")
+            self.setToolTip(tr("Downloading update - click to view progress"))
         elif state == STATE_DOWNLOADED:
-            self.setToolTip("Update ready - click to install")
+            self.setToolTip(tr("Update ready - click to install"))
         elif state == STATE_ERROR:
-            self.setToolTip("Update error - click for details")
+            self.setToolTip(tr("Update error - click for details"))
         else:
             self.setToolTip("")
 

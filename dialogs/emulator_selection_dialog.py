@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Slot
 from dialogs.selection_utils import apply_profile_selection_style
+from common.i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ class EmulatorGameSelectionDialog(QDialog):
             parent (QWidget, optional): The parent widget. Defaults to None.
         """
         super().__init__(parent)
-        self.setWindowTitle(f"Select {emulator_name} Game")
+        self.setWindowTitle(tr("Select {0} Game", emulator_name))
         self.setMinimumWidth(460)
 
         self.profile_data_list = profile_data_list
@@ -108,8 +109,8 @@ class EmulatorGameSelectionDialog(QDialog):
 
         # --- Label ---
         label = QLabel(
-            f"The following profiles/games have been found for {emulator_name}.\n"
-            "Select one or more games to add:"
+            tr("The following profiles/games have been found for {0}.\n"
+            "Select one or more games to add:", emulator_name)
         )
         label.setWordWrap(True)
         game_layout.addWidget(label)
@@ -124,7 +125,7 @@ class EmulatorGameSelectionDialog(QDialog):
         # Populate the list widget
         if not self.profile_data_list:
              # Should not happen if called correctly, but handle gracefully
-             item = QListWidgetItem("(No profiles found)")
+             item = QListWidgetItem(tr("(No profiles found)"))
              item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable) # Make it unselectable
              self.profile_list_widget.addItem(item)
         else:
@@ -135,7 +136,7 @@ class EmulatorGameSelectionDialog(QDialog):
                 display_name = group['name']
                 folder_count = len(group['options'])
                 if folder_count > 1:
-                    display_name = f"{display_name}   ({folder_count} folders)"
+                    display_name = tr("{0}   ({1} folders)", display_name, folder_count)
                 item = QListWidgetItem(display_name)
                 # Store the game group (name + folder options) in the item's data
                 item.setData(Qt.ItemDataRole.UserRole, group)
@@ -146,7 +147,7 @@ class EmulatorGameSelectionDialog(QDialog):
 
         selection_row = QHBoxLayout()
         selection_row.addStretch()
-        self.select_all_checkbox = QCheckBox("Select all games")
+        self.select_all_checkbox = QCheckBox(tr("Select all games"))
         self.select_all_checkbox.setTristate(True)
         self.select_all_checkbox.clicked.connect(self._toggle_all_profiles)
         selection_row.addWidget(self.select_all_checkbox)
@@ -160,7 +161,7 @@ class EmulatorGameSelectionDialog(QDialog):
         folder_layout.setContentsMargins(0, 0, 0, 0)
 
         folder_header = QHBoxLayout()
-        self.back_button = QPushButton("←  Back")
+        self.back_button = QPushButton(tr("←  Back"))
         self.back_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.back_button.setStyleSheet(
             "QPushButton { border: none; background: transparent; padding: 4px 8px; "
@@ -218,10 +219,10 @@ class EmulatorGameSelectionDialog(QDialog):
             # then add everything selected on the game list
             ok_button.setEnabled(bool(self.folder_list_widget.selectedItems()))
             if self._folder_step < len(self._multi_folder_groups) - 1:
-                ok_button.setText("Next")
+                ok_button.setText(tr("Next"))
             else:
                 count = len(self._folder_groups)
-                ok_button.setText("Add Game" if count == 1 else f"Add {count} Games")
+                ok_button.setText(tr("Add Game") if count == 1 else tr("Add {0} Games", count))
             ok_button.setDefault(True)
             return
         if ok_button:
@@ -229,10 +230,10 @@ class EmulatorGameSelectionDialog(QDialog):
             selection_count = len(selected_groups)
             ok_button.setEnabled(selection_count > 0)
             if any(len(group['options']) > 1 for group in selected_groups):
-                ok_button.setText("Next")  # The folder choice comes next
+                ok_button.setText(tr("Next"))  # The folder choice comes next
             else:
                 ok_button.setText(
-                    "Add Game" if selection_count == 1 else f"Add {selection_count} Games"
+                    tr("Add Game") if selection_count == 1 else tr("Add {0} Games", selection_count)
                 )
             ok_button.setDefault(True)
 
@@ -294,10 +295,11 @@ class EmulatorGameSelectionDialog(QDialog):
         self._folder_step = step
         group = self._multi_folder_groups[step]
         total = len(self._multi_folder_groups)
-        counter = f" ({step + 1} of {total})" if total > 1 else ""
+        counter = tr(" ({0} of {1})", step + 1, total) if total > 1 else ""
         self.folder_label.setText(
-            f"<b>{html.escape(group['name'])}</b>{counter} has saves in more than one folder.<br>"
-            "Select the folder to use (the most recently saved one is selected):"
+            tr("<b>{0}</b>{1} has saves in more than one folder.<br>"
+            "Select the folder to use (the most recently saved one is selected):",
+            html.escape(group['name']), counter)
         )
 
         self.folder_list_widget.clear()
@@ -353,7 +355,7 @@ class EmulatorGameSelectionDialog(QDialog):
                 # Should not happen if UserRole is set correctly
                 log.error("Selected item in EmulatorGameSelectionDialog has no UserRole data!")
                 # Optionally show a message?
-                QMessageBox.warning(self, "Selection Error", "Unable to retrieve data for the selected profile.")
+                QMessageBox.warning(self, tr("Selection Error"), tr("Unable to retrieve data for the selected profile."))
                 super().reject() # Reject if data is missing
         # else: No item selected (should not happen if OK button logic is correct)
 
@@ -383,7 +385,7 @@ def _folder_choices(options):
     timed_options.sort(key=lambda option: option[0], reverse=True)
 
     # Same folder twice (different Switch users): add the user folder to tell them apart
-    labels = [p.get('label') or "Folder" for _time, p in timed_options]
+    labels = [p.get('label') or tr("Folder") for _time, p in timed_options]
 
     choices = []
     for index, (save_time, profile_data) in enumerate(timed_options):
@@ -391,11 +393,14 @@ def _folder_choices(options):
         save_path = (profile_data.get('paths') or [""])[0]
         if labels.count(text) > 1 and save_path:
             user_id = os.path.basename(os.path.dirname(save_path))
-            text += f" · user {user_id[:8]}"
+            text += tr(" · user {0}", user_id[:8])
         if save_time > 0:
             date_text = datetime.fromtimestamp(save_time).strftime("%Y-%m-%d %H:%M")
-            text += f" — {'Latest — ' if index == 0 else ''}last saved {date_text}"
+            if index == 0:
+                text += tr(" — Latest — last saved {0}", date_text)
+            else:
+                text += tr(" — last saved {0}", date_text)
         else:
-            text += " — no save files"
+            text += tr(" — no save files")
         choices.append((text, save_path, profile_data))
     return choices

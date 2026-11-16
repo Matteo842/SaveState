@@ -10,6 +10,7 @@ import glob
 
 # --- Single Instance Constants (from lightweight config module) ---
 from config import SHARED_MEM_KEY, LOCAL_SERVER_NAME
+from common.i18n import tr
 
 # --- Minimal PySide6 Imports for Single Instance Check ---
 # These are deferred to GUI mode only (not needed for --backup silent mode)
@@ -322,6 +323,8 @@ if __name__ == "__main__":
     if args.backup:
         # === Silent Backup Mode ===
         # Import heavy modules only for backup mode
+        from common import i18n
+        i18n.init_language()  # Language for the backup notification
         from backup import backup_runner
         
         profile_to_backup = args.backup
@@ -461,6 +464,10 @@ if __name__ == "__main__":
         if app_should_run:
             logging.info("First GUI instance. Now importing heavy modules...")
 
+            # Choose the language first, so every window is built in that language
+            from common import i18n
+            i18n.init_language()
+
             # --- NOW import heavy modules (only for first instance) ---
             from PySide6.QtWidgets import QApplication, QMessageBox, QDialog, QWidget
             from PySide6.QtGui import QIcon
@@ -494,6 +501,8 @@ if __name__ == "__main__":
                     else:
                         app.setWindowIcon(QIcon(app_icon_path))
                     created_main_app_instance = True
+                    i18n.install_qt_translator(app)  # Translates the standard Yes / No / Cancel buttons
+                    i18n.apply_font_fallbacks()  # Clean Chinese text on non-Chinese systems
                 else:
                     logging.debug("Existing QApplication instance found.")
                     created_main_app_instance = False
@@ -503,7 +512,7 @@ if __name__ == "__main__":
                  logging.critical(f"Critical application init error: {e_app_init}", exc_info=True)
                  # Try to show a Qt message box
                  try: 
-                     QMessageBox.critical(None, "Critical Startup Error", f"Unable to initialize the graphical environment.\n{e_app_init}")
+                     QMessageBox.critical(None, tr("Critical Startup Error"), tr("Unable to initialize the graphical environment.\n{0}", e_app_init))
                  except Exception as e_msgbox:
                      logging.error(f"Failed to show critical error QMessageBox: {e_msgbox}")
                  sys.exit(1) # Exit immediately
@@ -554,13 +563,13 @@ if __name__ == "__main__":
                     # drive isn't ready yet). Ask the user instead of opening the setup wizard.
                     while is_first_launch and settings_manager.is_portable_mode():
                         settings_path = os.path.join(settings_manager.get_active_config_dir(), settings_manager.SETTINGS_FILENAME)
-                        missing_box = QMessageBox(QMessageBox.Icon.Warning, "SaveState - Settings Not Found",
-                                                  "SaveState is in portable mode, but its settings file can't be found:\n\n"
-                                                  f"{settings_path}\n\n"
-                                                  "The drive may not be ready yet. Make sure it's connected, then click Retry.")
-                        retry_button = missing_box.addButton("Retry", QMessageBox.ButtonRole.AcceptRole)
-                        setup_button = missing_box.addButton("Set Up Again", QMessageBox.ButtonRole.DestructiveRole)
-                        missing_box.addButton("Quit", QMessageBox.ButtonRole.RejectRole)
+                        missing_box = QMessageBox(QMessageBox.Icon.Warning, tr("SaveState - Settings Not Found"),
+                                                  tr("SaveState is in portable mode, but its settings file can't be found:\n\n"
+                                                  "{0}\n\n"
+                                                  "The drive may not be ready yet. Make sure it's connected, then click Retry.", settings_path))
+                        retry_button = missing_box.addButton(tr("Retry"), QMessageBox.ButtonRole.AcceptRole)
+                        setup_button = missing_box.addButton(tr("Set Up Again"), QMessageBox.ButtonRole.DestructiveRole)
+                        missing_box.addButton(tr("Quit"), QMessageBox.ButtonRole.RejectRole)
                         missing_box.exec()
                         if missing_box.clickedButton() is retry_button:
                             settings_manager.clear_settings_cache()
@@ -597,9 +606,9 @@ if __name__ == "__main__":
                                     logging.error("User cancelled backup directory selection. Exiting.")
                                     QMessageBox.warning(
                                         None,
-                                        "SaveState - Startup Cancelled",
-                                        "The application cannot start without a valid backup folder.\n\n"
-                                        "Please restart SaveState and select a valid backup location."
+                                        tr("SaveState - Startup Cancelled"),
+                                        tr("The application cannot start without a valid backup folder.\n\n"
+                                        "Please restart SaveState and select a valid backup location.")
                                     )
                                     cleanup_instance_lock(local_server, shared_memory)
                                     sys.exit(0)
@@ -669,10 +678,10 @@ if __name__ == "__main__":
                                 window.profile_table_manager.update_profile_table() # Aggiorna tabella
                                 logging.info("Initial settings configured and saved by user.")
                             else:
-                                QMessageBox.critical(window, "Error", "Unable to save initial settings.")
+                                QMessageBox.critical(window, tr("Error"), tr("Unable to save initial settings."))
                         else: # User cancelled the first launch dialog
-                            reply = QMessageBox.question(window, "Default Settings",
-                                                        "No specific settings saved. Use default settings and continue?",
+                            reply = QMessageBox.question(window, tr("Default Settings"),
+                                                        tr("No specific settings saved. Use default settings and continue?"),
                                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
                                                         QMessageBox.StandardButton.Yes)
                             if reply != QMessageBox.StandardButton.Yes:
@@ -682,7 +691,7 @@ if __name__ == "__main__":
                                 sys.exit(0)
                             else: # Save defaults if user accepts to continue
                                 if not settings_manager.save_settings(current_settings): # Save the loaded defaults
-                                     QMessageBox.warning(window, "Error", "Unable to save default settings.")
+                                     QMessageBox.warning(window, tr("Error"), tr("Unable to save default settings."))
                                 # Continue with the loaded defaults in memory
 
                     # Connect the local server signal to the window slot
@@ -741,12 +750,12 @@ if __name__ == "__main__":
                 except ImportError as e_imp:
                      # CRITICAL: Library import error, application cannot start.
                      logging.critical(f"Missing library: {e_imp}. Application cannot start.", exc_info=True)
-                     QMessageBox.critical(None, "Import Error", f"Critical error: missing library.\n{e_imp}\nThe application cannot start.")
+                     QMessageBox.critical(None, tr("Import Error"), tr("Critical error: missing library.\n{0}\nThe application cannot start.", e_imp))
                      sys.exit(1)
                 except Exception as e_gui_init:
                      logging.critical(f"Fatal GUI initialization error: {e_gui_init}", exc_info=True)
                      try:
-                        QMessageBox.critical(None, "Startup Error", f"Fatal error during GUI initialization:\n{e_gui_init}")
+                        QMessageBox.critical(None, tr("Startup Error"), tr("Fatal error during GUI initialization:\n{0}", e_gui_init))
                      except Exception as e_final_msgbox:
                          logging.error(f"Failed to show fatal GUI error QMessageBox: {e_final_msgbox}")
                      sys.exit(1)

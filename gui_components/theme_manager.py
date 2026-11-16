@@ -21,6 +21,7 @@ except ImportError:
 
 import config # To access LIGHT_THEME_QSS and DARK_THEME_QSS
 from core import settings_manager # To save theme settings
+from common.i18n import tr
 
 class ThemeManager:
     # Manages the light/dark theme and the toggle button.
@@ -117,7 +118,7 @@ class ThemeManager:
         try:
             icon_size = QSize(16, 16) # Keep consistency with other icons
             if theme_name == 'light':
-                tooltip_text = "Switch to dark theme"
+                tooltip_text = tr("Switch to dark theme")
                 if self.moon_icon:
                     self.theme_button.setIcon(self.moon_icon)
                     self.theme_button.setIconSize(icon_size)
@@ -129,7 +130,7 @@ class ThemeManager:
                 self.theme_button.setToolTip(tooltip_text)
                 self.theme_button.update()
             else: # 'dark' or default theme
-                tooltip_text = "Switch to light theme"
+                tooltip_text = tr("Switch to light theme")
                 if self.sun_icon:
                     self.theme_button.setIcon(self.sun_icon)
                     self.theme_button.setIconSize(icon_size)
@@ -169,8 +170,8 @@ class ThemeManager:
             self.update_theme()
             self._notify_theme_change()
             QMessageBox.warning(self.main_window, # Use main_window as parent for the dialog
-                                "Error",
-                                "Unable to save theme setting.")
+                                tr("Error"),
+                                tr("Unable to save theme setting."))
         else:
             logging.info(f"ThemeManager: Theme setting '{new_theme}' saved successfully.")
     

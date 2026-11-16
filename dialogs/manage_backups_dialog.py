@@ -17,6 +17,7 @@ from gui_components import lock_backup_manager
 from gui_components import backup_notes_manager
 from gui_components.profile_list_manager import NotePopupWidget, NoteOverlayButton
 from common.utils import resource_path
+from common.i18n import tr
 
 
 class BackupSelectionDelegate(QStyledItemDelegate):
@@ -113,7 +114,7 @@ class ManageBackupsDialog(QDialog):
      def __init__(self, profile_name, parent=None):
         super().__init__(parent)
         self.profile_name = profile_name
-        self.setWindowTitle(f"Manage Backups for {self.profile_name}")
+        self.setWindowTitle(tr("Manage Backups for {0}", self.profile_name))
         self.setMinimumWidth(550)
         # Get the style for standard icons
         style = QApplication.instance().style()
@@ -148,7 +149,7 @@ class ManageBackupsDialog(QDialog):
         # Widget - Use QTableWidget for better control over columns
         self.backup_table = QTableWidget()
         self.backup_table.setColumnCount(2)  # Backup name, Lock toggle
-        self.backup_table.setHorizontalHeaderLabels(["Backup", "Lock"])
+        self.backup_table.setHorizontalHeaderLabels([tr("Backup"), tr("Lock")])
         self.backup_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.backup_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.backup_table.verticalHeader().setVisible(False)
@@ -185,18 +186,18 @@ class ManageBackupsDialog(QDialog):
         self.backup_delegate = BackupSelectionDelegate(self.backup_table)
         self.backup_table.setItemDelegate(self.backup_delegate)
         
-        self.delete_button = QPushButton("Delete Selected")
+        self.delete_button = QPushButton(tr("Delete Selected"))
         self.delete_button.setObjectName("DangerButton")
         
         # Set standard icon for Delete
         delete_icon = style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
         self.delete_button.setIcon(delete_icon)
         
-        self.delete_all_button = QPushButton("Delete All")
+        self.delete_all_button = QPushButton(tr("Delete All"))
         self.delete_all_button.setObjectName("DangerButton")
         self.delete_all_button.setIcon(delete_icon)
         
-        self.close_button = QPushButton("Close")
+        self.close_button = QPushButton(tr("Close"))
         
         # Set standard icon for Close
         close_icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton)
@@ -428,14 +429,14 @@ class ManageBackupsDialog(QDialog):
         menu = QMenu(self)
         has_note = backup_notes_manager.has_note(backup_path)
 
-        note_action = QAction("Edit Note" if has_note else "Add Note", self)
+        note_action = QAction(tr("Edit Note") if has_note else tr("Add Note"), self)
         if self.note_icon_path and os.path.exists(self.note_icon_path):
             note_action.setIcon(QIcon(self.note_icon_path))
         note_action.triggered.connect(lambda: self._open_note_editor_for_backup(backup_path))
         menu.addAction(note_action)
 
         if has_note:
-            remove_action = QAction("Remove Note", self)
+            remove_action = QAction(tr("Remove Note"), self)
             remove_action.triggered.connect(lambda: self._remove_note_for_backup(backup_path))
             menu.addAction(remove_action)
 
@@ -510,9 +511,9 @@ class ManageBackupsDialog(QDialog):
         
         # Set tooltip
         if is_locked:
-            checkbox.setToolTip("Click to unlock this backup")
+            checkbox.setToolTip(tr("Click to unlock this backup"))
         else:
-            checkbox.setToolTip("Click to lock this backup (protects from deletion)")
+            checkbox.setToolTip(tr("Click to lock this backup (protects from deletion)"))
         
         # Connect to toggle handler
         checkbox.toggled.connect(lambda checked, path=backup_path: self._on_lock_toggled(path, checked))
@@ -528,7 +529,7 @@ class ManageBackupsDialog(QDialog):
             if success:
                 logging.info(f"Backup locked: {backup_path}")
             else:
-                QMessageBox.warning(self, "Lock Failed", message)
+                QMessageBox.warning(self, tr("Lock Failed"), message)
                 # Refresh the list to reset checkbox state
                 self.populate_backup_list()
         else:
@@ -537,7 +538,7 @@ class ManageBackupsDialog(QDialog):
             if success:
                 logging.info(f"Backup unlocked: {backup_path}")
             else:
-                QMessageBox.warning(self, "Unlock Failed", message)
+                QMessageBox.warning(self, tr("Unlock Failed"), message)
                 # Refresh the list to reset checkbox state
                 self.populate_backup_list()
         
@@ -552,9 +553,9 @@ class ManageBackupsDialog(QDialog):
                 checkbox = checkbox_widget.findChild(QCheckBox)
                 if checkbox and checkbox.property("backup_path") == backup_path:
                     if is_locked:
-                        checkbox.setToolTip("Click to unlock this backup")
+                        checkbox.setToolTip(tr("Click to unlock this backup"))
                     else:
-                        checkbox.setToolTip("Click to lock this backup (protects from deletion)")
+                        checkbox.setToolTip(tr("Click to lock this backup (protects from deletion)"))
                     break
      
      # --- Method populate_backup_list ---
@@ -593,7 +594,7 @@ class ManageBackupsDialog(QDialog):
         if not backups:
             # Handle no backups found - add a single row with message
             self.backup_table.setRowCount(1)
-            no_backup_item = QTableWidgetItem("No backups found.")
+            no_backup_item = QTableWidgetItem(tr("No backups found."))
             no_backup_item.setData(Qt.ItemDataRole.UserRole, None)
             self.backup_table.setItem(0, 0, no_backup_item)  # Column 0 is backup name
             self.backup_table.setEnabled(False)
@@ -662,16 +663,16 @@ class ManageBackupsDialog(QDialog):
         if lock_backup_manager.is_backup_locked(backup_path):
             QMessageBox.warning(
                 self,
-                "Backup Locked",
-                f"Cannot delete '{backup_name}'.\n\nThis backup is locked. Unlock it first to delete."
+                tr("Backup Locked"),
+                tr("Cannot delete '{0}'.\n\nThis backup is locked. Unlock it first to delete.", backup_name)
             )
             return
         
-        confirm_title = "Confirm Deletion"
+        confirm_title = tr("Confirm Deletion")
         confirm_text = (
-            "Are you sure you want to PERMANENTLY delete the backup file:\n\n"
-            f"{backup_name}\n\n"
-            "This action cannot be undone!"
+            tr("Are you sure you want to PERMANENTLY delete the backup file:\n\n"
+            "{0}\n\n"
+            "This action cannot be undone!", backup_name)
         )
 
         confirm = QMessageBox.warning(self, confirm_title, confirm_text,
@@ -689,10 +690,10 @@ class ManageBackupsDialog(QDialog):
                     backup_notes_manager.remove_note(backup_path)
                 except Exception as e_note:
                     logging.warning(f"Failed to remove note for deleted backup: {e_note}")
-                QMessageBox.information(self, "Success", message)
+                QMessageBox.information(self, tr("Success"), message)
                 self.populate_backup_list()
             else:
-                QMessageBox.critical(self, "Deletion Error", message)
+                QMessageBox.critical(self, tr("Deletion Error"), message)
                 self.populate_backup_list()
      
      @Slot()
@@ -713,19 +714,19 @@ class ManageBackupsDialog(QDialog):
             return
         
         # Prepare confirmation message
-        confirm_title = "Confirm Delete All"
+        confirm_title = tr("Confirm Delete All")
         if locked_count > 0:
             confirm_text = (
-                f"Are you sure you want to PERMANENTLY delete {backup_count - locked_count} backup(s) "
-                f"for profile '{self.profile_name}'?\n\n"
-                f"Note: {locked_count} locked backup(s) will be skipped.\n\n"
-                "This action cannot be undone!"
+                tr("Are you sure you want to PERMANENTLY delete {0} backup(s) "
+                "for profile '{1}'?\n\n"
+                "Note: {2} locked backup(s) will be skipped.\n\n"
+                "This action cannot be undone!", backup_count - locked_count, self.profile_name, locked_count)
             )
         else:
             confirm_text = (
-                f"Are you sure you want to PERMANENTLY delete ALL {backup_count} backup(s) "
-                f"for profile '{self.profile_name}'?\n\n"
-                "This action cannot be undone!"
+                tr("Are you sure you want to PERMANENTLY delete ALL {0} backup(s) "
+                "for profile '{1}'?\n\n"
+                "This action cannot be undone!", backup_count, self.profile_name)
             )
         
         confirm = QMessageBox.warning(
@@ -769,17 +770,17 @@ class ManageBackupsDialog(QDialog):
             
             # Show result
             if failed_count == 0:
-                result_msg = f"Successfully deleted {success_count} backup(s)."
+                result_msg = tr("Successfully deleted {0} backup(s).", success_count)
                 if locked_count > 0:
-                    result_msg += f"\n{locked_count} locked backup(s) were skipped."
-                QMessageBox.information(self, "Success", result_msg)
+                    result_msg += tr("\n{0} locked backup(s) were skipped.", locked_count)
+                QMessageBox.information(self, tr("Success"), result_msg)
             else:
                 QMessageBox.warning(
                     self,
-                    "Partial Success",
-                    f"Deleted {success_count} backup(s).\n"
-                    f"Failed to delete {failed_count} backup(s)."
-                    + (f"\n{locked_count} locked backup(s) were skipped." if locked_count > 0 else "")
+                    tr("Partial Success"),
+                    tr("Deleted {0} backup(s).\n"
+                    "Failed to delete {1} backup(s).", success_count, failed_count)
+                    + ("\n" + tr("{0} locked backup(s) were skipped.", locked_count) if locked_count > 0 else "")
                 )
             
             # Refresh the list

@@ -351,6 +351,8 @@ def load_settings():
         "max_backups": config.MAX_BACKUPS,
         "max_source_size_mb": 200, # Default limit 500 MB for the source
         "theme": "dark", # Possible values: 'dark', 'light'
+        # Interface language: "auto" follows the operating system, or a code like "it"
+        "language": "auto",
         "compression_mode": "standard",
         "check_free_space_enabled": True,
         "enable_global_drag_effect": False, # ADDED: For the pynput global mouse drag detection overlay

@@ -87,6 +87,8 @@ from config import SHARED_MEM_KEY, LOCAL_SERVER_NAME
 
 from PySide6.QtCore import QObject as _QObject, QEvent as _QEvent
 from PySide6.QtWidgets import QDialogButtonBox as _QDialogButtonBox
+from common.i18n import tr
+from gui_components.language_selector import LanguageButton
 
 class _ControllerDialogBadger(_QObject):
     """Application-level event filter.
@@ -428,7 +430,7 @@ class MainWindow(QMainWindow):
         self.overlay_widget.hide() # Start hidden
         self.overlay_widget.setMouseTracking(False) # Don't let the overlay intercept mouse events for itself
 
-        self.loading_label = QLabel("Drop Here", self.overlay_widget)
+        self.loading_label = QLabel(tr("Drop Here"), self.overlay_widget)
         # font = self.loading_label.font()
         # font.setPointSize(24)
         # font.setBold(True)
@@ -490,7 +492,7 @@ class MainWindow(QMainWindow):
         
         
         # New visible Cloud entry
-        self.cloud_button = QPushButton("Cloud Sync")
+        self.cloud_button = QPushButton(tr("Cloud Sync"))
         
         # Cloud icon
         cloud_icon_path = resource_path("icons/cloud-sync.png")
@@ -502,7 +504,7 @@ class MainWindow(QMainWindow):
 
         # Search bar for profiles (initially hidden)
         self.search_bar = QLineEdit(self)
-        self.search_bar.setPlaceholderText("Type to search profiles...")
+        self.search_bar.setPlaceholderText(tr("Type to search profiles..."))
         self.search_bar.hide()
         self.search_bar.textChanged.connect(self._on_main_search_text_changed)
         
@@ -576,7 +578,7 @@ class MainWindow(QMainWindow):
             self.controller_button.setText("🎮")
         self.controller_button.setFlat(True)
         self.controller_button.setFixedSize(QSize(28, 28))
-        self.controller_button.setToolTip("Controller Settings")
+        self.controller_button.setToolTip(tr("Controller Settings"))
         
         #self.status_label = QLabel(self.tr("Pronto."))
         self.status_label.setObjectName("StatusLabel")
@@ -597,7 +599,7 @@ class MainWindow(QMainWindow):
         delete_prof_icon = style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon) # Icona Cestino
         self.delete_profile_button.setIcon(delete_prof_icon)
         
-        self.backup_button = QPushButton("Backup")
+        self.backup_button = QPushButton(tr("Backup"))
         self.backup_button.setObjectName("BackupButton")
         backup_icon_path = resource_path("icons/backup.png")
         if os.path.exists(backup_icon_path):
@@ -615,7 +617,7 @@ class MainWindow(QMainWindow):
         self.backup_mode_toggle = QPushButton("+")
         self.backup_mode_toggle.setFixedSize(22, 18)
         self.backup_mode_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.backup_mode_toggle.setToolTip("Switch to 'Backup All' mode - Click to toggle")
+        self.backup_mode_toggle.setToolTip(tr("Switch to 'Backup All' mode - Click to toggle"))
         
         # Style for the toggle - clearer
         self.backup_mode_toggle.setStyleSheet("""
@@ -655,7 +657,7 @@ class MainWindow(QMainWindow):
         # via the #BackupButton / #RestoreButton / #ManageButton object names so the
         # action buttons follow the active theme automatically.
 
-        self.restore_button = QPushButton("Restore")
+        self.restore_button = QPushButton(tr("Restore"))
         self.restore_button.setObjectName("RestoreButton")
         restore_icon_path = resource_path("icons/restore.png")
         if os.path.exists(restore_icon_path):
@@ -667,12 +669,12 @@ class MainWindow(QMainWindow):
             restore_icon = style.standardIcon(QStyle.StandardPixmap.SP_ArrowDown)
             self.restore_button.setIcon(restore_icon)
 
-        self.manage_backups_button = QPushButton("Manage Backups")
+        self.manage_backups_button = QPushButton(tr("Manage Backups"))
         self.manage_backups_button.setObjectName("ManageButton")
         manage_icon = style.standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView) # Icona Vista Dettagliata?
         self.manage_backups_button.setIcon(manage_icon)
         
-        self.open_backup_dir_button = QPushButton("Open Backup Folder")
+        self.open_backup_dir_button = QPushButton(tr("Open Backup Folder"))
         open_folder_icon = style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon) # Icona Apri Cartella
         self.open_backup_dir_button.setIcon(open_folder_icon)
         
@@ -705,7 +707,7 @@ class MainWindow(QMainWindow):
         title_layout = QHBoxLayout()
         title_layout.setContentsMargins(12, 4, 12, 4)
         title_layout.setSpacing(6)
-        self.title_label = QLabel("SaveState - 2.8.1")
+        self.title_label = QLabel(tr("SaveState - 2.8.1"))
         self.title_label.setObjectName("TitleLabel")
         title_layout.addWidget(self.title_label)
         # Update indicator sits immediately to the right of the version text,
@@ -774,7 +776,7 @@ class MainWindow(QMainWindow):
         content_container.setLayout(content_layout)
         
         # Create Profiles group - button positioned in title area via absolute positioning
-        profile_group = QGroupBox("Profiles")
+        profile_group = QGroupBox(tr("Profiles"))
         profile_group.setObjectName("ProfilesGroup")
         self.profile_group = profile_group
         profile_layout = QVBoxLayout()
@@ -786,7 +788,7 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(profile_group, stretch=1)
 
         # Inline Profile Editor (hidden by default)
-        self.profile_editor_group = QGroupBox("Edit Profile")
+        self.profile_editor_group = QGroupBox(tr("Edit Profile"))
         editor_layout = QVBoxLayout()
         editor_layout.setContentsMargins(8, 6, 8, 6)
         editor_layout.setSpacing(6)
@@ -796,7 +798,7 @@ class MainWindow(QMainWindow):
         icon_row_layout = QHBoxLayout(self.edit_icon_row)
         icon_row_layout.setContentsMargins(0, 0, 0, 0)
         icon_row_layout.setSpacing(8)
-        icon_row_layout.addWidget(QLabel("Icon:"))
+        icon_row_layout.addWidget(QLabel(tr("Icon:")))
         self.edit_icon_preview = QLabel()
         self.edit_icon_preview.setFixedSize(48, 48)
         self.edit_icon_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -804,15 +806,15 @@ class MainWindow(QMainWindow):
             "QLabel { border: 1px solid #555; border-radius: 4px; background-color: rgba(0, 0, 0, 30); }"
         )
         icon_row_layout.addWidget(self.edit_icon_preview)
-        self.edit_icon_change_button = QPushButton("Change Icon...")
+        self.edit_icon_change_button = QPushButton(tr("Change Icon..."))
         self.edit_icon_change_button.setToolTip(
-            "Pick a custom image (PNG, JPG, ICO, BMP, WEBP, SVG) or steal "
+            tr("Pick a custom image (PNG, JPG, ICO, BMP, WEBP, SVG) or steal "
             "the icon from a program / shortcut (.exe, .dll, .lnk, "
-            ".desktop, .AppImage)"
+            ".desktop, .AppImage)")
         )
-        self.edit_icon_reset_button = QPushButton("Reset")
+        self.edit_icon_reset_button = QPushButton(tr("Reset"))
         self.edit_icon_reset_button.setToolTip(
-            "Remove the custom icon and use the automatically detected one"
+            tr("Remove the custom icon and use the automatically detected one")
         )
         icon_row_layout.addWidget(self.edit_icon_change_button)
         icon_row_layout.addWidget(self.edit_icon_reset_button)
@@ -820,13 +822,13 @@ class MainWindow(QMainWindow):
         editor_layout.addWidget(self.edit_icon_row)
         # Name field
         name_row = QHBoxLayout()
-        name_row.addWidget(QLabel("Name:"))
+        name_row.addWidget(QLabel(tr("Name:")))
         self.edit_name_edit = QLineEdit()
         name_row.addWidget(self.edit_name_edit)
         editor_layout.addLayout(name_row)
         # Path field with browse
         path_row = QHBoxLayout()
-        path_row.addWidget(QLabel("Save Path:"))
+        path_row.addWidget(QLabel(tr("Save Path:")))
         self.edit_path_edit = QLineEdit()
         self.edit_browse_button = QPushButton()
         self.edit_browse_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DirIcon))
@@ -834,9 +836,9 @@ class MainWindow(QMainWindow):
         path_row.addWidget(self.edit_browse_button)
         editor_layout.addLayout(path_row)
         # Overrides toggle and group
-        self.overrides_enable_checkbox = QCheckBox("Use profile-specific settings")
+        self.overrides_enable_checkbox = QCheckBox(tr("Use profile-specific settings"))
         editor_layout.addWidget(self.overrides_enable_checkbox)
-        self.overrides_group = QGroupBox("Overrides")
+        self.overrides_group = QGroupBox(tr("Overrides"))
         overrides_outer = QHBoxLayout()
         overrides_outer.setContentsMargins(8, 6, 8, 6)
         overrides_outer.setSpacing(12)
@@ -855,10 +857,13 @@ class MainWindow(QMainWindow):
         override_max_backups_layout.setSpacing(8)
         override_max_backups_layout.addWidget(self.override_max_backups_spin, stretch=1)
         override_max_backups_layout.addStretch(1)
-        overrides_form.addRow("Max backups:", self.override_max_backups_row)
+        overrides_form.addRow(tr("Max backups:"), self.override_max_backups_row)
         # Compression mode
         self.override_compression_combo = QComboBox()
-        self.override_compression_combo.addItems(["standard", "maximum", "stored"])
+        # Text shown to the user, and the value saved in the profile
+        for compression_text, compression_value in (
+                (tr("standard"), "standard"), (tr("maximum"), "maximum"), (tr("stored"), "stored")):
+            self.override_compression_combo.addItem(compression_text, compression_value)
         self.override_compression_combo.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
@@ -868,12 +873,12 @@ class MainWindow(QMainWindow):
         override_compression_layout.setSpacing(8)
         override_compression_layout.addWidget(self.override_compression_combo, stretch=1)
         override_compression_layout.addStretch(1)
-        overrides_form.addRow("Compression:", self.override_compression_row)
+        overrides_form.addRow(tr("Compression:"), self.override_compression_row)
         # Max source size MB (match Settings dialog options)
         self.override_size_options = [
             ("50 MB", 50), ("100 MB", 100), ("250 MB", 250), ("500 MB", 500),
             ("1 GB (1024 MB)", 1024), ("2 GB (2048 MB)", 2048),
-            ("5 GB (5120 MB)", 5120), ("No Limit", -1)
+            ("5 GB (5120 MB)", 5120), (tr("No Limit"), -1)
         ]
         self.override_max_size_combo = QComboBox()
         for display_text, _ in self.override_size_options:
@@ -887,9 +892,9 @@ class MainWindow(QMainWindow):
         override_max_size_layout.setSpacing(8)
         override_max_size_layout.addWidget(self.override_max_size_combo, stretch=1)
         override_max_size_layout.addStretch(1)
-        overrides_form.addRow("Max source size (MB):", self.override_max_size_row)
+        overrides_form.addRow(tr("Max source size (MB):"), self.override_max_size_row)
         # Check free space
-        self.override_check_space_checkbox = QCheckBox("Check free disk space before backup")
+        self.override_check_space_checkbox = QCheckBox(tr("Check free disk space before backup"))
         overrides_form.addRow(self.override_check_space_checkbox)
 
         overrides_form_widget = QWidget()
@@ -904,7 +909,7 @@ class MainWindow(QMainWindow):
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding
         )
         self.overrides_illustration_label.setToolTip(
-            "Profile-specific overrides for backup limits, compression, and size."
+            tr("Profile-specific overrides for backup limits, compression, and size.")
         )
         overrides_outer.addWidget(
             self.overrides_illustration_label,
@@ -917,9 +922,9 @@ class MainWindow(QMainWindow):
         editor_layout.addWidget(self.overrides_group)
 
         # --- Auto Backup section ---
-        self.auto_backup_enable_checkbox = QCheckBox("Enable automatic backup")
+        self.auto_backup_enable_checkbox = QCheckBox(tr("Enable automatic backup"))
         editor_layout.addWidget(self.auto_backup_enable_checkbox)
-        self.auto_backup_group = QGroupBox("Automatic Backup")
+        self.auto_backup_group = QGroupBox(tr("Automatic Backup"))
         auto_backup_outer = QHBoxLayout()
         auto_backup_outer.setContentsMargins(8, 6, 8, 6)
         auto_backup_outer.setSpacing(12)
@@ -937,15 +942,15 @@ class MainWindow(QMainWindow):
         )
         # (display text, internal mode value)
         self.auto_backup_mode_options = [
-            ("When the game is closed", "process_close"),
-            ("When save files change", "interval_changed"),
-            ("On a fixed schedule", "interval_fixed"),
+            (tr("When the game is closed"), "process_close"),
+            (tr("When save files change"), "interval_changed"),
+            (tr("On a fixed schedule"), "interval_fixed"),
         ]
         for display_text, _ in self.auto_backup_mode_options:
             self.auto_backup_mode_combo.addItem(display_text)
         trigger_row_layout.addWidget(self.auto_backup_mode_combo, stretch=1)
         trigger_row_layout.addStretch(1)
-        auto_backup_form.addRow("Trigger:", self.auto_backup_trigger_row)
+        auto_backup_form.addRow(tr("Trigger:"), self.auto_backup_trigger_row)
         # Interval (value + unit) - used by the two schedule modes
         self.auto_backup_interval_row = QWidget()
         interval_row_layout = QHBoxLayout(self.auto_backup_interval_row)
@@ -956,14 +961,14 @@ class MainWindow(QMainWindow):
         self.auto_backup_interval_spin.setValue(1)
         self.auto_backup_interval_unit_combo = QComboBox()
         # (display text, minutes multiplier)
-        self.auto_backup_interval_units = [("Minutes", 1), ("Hours", 60), ("Days", 1440)]
+        self.auto_backup_interval_units = [(tr("Minutes"), 1), (tr("Hours"), 60), (tr("Days"), 1440)]
         for display_text, _ in self.auto_backup_interval_units:
             self.auto_backup_interval_unit_combo.addItem(display_text)
         self.auto_backup_interval_unit_combo.setCurrentIndex(1)  # default: Hours
         interval_row_layout.addWidget(self.auto_backup_interval_spin)
         interval_row_layout.addWidget(self.auto_backup_interval_unit_combo)
         interval_row_layout.addStretch(1)
-        self.auto_backup_interval_label = QLabel("Check every:")
+        self.auto_backup_interval_label = QLabel(tr("Check every:"))
         auto_backup_form.addRow(self.auto_backup_interval_label, self.auto_backup_interval_row)
 
         # --- Process detection (used by the "when the game is closed" mode) ---
@@ -976,30 +981,30 @@ class MainWindow(QMainWindow):
         self.auto_backup_process_combo = QComboBox()
         self.auto_backup_process_combo.setEditable(True)
         self.auto_backup_process_combo.setToolTip(
-            "Name of the game's process/executable (e.g. Game.exe). "
+            tr("Name of the game's process/executable (e.g. Game.exe). "
             "The entry auto-detected from this profile is shown in green; "
             "running programs are sorted by GPU, then RAM, then CPU usage. "
-            "You can also type a name manually."
+            "You can also type a name manually.")
         )
-        self.auto_backup_process_refresh_button = QPushButton("Refresh")
+        self.auto_backup_process_refresh_button = QPushButton(tr("Refresh"))
         self.auto_backup_process_refresh_button.setToolTip(
-            "Reload running programs (sorted by GPU/RAM/CPU, system apps hidden)"
+            tr("Reload running programs (sorted by GPU/RAM/CPU, system apps hidden)")
         )
         process_row_layout.addWidget(self.auto_backup_process_combo, stretch=1)
         process_row_layout.addWidget(self.auto_backup_process_refresh_button)
-        self.auto_backup_process_label = QLabel("Game process:")
+        self.auto_backup_process_label = QLabel(tr("Game process:"))
         auto_backup_form.addRow(self.auto_backup_process_label, self.auto_backup_process_row)
 
         # --- Online sync (upload each automatic backup to the cloud) ---
         # Upload-only: after every automatic backup, the new archive is pushed
         # to the configured cloud provider. It never downloads/overwrites local
         # saves. The provider itself is configured in the Cloud panel.
-        self.auto_backup_sync_online_checkbox = QCheckBox("Sync backups online (upload to cloud)")
+        self.auto_backup_sync_online_checkbox = QCheckBox(tr("Sync backups online (upload to cloud)"))
         self.auto_backup_sync_online_checkbox.setToolTip(
-            "After each automatic backup, upload the newest backup to your "
+            tr("After each automatic backup, upload the newest backup to your "
             "configured cloud provider (upload only; never overwrites local saves). "
             "Requires an active cloud connection and a backup interval of at least "
-            "15 minutes. Cloud uploads are rate-limited to protect API quotas."
+            "15 minutes. Cloud uploads are rate-limited to protect API quotas.")
         )
         auto_backup_form.addRow(self.auto_backup_sync_online_checkbox)
 
@@ -1015,8 +1020,8 @@ class MainWindow(QMainWindow):
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding
         )
         self.auto_backup_illustration_label.setToolTip(
-            "Automatic backup keeps your saves safe on a schedule, when files change, "
-            "or when the game closes."
+            tr("Automatic backup keeps your saves safe on a schedule, when files change, "
+            "or when the game closes.")
         )
         auto_backup_outer.addWidget(
             self.auto_backup_illustration_label,
@@ -1039,9 +1044,9 @@ class MainWindow(QMainWindow):
 
         # Save/Cancel buttons
         buttons_row = QHBoxLayout()
-        self.edit_save_button = QPushButton("Save")
+        self.edit_save_button = QPushButton(tr("Save"))
         self.edit_save_button.setObjectName("SaveButton")
-        self.edit_cancel_button = QPushButton("Cancel")
+        self.edit_cancel_button = QPushButton(tr("Cancel"))
         buttons_row.addStretch(1)
         buttons_row.addWidget(self.edit_save_button)
         buttons_row.addWidget(self.edit_cancel_button)
@@ -1051,7 +1056,7 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.profile_editor_group, stretch=1)
 
         # --- Inline Settings Panel (hidden by default) ---
-        self.settings_panel_group = QGroupBox("Application Settings")
+        self.settings_panel_group = QGroupBox(tr("Application Settings"))
         settings_main_layout = QVBoxLayout()
         settings_main_layout.setContentsMargins(8, 4, 8, 8)  # Reduce top margin
         settings_main_layout.setSpacing(8)
@@ -1063,12 +1068,12 @@ class MainWindow(QMainWindow):
         settings_grid.setVerticalSpacing(12)
         
         # ROW 0, COL 0-1: Backup Base Path (full width)
-        backup_path_group = QGroupBox("Backup Base Path")
+        backup_path_group = QGroupBox(tr("Backup Base Path"))
         backup_path_layout = QHBoxLayout()
         backup_path_layout.setContentsMargins(8, 8, 8, 8)
         backup_path_layout.setSpacing(6)
         self.settings_path_edit = QLineEdit()
-        self.settings_browse_button = QPushButton("Browse...")
+        self.settings_browse_button = QPushButton(tr("Browse..."))
         self.settings_browse_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
         backup_path_layout.addWidget(self.settings_path_edit)
         backup_path_layout.addWidget(self.settings_browse_button)
@@ -1076,17 +1081,17 @@ class MainWindow(QMainWindow):
         settings_grid.addWidget(backup_path_group, 0, 0, 1, 2)  # span 2 columns
         
         # ROW 1, COL 0: Portable Mode
-        portable_group = QGroupBox("Portable Mode")
+        portable_group = QGroupBox(tr("Portable Mode"))
         portable_layout = QVBoxLayout()
         portable_layout.setContentsMargins(8, 8, 8, 8)
         portable_layout.setSpacing(6)
-        self.settings_portable_checkbox = QCheckBox("Use only JSONs in backup folder (.savestate)")
+        self.settings_portable_checkbox = QCheckBox(tr("Use only JSONs in backup folder (.savestate)"))
         portable_layout.addWidget(self.settings_portable_checkbox)
         portable_group.setLayout(portable_layout)
         settings_grid.addWidget(portable_group, 1, 0)
         
         # ROW 1, COL 1: Maximum Source Size
-        max_size_group = QGroupBox("Maximum Source Size for Backup")
+        max_size_group = QGroupBox(tr("Maximum Source Size for Backup"))
         max_size_layout = QVBoxLayout()
         max_size_layout.setContentsMargins(8, 8, 8, 8)
         max_size_layout.setSpacing(6)
@@ -1094,7 +1099,7 @@ class MainWindow(QMainWindow):
         self.settings_size_options = [
             ("50 MB", 50), ("100 MB", 100), ("250 MB", 250), ("500 MB", 500),
             ("1 GB (1024 MB)", 1024), ("2 GB (2048 MB)", 2048),
-            ("5 GB (5120 MB)", 5120), ("No Limit", -1)
+            ("5 GB (5120 MB)", 5120), (tr("No Limit"), -1)
         ]
         for display_text, _ in self.settings_size_options:
             self.settings_max_size_combo.addItem(display_text)
@@ -1103,7 +1108,7 @@ class MainWindow(QMainWindow):
         settings_grid.addWidget(max_size_group, 1, 1)
         
         # ROW 2, COL 0: Max Number of Backups
-        max_backups_group = QGroupBox("Maximum Number of Backups per Profile")
+        max_backups_group = QGroupBox(tr("Maximum Number of Backups per Profile"))
         max_backups_layout = QHBoxLayout()
         max_backups_layout.setContentsMargins(8, 8, 8, 8)
         max_backups_layout.setSpacing(6)
@@ -1111,21 +1116,21 @@ class MainWindow(QMainWindow):
         self.settings_max_backups_spin.setRange(1, 99)
         self.settings_max_backups_spin.setMaximumWidth(80)  # Limit width
         max_backups_layout.addWidget(self.settings_max_backups_spin)
-        max_backups_layout.addWidget(QLabel("backups per profile (.zip)"))
+        max_backups_layout.addWidget(QLabel(tr("backups per profile (.zip)")))
         max_backups_layout.addStretch(1)  # Push everything to the left
         max_backups_group.setLayout(max_backups_layout)
         settings_grid.addWidget(max_backups_group, 2, 0)
         
         # ROW 2, COL 1: Backup Compression
-        compression_group = QGroupBox("Backup Compression (.zip)")
+        compression_group = QGroupBox(tr("Backup Compression (.zip)"))
         compression_layout = QVBoxLayout()
         compression_layout.setContentsMargins(8, 8, 8, 8)
         compression_layout.setSpacing(6)
         self.settings_compression_combo = QComboBox()
         self.settings_compression_options = {
-            "standard": "Standard (Recommended)",
-            "maximum": "Maximum (Slower)",
-            "stored": "None (Faster)"
+            "standard": tr("Standard (Recommended)"),
+            "maximum": tr("Maximum (Slower)"),
+            "stored": tr("None (Faster)")
         }
         for key, text in self.settings_compression_options.items():
             self.settings_compression_combo.addItem(text, key)
@@ -1134,37 +1139,37 @@ class MainWindow(QMainWindow):
         settings_grid.addWidget(compression_group, 2, 1)
         
         # ROW 3, COL 0: Space check / update
-        space_check_group = QGroupBox("Space check/update")
+        space_check_group = QGroupBox(tr("Space check/update"))
         space_check_layout = QVBoxLayout()
         space_check_layout.setContentsMargins(8, 8, 8, 8)
         space_check_layout.setSpacing(6)
-        self.settings_space_check_checkbox = QCheckBox("Enable space check before backup (2gb)")
+        self.settings_space_check_checkbox = QCheckBox(tr("Enable space check before backup (2gb)"))
         space_check_layout.addWidget(self.settings_space_check_checkbox)
         # Opt-in auto-update check. No network requests happen unless this is
         # enabled OR the user clicks the update indicator manually.
-        self.settings_check_updates_checkbox = QCheckBox("Check for updates on startup (via GitHub Releases)")
+        self.settings_check_updates_checkbox = QCheckBox(tr("Check for updates on startup (via GitHub Releases)"))
         space_check_layout.addWidget(self.settings_check_updates_checkbox)
         space_check_group.setLayout(space_check_layout)
         settings_grid.addWidget(space_check_group, 3, 0)
         
         # ROW 3, COL 1: UI Settings
-        ui_settings_group = QGroupBox("UI Settings")
+        ui_settings_group = QGroupBox(tr("UI Settings"))
         ui_settings_layout = QVBoxLayout()
         ui_settings_layout.setContentsMargins(8, 8, 8, 8)
         ui_settings_layout.setSpacing(6)
-        self.settings_global_drag_checkbox = QCheckBox("Enable global mouse drag-to-show effect")
-        self.settings_shorten_paths_checkbox = QCheckBox("Shorten save paths in selection dialogs")
+        self.settings_global_drag_checkbox = QCheckBox(tr("Enable global mouse drag-to-show effect"))
+        self.settings_shorten_paths_checkbox = QCheckBox(tr("Shorten save paths in selection dialogs"))
         ui_settings_layout.addWidget(self.settings_global_drag_checkbox)
         ui_settings_layout.addWidget(self.settings_shorten_paths_checkbox)
         ui_settings_group.setLayout(ui_settings_layout)
         settings_grid.addWidget(ui_settings_group, 3, 1)
         
         # ROW 4, COL 0: System Tray Settings
-        tray_settings_group = QGroupBox("System Tray")
+        tray_settings_group = QGroupBox(tr("System Tray"))
         tray_settings_layout = QVBoxLayout()
         tray_settings_layout.setContentsMargins(8, 8, 8, 8)
         tray_settings_layout.setSpacing(6)
-        self.settings_minimize_to_tray_checkbox = QCheckBox("Minimize to tray on close")
+        self.settings_minimize_to_tray_checkbox = QCheckBox(tr("Minimize to tray on close"))
         tray_settings_layout.addWidget(self.settings_minimize_to_tray_checkbox)
         # Off by default; state lives in the Windows "Run" key / Linux autostart file.
         self.settings_start_with_windows_checkbox = QCheckBox(autostart_utils.checkbox_label())
@@ -1174,11 +1179,11 @@ class MainWindow(QMainWindow):
         settings_grid.addWidget(tray_settings_group, 4, 0)
         
         # ROW 4, COL 1: Profile Appearance
-        profile_ui_group = QGroupBox("Profile Appearance")
+        profile_ui_group = QGroupBox(tr("Profile Appearance"))
         profile_ui_layout = QVBoxLayout()
         profile_ui_layout.setContentsMargins(8, 8, 8, 8)
         profile_ui_layout.setSpacing(6)
-        self.settings_show_icons_checkbox = QCheckBox("Show game icons in profile list")
+        self.settings_show_icons_checkbox = QCheckBox(tr("Show game icons in profile list"))
         profile_ui_layout.addWidget(self.settings_show_icons_checkbox)
         profile_ui_group.setLayout(profile_ui_layout)
         settings_grid.addWidget(profile_ui_group, 4, 1)
@@ -1188,9 +1193,12 @@ class MainWindow(QMainWindow):
         
         # Exit and Save buttons
         settings_buttons_row = QHBoxLayout()
-        self.settings_exit_button = QPushButton("Exit")
-        self.settings_save_button = QPushButton("Save")
+        self.settings_exit_button = QPushButton(tr("Exit"))
+        self.settings_save_button = QPushButton(tr("Save"))
         self.settings_save_button.setObjectName("SaveButton")
+        # Small flag button: opens the language selector
+        self.settings_language_button = LanguageButton(self)
+        settings_buttons_row.addWidget(self.settings_language_button)
         settings_buttons_row.addStretch(1)
         settings_buttons_row.addWidget(self.settings_exit_button)
         settings_buttons_row.addWidget(self.settings_save_button)
@@ -1221,7 +1229,7 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.cloud_panel, stretch=1)
         # --- End Inline Cloud Save Panel ---
 
-        actions_group = QGroupBox("Actions")
+        actions_group = QGroupBox(tr("Actions"))
         self.actions_group = actions_group
         actions_layout = QHBoxLayout()
         # Use margins to shorten buttons slightly from the edges without making them tiny
@@ -1248,7 +1256,7 @@ class MainWindow(QMainWindow):
         actions_group.installEventFilter(self)
         
         content_layout.addWidget(actions_group)
-        general_group = QGroupBox("General")
+        general_group = QGroupBox(tr("General"))
         self.general_group = general_group
         general_layout = QHBoxLayout()
         general_layout.setContentsMargins(6, 6, 6, 6)
@@ -1347,7 +1355,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(status_bar)
         
         # --- CREAZIONE DOCK WIDGET PER IL LOG ---
-        self.log_dock_widget = QDockWidget("Console Log", self)
+        self.log_dock_widget = QDockWidget(tr("Console Log"), self)
         self.log_dock_widget.setObjectName("LogDockWidget") # Utile per QSS
         self.log_dock_widget.setMinimumHeight(150)
 
@@ -1642,7 +1650,7 @@ class MainWindow(QMainWindow):
                 
             # Force the loading label to show "Drop Here" during drag
             if hasattr(self, 'loading_label') and self.loading_label:
-                self.loading_label.setText("Drop Here")
+                self.loading_label.setText(tr("Drop Here"))
                 logging.debug("MainWindow.dragEnterEvent: Set loading_label text to 'Drop Here'")
                 
             self.request_show_overlay.emit() # Request to show the "Drop Here" overlay
@@ -1759,38 +1767,38 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logging.error(f"Error toggling cloud panel: {e}")
             if hasattr(self, 'status_label'):
-                self.status_label.setText("Error opening Cloud Save panel.")
+                self.status_label.setText(tr("Error opening Cloud Save panel."))
     
     def updateUiText(self):
         """Updates the UI text"""
         logging.debug(">>> updateUiText: START <<<")
-        self.setWindowTitle("SaveState - 3.2")
+        self.setWindowTitle(tr("SaveState - 3.2"))
         if hasattr(self, 'title_label'):
-            self.title_label.setText("SaveState - 3.2")
+            self.title_label.setText(tr("SaveState - 3.2"))
         self.profile_table_manager.retranslate_headers()
         # Keep Settings as icon-only in the title bar
         self.settings_button.setText("")
-        self.new_profile_button.setText("New Profile...")
-        self.steam_button.setText("Manage Steam")
-        self.backup_button.setText("Backup")
-        self.restore_button.setText("Restore")
-        self.manage_backups_button.setText("Manage Backups")
-        self.open_backup_dir_button.setText("Open Backup Folder")
+        self.new_profile_button.setText(tr("New Profile..."))
+        self.steam_button.setText(tr("Manage Steam"))
+        self.backup_button.setText(tr("Backup"))
+        self.restore_button.setText(tr("Restore"))
+        self.manage_backups_button.setText(tr("Manage Backups"))
+        self.open_backup_dir_button.setText(tr("Open Backup Folder"))
         if hasattr(self, 'cloud_button'):
-            self.cloud_button.setText("Cloud Sync")
+            self.cloud_button.setText(tr("Cloud Sync"))
 
         if hasattr(self, 'profile_group'): # Check if attribute exists
-            self.profile_group.setTitle("Profiles")
+            self.profile_group.setTitle(tr("Profiles"))
         if hasattr(self, 'actions_group'):
-            self.actions_group.setTitle("Actions")
+            self.actions_group.setTitle(tr("Actions"))
         if hasattr(self, 'general_group'):
-            self.general_group.setTitle("General")
+            self.general_group.setTitle(tr("General"))
 
             # Update animation label placeholder text
             # Check if the label exists and is NOT showing a GIF (movie)
             if hasattr(self, 'loading_label') and self.loading_label and \
             (not hasattr(self, 'loading_movie') or not self.loading_movie or not self.loading_movie.isValid()):
-                self.loading_label.setText("Drop Here")
+                self.loading_label.setText(tr("Drop Here"))
                 # --- START OF MODIFIED STYLING ---
                 # font = self.loading_label.font()
                 # font.setPointSize(24)
@@ -1805,15 +1813,15 @@ class MainWindow(QMainWindow):
 
         # Update editor texts if present
         if hasattr(self, 'profile_editor_group'):
-            self.profile_editor_group.setTitle("Edit Profile")
+            self.profile_editor_group.setTitle(tr("Edit Profile"))
         if hasattr(self, 'edit_save_button'):
-            self.edit_save_button.setText("Save")
+            self.edit_save_button.setText(tr("Save"))
         if hasattr(self, 'edit_cancel_button'):
-            self.edit_cancel_button.setText("Cancel")
+            self.edit_cancel_button.setText(tr("Cancel"))
         if hasattr(self, 'overrides_group'):
-            self.overrides_group.setTitle("Overrides")
+            self.overrides_group.setTitle(tr("Overrides"))
         if hasattr(self, 'overrides_enable_checkbox'):
-            self.overrides_enable_checkbox.setText("Use profile-specific settings")
+            self.overrides_enable_checkbox.setText(tr("Use profile-specific settings"))
 
         # --- Update Tooltips and Titles ---
         # create_shortcut_button removed - functionality available in context menu
@@ -1821,10 +1829,10 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'toggle_log_button'):
             # Set a generic tooltip, will be updated by handle_toggle_log if needed
              is_log_visible = self.log_dock_widget.isVisible() if hasattr(self, 'log_dock_widget') else False
-             tooltip_key = "Hide Log" if is_log_visible else "Show Log"
+             tooltip_key = tr("Hide Log") if is_log_visible else tr("Show Log")
              self.toggle_log_button.setToolTip(tooltip_key)
         if hasattr(self, 'log_dock_widget'):
-            self.log_dock_widget.setWindowTitle("Console Log")
+            self.log_dock_widget.setWindowTitle(tr("Console Log"))
         logging.debug(">>> updateUiText: END <<<")
 
     def show_overlay_message(self, message_text):
@@ -1881,7 +1889,7 @@ class MainWindow(QMainWindow):
         
         # Only set default text if no text is already set
         if not self.loading_label.text() or self.loading_label.text().strip() == "":
-            self.loading_label.setText("Drop Here")
+            self.loading_label.setText(tr("Drop Here"))
 
         # Ensure font and style are correct if not already set by show_overlay_message
         if "padding" not in self.loading_label.styleSheet():
@@ -2040,9 +2048,9 @@ class MainWindow(QMainWindow):
             # Update button text based on selection count (multi-selection support)
             selection_count = self.profile_table_manager.get_selection_count()
             if selection_count > 1:
-                self.backup_button.setText("Backup Selected")
+                self.backup_button.setText(tr("Backup Selected"))
             else:
-                self.backup_button.setText("Backup")
+                self.backup_button.setText(tr("Backup"))
         
         # Toggle button should ALWAYS be enabled (if there are profiles)
         # But it should only be VISIBLE when there are 3+ profiles
@@ -2491,11 +2499,11 @@ class MainWindow(QMainWindow):
                         try:
                             self.tray_icon.show()
                             if periodic_sync_enabled:
-                                self.tray_icon.showMessage("SaveState", "Running in background for periodic sync.", QSystemTrayIcon.MessageIcon.Information, 3000)
+                                self.tray_icon.showMessage("SaveState", tr("Running in background for periodic sync."), QSystemTrayIcon.MessageIcon.Information, 3000)
                             elif auto_backup_enabled:
-                                self.tray_icon.showMessage("SaveState", "Running in background for automatic backups.", QSystemTrayIcon.MessageIcon.Information, 3000)
+                                self.tray_icon.showMessage("SaveState", tr("Running in background for automatic backups."), QSystemTrayIcon.MessageIcon.Information, 3000)
                             else:
-                                self.tray_icon.showMessage("SaveState", "Minimized to system tray.", QSystemTrayIcon.MessageIcon.Information, 2000)
+                                self.tray_icon.showMessage("SaveState", tr("Minimized to system tray."), QSystemTrayIcon.MessageIcon.Information, 2000)
                         except Exception:
                             pass
                         logging.info(f"SaveState hidden to system tray (minimize_to_tray={minimize_to_tray}, periodic_sync={periodic_sync_enabled}, auto_backup={auto_backup_enabled}).")
@@ -2541,8 +2549,8 @@ class MainWindow(QMainWindow):
             icon_path = resource_path("icon.png")
             tray_icon = QSystemTrayIcon(QIcon(icon_path), self)
             tray_menu = QMenu(self)
-            act_show = tray_menu.addAction("Show SaveState")
-            act_exit = tray_menu.addAction("Exit")
+            act_show = tray_menu.addAction(tr("Show SaveState"))
+            act_exit = tray_menu.addAction(tr("Exit"))
             act_show.triggered.connect(self._restore_from_tray)
             def _do_exit():
                 self._allow_close = True
@@ -2636,14 +2644,14 @@ class MainWindow(QMainWindow):
                 
                 if is_group:
                     # --- Group Profile Context Menu ---
-                    act_edit_group = QAction("Edit Group", self)
-                    act_ungroup = QAction("Ungroup", self)
-                    act_shortcut = QAction("Create Backup Shortcut", self)
+                    act_edit_group = QAction(tr("Edit Group"), self)
+                    act_ungroup = QAction(tr("Ungroup"), self)
+                    act_shortcut = QAction(tr("Create Backup Shortcut"), self)
                     
                     # Set tooltips
-                    act_edit_group.setToolTip("Edit the profiles in this group")
-                    act_ungroup.setToolTip("Dissolve this group, making member profiles visible again")
-                    act_shortcut.setToolTip("Creates a desktop shortcut to quickly backup all profiles in this group")
+                    act_edit_group.setToolTip(tr("Edit the profiles in this group"))
+                    act_ungroup.setToolTip(tr("Dissolve this group, making member profiles visible again"))
+                    act_shortcut.setToolTip(tr("Creates a desktop shortcut to quickly backup all profiles in this group"))
                     
                     # Set folder icon for group actions
                     try:
@@ -2669,8 +2677,8 @@ class MainWindow(QMainWindow):
                     profile_name_for_note = self.profile_table_manager.get_selected_profile_name()
                     from gui_components import notes_manager
                     has_note = notes_manager.has_note(profile_name_for_note) if profile_name_for_note else False
-                    act_note = QAction("Edit Note" if has_note else "Add Note", self)
-                    act_note.setToolTip("Add or edit a text note for this profile")
+                    act_note = QAction(tr("Edit Note") if has_note else tr("Add Note"), self)
+                    act_note.setToolTip(tr("Add or edit a text note for this profile"))
                     try:
                         note_icon_path = resource_path("icons/note.png")
                         if os.path.exists(note_icon_path):
@@ -2688,8 +2696,8 @@ class MainWindow(QMainWindow):
                     
                     # Playnite integration (Windows only)
                     if platform.system() == 'Windows':
-                        act_playnite = QAction("Playnite Script", self)
-                        act_playnite.setToolTip("Generate a script to auto-backup this group when games close in Playnite")
+                        act_playnite = QAction(tr("Playnite Script"), self)
+                        act_playnite.setToolTip(tr("Generate a script to auto-backup this group when games close in Playnite"))
                         try:
                             playnite_icon_path = resource_path("icons/playnite.svg")
                             if os.path.exists(playnite_icon_path):
@@ -2700,8 +2708,8 @@ class MainWindow(QMainWindow):
                         menu.addAction(act_playnite)
                     
                     # Heroic Games Launcher integration (Windows + Linux)
-                    act_heroic = QAction("Heroic Script", self)
-                    act_heroic.setToolTip("Generate a script file to auto-backup this group when games close in Heroic")
+                    act_heroic = QAction(tr("Heroic Script"), self)
+                    act_heroic.setToolTip(tr("Generate a script file to auto-backup this group when games close in Heroic"))
                     try:
                         heroic_icon_path = resource_path("icons/heroic.png")
                         if os.path.exists(heroic_icon_path):
@@ -2712,10 +2720,10 @@ class MainWindow(QMainWindow):
                     menu.addAction(act_heroic)
                 else:
                     # --- Regular Profile Context Menu ---
-                    act_edit = QAction("Edit Profile", self)
-                    act_shortcut = QAction("Create Backup Shortcut", self)
-                    act_shortcut.setToolTip("Creates a desktop shortcut to quickly run a backup for this profile")
-                    act_shortcut.setStatusTip("Creates a desktop shortcut to quickly run a backup for this profile")
+                    act_edit = QAction(tr("Edit Profile"), self)
+                    act_shortcut = QAction(tr("Create Backup Shortcut"), self)
+                    act_shortcut.setToolTip(tr("Creates a desktop shortcut to quickly run a backup for this profile"))
+                    act_shortcut.setStatusTip(tr("Creates a desktop shortcut to quickly run a backup for this profile"))
                     
                     # Optional icons
                     try:
@@ -2732,8 +2740,8 @@ class MainWindow(QMainWindow):
                     profile_name_for_note = self.profile_table_manager.get_selected_profile_name()
                     from gui_components import notes_manager
                     has_note = notes_manager.has_note(profile_name_for_note) if profile_name_for_note else False
-                    act_note = QAction("Edit Note" if has_note else "Add Note", self)
-                    act_note.setToolTip("Add or edit a text note for this profile")
+                    act_note = QAction(tr("Edit Note") if has_note else tr("Add Note"), self)
+                    act_note.setToolTip(tr("Add or edit a text note for this profile"))
                     try:
                         note_icon_path = resource_path("icons/note.png")
                         if os.path.exists(note_icon_path):
@@ -2749,8 +2757,8 @@ class MainWindow(QMainWindow):
                     
                     # Add "Create Group" option when multiple profiles are selected
                     if selection_count > 1:
-                        act_create_group = QAction(f"Create Group ({selection_count} profiles)", self)
-                        act_create_group.setToolTip("Create a group containing the selected profiles")
+                        act_create_group = QAction(tr("Create Group ({0} profiles)", selection_count), self)
+                        act_create_group.setToolTip(tr("Create a group containing the selected profiles"))
                         try:
                             from PySide6.QtWidgets import QStyle
                             folder_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
@@ -2765,8 +2773,8 @@ class MainWindow(QMainWindow):
                     
                     # Playnite integration (Windows only)
                     if platform.system() == 'Windows':
-                        act_playnite = QAction("Playnite Script", self)
-                        act_playnite.setToolTip("Generate a script to auto-backup when this game closes in Playnite")
+                        act_playnite = QAction(tr("Playnite Script"), self)
+                        act_playnite.setToolTip(tr("Generate a script to auto-backup when this game closes in Playnite"))
                         try:
                             playnite_icon_path = resource_path("icons/playnite.svg")
                             if os.path.exists(playnite_icon_path):
@@ -2777,8 +2785,8 @@ class MainWindow(QMainWindow):
                         menu.addAction(act_playnite)
                     
                     # Heroic Games Launcher integration (Windows + Linux)
-                    act_heroic = QAction("Heroic Script", self)
-                    act_heroic.setToolTip("Generate a script file to auto-backup when this game closes in Heroic")
+                    act_heroic = QAction(tr("Heroic Script"), self)
+                    act_heroic.setToolTip(tr("Generate a script file to auto-backup when this game closes in Heroic"))
                     try:
                         heroic_icon_path = resource_path("icons/heroic.png")
                         if os.path.exists(heroic_icon_path):
@@ -2840,18 +2848,18 @@ class MainWindow(QMainWindow):
                 path_norm = os.path.normpath(path_value).lower()
                 
                 if backup_base_norm and path_norm.startswith(backup_base_norm):
-                    path_warning = "⚠️ CRITICAL: Path is inside backup folder! This will cause recursive backups."
+                    path_warning = tr("⚠️ CRITICAL: Path is inside backup folder! This will cause recursive backups.")
                     self.edit_path_edit.setStyleSheet("QLineEdit { border: 2px solid #FF0000; background-color: #3a2020; }")
                 elif not os.path.exists(path_value):
-                    path_warning = "⚠️ Path does not exist! The game may have been uninstalled."
+                    path_warning = tr("⚠️ Path does not exist! The game may have been uninstalled.")
                     self.edit_path_edit.setStyleSheet("QLineEdit { border: 2px solid #FFA500; background-color: #3a3020; }")
                 else:
                     self.edit_path_edit.setStyleSheet("")  # Reset to default
                     
-                self.edit_path_edit.setToolTip(path_warning if path_warning else "Save game folder path")
+                self.edit_path_edit.setToolTip(path_warning if path_warning else tr("Save game folder path"))
             else:
                 self.edit_path_edit.setStyleSheet("")
-                self.edit_path_edit.setToolTip("Save game folder path")
+                self.edit_path_edit.setToolTip(tr("Save game folder path"))
 
             # Populate overrides UI from profile or global settings
             use_overrides = False
@@ -2870,7 +2878,7 @@ class MainWindow(QMainWindow):
             self.overrides_enable_checkbox.setChecked(use_overrides)
             self.override_max_backups_spin.setValue(int(overrides.get('max_backups', global_max_backups)))
             comp_val = str(overrides.get('compression_mode', global_compression))
-            idx = self.override_compression_combo.findText(comp_val)
+            idx = self.override_compression_combo.findData(comp_val)
             self.override_compression_combo.setCurrentIndex(idx if idx >= 0 else 0)
             # Select matching size option; fallback to 500MB if not found
             size_mb = int(overrides.get('max_source_size_mb', global_max_size))
@@ -3042,21 +3050,21 @@ class MainWindow(QMainWindow):
 
             if available:
                 cb.setToolTip(
-                    "After each automatic backup, upload the newest backup to your "
+                    tr("After each automatic backup, upload the newest backup to your "
                     "configured cloud provider. Upload only; requires an active "
-                    f"connection. Minimum backup interval: "
-                    f"{MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES} minutes."
+                    "connection. Minimum backup interval: "
+                    "{0} minutes.", MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES)
                 )
             elif cb.isChecked():
                 cb.setToolTip(
-                    f"Online sync is ON for this profile but paused: {reason}. "
-                    f"Local automatic backups still run. Connect in the Cloud "
-                    f"panel to resume uploading."
+                    tr("Online sync is ON for this profile but paused: {0}. "
+                    "Local automatic backups still run. Connect in the Cloud "
+                    "panel to resume uploading.", reason)
                 )
             else:
                 cb.setToolTip(
-                    f"Online sync unavailable: {reason}. "
-                    f"Connect and configure a cloud provider in the Cloud panel to enable it."
+                    tr("Online sync unavailable: {0}. "
+                    "Connect and configure a cloud provider in the Cloud panel to enable it.", reason)
                 )
         except Exception as e:
             logging.error(f"Error applying online sync availability: {e}")
@@ -3095,10 +3103,10 @@ class MainWindow(QMainWindow):
                     cb.blockSignals(False)
                     QMessageBox.warning(
                         self,
-                        "Online sync unavailable",
-                        f"Cannot enable online sync:\n\n{reason}\n\n"
-                        f"Open the Cloud panel, configure your cloud provider, and connect "
-                        f"before turning on this option.",
+                        tr("Online sync unavailable"),
+                        tr("Cannot enable online sync:\n\n{0}\n\n"
+                        "Open the Cloud panel, configure your cloud provider, and connect "
+                        "before turning on this option.", reason),
                     )
                     self._apply_online_sync_availability()
                     return
@@ -3109,15 +3117,15 @@ class MainWindow(QMainWindow):
                 return
 
             msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("Backup interval too short")
+            msg_box.setWindowTitle(tr("Backup interval too short"))
             msg_box.setIcon(QMessageBox.Icon.Question)
             msg_box.setTextFormat(Qt.TextFormat.RichText)
             msg_box.setText(
-                "Online sync uploads each automatic backup to the cloud.<br><br>"
-                f"<b>With online sync enabled, the backup interval cannot be shorter "
-                f"than {min_iv} minutes.</b><br><br>"
-                f"Your current interval is {interval} minute(s). "
-                f"Increase it to {min_iv} minutes?"
+                tr("Online sync uploads each automatic backup to the cloud.<br><br>"
+                "<b>With online sync enabled, the backup interval cannot be shorter "
+                "than {0} minutes.</b><br><br>"
+                "Your current interval is {1} minute(s). "
+                "Increase it to {0} minutes?", min_iv, interval)
             )
             msg_box.setStandardButtons(
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
@@ -3201,7 +3209,7 @@ class MainWindow(QMainWindow):
 
             if not process_watch_utils.is_process_watching_supported():
                 self.auto_backup_process_combo.setToolTip(
-                    "Process detection is not supported on this platform."
+                    tr("Process detection is not supported on this platform.")
                 )
 
             # A newer scan (editor reopened, Refresh pressed) makes older
@@ -3442,7 +3450,7 @@ class MainWindow(QMainWindow):
                 cb.setChecked(True)
                 cb.setEnabled(False)
                 cb.setToolTip(
-                    "Forced ON because Periodic Sync is enabled in Cloud settings"
+                    tr("Forced ON because Periodic Sync is enabled in Cloud settings")
                 )
             elif auto_backup_enabled:
                 cb.setChecked(True)
@@ -3456,13 +3464,13 @@ class MainWindow(QMainWindow):
                     if len(names) > 4:
                         preview += f", +{len(names) - 4} more"
                     cb.setToolTip(
-                        f"Required while automatic backup is enabled on: {preview}. "
-                        "Uncheck to disable automatic backup on those profiles."
+                        tr("Required while automatic backup is enabled on: {0}. "
+                        "Uncheck to disable automatic backup on those profiles.", preview)
                     )
                 else:
                     cb.setToolTip(
-                        "Required while automatic backup is enabled on one or more profiles. "
-                        "Uncheck to disable it everywhere."
+                        tr("Required while automatic backup is enabled on one or more profiles. "
+                        "Uncheck to disable it everywhere.")
                     )
             else:
                 cb.setChecked(self.current_settings.get("minimize_to_tray_on_close", False))
@@ -4273,10 +4281,10 @@ class MainWindow(QMainWindow):
 
         msg = QMessageBox(self)
         msg.setWindowTitle("SaveState")
-        msg.setText("Close SaveState?")
+        msg.setText(tr("Close SaveState?"))
         msg.setIcon(QMessageBox.Icon.Question)
-        yes_btn = msg.addButton("Close",   QMessageBox.ButtonRole.AcceptRole)  # A
-        no_btn  = msg.addButton("Cancel",  QMessageBox.ButtonRole.RejectRole)  # B
+        yes_btn = msg.addButton(tr("Close"),   QMessageBox.ButtonRole.AcceptRole)  # A
+        no_btn  = msg.addButton(tr("Cancel"),  QMessageBox.ButtonRole.RejectRole)  # B
         msg.setDefaultButton(no_btn)
 
         # Tag with references so _ctrl_dialog_dispatch can click specific buttons
@@ -4464,7 +4472,7 @@ class MainWindow(QMainWindow):
     @Slot(int)
     def _ctrl_on_connected(self, idx: int):
         logging.info(f"Controller {idx} connected.")
-        self.status_label.setText(f"Controller {idx + 1} connected.")
+        self.status_label.setText(tr("Controller {0} connected.", idx + 1))
         self._ctrl_install_dialog_badger()
         # Update controller panel status indicator
         try:

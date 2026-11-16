@@ -23,6 +23,7 @@ from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QPixmap
 
 from core import core_logic
+from common.i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -40,14 +41,14 @@ SIZE_OPTIONS = [
     ("1 GB (1024 MB)", 1024),
     ("2 GB (2048 MB)", 2048),
     ("5 GB (5120 MB)", 5120),
-    ("No Limit", -1)
+    (tr("No Limit"), -1)
 ]
 
 # Compression options
 COMPRESSION_OPTIONS = {
-    "standard": "Standard (Recommended)",
-    "maximum": "Maximum (Slower)",
-    "stored": "None (Faster)"
+    "standard": tr("Standard (Recommended)"),
+    "maximum": tr("Maximum (Slower)"),
+    "stored": tr("None (Faster)")
 }
 
 
@@ -96,9 +97,9 @@ class GroupDialog(QDialog):
         
         # Setup window
         if self.edit_mode:
-            self.setWindowTitle("Edit Profile Group")
+            self.setWindowTitle(tr("Edit Profile Group"))
         else:
-            self.setWindowTitle("Create Profile Group")
+            self.setWindowTitle(tr("Create Profile Group"))
         
         self.setMinimumWidth(500)
         self.setMinimumHeight(550)
@@ -120,7 +121,7 @@ class GroupDialog(QDialog):
         icon_row_layout = QHBoxLayout(self.icon_row)
         icon_row_layout.setContentsMargins(0, 0, 0, 0)
         icon_row_layout.setSpacing(8)
-        icon_row_layout.addWidget(QLabel("Icon:"))
+        icon_row_layout.addWidget(QLabel(tr("Icon:")))
         self.icon_preview = QLabel()
         self.icon_preview.setFixedSize(48, 48)
         self.icon_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -129,16 +130,16 @@ class GroupDialog(QDialog):
             "background-color: rgba(0, 0, 0, 30); }"
         )
         icon_row_layout.addWidget(self.icon_preview)
-        self.icon_change_button = QPushButton("Change Icon...")
+        self.icon_change_button = QPushButton(tr("Change Icon..."))
         self.icon_change_button.setToolTip(
-            "Pick a custom image (PNG, JPG, ICO, BMP, WEBP, SVG) or steal "
+            tr("Pick a custom image (PNG, JPG, ICO, BMP, WEBP, SVG) or steal "
             "the icon from a program / shortcut (.exe, .dll, .lnk, "
-            ".desktop, .AppImage)"
+            ".desktop, .AppImage)")
         )
         self.icon_change_button.clicked.connect(self._on_change_icon)
-        self.icon_reset_button = QPushButton("Reset")
+        self.icon_reset_button = QPushButton(tr("Reset"))
         self.icon_reset_button.setToolTip(
-            "Remove the custom icon and use the default folder icon"
+            tr("Remove the custom icon and use the default folder icon")
         )
         self.icon_reset_button.clicked.connect(self._on_reset_icon)
         icon_row_layout.addWidget(self.icon_change_button)
@@ -150,9 +151,9 @@ class GroupDialog(QDialog):
         self._refresh_icon_preview()
 
         # --- Group Name Section ---
-        name_label = QLabel("Group Name:")
+        name_label = QLabel(tr("Group Name:"))
         self.name_edit = QLineEdit()
-        self.name_edit.setPlaceholderText("Enter a name for the group...")
+        self.name_edit.setPlaceholderText(tr("Enter a name for the group..."))
         self.name_edit.textChanged.connect(self._update_button_state)
         layout.addWidget(name_label)
         layout.addWidget(self.name_edit)
@@ -164,7 +165,7 @@ class GroupDialog(QDialog):
         layout.addWidget(separator)
         
         # --- Profile Selection Section ---
-        profiles_label = QLabel("Select profiles to include in this group:")
+        profiles_label = QLabel(tr("Select profiles to include in this group:"))
         layout.addWidget(profiles_label)
         
         # Profile list with checkboxes
@@ -179,7 +180,7 @@ class GroupDialog(QDialog):
         available_profiles = self._get_available_profiles()
         
         if not available_profiles:
-            item = QListWidgetItem("(No available profiles)")
+            item = QListWidgetItem(tr("(No available profiles)"))
             item.setFlags(Qt.ItemFlag.NoItemFlags)
             self.profile_list.addItem(item)
         else:
@@ -229,15 +230,15 @@ class GroupDialog(QDialog):
     def _setup_settings_section(self, parent_layout: QVBoxLayout):
         """Setup the group settings override section."""
         # --- Settings Group Box ---
-        self.settings_group = QGroupBox("Group Settings (Override)")
+        self.settings_group = QGroupBox(tr("Group Settings (Override)"))
         settings_layout = QVBoxLayout()
         settings_layout.setSpacing(8)
         
         # Enable settings checkbox
-        self.enable_settings_checkbox = QCheckBox("Enable group-level settings override")
+        self.enable_settings_checkbox = QCheckBox(tr("Enable group-level settings override"))
         self.enable_settings_checkbox.setToolTip(
-            "When enabled, these settings will override individual profile settings\n"
-            "and global settings for all profiles in this group."
+            tr("When enabled, these settings will override individual profile settings\n"
+            "and global settings for all profiles in this group.")
         )
         self.enable_settings_checkbox.toggled.connect(self._on_settings_enabled_toggled)
         settings_layout.addWidget(self.enable_settings_checkbox)
@@ -254,8 +255,8 @@ class GroupDialog(QDialog):
         self.max_backups_spin.setValue(
             self.global_settings.get('max_backups', DEFAULT_MAX_BACKUPS)
         )
-        self.max_backups_spin.setToolTip("Maximum number of backups to keep per profile")
-        form_layout.addRow("Max backups:", self.max_backups_spin)
+        self.max_backups_spin.setToolTip(tr("Maximum number of backups to keep per profile"))
+        form_layout.addRow(tr("Max backups:"), self.max_backups_spin)
         
         # Compression mode combobox
         self.compression_combo = QComboBox()
@@ -266,8 +267,8 @@ class GroupDialog(QDialog):
         idx = self.compression_combo.findData(default_compression)
         if idx >= 0:
             self.compression_combo.setCurrentIndex(idx)
-        self.compression_combo.setToolTip("Compression mode for backup archives")
-        form_layout.addRow("Compression:", self.compression_combo)
+        self.compression_combo.setToolTip(tr("Compression mode for backup archives"))
+        form_layout.addRow(tr("Compression:"), self.compression_combo)
         
         # Max source size combobox
         self.max_source_size_combo = QComboBox()
@@ -280,16 +281,16 @@ class GroupDialog(QDialog):
             3  # Default to 500 MB (index 3)
         )
         self.max_source_size_combo.setCurrentIndex(size_idx)
-        self.max_source_size_combo.setToolTip("Maximum source size allowed for backup")
-        form_layout.addRow("Max source size:", self.max_source_size_combo)
+        self.max_source_size_combo.setToolTip(tr("Maximum source size allowed for backup"))
+        form_layout.addRow(tr("Max source size:"), self.max_source_size_combo)
         
         settings_layout.addWidget(self.settings_form_widget)
         
         # Reset button
         reset_layout = QHBoxLayout()
         reset_layout.addStretch()
-        self.reset_settings_btn = QPushButton("Reset to Defaults")
-        self.reset_settings_btn.setToolTip("Reset settings to global defaults")
+        self.reset_settings_btn = QPushButton(tr("Reset to Defaults"))
+        self.reset_settings_btn.setToolTip(tr("Reset settings to global defaults"))
         self.reset_settings_btn.clicked.connect(self._reset_settings_to_defaults)
         reset_layout.addWidget(self.reset_settings_btn)
         settings_layout.addLayout(reset_layout)
@@ -514,18 +515,18 @@ class GroupDialog(QDialog):
         
         # Update selection info
         if selection_count == 0:
-            self.selection_info_label.setText("Select at least 1 profile")
+            self.selection_info_label.setText(tr("Select at least 1 profile"))
             self.selection_info_label.setStyleSheet("color: #d32f2f; font-style: italic;")
         elif selection_count == 1:
-            self.selection_info_label.setText("1 profile selected (consider adding more)")
+            self.selection_info_label.setText(tr("1 profile selected (consider adding more)"))
             self.selection_info_label.setStyleSheet("color: #f57c00; font-style: italic;")
         else:
-            self.selection_info_label.setText(f"{selection_count} profiles selected")
+            self.selection_info_label.setText(tr("{0} profiles selected", selection_count))
             self.selection_info_label.setStyleSheet("color: #388e3c; font-style: italic;")
         
         # Show name error if conflict
         if name_conflict:
-            self.selection_info_label.setText(f"A profile named '{name}' already exists")
+            self.selection_info_label.setText(tr("A profile named '{0}' already exists", name))
             self.selection_info_label.setStyleSheet("color: #d32f2f; font-style: italic;")
         
         # Enable OK button only if everything is valid
@@ -604,14 +605,14 @@ class GroupDialog(QDialog):
         else:
             exe_pattern = "*.AppImage *.desktop *.exe *.ico"
         file_filter = (
-            "Icon sources (*.png *.jpg *.jpeg *.bmp *.webp *.ico *.svg "
-            f"{exe_pattern});;"
+            tr("Icon sources (*.png *.jpg *.jpeg *.bmp *.webp *.ico *.svg "
+            "{0});;"
             "Images (*.png *.jpg *.jpeg *.bmp *.webp *.ico *.svg);;"
-            f"Programs / shortcuts ({exe_pattern});;"
-            "All files (*)"
+            "Programs / shortcuts ({0});;"
+            "All files (*)", exe_pattern)
         )
         source_path, _ = QFileDialog.getOpenFileName(
-            self, "Select Group Icon", "", file_filter
+            self, tr("Select Group Icon"), "", file_filter
         )
         if not source_path:
             return
@@ -624,9 +625,9 @@ class GroupDialog(QDialog):
         if not saved_path:
             QMessageBox.warning(
                 self,
-                "Icon Error",
-                "Could not load the selected image.\n"
-                "Make sure the file is a valid image (PNG, JPG, BMP, ICO, WEBP, SVG)."
+                tr("Icon Error"),
+                tr("Could not load the selected image.\n"
+                "Make sure the file is a valid image (PNG, JPG, BMP, ICO, WEBP, SVG).")
             )
             return
 
@@ -682,18 +683,18 @@ class GroupDialog(QDialog):
         
         # Final validation
         if not name:
-            QMessageBox.warning(self, "Invalid Name", "Please enter a group name.")
+            QMessageBox.warning(self, tr("Invalid Name"), tr("Please enter a group name."))
             return
         
         if not checked_profiles:
-            QMessageBox.warning(self, "No Selection", "Please select at least one profile.")
+            QMessageBox.warning(self, tr("No Selection"), tr("Please select at least one profile."))
             return
         
         # Check for name conflict (shouldn't happen if button state is correct)
         if name in self.profiles_dict:
             if not (self.edit_mode and name == self.original_group_name):
-                QMessageBox.warning(self, "Name Conflict", 
-                                   f"A profile named '{name}' already exists.")
+                QMessageBox.warning(self, tr("Name Conflict"), 
+                                   tr("A profile named '{0}' already exists.", name))
                 return
         
         # Store results
@@ -757,7 +758,7 @@ class GroupMemberSelectionDialog(QDialog):
         self.member_profiles = member_profiles
         self.selected_profiles = None
         
-        self.setWindowTitle(f"Restore from Group: {group_name}")
+        self.setWindowTitle(tr("Restore from Group: {0}", group_name))
         self.setMinimumWidth(400)
         self.setMinimumHeight(300)
         
@@ -770,8 +771,8 @@ class GroupMemberSelectionDialog(QDialog):
         
         # Info label
         info_label = QLabel(
-            f"The group '{self.group_name}' contains {len(self.member_profiles)} profiles.\n"
-            "Select which profiles to restore:"
+            tr("The group '{0}' contains {1} profiles.\n"
+            "Select which profiles to restore:", self.group_name, len(self.member_profiles))
         )
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
@@ -794,11 +795,11 @@ class GroupMemberSelectionDialog(QDialog):
         quick_layout = QHBoxLayout()
         from PySide6.QtWidgets import QPushButton
         
-        select_all_btn = QPushButton("Select All")
+        select_all_btn = QPushButton(tr("Select All"))
         select_all_btn.clicked.connect(self._select_all)
         quick_layout.addWidget(select_all_btn)
         
-        select_none_btn = QPushButton("Select None")
+        select_none_btn = QPushButton(tr("Select None"))
         select_none_btn.clicked.connect(self._select_none)
         quick_layout.addWidget(select_none_btn)
         
@@ -849,7 +850,7 @@ class GroupMemberSelectionDialog(QDialog):
         """Accept the dialog with selected profiles."""
         self.selected_profiles = self._get_checked_profiles()
         if not self.selected_profiles:
-            QMessageBox.warning(self, "No Selection", "Please select at least one profile.")
+            QMessageBox.warning(self, tr("No Selection"), tr("Please select at least one profile."))
             return
         super().accept()
     

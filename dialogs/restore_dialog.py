@@ -15,6 +15,7 @@ from gui_components import lock_backup_manager
 from gui_components import backup_notes_manager
 from gui_components.profile_list_manager import NotePopupWidget, NoteOverlayButton
 from common.utils import resource_path
+from common.i18n import tr
 
 
 BACKUP_SEPARATOR_ROLE = Qt.ItemDataRole.UserRole + 2
@@ -53,7 +54,7 @@ class RestoreSelectionDelegate(QStyledItemDelegate):
             is_dark = self._is_dark_mode(option)
             label_color = QColor("#A8A8A8") if is_dark else QColor("#62646A")
             line_color = QColor("#555555") if is_dark else QColor("#C5C7CE")
-            label = "OLDER BACKUPS"
+            label = tr("OLDER BACKUPS")
             rect = option.rect.adjusted(12, 4, -12, -3)
 
             font = painter.font()
@@ -185,9 +186,9 @@ class RestoreDialog(QDialog):
         
         # Set title based on whether we have a profile
         if profile_name:
-            self.setWindowTitle(f"Restore Backup for {profile_name}")
+            self.setWindowTitle(tr("Restore Backup for {0}", profile_name))
         else:
-            self.setWindowTitle("Restore Backup from ZIP")
+            self.setWindowTitle(tr("Restore Backup from ZIP"))
         self._original_window_title = self.windowTitle()
         
         self.setMinimumWidth(450)
@@ -236,7 +237,7 @@ class RestoreDialog(QDialog):
 
         if not backups and profile_name:
             # Handle no backups found (only show if we have a profile)
-            no_backup_label = QLabel("No backups found for this profile.")
+            no_backup_label = QLabel(tr("No backups found for this profile."))
             self.backup_list_widget.setEnabled(False)
         elif profile_name:
             # --- Use system locale for date formatting ---
@@ -282,7 +283,7 @@ class RestoreDialog(QDialog):
                     latest_font = item.font()
                     latest_font.setBold(True)
                     item.setFont(latest_font)
-                    tooltip_lines.append("Most recent backup")
+                    tooltip_lines.append(tr("Most recent backup"))
 
                 # Check if this backup is locked and add lock icon
                 if locked_backup_path:
@@ -290,7 +291,7 @@ class RestoreDialog(QDialog):
                     if is_locked:
                         if self.lock_icon:
                             item.setIcon(self.lock_icon)
-                        tooltip_lines.append("This backup is locked (protected from deletion)")
+                        tooltip_lines.append(tr("This backup is locked (protected from deletion)"))
 
                 if tooltip_lines:
                     item.setToolTip("\n".join(tooltip_lines))
@@ -302,14 +303,14 @@ class RestoreDialog(QDialog):
         # If no profile name, keep the list enabled but empty and show an instruction label
         if not profile_name:
             self.backup_list_widget.setEnabled(True)
-            no_backup_label = QLabel("Use 'Load from ZIP' button to select a backup file.")
+            no_backup_label = QLabel(tr("Use 'Load from ZIP' button to select a backup file."))
 
         # --- Info label for loaded ZIP (kept hidden - superseded by list item presentation) ---
         self.zip_info_label = QLabel("")
         self.zip_info_label.hide()
 
         # --- Load from ZIP Button (styled for more prominence) ---
-        self.load_zip_button = QPushButton("  Load from ZIP...")
+        self.load_zip_button = QPushButton(tr("  Load from ZIP..."))
         self.load_zip_button.clicked.connect(self.handle_load_from_zip)
         # Add folder icon for visual importance
         from PySide6.QtWidgets import QApplication, QStyle as QSt
@@ -330,13 +331,13 @@ class RestoreDialog(QDialog):
         """)
         
         # --- Clear ZIP Button (initially hidden) ---
-        self.clear_zip_button = QPushButton("Clear Selection")
+        self.clear_zip_button = QPushButton(tr("Clear Selection"))
         self.clear_zip_button.clicked.connect(self.handle_clear_zip)
         self.clear_zip_button.hide()
         
         # --- Dialog Buttons ---
         buttons = QDialogButtonBox()
-        ok_button = buttons.addButton("Restore Selected", QDialogButtonBox.ButtonRole.AcceptRole)
+        ok_button = buttons.addButton(tr("Restore Selected"), QDialogButtonBox.ButtonRole.AcceptRole)
         ok_button.setObjectName("SaveButton")
         cancel_button = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -348,9 +349,9 @@ class RestoreDialog(QDialog):
         
         # Top section with instruction label
         if profile_name:
-            self.instruction_label = QLabel("Select the backup to restore from:")
+            self.instruction_label = QLabel(tr("Select the backup to restore from:"))
         else:
-            self.instruction_label = QLabel("Load a backup ZIP file to restore:")
+            self.instruction_label = QLabel(tr("Load a backup ZIP file to restore:"))
         layout.addWidget(self.instruction_label)
         self._original_instruction_text = self.instruction_label.text()
         
@@ -583,14 +584,14 @@ class RestoreDialog(QDialog):
         menu = QMenu(self)
         has_note = backup_notes_manager.has_note(backup_path)
 
-        note_action = QAction("Edit Note" if has_note else "Add Note", self)
+        note_action = QAction(tr("Edit Note") if has_note else tr("Add Note"), self)
         if self.note_icon_path and os.path.exists(self.note_icon_path):
             note_action.setIcon(QIcon(self.note_icon_path))
         note_action.triggered.connect(lambda: self._open_note_editor_for_backup(backup_path))
         menu.addAction(note_action)
 
         if has_note:
-            remove_action = QAction("Remove Note", self)
+            remove_action = QAction(tr("Remove Note"), self)
             remove_action.triggered.connect(lambda: self._remove_note_for_backup(backup_path))
             menu.addAction(remove_action)
 
@@ -628,9 +629,9 @@ class RestoreDialog(QDialog):
         # Open file dialog to select a ZIP file, starting from backup directory
         zip_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select Backup ZIP File",
+            tr("Select Backup ZIP File"),
             start_dir,  # Start from backup directory
-            "ZIP Files (*.zip);;All Files (*)"
+            tr("ZIP Files (*.zip);;All Files (*)")
         )
         
         if not zip_path:
@@ -642,8 +643,8 @@ class RestoreDialog(QDialog):
         if not is_valid:
             QMessageBox.warning(
                 self,
-                "Invalid Backup ZIP",
-                f"The selected ZIP file is not a valid SaveState backup:\n\n{error_msg}"
+                tr("Invalid Backup ZIP"),
+                tr("The selected ZIP file is not a valid SaveState backup:\n\n{0}", error_msg)
             )
             return
         
@@ -664,14 +665,14 @@ class RestoreDialog(QDialog):
             date_str = created_at
 
         zip_filename = os.path.basename(zip_path)
-        zip_item_text = f"From ZIP — {profile_name} ({date_str})"
+        zip_item_text = tr("From ZIP — {0} ({1})", profile_name, date_str)
 
         if self._zip_list_item is None:
             item = QListWidgetItem(zip_item_text)
             # Mark as a ZIP item and store path
             item.setData(Qt.ItemDataRole.UserRole, zip_path)
             item.setData(Qt.ItemDataRole.UserRole + 1, True)  # flag: is_zip
-            item.setToolTip(f"ZIP File: {zip_filename}\nProfile: {profile_name}\nDate: {date_str}\nPath: {zip_path}")
+            item.setToolTip(tr("ZIP File: {0}\nProfile: {1}\nDate: {2}\nPath: {3}", zip_filename, profile_name, date_str, zip_path))
             # Slight visual cue (optional, subtle)
             item.setForeground(QBrush(QColor(220, 220, 220)))
             self.backup_list_widget.insertItem(0, item)
@@ -680,7 +681,7 @@ class RestoreDialog(QDialog):
             self._zip_list_item.setText(zip_item_text)
             self._zip_list_item.setData(Qt.ItemDataRole.UserRole, zip_path)
             self._zip_list_item.setData(Qt.ItemDataRole.UserRole + 1, True)
-            self._zip_list_item.setToolTip(f"ZIP File: {zip_filename}\nProfile: {profile_name}\nDate: {date_str}\nPath: {zip_path}")
+            self._zip_list_item.setToolTip(tr("ZIP File: {0}\nProfile: {1}\nDate: {2}\nPath: {3}", zip_filename, profile_name, date_str, zip_path))
 
         # Select the ZIP item and ensure OK is enabled
         self.backup_list_widget.setCurrentItem(self._zip_list_item)
@@ -705,9 +706,9 @@ class RestoreDialog(QDialog):
         self.zip_info_label.hide()
 
         # Update window title and instruction label to reflect ZIP mode
-        self.setWindowTitle(f"Restore Backup from ZIP — {profile_name}")
+        self.setWindowTitle(tr("Restore Backup from ZIP — {0}", profile_name))
         if hasattr(self, 'instruction_label') and self.instruction_label:
-            self.instruction_label.setText("Ready to restore from ZIP:")
+            self.instruction_label.setText(tr("Ready to restore from ZIP:"))
 
         logging.info(f"Loaded ZIP backup: {os.path.basename(zip_path)} for profile '{profile_name}'")
 

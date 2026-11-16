@@ -7,6 +7,7 @@ a = Analysis(
     binaries=[], # File binari non Python da includere (lascia vuoto se non necessario)
     datas=[
          ('icons', 'icons'),              # Copia la cartella 'icons' nella root dell'output [cite: 11]
+         ('lang', 'lang'),                # Translations (lang/it.json, lang/zh_CN.json, ...)
 		 ('icon.png', '.'),
 		 ('backup/backup_runner.py', '.'),
          ('emulator_utils/citra_titles_map.pkl', 'emulator_utils'), # Include il DB dei titoli 3ds

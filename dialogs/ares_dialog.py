@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Slot
 from dialogs.selection_utils import apply_profile_selection_style
+from common.i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class AresSetupDialog(QDialog):
 
     def __init__(self, ares_hint: str, systems_list: List[Dict], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("ares - Select System & Game")
+        self.setWindowTitle(tr("ares - Select System & Game"))
         self.setMinimumWidth(520)
 
         self.ares_hint = ares_hint
@@ -47,7 +48,7 @@ class AresSetupDialog(QDialog):
         # ── Page 0: System / Console selection ──
         self.system_page = QWidget(self)
         system_layout = QVBoxLayout(self.system_page)
-        self.system_label = QLabel("Select a console with detected saves:")
+        self.system_label = QLabel(tr("Select a console with detected saves:"))
         self.system_label.setWordWrap(True)
         system_layout.addWidget(self.system_label)
 
@@ -59,7 +60,7 @@ class AresSetupDialog(QDialog):
         for system in self.systems_list:
             name = system.get("name", system.get("id", "Unknown"))
             count = system.get("count", 0)
-            item = QListWidgetItem(f"{name} ({count} saves)")
+            item = QListWidgetItem(tr("{0} ({1} saves)", name, count))
             item.setData(Qt.ItemDataRole.UserRole, system)
             self.system_list.addItem(item)
         self.system_list.itemDoubleClicked.connect(lambda _: self._on_next_or_select())
@@ -72,7 +73,7 @@ class AresSetupDialog(QDialog):
         profile_layout = QVBoxLayout(self.profile_page)
 
         profile_header = QHBoxLayout()
-        self.back_button = QPushButton("←  Back")
+        self.back_button = QPushButton(tr("←  Back"))
         self.back_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.back_button.setStyleSheet(
             "QPushButton { border: none; background: transparent; padding: 4px 8px; "
@@ -82,13 +83,13 @@ class AresSetupDialog(QDialog):
         self.back_button.clicked.connect(self._on_back)
         profile_header.addWidget(self.back_button)
         profile_header.addStretch()
-        self.select_all_checkbox = QCheckBox("Select all games")
+        self.select_all_checkbox = QCheckBox(tr("Select all games"))
         self.select_all_checkbox.setTristate(True)
         self.select_all_checkbox.clicked.connect(self._toggle_all_profiles)
         profile_header.addWidget(self.select_all_checkbox)
         profile_layout.addLayout(profile_header)
 
-        self.profile_label = QLabel("Select one or more games/profiles for the chosen system:")
+        self.profile_label = QLabel(tr("Select one or more games/profiles for the chosen system:"))
         self.profile_label.setWordWrap(True)
         profile_layout.addWidget(self.profile_label)
 
@@ -126,10 +127,10 @@ class AresSetupDialog(QDialog):
         ok_btn = self.button_box.button(QDialogButtonBox.StandardButton.Ok)
         if self.stack.currentIndex() == 0:
             if ok_btn:
-                ok_btn.setText("Next")
+                ok_btn.setText(tr("Next"))
         else:
             if ok_btn:
-                ok_btn.setText("Add Selected")
+                ok_btn.setText(tr("Add Selected"))
         if ok_btn:
             ok_btn.setDefault(True)
 
@@ -148,7 +149,7 @@ class AresSetupDialog(QDialog):
             if ok_btn:
                 ok_btn.setEnabled(bool(selected))
                 ok_btn.setText(
-                    "Add Game" if len(selected) == 1 else f"Add {len(selected)} Games"
+                    tr("Add Game") if len(selected) == 1 else tr("Add {0} Games", len(selected))
                 )
             profile_count = sum(
                 1
@@ -224,7 +225,7 @@ class AresSetupDialog(QDialog):
             log.error(f"Failed to load profiles for ares system {system_id}: {e}")
             profiles = []
         if not profiles:
-            item = QListWidgetItem("(No saves found for this system)")
+            item = QListWidgetItem(tr("(No saves found for this system)"))
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.profile_list.addItem(item)
             return

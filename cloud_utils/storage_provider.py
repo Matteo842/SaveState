@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Callable, Any
 from enum import Enum
 import logging
 import os
+from common.i18n import tr
 
 
 def select_zip_files_for_upload(
@@ -151,13 +152,13 @@ class StorageProvider(ABC):
             if self.is_connected:
                 return {
                     'success': True,
-                    'message': f'Connected to {self.name}',
+                    'message': tr('Connected to {0}', self.name),
                     'details': None
                 }
             else:
                 return {
                     'success': False,
-                    'message': f'Not connected to {self.name}',
+                    'message': tr('Not connected to {0}', self.name),
                     'details': None
                 }
         except Exception as e:

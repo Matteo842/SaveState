@@ -29,6 +29,7 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 from cloud_utils.storage_provider import StorageProvider, ProviderType, select_zip_files_for_upload
+from common.i18n import tr
 
 
 class WebDAVProvider(StorageProvider):
@@ -249,13 +250,13 @@ class WebDAVProvider(StorageProvider):
         }
         
         if not self._url:
-            result['message'] = 'No URL configured'
+            result['message'] = tr('No URL configured')
             return result
         
         try:
             if not self.is_connected:
                 if not self.connect():
-                    result['message'] = 'Connection failed'
+                    result['message'] = tr('Connection failed')
                     return result
             
             # Test write access by creating and deleting a test file
@@ -273,14 +274,14 @@ class WebDAVProvider(StorageProvider):
                     self._session.delete(test_url, timeout=self._timeout)
                     result['details']['writable'] = True
                 else:
-                    result['message'] = 'Path is read-only'
+                    result['message'] = tr('Path is read-only')
                     return result
             except Exception as e:
-                result['message'] = f'Write test failed: {e}'
+                result['message'] = tr('Write test failed: {0}', e)
                 return result
             
             result['success'] = True
-            result['message'] = 'Connection successful'
+            result['message'] = tr('Connection successful')
             return result
             
         except Exception as e:
@@ -307,11 +308,11 @@ class WebDAVProvider(StorageProvider):
         }
         
         if not self.is_connected:
-            result['error'] = 'Not connected'
+            result['error'] = tr('Not connected')
             return result
         
         if not os.path.isdir(local_path):
-            result['error'] = f'Local path not found: {local_path}'
+            result['error'] = tr('Local path not found: {0}', local_path)
             return result
         
         try:
@@ -417,7 +418,7 @@ class WebDAVProvider(StorageProvider):
         }
         
         if not self.is_connected:
-            result['error'] = 'Not connected'
+            result['error'] = tr('Not connected')
             return result
         
         try:
@@ -431,7 +432,7 @@ class WebDAVProvider(StorageProvider):
                 timeout=self._timeout
             )
             if response.status_code == 404:
-                result['error'] = f'Profile not found: {profile_name}'
+                result['error'] = tr('Profile not found: {0}', profile_name)
                 return result
             
             # Create local directory

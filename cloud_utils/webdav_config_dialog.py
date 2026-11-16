@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QFrame, QComboBox
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject
+from common.i18n import tr
 
 
 class WebDAVConnectionTestWorker(QObject):
@@ -47,7 +48,7 @@ class WebDAVConnectionTestWorker(QObject):
             else:
                 self.finished.emit({
                     'success': False,
-                    'message': 'Failed to connect to WebDAV server',
+                    'message': tr('Failed to connect to WebDAV server'),
                     'details': None
                 })
                 
@@ -88,7 +89,7 @@ class WebDAVConfigDialog(QDialog):
         self.test_thread = None
         self.test_worker = None
         
-        self.setWindowTitle("WebDAV Configuration")
+        self.setWindowTitle(tr("WebDAV Configuration"))
         self.setModal(True)
         self.setMinimumWidth(500)
         
@@ -101,22 +102,22 @@ class WebDAVConfigDialog(QDialog):
         layout.setSpacing(12)
         
         # --- Server Settings Group ---
-        server_group = QGroupBox("Server Settings")
+        server_group = QGroupBox(tr("Server Settings"))
         server_layout = QFormLayout()
         server_layout.setSpacing(8)
         
         # Preset selector
         self.preset_combo = QComboBox()
-        self.preset_combo.addItem("Custom", "")
+        self.preset_combo.addItem(tr("Custom"), "")
         self.preset_combo.addItem("Nextcloud", "nextcloud")
         self.preset_combo.addItem("ownCloud", "owncloud")
         self.preset_combo.currentIndexChanged.connect(self._on_preset_changed)
-        server_layout.addRow("Server Type:", self.preset_combo)
+        server_layout.addRow(tr("Server Type:"), self.preset_combo)
         
         # URL
         self.url_edit = QLineEdit()
         self.url_edit.setPlaceholderText("https://cloud.example.com/remote.php/dav/files/username/")
-        server_layout.addRow("WebDAV URL:", self.url_edit)
+        server_layout.addRow(tr("WebDAV URL:"), self.url_edit)
         
         # Help text
         self.url_help = QLabel()
@@ -129,23 +130,23 @@ class WebDAVConfigDialog(QDialog):
         layout.addWidget(server_group)
         
         # --- Authentication Group ---
-        auth_group = QGroupBox("Authentication")
+        auth_group = QGroupBox(tr("Authentication"))
         auth_layout = QFormLayout()
         auth_layout.setSpacing(8)
         
         # Username
         self.username_edit = QLineEdit()
-        self.username_edit.setPlaceholderText("Your username")
-        auth_layout.addRow("Username:", self.username_edit)
+        self.username_edit.setPlaceholderText(tr("Your username"))
+        auth_layout.addRow(tr("Username:"), self.username_edit)
         
         # Password
         self.password_edit = QLineEdit()
         self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password_edit.setPlaceholderText("Password or App Password")
-        auth_layout.addRow("Password:", self.password_edit)
+        self.password_edit.setPlaceholderText(tr("Password or App Password"))
+        auth_layout.addRow(tr("Password:"), self.password_edit)
         
         # App password hint
-        password_hint = QLabel("For Nextcloud/ownCloud, use an App Password from Security settings")
+        password_hint = QLabel(tr("For Nextcloud/ownCloud, use an App Password from Security settings"))
         password_hint.setWordWrap(True)
         password_hint.setStyleSheet("color: #888888; font-size: 11px;")
         auth_layout.addRow("", password_hint)
@@ -154,31 +155,31 @@ class WebDAVConfigDialog(QDialog):
         layout.addWidget(auth_group)
         
         # --- Advanced Options Group ---
-        options_group = QGroupBox("Advanced Options")
+        options_group = QGroupBox(tr("Advanced Options"))
         options_layout = QVBoxLayout()
         options_layout.setSpacing(8)
         
         # Verify SSL
-        self.verify_ssl_checkbox = QCheckBox("Verify SSL Certificate")
+        self.verify_ssl_checkbox = QCheckBox(tr("Verify SSL Certificate"))
         self.verify_ssl_checkbox.setChecked(True)
         self.verify_ssl_checkbox.setToolTip(
-            "Verify SSL certificates.\n"
-            "Disable only for self-signed certificates (not recommended)."
+            tr("Verify SSL certificates.\n"
+            "Disable only for self-signed certificates (not recommended).")
         )
         options_layout.addWidget(self.verify_ssl_checkbox)
         
         # Digest auth
-        self.digest_auth_checkbox = QCheckBox("Use Digest Authentication")
+        self.digest_auth_checkbox = QCheckBox(tr("Use Digest Authentication"))
         self.digest_auth_checkbox.setToolTip(
-            "Use Digest authentication instead of Basic.\n"
-            "Rarely needed - most servers use Basic auth with HTTPS."
+            tr("Use Digest authentication instead of Basic.\n"
+            "Rarely needed - most servers use Basic auth with HTTPS.")
         )
         options_layout.addWidget(self.digest_auth_checkbox)
         
         # Auto-connect
-        self.auto_connect_checkbox = QCheckBox("Auto-connect on startup")
+        self.auto_connect_checkbox = QCheckBox(tr("Auto-connect on startup"))
         self.auto_connect_checkbox.setToolTip(
-            "Automatically connect to this WebDAV server when SaveState starts"
+            tr("Automatically connect to this WebDAV server when SaveState starts")
         )
         options_layout.addWidget(self.auto_connect_checkbox)
         
@@ -190,7 +191,7 @@ class WebDAVConfigDialog(QDialog):
         test_layout = QHBoxLayout(test_frame)
         test_layout.setContentsMargins(0, 0, 0, 0)
         
-        self.test_button = QPushButton("Test Connection")
+        self.test_button = QPushButton(tr("Test Connection"))
         self.test_button.clicked.connect(self._on_test_clicked)
         test_layout.addWidget(self.test_button)
         
@@ -204,11 +205,11 @@ class WebDAVConfigDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch(1)
         
-        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button = QPushButton(tr("Cancel"))
         self.cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(self.cancel_button)
         
-        self.save_button = QPushButton("Save")
+        self.save_button = QPushButton(tr("Save"))
         self.save_button.setObjectName("SaveButton")
         self.save_button.clicked.connect(self._on_save_clicked)
         button_layout.addWidget(self.save_button)
@@ -220,17 +221,17 @@ class WebDAVConfigDialog(QDialog):
         preset = self.preset_combo.currentData()
         if preset == "nextcloud":
             self.url_help.setText(
-                "Nextcloud URL format: https://your-server.com/remote.php/dav/files/USERNAME/\n"
-                "Replace USERNAME with your Nextcloud username"
+                tr("Nextcloud URL format: https://your-server.com/remote.php/dav/files/USERNAME/\n"
+                "Replace USERNAME with your Nextcloud username")
             )
         elif preset == "owncloud":
             self.url_help.setText(
-                "ownCloud URL format: https://your-server.com/remote.php/webdav/\n"
-                "The username is specified in the Authentication section"
+                tr("ownCloud URL format: https://your-server.com/remote.php/webdav/\n"
+                "The username is specified in the Authentication section")
             )
         else:
             self.url_help.setText(
-                "Enter the full WebDAV URL including the path"
+                tr("Enter the full WebDAV URL including the path")
             )
     
     def _on_preset_changed(self, index):
@@ -245,7 +246,7 @@ class WebDAVConfigDialog(QDialog):
         self.url_edit.setText(self.current_config.get('webdav_url', ''))
         self.username_edit.setText(self.current_config.get('webdav_username', ''))
         if self.current_config.get('webdav_has_password', False):
-            self.password_edit.setPlaceholderText("Saved password will be used if left blank")
+            self.password_edit.setPlaceholderText(tr("Saved password will be used if left blank"))
         self.verify_ssl_checkbox.setChecked(self.current_config.get('webdav_verify_ssl', True))
         self.digest_auth_checkbox.setChecked(self.current_config.get('webdav_use_digest', False))
         self.auto_connect_checkbox.setChecked(self.current_config.get('webdav_auto_connect', False))
@@ -259,21 +260,21 @@ class WebDAVConfigDialog(QDialog):
         if not url:
             QMessageBox.warning(
                 self,
-                "Missing Information",
-                "Please enter a WebDAV URL."
+                tr("Missing Information"),
+                tr("Please enter a WebDAV URL.")
             )
             return
         
         if not username or not password:
             QMessageBox.warning(
                 self,
-                "Missing Information",
-                "Please enter username and password."
+                tr("Missing Information"),
+                tr("Please enter username and password.")
             )
             return
         
         # Update status
-        self.test_status_label.setText("Testing connection...")
+        self.test_status_label.setText(tr("Testing connection..."))
         self.test_status_label.setStyleSheet("color: #AAAAAA;")
         self.test_button.setEnabled(False)
         
@@ -299,7 +300,7 @@ class WebDAVConfigDialog(QDialog):
         self.test_button.setEnabled(True)
         
         if result.get('success'):
-            self.test_status_label.setText("✓ Connection successful!")
+            self.test_status_label.setText(tr("✓ Connection successful!"))
             self.test_status_label.setStyleSheet("color: #55FF55;")
         else:
             message = result.get('message', 'Connection failed')
@@ -314,24 +315,24 @@ class WebDAVConfigDialog(QDialog):
         if not url:
             QMessageBox.warning(
                 self,
-                "Missing Information",
-                "Please enter a WebDAV URL."
+                tr("Missing Information"),
+                tr("Please enter a WebDAV URL.")
             )
             return
         
         if not username:
             QMessageBox.warning(
                 self,
-                "Missing Information",
-                "Please enter a username."
+                tr("Missing Information"),
+                tr("Please enter a username.")
             )
             return
 
         if not self.password_edit.text() and not self.current_config.get('webdav_has_password', False):
             QMessageBox.warning(
                 self,
-                "Missing Information",
-                "Please enter a password."
+                tr("Missing Information"),
+                tr("Please enter a password.")
             )
             return
         

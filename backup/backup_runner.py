@@ -6,6 +6,7 @@ import sys
 import os
 import logging
 import re
+from common.i18n import tr, trn
 # Import necessary modules for loading data and performing backups
 # Assume these files are findable (in the same folder or in the python path)
 # Specific imports for Qt notification
@@ -84,20 +85,21 @@ def show_notification(success, message, force=False, profile_name=None, profile_
     pass ``force=True`` to display the popup regardless.
     """
     logging.debug(">>> Entered show_notification <<<")
-    title = "Backup Complete" if success else "Backup Error"
+    title = tr("Backup Complete") if success else tr("Backup Error")
     clean_message = re.sub(r'\n+', '\n', message).strip()
     if success:
-        success_prefix = "Backup completed successfully:"
+        success_prefix = tr("Backup completed successfully:")
         if clean_message.startswith(success_prefix):
             clean_message = clean_message[len(success_prefix):].lstrip()
-        clean_message = re.sub(
-            r"\s+Deleted (\d+) obsolete backups?\.$",
-            lambda match: (
-                f"\nRemoved {match.group(1)} obsolete "
-                f"{'backup' if match.group(1) == '1' else 'backups'}."
-            ),
-            clean_message,
-        )
+        # Find the "Deleted N obsolete backups." sentence, in the current language
+        deleted_sentence = re.escape(tr(" Deleted {0} obsolete backups.").strip()).replace(r"\{0\}", r"(\d+)")
+        if r"(\d+)" in deleted_sentence:
+            clean_message = re.sub(
+                r"\s+" + deleted_sentence + "$",
+                lambda match: "\n" + trn("Removed {0} obsolete backup.", "Removed {0} obsolete backups.",
+                                         int(match.group(1))),
+                clean_message,
+            )
     notification_icon = _notification_icon_path(
         success, profile_name=profile_name, profile_data=profile_data
     )
@@ -157,7 +159,7 @@ def show_notification(success, message, force=False, profile_name=None, profile_
              qss = "" # Fallback to empty style
 
         logging.debug("Creating NotificationPopup...")
-        title = "Backup Complete" if success else "Backup Error" 
+        title = tr("Backup Complete") if success else tr("Backup Error") 
 
         try:
             popup = NotificationPopup(
@@ -239,7 +241,7 @@ def _run_group_backup(group_name, profiles, settings):
     
     if not member_profiles:
         logging.error(f"Group '{group_name}' has no member profiles.")
-        show_notification(False, f"Error: Group '{group_name}' is empty.")
+        show_notification(False, tr("Error: Group '{0}' is empty.", group_name))
         return False
     
     # Get group settings for logging purposes
@@ -319,12 +321,12 @@ def _run_group_backup(group_name, profiles, settings):
     # Show final notification
     group_data = profiles.get(group_name)
     if all_success:
-        message = f"Group backup completed successfully!\n\n{group_name}: {success_count}/{len(member_profiles)} profiles backed up."
+        message = tr("Group backup completed successfully!\n\n{0}: {1}/{2} profiles backed up.", group_name, success_count, len(member_profiles))
         show_notification(
             True, message, profile_name=group_name, profile_data=group_data
         )
     else:
-        message = f"Group backup completed with errors.\n\n{group_name}: {success_count}/{len(member_profiles)} succeeded.\nFailed: {', '.join(failed_profiles)}"
+        message = tr("Group backup completed with errors.\n\n{0}: {1}/{2} succeeded.\nFailed: {3}", group_name, success_count, len(member_profiles), ', '.join(failed_profiles))
         show_notification(
             False, message, profile_name=group_name, profile_data=group_data
         )
@@ -345,11 +347,11 @@ def run_silent_backup(profile_name):
         settings, _ = settings_manager.load_settings()
         if not settings: # Handle rare case where load_settings returns None
               logging.error("Unable to load settings.")
-              show_notification(False, "Error loading settings.")
+              show_notification(False, tr("Error loading settings."))
               return False
     except Exception as e:
         logging.error(f"Critical error loading settings: {e}", exc_info=True)
-        show_notification(False, f"Critical settings error: {e}")
+        show_notification(False, tr("Critical settings error: {0}", e))
         return False
 
     # 2. Load Profiles
@@ -357,7 +359,7 @@ def run_silent_backup(profile_name):
         profiles = core_logic.load_profiles()
     except Exception as e:
         logging.error(f"Critical error loading profiles: {e}", exc_info=True)
-        show_notification(False, f"Critical profile error: {e}")
+        show_notification(False, tr("Critical profile error: {0}", e))
         return False
 
     # 3. Check Profile Existence (with fallback to sanitized name)
@@ -372,11 +374,11 @@ def run_silent_backup(profile_name):
                 actual_profile_name = sanitized_name
             else:
                 logging.error(f"Profile '{profile_name}' not found in '{core_logic.PROFILES_FILE_PATH}'. Backup cancelled.")
-                show_notification(False, f"Profile not found: {profile_name}")
+                show_notification(False, tr("Profile not found: {0}", profile_name))
                 return False
         except Exception as e_sanitize:
             logging.error(f"Profile '{profile_name}' not found in '{core_logic.PROFILES_FILE_PATH}'. Backup cancelled.")
-            show_notification(False, f"Profile not found: {profile_name}")
+            show_notification(False, tr("Profile not found: {0}", profile_name))
             return False
     
     profile_name = actual_profile_name  # Use the found name for the rest
@@ -386,7 +388,7 @@ def run_silent_backup(profile_name):
     if not profile_data or not isinstance(profile_data, dict):
         # If we don't find a valid dictionary
         logging.error(f"Invalid profile data for '{profile_name}' in backup_runner. Backup cancelled.")
-        show_notification(False, f"Error: Invalid profile data for {profile_name}.")
+        show_notification(False, tr("Error: Invalid profile data for {0}.", profile_name))
         return False
     
     # 4b. Check if this is a group profile - backup all members sequentially
@@ -408,7 +410,7 @@ def run_silent_backup(profile_name):
         # Show a more specific message to the user
         show_notification(
             False,
-            f"Error: No valid backup path defined for {profile_name}.",
+            tr("Error: No valid backup path defined for {0}.", profile_name),
             profile_name=profile_name,
             profile_data=profile_data,
         )
@@ -450,7 +452,7 @@ def run_silent_backup(profile_name):
          logging.error("Necessary settings (backup base directory, max backups, max source size) are invalid in backup_runner.")
          show_notification(
              False,
-             "Error: Invalid backup settings.",
+             tr("Error: Invalid backup settings."),
              profile_name=profile_name,
              profile_data=profile_data,
          )
@@ -465,7 +467,7 @@ def run_silent_backup(profile_name):
         logging.error(msg)
         show_notification(
             False,
-            "Error calculating source size. Backup cancelled.",
+            tr("Error calculating source size. Backup cancelled."),
             profile_name=profile_name,
             profile_data=profile_data,
         )
@@ -488,7 +490,7 @@ def run_silent_backup(profile_name):
             if free_bytes < required_bytes_with_margin:
                  free_gb = free_bytes / (1024*1024*1024)
                  required_gb = required_bytes_with_margin / (1024*1024*1024)
-                 msg = f"Insufficient disk space for backup '{profile_name}'. Available: {free_gb:.2f} GB, Estimated Required: {required_gb:.2f} GB (incl. {min_gb_required} GB margin)."
+                 msg = tr("Insufficient disk space for backup '{0}'. Available: {1:.2f} GB, Estimated Required: {2:.2f} GB (incl. {3} GB margin).", profile_name, free_gb, required_gb, min_gb_required)
                  logging.error(msg)
                  show_notification(
                      False,
@@ -499,7 +501,7 @@ def run_silent_backup(profile_name):
                  return False
             logging.info("Space control passed.")
         except Exception as e_space:
-            msg = f"Disk space check error: {e_space}"
+            msg = tr("Disk space check error: {0}", e_space)
             logging.error(msg, exc_info=True)
             show_notification(
                 False,
@@ -539,7 +541,7 @@ def run_silent_backup(profile_name):
          logging.error(f"Unexpected error during execution core_logic.perform_backup: {e_backup}", exc_info=True)
          show_notification(
              False,
-             f"Unexpected backup error: {e_backup}",
+             tr("Unexpected backup error: {0}", e_backup),
              profile_name=profile_name,
              profile_data=profile_data,
          )
@@ -580,6 +582,13 @@ if __name__ == "__main__":
     logging.info(f"Received arguments: {' '.join(sys.argv)}")
     # --- END Logging ---
 
+    # Choose the language for the notification texts
+    try:
+        from common import i18n
+        i18n.init_language()
+    except Exception as e_lang:
+        logging.warning(f"Could not set the language, using English: {e_lang}")
+
     parser = argparse.ArgumentParser(description="Runs the backup for a specific Game Saver profile.") 
     parser.add_argument("--backup", required=True, help="Name of the profile to back up.") 
 
@@ -604,5 +613,5 @@ if __name__ == "__main__":
          # Generic error not caught before
          logging.critical(f"Fatal error in backup_runner: {e_main}", exc_info=True)
          # Try showing a notification even for fatal errors?
-         show_notification(False, f"Fatal error: {e_main}") 
+         show_notification(False, tr("Fatal error: {0}", e_main)) 
          sys.exit(1)

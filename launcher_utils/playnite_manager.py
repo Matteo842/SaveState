@@ -21,6 +21,7 @@ import json
 import tempfile
 import shutil
 from typing import Optional, List, Dict
+from common.i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -30,8 +31,8 @@ class PlayniteDatabaseLockedException(Exception):
     def __init__(self, db_path: str):
         self.db_path = db_path
         super().__init__(
-            f"Permission denied reading Playnite database: {db_path}. "
-            "Playnite is currently running and has locked the database file."
+            tr("Permission denied reading Playnite database: {0}. "
+            "Playnite is currently running and has locked the database file.", db_path)
         )
 
 # Blacklist of names that are NOT games (social media, launchers, websites, etc.)

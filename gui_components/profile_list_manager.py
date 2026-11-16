@@ -17,6 +17,7 @@ from gui_components.empty_state_widget import EmptyStateWidget
 from gui_components import icon_extractor  # For game icon extraction
 from common.utils import resource_path # <--- Import from utils
 from gui.gui_utils import open_folder_in_file_manager  # For opening folders cross-platform
+from common.i18n import tr
 
 
 class NoteOverlayButton(QPushButton):
@@ -102,7 +103,7 @@ class NotePopupWidget(QWidget):
 
         # Text area for note content
         self.text_edit = QTextEdit()
-        self.text_edit.setPlaceholderText("Write your note here...")
+        self.text_edit.setPlaceholderText(tr("Write your note here..."))
         self.text_edit.setMinimumHeight(38)
         self.text_edit.setMaximumHeight(169)
         self.text_edit.setAcceptRichText(False)  # Plain text only
@@ -115,13 +116,13 @@ class NotePopupWidget(QWidget):
         btn_layout.setSpacing(8)
         btn_layout.addStretch(1)
 
-        self.cancel_button = QPushButton("Cancel \u2717")
+        self.cancel_button = QPushButton(tr("Cancel \u2717"))
         self.cancel_button.setFixedHeight(25)
         self.cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_button.clicked.connect(self.cancel_and_close)
         btn_layout.addWidget(self.cancel_button)
 
-        self.save_close_button = QPushButton("Save \u2713")
+        self.save_close_button = QPushButton(tr("Save \u2713"))
         self.save_close_button.setFixedHeight(25)
         self.save_close_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.save_close_button.clicked.connect(self.save_and_close)
@@ -690,8 +691,8 @@ class ProfileListManager:
         """Update the table header labels."""
         self.table_widget.setHorizontalHeaderLabels([
             "", # Empty header for favorite column
-            "Profile",
-            "Backup Info",
+            tr("Profile"),
+            tr("Backup Info"),
             ""  # Empty header for delete column
         ])
 
@@ -838,9 +839,9 @@ class ProfileListManager:
                                 date_str = system_locale.toString(last_backup_dt, QLocale.FormatType.ShortFormat)
                             except Exception:
                                 date_str = "???"
-                        info_str = f"Group ({member_count}) | Last: {date_str}"
+                        info_str = tr("Group ({0}) | Last: {1}", member_count, date_str)
                     else:
-                        info_str = f"Group ({member_count} profiles)"
+                        info_str = tr("Group ({0} profiles)", member_count)
                 elif count > 0:
                     date_str = "N/D"
                     if last_backup_dt:
@@ -853,25 +854,25 @@ class ProfileListManager:
                             logging.error(f"Error formatting last backup date for {profile_name}: {e}", exc_info=True)
                             date_str = "???"
 
-                    backup_label_singular = "Backup"
-                    backup_label_plural = "Backups"
-                    last_label = "Last"
+                    backup_label_singular = tr("Backup")
+                    backup_label_plural = tr("Backups")
+                    last_label = tr("Last")
                     backup_label = backup_label_singular if count == 1 else backup_label_plural
                     info_str = f"{backup_label}: {count} | {last_label}: {date_str}"
                 else:
-                     info_str = "No backups"
+                     info_str = tr("No backups")
 
                 # --- Create Favorite Item (Column 0) ---
                 fav_item = QTableWidgetItem()
                 fav_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if is_favorite and self.star_icon:
                     fav_item.setIcon(self.star_icon)
-                    fav_item.setToolTip("Remove from favorites")
+                    fav_item.setToolTip(tr("Remove from favorites"))
                 elif self.empty_star_icon: # Use empty star if available
                     fav_item.setIcon(self.empty_star_icon)
-                    fav_item.setToolTip("Add to favorites")
+                    fav_item.setToolTip(tr("Add to favorites"))
                 else: # Fallback without empty star icon
-                    fav_item.setToolTip("Add/Remove favorite") # Fallback
+                    fav_item.setToolTip(tr("Add/Remove favorite")) # Fallback
 
                 fav_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
                 fav_item.setData(Qt.ItemDataRole.UserRole, profile_name) # Save name for toggle
@@ -967,13 +968,13 @@ class ProfileListManager:
                 # Update the icon and tooltip in the clicked cell
                 if new_status and self.star_icon:
                     item.setIcon(self.star_icon)
-                    item.setToolTip("Remove from favorites")
+                    item.setToolTip(tr("Remove from favorites"))
                 elif self.empty_star_icon: # Use empty star if available
                     item.setIcon(self.empty_star_icon)
-                    item.setToolTip("Add to favorites")
+                    item.setToolTip(tr("Add to favorites"))
                 else: # Fallback without empty star icon
                     item.setIcon(QIcon()) # Remove icon
-                    item.setToolTip("Add/Remove favorite")
+                    item.setToolTip(tr("Add/Remove favorite"))
 
                 # --- Update the table to apply favorites sorting ---
                 logging.debug("Update table to apply favorites sorting...")
@@ -983,8 +984,8 @@ class ProfileListManager:
             else:
                 # The saving failed (manager has already logged the error)
                 QMessageBox.warning(self.main_window,
-                                    "Error",
-                                    f"Unable to save favorite status for '{profile_name}'.")
+                                    tr("Error"),
+                                    tr("Unable to save favorite status for '{0}'.", profile_name))
                 # We don't update the icon in the GUI if the saving fails
                 
     @Slot(int, int)
@@ -1019,7 +1020,7 @@ class ProfileListManager:
                 self.main_window.handlers.handle_edit_group()
             else:
                 logging.warning(f"Cannot open Edit Group dialog: handler not available")
-                self.main_window.status_label.setText(f"Right-click on '{profile_name}' to edit group settings")
+                self.main_window.status_label.setText(tr("Right-click on '{0}' to edit group settings", profile_name))
             return
         
         # Check if profile has a path or paths
@@ -1035,7 +1036,7 @@ class ProfileListManager:
         
         if not save_path or not os.path.exists(save_path):
             logging.warning(f"Cannot open save folder for profile '{profile_name}': path does not exist")
-            self.main_window.status_label.setText(f"Save folder for '{profile_name}' does not exist")
+            self.main_window.status_label.setText(tr("Save folder for '{0}' does not exist", profile_name))
             return
         
         # Check if the path is a file or directory
@@ -1051,10 +1052,10 @@ class ProfileListManager:
         success, message = open_folder_in_file_manager(folder_to_open)
         
         if success:
-            self.main_window.status_label.setText(f"Opened save folder for '{profile_name}'")
+            self.main_window.status_label.setText(tr("Opened save folder for '{0}'", profile_name))
         else:
             logging.error(f"Error opening save folder for profile '{profile_name}': {message}")
-            self.main_window.status_label.setText(f"Error opening save folder: {message}")
+            self.main_window.status_label.setText(tr("Error opening save folder: {0}", message))
             
             # In case of error, try to open the parent directory if the path is a file
             if os.path.isfile(save_path):
@@ -1064,10 +1065,10 @@ class ProfileListManager:
                 success_parent, message_parent = open_folder_in_file_manager(parent_dir)
                 
                 if success_parent:
-                    self.main_window.status_label.setText(f"Opened parent folder for '{profile_name}'")
+                    self.main_window.status_label.setText(tr("Opened parent folder for '{0}'", profile_name))
                 else:
                     logging.error(f"Error opening parent folder: {message_parent}")
-                    self.main_window.status_label.setText(f"Error opening parent folder: {message_parent}")
+                    self.main_window.status_label.setText(tr("Error opening parent folder: {0}", message_parent))
 
     def _create_delete_button(self, profile_name: str) -> QWidget:
         """Create a styled delete button widget for the profile row.
@@ -1086,7 +1087,7 @@ class ProfileListManager:
         button.setEnabled(False)  # Start disabled, will be enabled for selected row
         button.setVisible(False)  # Start hidden, will be shown only for selected row
         button.setFlat(True)  # Flat button for cleaner look
-        button.setToolTip(f"Delete profile '{profile_name}'")
+        button.setToolTip(tr("Delete profile '{0}'", profile_name))
         
         # Set trash icon - try custom icon first, then fallback to system icon
         icon_set = False
@@ -1337,7 +1338,7 @@ class ProfileListManager:
             return
 
         all_notes = notes_manager.load_notes()
-        tip_reason = reason or "cloud unavailable"
+        tip_reason = reason or tr("cloud unavailable")
         for row in range(self.table_widget.rowCount()):
             name_item = self.table_widget.item(row, 1)
             if not name_item:
@@ -1349,9 +1350,9 @@ class ProfileListManager:
 
             dot = CloudSyncWarningIndicator(self.cloud_desync_icon_path, parent=viewport)
             dot.setToolTip(
-                f"Online sync is enabled for this profile but paused:\n"
-                f"{tip_reason}.\n\n"
-                f"Local automatic backups still run; open the Cloud panel to connect."
+                tr("Online sync is enabled for this profile but paused:\n"
+                "{0}.\n\n"
+                "Local automatic backups still run; open the Cloud panel to connect.", tip_reason)
             )
             dot.setProperty("row_index", row)
             dot.setProperty("has_note", profile_name in all_notes)

@@ -23,6 +23,7 @@ from typing import Optional, List, Dict, Callable, Any
 from pathlib import Path
 from wsgiref.simple_server import WSGIRequestHandler
 from PySide6.QtCore import QObject, Signal
+from common.i18n import tr
 
 # Lazy loading helpers for Google APIs to optimize startup time
 Request = None
@@ -109,8 +110,8 @@ class _OAuthCallbackHandler:
 
         if not ("code" in params or "error" in params):
             response = self._html_response(
-                "Authorization Pending",
-                "This is the SaveState authorization endpoint. Return to the Google sign-in page.",
+                tr("Authorization Pending"),
+                tr("This is the SaveState authorization endpoint. Return to the Google sign-in page."),
             )
             start_response("400 Bad Request", [
                 ("Content-Type", "text/html; charset=utf-8"),
@@ -121,8 +122,8 @@ class _OAuthCallbackHandler:
         if not state or state != self.expected_state:
             logging.warning("Rejected Google OAuth callback with an invalid state")
             response = self._html_response(
-                "Authorization Rejected",
-                "The authorization state was invalid. Return to SaveState and try again.",
+                tr("Authorization Rejected"),
+                tr("The authorization state was invalid. Return to SaveState and try again."),
             )
             start_response("400 Bad Request", [
                 ("Content-Type", "text/html; charset=utf-8"),
@@ -132,11 +133,11 @@ class _OAuthCallbackHandler:
 
         self.authorization_response = response_url
         if "error" in params:
-            title = "Authorization Cancelled"
-            message = "Google did not authorize SaveState. You can close this window."
+            title = tr("Authorization Cancelled")
+            message = tr("Google did not authorize SaveState. You can close this window.")
         else:
-            title = "Authorization Successful"
-            message = "You can close this window and return to SaveState."
+            title = tr("Authorization Successful")
+            message = tr("You can close this window and return to SaveState.")
         response = self._html_response(title, message)
         start_response("200 OK", [
             ("Content-Type", "text/html; charset=utf-8"),
@@ -203,7 +204,7 @@ class GoogleDriveManager:
             bool: True if authentication successful, False otherwise
         """
         if not self._auth_lock.acquire(blocking=False):
-            self.last_auth_error = "Another Google Drive authentication attempt is already running."
+            self.last_auth_error = tr("Another Google Drive authentication attempt is already running.")
             logging.warning(self.last_auth_error)
             return False
 
@@ -242,7 +243,7 @@ class GoogleDriveManager:
                 if not creds:
                     if not self.client_secret_file.exists():
                         self.last_auth_error = (
-                            "Google Drive configuration is missing (client_secret.json was not found)."
+                            tr("Google Drive configuration is missing (client_secret.json was not found).")
                         )
                         logging.error(f"{self.last_auth_error} Path: {self.client_secret_file}")
                         return False
@@ -311,7 +312,7 @@ class GoogleDriveManager:
                             urllib.parse.urlparse(authorization_response).query
                         )
                         if "error" in params:
-                            self.last_auth_error = "Google authorization was not completed. Please try connecting again."
+                            self.last_auth_error = tr("Google authorization was not completed. Please try connecting again.")
                             logging.warning(self.last_auth_error)
                             return False
 
@@ -320,7 +321,7 @@ class GoogleDriveManager:
                         logging.info("OAuth2 flow completed successfully")
                         
                     except Exception as e:
-                        self.last_auth_error = f"Google OAuth failed ({type(e).__name__}). Please try connecting again."
+                        self.last_auth_error = tr("Google OAuth failed ({0}). Please try connecting again.", type(e).__name__)
                         logging.error(self.last_auth_error)
                         return False
                 
@@ -365,7 +366,7 @@ class GoogleDriveManager:
                 self.app_folder_id = self.create_app_folder()
                 if not self.app_folder_id:
                     self.last_auth_error = (
-                        "Google Drive connected, but the SaveState backup folder could not be accessed."
+                        tr("Google Drive connected, but the SaveState backup folder could not be accessed.")
                     )
                     logging.warning("Could not create/find app folder")
                     self.service = None
@@ -378,12 +379,12 @@ class GoogleDriveManager:
                 return True
                 
             except Exception as e:
-                self.last_auth_error = f"Google Drive API initialization failed ({type(e).__name__}). Please try connecting again."
+                self.last_auth_error = tr("Google Drive API initialization failed ({0}). Please try connecting again.", type(e).__name__)
                 logging.error(self.last_auth_error)
                 return False
                 
         except Exception as e:
-            self.last_auth_error = f"Unexpected Google Drive authentication error ({type(e).__name__}). Please try connecting again."
+            self.last_auth_error = tr("Unexpected Google Drive authentication error ({0}). Please try connecting again.", type(e).__name__)
             logging.error(self.last_auth_error)
             return False
         finally:
@@ -406,17 +407,17 @@ class GoogleDriveManager:
             parsed = urllib.parse.urlparse(callback_url)
             params = urllib.parse.parse_qs(parsed.query)
             if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
-                return False, "Paste the complete localhost URL shown in the browser address bar."
+                return False, tr("Paste the complete localhost URL shown in the browser address bar.")
             if not ("code" in params or "error" in params):
-                return False, "The URL does not contain a Google authorization result."
+                return False, tr("The URL does not contain a Google authorization result.")
             if not self._oauth_expected_state:
-                return False, "No Google authorization is currently waiting for a callback."
+                return False, tr("No Google authorization is currently waiting for a callback.")
             if params.get("state", [""])[0] != self._oauth_expected_state:
-                return False, "The URL belongs to a different authorization attempt."
+                return False, tr("The URL belongs to a different authorization attempt.")
             if parsed.port != self._oauth_callback_port:
-                return False, "The URL belongs to a different authorization attempt."
+                return False, tr("The URL belongs to a different authorization attempt.")
         except (TypeError, ValueError):
-            return False, "The pasted callback URL is not valid."
+            return False, tr("The pasted callback URL is not valid.")
 
         self._manual_callback_urls.put(callback_url)
         return True, ""
@@ -428,7 +429,7 @@ class GoogleDriveManager:
         deadline = time.monotonic() + OAUTH_CALLBACK_TIMEOUT_SEC
         while time.monotonic() < deadline:
             if self._cancelled:
-                self.last_auth_error = "Google Drive authorization was cancelled."
+                self.last_auth_error = tr("Google Drive authorization was cancelled.")
                 logging.info(self.last_auth_error)
                 return None
 
@@ -455,8 +456,8 @@ class GoogleDriveManager:
             local_server.handle_request()
 
         self.last_auth_error = (
-            "Google authorization timed out because the browser callback was not received. "
-            "If the browser shows a failed localhost page, paste its full address into SaveState."
+            tr("Google authorization timed out because the browser callback was not received. "
+            "If the browser shows a failed localhost page, paste its full address into SaveState.")
         )
         logging.error(self.last_auth_error)
         return None
@@ -970,13 +971,13 @@ class GoogleDriveManager:
             upload_result = self.upload_backup(local_path, profile_name, overwrite=True)
             if not upload_result.get('ok', False):
                 logging.error("Upload phase of bidirectional sync failed")
-                return {'ok': False, 'error': 'Upload phase failed', 'phase': 'upload'}
+                return {'ok': False, 'error': tr('Upload phase failed'), 'phase': 'upload'}
             
             # Then download (smart sync: only overwrite if remote is newer)
             download_result = self.download_backup(profile_name, local_path, overwrite=True, smart_sync=True)
             if not download_result.get('ok', False):
                 logging.error("Download phase of bidirectional sync failed")
-                return {'ok': False, 'error': 'Download phase failed', 'phase': 'download'}
+                return {'ok': False, 'error': tr('Download phase failed'), 'phase': 'download'}
             
             logging.info(f"Bidirectional sync completed for profile '{profile_name}'")
             return {
@@ -986,7 +987,7 @@ class GoogleDriveManager:
             }
         else:
             logging.error(f"Invalid sync direction: {direction}")
-            return {'ok': False, 'error': f'Invalid sync direction: {direction}'}
+            return {'ok': False, 'error': tr('Invalid sync direction: {0}', direction)}
     
     def delete_cloud_backup(self, profile_name: str) -> bool:
         """

@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Slot
 from common import minecraft_utils
 import logging
+from common.i18n import tr
 
 
 class MinecraftWorldsDialog(QDialog):
@@ -27,7 +28,7 @@ class MinecraftWorldsDialog(QDialog):
                                       If provided, worlds_data is ignored.
         """
         super().__init__(parent)
-        self.setWindowTitle("Select Minecraft World")
+        self.setWindowTitle(tr("Select Minecraft World"))
         self.setMinimumWidth(450)
         self.setMinimumHeight(350)
         self.selected_world = None  # Stores the selected world's info
@@ -44,7 +45,7 @@ class MinecraftWorldsDialog(QDialog):
             self._sources = sources
             if len(sources) > 1:
                 source_layout = QHBoxLayout()
-                source_label = QLabel("Source:")
+                source_label = QLabel(tr("Source:"))
                 source_layout.addWidget(source_label)
                 
                 self._source_combo = QComboBox()
@@ -64,7 +65,7 @@ class MinecraftWorldsDialog(QDialog):
             self._current_worlds = []
 
         # --- World list label ---
-        self._list_label = QLabel("Select the world to create a profile for:")
+        self._list_label = QLabel(tr("Select the world to create a profile for:"))
         layout.addWidget(self._list_label)
 
         # --- World list ---
@@ -109,7 +110,7 @@ class MinecraftWorldsDialog(QDialog):
         
         if not self._current_worlds:
             # Show info item when no worlds found
-            info_item = QListWidgetItem("No worlds found in this source")
+            info_item = QListWidgetItem(tr("No worlds found in this source"))
             info_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Make it non-selectable
             info_item.setForeground(Qt.GlobalColor.gray)
             self.worlds_list_widget.addItem(info_item)
@@ -156,7 +157,7 @@ class MinecraftWorldsDialog(QDialog):
                 super().accept()  # Call the original QDialog accept
             else:
                 # Should not happen if UserRole is set correctly
-                QMessageBox.warning(self, "Selection Error", "Unable to retrieve the selected world's data.")
+                QMessageBox.warning(self, tr("Selection Error"), tr("Unable to retrieve the selected world's data."))
         # else: No item selected (should not happen if the OK button was enabled)
 
     def get_selected_world_info(self):

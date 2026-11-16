@@ -43,6 +43,7 @@ from backup import backup_runner
 from backup import backup_safety
 from common import process_watch_utils
 from gui.gui_utils import WorkerThread
+from common.i18n import tr
 
 
 # --- Configuration constants ---------------------------------------------
@@ -96,11 +97,11 @@ def _do_silent_backup(profile_name, paths=None):
 
         ok = backup_runner.run_silent_backup(profile_name)
         if ok:
-            return True, f"Auto-backup completed: {profile_name}"
-        return False, f"Auto-backup failed: {profile_name}"
+            return True, tr("Auto-backup completed: {0}", profile_name)
+        return False, tr("Auto-backup failed: {0}", profile_name)
     except Exception as e:
         logging.error(f"Auto-backup worker error for '{profile_name}': {e}", exc_info=True)
-        return False, f"Auto-backup error for {profile_name}: {e}"
+        return False, tr("Auto-backup error for {0}: {1}", profile_name, e)
 
 
 class AutoBackupManager:
@@ -522,7 +523,7 @@ class AutoBackupManager:
                         self._show_auto_backup_notification(
                             profile_name,
                             False,
-                            f"Backup saved locally, but NOT uploaded to cloud:\n{reason}",
+                            tr("Backup saved locally, but NOT uploaded to cloud:\n{0}", reason),
                         )
                     except Exception:
                         pass
@@ -545,11 +546,11 @@ class AutoBackupManager:
 
         handlers = getattr(self.main_window, "handlers", None)
         if handlers is not None and hasattr(handlers, "_show_controller_shortcut_notification"):
-            title = "Automatic Backup Complete" if success else "Automatic Backup Failed"
+            title = tr("Automatic Backup Complete") if success else tr("Automatic Backup Failed")
             if success and profile_name:
-                clean = f"Backup completed for '{profile_name}'."
+                clean = tr("Backup completed for '{0}'.", profile_name)
             else:
-                clean = message or f"Automatic backup failed for '{profile_name}'."
+                clean = message or tr("Automatic backup failed for '{0}'.", profile_name)
             handlers._show_controller_shortcut_notification(
                 bool(success), title, clean,
                 duration_ms=AUTO_BACKUP_NOTIFICATION_DURATION_MS,

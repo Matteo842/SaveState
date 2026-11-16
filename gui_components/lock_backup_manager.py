@@ -14,6 +14,7 @@ import json
 import stat
 import logging
 import config
+from common.i18n import tr
 
 # --- Locked Backups File Name and Path (dynamic using settings_manager) ---
 LOCKED_BACKUPS_FILENAME = "locked_backups.json"
@@ -290,10 +291,10 @@ def lock_backup(profile_name: str, backup_path: str) -> tuple[bool, str]:
         Tuple (success: bool, message: str)
     """
     if not profile_name or not backup_path:
-        return False, "Invalid profile name or backup path."
+        return False, tr("Invalid profile name or backup path.")
     
     if not os.path.isfile(backup_path):
-        return False, f"Backup file does not exist: {backup_path}"
+        return False, tr("Backup file does not exist: {0}", backup_path)
     
     locked_data = load_locked_backups()
     locked_entries = locked_data.get("locked", {})
@@ -302,13 +303,13 @@ def lock_backup(profile_name: str, backup_path: str) -> tuple[bool, str]:
     existing_lock = locked_entries.get(profile_name)
     if existing_lock:
         if os.path.normcase(os.path.normpath(existing_lock)) == os.path.normcase(os.path.normpath(backup_path)):
-            return True, "This backup is already locked."
+            return True, tr("This backup is already locked.")
         else:
-            return False, f"Profile '{profile_name}' already has a locked backup. Unlock it first."
+            return False, tr("Profile '{0}' already has a locked backup. Unlock it first.", profile_name)
     
     # Set the read-only attribute on the file
     if not _set_file_readonly(backup_path, readonly=True):
-        return False, "Failed to set read-only attribute on the backup file."
+        return False, tr("Failed to set read-only attribute on the backup file.")
     
     # Add to locked backups
     locked_entries[profile_name] = backup_path
@@ -316,11 +317,11 @@ def lock_backup(profile_name: str, backup_path: str) -> tuple[bool, str]:
     
     if save_locked_backups(locked_data):
         logging.info(f"Locked backup for profile '{profile_name}': {backup_path}")
-        return True, f"Backup locked successfully."
+        return True, tr("Backup locked successfully.")
     else:
         # Rollback the read-only attribute if saving failed
         _set_file_readonly(backup_path, readonly=False)
-        return False, "Failed to save locked backups data."
+        return False, tr("Failed to save locked backups data.")
 
 
 def unlock_backup(profile_name: str, backup_path: str = None) -> tuple[bool, str]:
@@ -335,7 +336,7 @@ def unlock_backup(profile_name: str, backup_path: str = None) -> tuple[bool, str
         Tuple (success: bool, message: str)
     """
     if not profile_name:
-        return False, "Invalid profile name."
+        return False, tr("Invalid profile name.")
     
     locked_data = load_locked_backups()
     locked_entries = locked_data.get("locked", {})
@@ -343,11 +344,11 @@ def unlock_backup(profile_name: str, backup_path: str = None) -> tuple[bool, str
     # Get the stored locked backup path
     stored_path = locked_entries.get(profile_name)
     if not stored_path:
-        return True, "No locked backup found for this profile."
+        return True, tr("No locked backup found for this profile.")
     
     # If backup_path is provided, verify it matches the stored path
     if backup_path and os.path.normcase(os.path.normpath(backup_path)) != os.path.normcase(os.path.normpath(stored_path)):
-        return False, "Provided backup path does not match the locked backup."
+        return False, tr("Provided backup path does not match the locked backup.")
     
     # Use the stored path
     actual_path = stored_path
@@ -363,9 +364,9 @@ def unlock_backup(profile_name: str, backup_path: str = None) -> tuple[bool, str
     
     if save_locked_backups(locked_data):
         logging.info(f"Unlocked backup for profile '{profile_name}': {actual_path}")
-        return True, "Backup unlocked successfully."
+        return True, tr("Backup unlocked successfully.")
     else:
-        return False, "Failed to save locked backups data."
+        return False, tr("Failed to save locked backups data.")
 
 
 def remove_profile_locks(profile_name: str) -> bool:

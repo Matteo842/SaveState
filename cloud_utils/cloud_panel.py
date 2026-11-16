@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QSize, Signal, QTimer, QThread, Slot, QObject, QEvent
 from PySide6.QtGui import QIcon, QPixmap, QMovie, QColor, QPalette, QPainter
+from common.i18n import tr
 
 class CloudSelectionDelegate(QStyledItemDelegate):
     """Custom Delegate to draw the selection with theme support mimicking multi-profile selection."""
@@ -120,7 +121,7 @@ class AuthWorker(QObject):
                     self.drive_manager,
                     "last_auth_error",
                     "",
-                ) or "Google Drive authentication failed."
+                ) or tr("Google Drive authentication failed.")
                 self.finished.emit(False, error_message)
         except Exception as e:
             # Don't emit signal if this worker was cancelled
@@ -130,7 +131,7 @@ class AuthWorker(QObject):
             
             error_msg = str(e)
             logging.error(f"Authentication error: {error_msg}")
-            self.finished.emit(False, f"Error during authentication: {error_msg}")
+            self.finished.emit(False, tr("Error during authentication: {0}", error_msg))
 
 
 class UploadWorker(QObject):
@@ -422,7 +423,7 @@ class DeleteWorker(QObject):
                 self.cancelled.emit()
                 return
             
-            self.progress.emit(idx, total, f"Deleting {backup_name}...")
+            self.progress.emit(idx, total, tr("Deleting {0}...", backup_name))
             
             try:
                 if self.provider.delete_cloud_backup(backup_name):
@@ -460,7 +461,7 @@ class RefreshCloudStatusWorker(QObject):
             self.finished.emit(cloud_backups)
             
         except Exception as e:
-            error_msg = f"Error refreshing cloud status: {str(e)}"
+            error_msg = tr("Error refreshing cloud status: {0}", str(e))
             logging.error(error_msg, exc_info=True)
             self.error.emit(error_msg)
 
@@ -519,9 +520,9 @@ class CloudSavePathDialog(QFileDialog):
     def __init__(self, path='', parent=None):
         super().__init__(parent)
         self.setOption(QFileDialog.Option.DontUseNativeDialog)
-        self.setWindowTitle("Select Game Save File or Folder")
+        self.setWindowTitle(tr("Select Game Save File or Folder"))
         self.setFileMode(QFileDialog.FileMode.AnyFile)
-        self.setLabelText(QFileDialog.DialogLabel.FileName, "File or folder:")
+        self.setLabelText(QFileDialog.DialogLabel.FileName, tr("File or folder:"))
         if os.path.isdir(path):
             self.setDirectory(path)
         elif path:
@@ -534,7 +535,7 @@ class CloudSavePathDialog(QFileDialog):
         open_button.setAutoDefault(False)
         open_button.setDefault(False)
         open_button.hide()
-        select_button = buttons.addButton("Select", QDialogButtonBox.ButtonRole.ActionRole)
+        select_button = buttons.addButton(tr("Select"), QDialogButtonBox.ButtonRole.ActionRole)
         select_button.setObjectName("SaveButton")
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setObjectName("DangerButton")
         select_button.setDefault(True)
@@ -546,7 +547,7 @@ class CloudSavePathDialog(QFileDialog):
             QDialog.accept(self)
         else:
             QMessageBox.warning(
-                self, "Invalid Save Path", "Choose an existing save file or folder."
+                self, tr("Invalid Save Path"), tr("Choose an existing save file or folder.")
             )
 
 
@@ -571,28 +572,28 @@ class CloudProfileLinkDialog(QDialog):
         suggested_name = manifest.get('profile_name')
         if not isinstance(suggested_name, str) or not suggested_name.strip():
             suggested_name = folder_name
-        self.setWindowTitle("Set Up Downloaded Backup")
+        self.setWindowTitle(tr("Set Up Downloaded Backup"))
         self.setMinimumWidth(540)
 
         layout = QVBoxLayout(self)
-        origin = f" (created on {source_platform})" if isinstance(source_platform, str) else ""
+        origin = tr(" (created on {0})", source_platform) if isinstance(source_platform, str) else ""
         description = QLabel(
-            f"Backups for '{folder_name}'{origin} are on this device. Choose where "
-            "this device keeps the game's saves. No backup will be restored now."
+            tr("Backups for '{0}'{1} are on this device. Choose where "
+            "this device keeps the game's saves. No backup will be restored now.", folder_name, origin)
         )
         description.setTextFormat(Qt.TextFormat.PlainText)
         description.setWordWrap(True)
         layout.addWidget(description)
 
         self.profile_combo = QComboBox()
-        self.profile_combo.addItem("Create a new profile", None)
+        self.profile_combo.addItem(tr("Create a new profile"), None)
         for name, data in sorted(profiles.items(), key=lambda item: item[0].casefold()):
             if not is_group_profile(data):
-                self.profile_combo.addItem(f"Use existing profile: {name}", name)
+                self.profile_combo.addItem(tr("Use existing profile: {0}", name), name)
         self.profile_combo.currentIndexChanged.connect(self._update_mode)
         layout.addWidget(self.profile_combo)
 
-        self.name_label = QLabel("Profile name")
+        self.name_label = QLabel(tr("Profile name"))
         layout.addWidget(self.name_label)
         self.name_edit = QLineEdit(suggested_name)
         layout.addWidget(self.name_edit)
@@ -604,22 +605,22 @@ class CloudProfileLinkDialog(QDialog):
         self._path_browse_buttons = {}
         for index, source_path in enumerate(self.source_paths, 1):
             label = QLabel(
-                f"Save Path {index} on this device (original: {source_path})"
+                tr("Save Path {0} on this device (original: {1})", index, source_path)
                 if source_path and len(self.source_paths) > 1
-                else "Save Path on this device (file or folder)"
+                else tr("Save Path on this device (file or folder)")
             )
             label.setTextFormat(Qt.TextFormat.PlainText)
             label.setWordWrap(True)
             paths_layout.addWidget(label)
             row = QHBoxLayout()
             path_edit = QLineEdit()
-            path_edit.setPlaceholderText("Choose the game's local save file or folder")
+            path_edit.setPlaceholderText(tr("Choose the game's local save file or folder"))
             row.addWidget(path_edit)
             browse_button = QPushButton()
             browse_button.setObjectName("PathBrowseButton")
             browse_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
             browse_button.setIconSize(QSize(16, 16))
-            browse_button.setToolTip("Browse for a save file or folder")
+            browse_button.setToolTip(tr("Browse for a save file or folder"))
             browse_button.setAccessibleName("Browse for a save file or folder")
             browse_button.setAutoDefault(False)
             browse_button.clicked.connect(lambda _=False, edit=path_edit: self._browse_path(edit))
@@ -692,9 +693,9 @@ class CloudProfileLinkDialog(QDialog):
             configured = data.get('paths') or [data.get('path', '')]
             if len(configured) > len(self.path_edits):
                 QMessageBox.warning(
-                    self, "Cannot Link Backup",
-                    "This profile has more Save Paths than the downloaded backup. "
-                    "Choose another profile or edit this one first."
+                    self, tr("Cannot Link Backup"),
+                    tr("This profile has more Save Paths than the downloaded backup. "
+                    "Choose another profile or edit this one first.")
                 )
                 return
         paths = [edit.text() for edit in self.path_edits]
@@ -705,7 +706,7 @@ class CloudProfileLinkDialog(QDialog):
                 profile_name, save_path, create_new=existing_name is None,
             )
         except (ProfileLinkError, OSError) as exc:
-            QMessageBox.warning(self, "Cannot Link Backup", str(exc))
+            QMessageBox.warning(self, tr("Cannot Link Backup"), str(exc))
             return
         super().accept()
 
@@ -946,14 +947,14 @@ class CloudSavePanel(QWidget):
         # --- Header Section ---
         header_layout = QHBoxLayout()
         
-        title_label = QLabel("<h2>Cloud Save Manager</h2>")
+        title_label = QLabel(tr("<h2>Cloud Save Manager</h2>"))
         title_label.setObjectName("CloudPanelTitle")
         header_layout.addWidget(title_label)
         
         header_layout.addStretch(1)
         
         # Google Drive connection status
-        self.connection_status_label = QLabel("● Not Connected")
+        self.connection_status_label = QLabel(tr("● Not Connected"))
         self.connection_status_label.setObjectName("ConnectionStatus")
         self.connection_status_label.setStyleSheet("color: #FF5555;")
         header_layout.addWidget(self.connection_status_label)
@@ -962,8 +963,8 @@ class CloudSavePanel(QWidget):
         
         # --- Description ---
         description = QLabel(
-            "Sync your save backups to cloud storage or network folders. "
-            "Select backups to upload or download."
+            tr("Sync your save backups to cloud storage or network folders. "
+            "Select backups to upload or download.")
         )
         description.setWordWrap(True)
         description.setStyleSheet("color: #AAAAAA; font-size: 10pt;")
@@ -976,11 +977,11 @@ class CloudSavePanel(QWidget):
         
         # Provider dropdown
         self.provider_combo = QComboBox()
-        self.provider_combo.addItem("Google Drive", "google_drive")
-        self.provider_combo.addItem("Network Folder", "smb")
-        self.provider_combo.addItem("FTP Server", "ftp")
+        self.provider_combo.addItem(tr("Google Drive"), "google_drive")
+        self.provider_combo.addItem(tr("Network Folder"), "smb")
+        self.provider_combo.addItem(tr("FTP Server"), "ftp")
         self.provider_combo.addItem("WebDAV", "webdav")
-        self.provider_combo.addItem("Git Repository", "git")
+        self.provider_combo.addItem(tr("Git Repository"), "git")
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
         self.provider_combo.setMinimumWidth(140)
         toolbar_row.addWidget(self.provider_combo)
@@ -988,7 +989,7 @@ class CloudSavePanel(QWidget):
         # Configure button (square, icon only - like ExitButton)
         self.configure_provider_button = QPushButton()
         self.configure_provider_button.setObjectName("ConfigureButton")  # For CSS styling
-        self.configure_provider_button.setToolTip("Configure the selected storage provider")
+        self.configure_provider_button.setToolTip(tr("Configure the selected storage provider"))
         self.configure_provider_button.clicked.connect(self._on_configure_provider_clicked)
         # Load configure icon
         try:
@@ -1017,30 +1018,30 @@ class CloudSavePanel(QWidget):
         toolbar_row.addWidget(self.configure_provider_button)
         
         # Connect button
-        self.connect_button = QPushButton("Connect to Google Drive")
+        self.connect_button = QPushButton(tr("Connect to Google Drive"))
         self.connect_button.setObjectName("PrimaryButton")
         self.connect_button.clicked.connect(self._on_connect_or_logout_clicked)
         
         # Calculate fixed width for various connect texts (increased padding for better fit)
         from PySide6.QtGui import QFontMetrics
         font_metrics = self.connect_button.fontMetrics()
-        connect_texts = ["Connect to Google Drive", "Connect to Network Folder", "Logout"]
+        connect_texts = [tr("Connect to Google Drive"), tr("Connect to Network Folder"), tr("Logout")]
         max_width = max(font_metrics.horizontalAdvance(t) for t in connect_texts) + 60  # Increased padding
         self._connect_button_fixed_width = max_width
         self.connect_button.setFixedWidth(self._connect_button_fixed_width)
         toolbar_row.addWidget(self.connect_button)
         
         # Disconnect button (also fixed width to prevent layout shifts)
-        self.disconnect_button = QPushButton("Disconnect")
+        self.disconnect_button = QPushButton(tr("Disconnect"))
         self.disconnect_button.setEnabled(False)
         self.disconnect_button.clicked.connect(self._on_disconnect_clicked)
         # Calculate fixed width for various disconnect/connect texts
         disconnect_texts = [
-            "Disconnect", 
-            "Connect to FTP Server", 
-            "Connect to Network Folder",
-            "Connect to WebDAV",
-            "Connect to Git"
+            tr("Disconnect"), 
+            tr("Connect to FTP Server"), 
+            tr("Connect to Network Folder"),
+            tr("Connect to WebDAV"),
+            tr("Connect to Git")
         ]
         max_disconnect_width = max(font_metrics.horizontalAdvance(t) for t in disconnect_texts) + 50
         self.disconnect_button.setFixedWidth(max_disconnect_width)
@@ -1050,9 +1051,9 @@ class CloudSavePanel(QWidget):
         toolbar_row.addStretch(1)
         
         # Filter checkbox (right side)
-        self.show_all_backups_checkbox = QCheckBox("Show all backups")
+        self.show_all_backups_checkbox = QCheckBox(tr("Show all backups"))
         self.show_all_backups_checkbox.setToolTip(
-            "When enabled, shows all backup folders even if they don't match any profile"
+            tr("When enabled, shows all backup folders even if they don't match any profile")
         )
         self.show_all_backups_checkbox.toggled.connect(self._on_filter_changed)
         toolbar_row.addWidget(self.show_all_backups_checkbox)
@@ -1060,7 +1061,7 @@ class CloudSavePanel(QWidget):
         main_layout.addLayout(toolbar_row)
         
         # --- Backup List Table ---
-        list_group = QGroupBox("Available Backups")
+        list_group = QGroupBox(tr("Available Backups"))
         list_layout = QVBoxLayout()
         list_layout.setContentsMargins(6, 6, 6, 6)
         list_layout.setSpacing(6)
@@ -1068,7 +1069,7 @@ class CloudSavePanel(QWidget):
         self.backup_table = QTableWidget()
         self.backup_table.setColumnCount(5)
         self.backup_table.setHorizontalHeaderLabels([
-            "Select", "State", "Profile", "Local Status", "Cloud Status"
+            tr("Select"), tr("State"), tr("Profile"), tr("Local Status"), tr("Cloud Status")
         ])
         
         # Configure table
@@ -1126,13 +1127,13 @@ class CloudSavePanel(QWidget):
         self.refresh_search_stack.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         
         # Refresh button widget
-        self.refresh_button = QPushButton("Refresh List")
+        self.refresh_button = QPushButton(tr("Refresh List"))
         self.refresh_button.clicked.connect(self._on_refresh_clicked)
         # NO minimum width - let it use its natural size
         
         # Search bar widget
         self.filter_search = QLineEdit()
-        self.filter_search.setPlaceholderText("Type to filter backups...")
+        self.filter_search.setPlaceholderText(tr("Type to filter backups..."))
         self.filter_search.textChanged.connect(self._on_search_changed)
         # NO minimum width - let it use its natural size
         
@@ -1144,25 +1145,25 @@ class CloudSavePanel(QWidget):
         actions_layout.addWidget(self.refresh_search_stack)
         actions_layout.addStretch(1)
         
-        self.upload_button = QPushButton("Upload Selected")
+        self.upload_button = QPushButton(tr("Upload Selected"))
         self.upload_button.setEnabled(False)
         self.upload_button.clicked.connect(self._on_upload_clicked)
         actions_layout.addWidget(self.upload_button)
         
-        self.download_button = QPushButton("Download Selected")
+        self.download_button = QPushButton(tr("Download Selected"))
         self.download_button.setEnabled(False)
         self.download_button.clicked.connect(self._on_download_clicked)
         actions_layout.addWidget(self.download_button)
 
-        self.delete_button = QPushButton("Delete Selected from Cloud")
+        self.delete_button = QPushButton(tr("Delete Selected from Cloud"))
         self.delete_button.setObjectName("DangerButton")
         self.delete_button.setEnabled(False)
         self.delete_button.clicked.connect(self._on_delete_or_cancel_clicked)
         
         # Calculate width needed for BOTH possible texts and use the larger one
         # This prevents resizing when switching between "Delete..." and "Cancel..."
-        delete_text = "Delete Selected from Cloud"
-        cancel_text = "Cancel Operation"
+        delete_text = tr("Delete Selected from Cloud")
+        cancel_text = tr("Cancel Operation")
         
         # Get font metrics to calculate text width
         from PySide6.QtGui import QFontMetrics
@@ -1192,7 +1193,7 @@ class CloudSavePanel(QWidget):
         # Exit button (icon only, square)
         self.exit_button = QPushButton()
         self.exit_button.setObjectName("ExitButton")  # Set object name for CSS styling
-        self.exit_button.setToolTip("Exit Cloud Panel")
+        self.exit_button.setToolTip(tr("Exit Cloud Panel"))
         self.exit_button.clicked.connect(self._on_exit_clicked)
         # Try to load exit.png, fallback to standard icon
         try:
@@ -1278,7 +1279,7 @@ class CloudSavePanel(QWidget):
     
     def _update_header_labels(self):
         """Update table header labels to show sort indicators (▲/▼)."""
-        base_labels = ["Select", "State", "Profile", "Local Status", "Cloud Status"]
+        base_labels = [tr("Select"), tr("State"), tr("Profile"), tr("Local Status"), tr("Cloud Status")]
         
         for i, label in enumerate(base_labels):
             if i == self._sort_column:
@@ -1293,7 +1294,7 @@ class CloudSavePanel(QWidget):
         self._sort_column = None
         self._sort_ascending = True
         # Reset header labels to remove arrows
-        base_labels = ["Select", "State", "Profile", "Local Status", "Cloud Status"]
+        base_labels = [tr("Select"), tr("State"), tr("Profile"), tr("Local Status"), tr("Cloud Status")]
         for i, label in enumerate(base_labels):
             self.backup_table.setHorizontalHeaderItem(i, QTableWidgetItem(label))
 
@@ -1581,16 +1582,16 @@ class CloudSavePanel(QWidget):
         # Determine which icon to use
         if has_local and has_cloud:
             icon_name = "cloud_local.png"
-            tooltip = "Available locally and in cloud"
+            tooltip = tr("Available locally and in cloud")
         elif has_local:
             icon_name = "local.png"
-            tooltip = "Available locally only"
+            tooltip = tr("Available locally only")
         elif has_cloud:
             icon_name = "cloud.png"
-            tooltip = "Available in cloud only"
+            tooltip = tr("Available in cloud only")
         else:
             icon_name = None
-            tooltip = "Unknown state"
+            tooltip = tr("Unknown state")
         
         # Create icon label - use pre-cached icons
         if icon_name:
@@ -1603,7 +1604,7 @@ class CloudSavePanel(QWidget):
                 state_layout.addWidget(icon_label)
             else:
                 # Fallback to text if icon not found in cache
-                text_label = QLabel("Both" if has_local and has_cloud else ("Local" if has_local else "Cloud"))
+                text_label = QLabel(tr("Both") if has_local and has_cloud else (tr("Local") if has_local else tr("Cloud")))
                 text_label.setToolTip(tooltip)
                 state_layout.addWidget(text_label)
         else:
@@ -1627,11 +1628,11 @@ class CloudSavePanel(QWidget):
         elif is_favorite:
             display_name = "★ " + profile_name
         if needs_setup:
-            display_name += " (Needs setup)"
+            display_name += tr(" (Needs setup)")
         
         profile_item = QTableWidgetItem(display_name)
         if needs_setup:
-            profile_item.setToolTip("Double-click to choose a local Save Path")
+            profile_item.setToolTip(tr("Double-click to choose a local Save Path"))
         # Store the actual folder name as UserRole data for use in operations
         profile_item.setData(Qt.ItemDataRole.UserRole, folder_name)
         # Store group flag and member names for checkbox sync
@@ -1659,10 +1660,10 @@ class CloudSavePanel(QWidget):
         # Column 3: Local Status
         local_count = backup_info.get('local_file_count', 0)
         if has_local:
-            local_status = f"{local_count} files"
+            local_status = tr("{0} files", local_count)
             local_color = QColor("#4CAF50")
         else:
-            local_status = "Not local"
+            local_status = tr("Not local")
             local_color = QColor("#AAAAAA")
         
         local_item = QTableWidgetItem(local_status)
@@ -1673,10 +1674,10 @@ class CloudSavePanel(QWidget):
         # Column 4: Cloud Status
         cloud_count = backup_info.get('cloud_file_count', 0)
         if has_cloud:
-            cloud_status = f"{cloud_count} files"
+            cloud_status = tr("{0} files", cloud_count)
             cloud_color = QColor("#4CAF50")
         else:
-            cloud_status = "Not synced"
+            cloud_status = tr("Not synced")
             cloud_color = QColor("#AAAAAA")
         
         cloud_item = QTableWidgetItem(cloud_status)
@@ -1730,7 +1731,7 @@ class CloudSavePanel(QWidget):
     
     def _set_delete_button_to_cancel_mode(self):
         """Transform delete button into cancel button during operations."""
-        self.delete_button.setText("Cancel Operation")
+        self.delete_button.setText(tr("Cancel Operation"))
         if self._cancel_icon:
             self.delete_button.setIcon(self._cancel_icon)
         self.delete_button.setEnabled(True)
@@ -1743,7 +1744,7 @@ class CloudSavePanel(QWidget):
     
     def _set_delete_button_to_delete_mode(self):
         """Restore delete button to normal state after operations."""
-        self.delete_button.setText("Delete Selected from Cloud")
+        self.delete_button.setText(tr("Delete Selected from Cloud"))
         if self._delete_icon:
             self.delete_button.setIcon(self._delete_icon)
         # Restore object name
@@ -1802,7 +1803,7 @@ class CloudSavePanel(QWidget):
             if hasattr(self._current_worker, 'cancel'):
                 self._current_worker.cancel()
                 # Update progress bar to show cancellation
-                self.progress_bar.setFormat("Cancelling operation...")
+                self.progress_bar.setFormat(tr("Cancelling operation..."))
         except Exception as e:
             logging.error(f"Error requesting cancellation: {e}")
     
@@ -2007,7 +2008,7 @@ class CloudSavePanel(QWidget):
             nonlocal remaining_seconds
             remaining_seconds -= 1
             if remaining_seconds > 0:
-                self.refresh_button.setText(f"Wait {remaining_seconds}s...")
+                self.refresh_button.setText(tr("Wait {0}s...", remaining_seconds))
             else:
                 # Cooldown finished
                 self.refresh_button.setText(original_text)
@@ -2015,7 +2016,7 @@ class CloudSavePanel(QWidget):
                 self._refresh_cooldown_active = False
         
         # Update button text immediately
-        self.refresh_button.setText(f"Wait {remaining_seconds}s...")
+        self.refresh_button.setText(tr("Wait {0}s...", remaining_seconds))
         
         # Setup timer to update countdown every second
         QTimer.singleShot(1000, update_countdown)
@@ -2056,9 +2057,9 @@ class CloudSavePanel(QWidget):
             # Google Drive uses the connect button for Login/Logout
             self.connect_button.setVisible(True)
             if self.drive_manager and self.drive_manager.is_connected:
-                self.connect_button.setText("Logout")
+                self.connect_button.setText(tr("Logout"))
             else:
-                self.connect_button.setText("Connect to Google Drive")
+                self.connect_button.setText(tr("Connect to Google Drive"))
         else:
             # For FTP/SMB/WebDAV/Git, hide the connect button (they only use disconnect button)
             self.connect_button.setVisible(False)
@@ -2067,15 +2068,15 @@ class CloudSavePanel(QWidget):
         """Update the connection status label and disconnect button for the selected provider."""
         if provider_type == "google_drive":
             if self.drive_manager and self.drive_manager.is_connected:
-                self.connection_status_label.setText("● Connected")
+                self.connection_status_label.setText(tr("● Connected"))
                 self.connection_status_label.setStyleSheet("color: #55FF55;")
                 self.disconnect_button.setEnabled(True)
-                self.disconnect_button.setText("Disconnect")
+                self.disconnect_button.setText(tr("Disconnect"))
             else:
-                self.connection_status_label.setText("● Not Connected")
+                self.connection_status_label.setText(tr("● Not Connected"))
                 self.connection_status_label.setStyleSheet("color: #FF5555;")
                 self.disconnect_button.setEnabled(False)
-                self.disconnect_button.setText("Disconnect")
+                self.disconnect_button.setText(tr("Disconnect"))
         elif provider_type == "smb":
             try:
                 from cloud_utils.smb_provider import SMBProvider
@@ -2083,17 +2084,17 @@ class CloudSavePanel(QWidget):
                 
                 smb_provider = ProviderFactory.get_provider(ProviderType.SMB)
                 if smb_provider and smb_provider.is_connected:
-                    self.connection_status_label.setText("● Connected")
+                    self.connection_status_label.setText(tr("● Connected"))
                     self.connection_status_label.setStyleSheet("color: #55FF55;")
                     self.disconnect_button.setEnabled(True)
-                    self.disconnect_button.setText("Disconnect")
+                    self.disconnect_button.setText(tr("Disconnect"))
                 else:
-                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setText(tr("● Not Connected"))
                     self.connection_status_label.setStyleSheet("color: #FF5555;")
                     self.disconnect_button.setEnabled(True)
-                    self.disconnect_button.setText("Connect to Network Folder")
+                    self.disconnect_button.setText(tr("Connect to Network Folder"))
             except ImportError:
-                self.connection_status_label.setText("● Not Available")
+                self.connection_status_label.setText(tr("● Not Available"))
                 self.connection_status_label.setStyleSheet("color: #AAAAAA;")
                 self.disconnect_button.setEnabled(False)
         elif provider_type == "ftp":
@@ -2103,20 +2104,20 @@ class CloudSavePanel(QWidget):
                 
                 ftp_provider = ProviderFactory.get_provider(ProviderType.FTP)
                 if ftp_provider and ftp_provider.is_connected:
-                    self.connection_status_label.setText("● Connected")
+                    self.connection_status_label.setText(tr("● Connected"))
                     self.connection_status_label.setStyleSheet("color: #55FF55;")
                     self.disconnect_button.setEnabled(True)
-                    self.disconnect_button.setText("Disconnect")
+                    self.disconnect_button.setText(tr("Disconnect"))
                 else:
-                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setText(tr("● Not Connected"))
                     self.connection_status_label.setStyleSheet("color: #FF5555;")
                     self.disconnect_button.setEnabled(True)
-                    self.disconnect_button.setText("Connect to FTP Server")
+                    self.disconnect_button.setText(tr("Connect to FTP Server"))
             except ImportError:
-                self.connection_status_label.setText("● Not Available")
+                self.connection_status_label.setText(tr("● Not Available"))
                 self.connection_status_label.setStyleSheet("color: #AAAAAA;")
                 self.disconnect_button.setEnabled(False)
-                self.disconnect_button.setText("Disconnect")
+                self.disconnect_button.setText(tr("Disconnect"))
         elif provider_type == "webdav":
             try:
                 from cloud_utils.webdav_provider import WebDAVProvider
@@ -2124,20 +2125,20 @@ class CloudSavePanel(QWidget):
                 
                 webdav_provider = ProviderFactory.get_provider(ProviderType.WEBDAV)
                 if webdav_provider and webdav_provider.is_connected:
-                    self.connection_status_label.setText("● Connected")
+                    self.connection_status_label.setText(tr("● Connected"))
                     self.connection_status_label.setStyleSheet("color: #55FF55;")
                     self.disconnect_button.setEnabled(True)
-                    self.disconnect_button.setText("Disconnect")
+                    self.disconnect_button.setText(tr("Disconnect"))
                 else:
-                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setText(tr("● Not Connected"))
                     self.connection_status_label.setStyleSheet("color: #FF5555;")
                     self.disconnect_button.setEnabled(True)
-                    self.disconnect_button.setText("Connect to WebDAV")
+                    self.disconnect_button.setText(tr("Connect to WebDAV"))
             except ImportError:
-                self.connection_status_label.setText("● Not Available")
+                self.connection_status_label.setText(tr("● Not Available"))
                 self.connection_status_label.setStyleSheet("color: #AAAAAA;")
                 self.disconnect_button.setEnabled(False)
-                self.disconnect_button.setText("Disconnect")
+                self.disconnect_button.setText(tr("Disconnect"))
         elif provider_type == "git":
             try:
                 from cloud_utils.git_provider import GitProvider
@@ -2145,25 +2146,25 @@ class CloudSavePanel(QWidget):
                 
                 git_provider = ProviderFactory.get_provider(ProviderType.GIT)
                 if git_provider and git_provider.is_connected:
-                    self.connection_status_label.setText("● Connected")
+                    self.connection_status_label.setText(tr("● Connected"))
                     self.connection_status_label.setStyleSheet("color: #55FF55;")
                     self.disconnect_button.setEnabled(True)
-                    self.disconnect_button.setText("Disconnect")
+                    self.disconnect_button.setText(tr("Disconnect"))
                 else:
-                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setText(tr("● Not Connected"))
                     self.connection_status_label.setStyleSheet("color: #FF5555;")
                     self.disconnect_button.setEnabled(True)
-                    self.disconnect_button.setText("Connect to Git")
+                    self.disconnect_button.setText(tr("Connect to Git"))
             except ImportError:
-                self.connection_status_label.setText("● Not Available")
+                self.connection_status_label.setText(tr("● Not Available"))
                 self.connection_status_label.setStyleSheet("color: #AAAAAA;")
                 self.disconnect_button.setEnabled(False)
-                self.disconnect_button.setText("Disconnect")
+                self.disconnect_button.setText(tr("Disconnect"))
         else:
-            self.connection_status_label.setText("● Not Connected")
+            self.connection_status_label.setText(tr("● Not Connected"))
             self.connection_status_label.setStyleSheet("color: #FF5555;")
             self.disconnect_button.setEnabled(False)
-            self.disconnect_button.setText("Disconnect")
+            self.disconnect_button.setText(tr("Disconnect"))
         self._refresh_online_sync_ui_state()
     
     def _update_configure_button_state(self, provider_type):
@@ -2175,11 +2176,11 @@ class CloudSavePanel(QWidget):
         if provider_type == "google_drive":
             # Google Drive uses OAuth, disable configure button
             self.configure_provider_button.setEnabled(False)
-            self.configure_provider_button.setToolTip("Google Drive uses OAuth authentication")
+            self.configure_provider_button.setToolTip(tr("Google Drive uses OAuth authentication"))
         else:
             # Other providers need configuration
             self.configure_provider_button.setEnabled(True)
-            self.configure_provider_button.setToolTip("Configure the selected storage provider")
+            self.configure_provider_button.setToolTip(tr("Configure the selected storage provider"))
     
     def _on_configure_provider_clicked(self):
         """Open configuration dialog for the selected provider."""
@@ -2192,9 +2193,9 @@ class CloudSavePanel(QWidget):
             # Just show a message
             QMessageBox.information(
                 self,
-                "Google Drive Configuration",
-                "Google Drive is configured through the OAuth flow.\n\n"
-                "Click 'Connect to Google Drive' to authenticate."
+                tr("Google Drive Configuration"),
+                tr("Google Drive is configured through the OAuth flow.\n\n"
+                "Click 'Connect to Google Drive' to authenticate.")
             )
         elif provider_type == "smb":
             self._show_smb_config_dialog()
@@ -2226,8 +2227,8 @@ class CloudSavePanel(QWidget):
             logging.error(f"Error showing SMB config dialog: {e}")
             QMessageBox.critical(
                 self,
-                "Error",
-                f"Could not open configuration dialog:\n{str(e)}"
+                tr("Error"),
+                tr("Could not open configuration dialog:\n{0}", str(e))
             )
     
     def _on_smb_config_saved(self, config):
@@ -2276,8 +2277,8 @@ class CloudSavePanel(QWidget):
             if not smb_provider:
                 QMessageBox.critical(
                     self,
-                    "Error",
-                    "SMB provider is not available."
+                    tr("Error"),
+                    tr("SMB provider is not available.")
                 )
                 return
 
@@ -2290,8 +2291,8 @@ class CloudSavePanel(QWidget):
             if use_credentials and not password:
                 password, ok = QInputDialog.getText(
                     self,
-                    "SMB Password",
-                    f"Enter password for {username or smb_path}:",
+                    tr("SMB Password"),
+                    tr("Enter password for {0}:", username or smb_path),
                     QLineEdit.Password,
                 )
                 if not ok:
@@ -2308,9 +2309,9 @@ class CloudSavePanel(QWidget):
             )
             
             if success:
-                self.connection_status_label.setText("● Connected")
+                self.connection_status_label.setText(tr("● Connected"))
                 self.connection_status_label.setStyleSheet("color: #55FF55;")
-                self.disconnect_button.setText("Disconnect")
+                self.disconnect_button.setText(tr("Disconnect"))
                 self.disconnect_button.setEnabled(True)
                 
                 # Refresh the backup list to show cloud backups
@@ -2321,17 +2322,17 @@ class CloudSavePanel(QWidget):
             else:
                 QMessageBox.warning(
                     self,
-                    "Connection Failed",
-                    f"Could not connect to:\n{smb_path}\n\n"
-                    "Please check that the path is accessible."
+                    tr("Connection Failed"),
+                    tr("Could not connect to:\n{0}\n\n"
+                    "Please check that the path is accessible.", smb_path)
                 )
                 
         except Exception as e:
             logging.error(f"Error connecting to SMB: {e}")
             QMessageBox.critical(
                 self,
-                "Connection Error",
-                f"Error connecting to network folder:\n{str(e)}"
+                tr("Connection Error"),
+                tr("Error connecting to network folder:\n{0}", str(e))
             )
     
     def _show_ftp_config_dialog(self):
@@ -2358,8 +2359,8 @@ class CloudSavePanel(QWidget):
             logging.error(f"Error showing FTP config dialog: {e}")
             QMessageBox.critical(
                 self,
-                "Error",
-                f"Could not open configuration dialog:\n{str(e)}"
+                tr("Error"),
+                tr("Could not open configuration dialog:\n{0}", str(e))
             )
     
     def _on_ftp_config_saved(self, config):
@@ -2392,8 +2393,8 @@ class CloudSavePanel(QWidget):
             if not ftp_provider:
                 QMessageBox.critical(
                     self,
-                    "Error",
-                    "FTP provider is not available."
+                    tr("Error"),
+                    tr("FTP provider is not available.")
                 )
                 return
             
@@ -2409,9 +2410,9 @@ class CloudSavePanel(QWidget):
             )
             
             if success:
-                self.connection_status_label.setText("● Connected")
+                self.connection_status_label.setText(tr("● Connected"))
                 self.connection_status_label.setStyleSheet("color: #55FF55;")
-                self.disconnect_button.setText("Disconnect")
+                self.disconnect_button.setText(tr("Disconnect"))
                 self.disconnect_button.setEnabled(True)
                 
                 # Refresh the backup list to show cloud backups
@@ -2422,17 +2423,17 @@ class CloudSavePanel(QWidget):
             else:
                 QMessageBox.warning(
                     self,
-                    "Connection Failed",
-                    f"Could not connect to:\n{ftp_host}\n\n"
-                    "Please check your settings and try again."
+                    tr("Connection Failed"),
+                    tr("Could not connect to:\n{0}\n\n"
+                    "Please check your settings and try again.", ftp_host)
                 )
                 
         except Exception as e:
             logging.error(f"Error connecting to FTP: {e}")
             QMessageBox.critical(
                 self,
-                "Connection Error",
-                f"Error connecting to FTP server:\n{str(e)}"
+                tr("Connection Error"),
+                tr("Error connecting to FTP server:\n{0}", str(e))
             )
     
     def _show_webdav_config_dialog(self):
@@ -2459,8 +2460,8 @@ class CloudSavePanel(QWidget):
             logging.error(f"Error showing WebDAV config dialog: {e}")
             QMessageBox.critical(
                 self,
-                "Error",
-                f"Could not open configuration dialog:\n{str(e)}"
+                tr("Error"),
+                tr("Could not open configuration dialog:\n{0}", str(e))
             )
     
     def _on_webdav_config_saved(self, config):
@@ -2502,8 +2503,8 @@ class CloudSavePanel(QWidget):
             if not webdav_provider:
                 QMessageBox.critical(
                     self,
-                    "Error",
-                    "WebDAV provider is not available."
+                    tr("Error"),
+                    tr("WebDAV provider is not available.")
                 )
                 return False
             
@@ -2517,9 +2518,9 @@ class CloudSavePanel(QWidget):
             )
             
             if success:
-                self.connection_status_label.setText("● Connected")
+                self.connection_status_label.setText(tr("● Connected"))
                 self.connection_status_label.setStyleSheet("color: #55FF55;")
-                self.disconnect_button.setText("Disconnect")
+                self.disconnect_button.setText(tr("Disconnect"))
                 self.disconnect_button.setEnabled(True)
                 
                 # Refresh the backup list to show cloud backups
@@ -2531,9 +2532,9 @@ class CloudSavePanel(QWidget):
             else:
                 QMessageBox.warning(
                     self,
-                    "Connection Failed",
-                    f"Could not connect to:\n{webdav_url}\n\n"
-                    "Please check your settings and try again."
+                    tr("Connection Failed"),
+                    tr("Could not connect to:\n{0}\n\n"
+                    "Please check your settings and try again.", webdav_url)
                 )
                 return False
                 
@@ -2541,8 +2542,8 @@ class CloudSavePanel(QWidget):
             logging.error(f"Error connecting to WebDAV: {e}")
             QMessageBox.critical(
                 self,
-                "Connection Error",
-                f"Error connecting to WebDAV server:\n{str(e)}"
+                tr("Connection Error"),
+                tr("Error connecting to WebDAV server:\n{0}", str(e))
             )
             return False
     
@@ -2568,8 +2569,8 @@ class CloudSavePanel(QWidget):
             logging.error(f"Error showing Git config dialog: {e}")
             QMessageBox.critical(
                 self,
-                "Error",
-                f"Could not open configuration dialog:\n{str(e)}"
+                tr("Error"),
+                tr("Could not open configuration dialog:\n{0}", str(e))
             )
     
     def _on_git_config_saved(self, config):
@@ -2596,8 +2597,8 @@ class CloudSavePanel(QWidget):
             if not git_provider:
                 QMessageBox.critical(
                     self,
-                    "Error",
-                    "Git provider is not available. Ensure Git is installed."
+                    tr("Error"),
+                    tr("Git provider is not available. Ensure Git is installed.")
                 )
                 return
             
@@ -2610,9 +2611,9 @@ class CloudSavePanel(QWidget):
             )
             
             if success:
-                self.connection_status_label.setText("● Connected")
+                self.connection_status_label.setText(tr("● Connected"))
                 self.connection_status_label.setStyleSheet("color: #55FF55;")
-                self.disconnect_button.setText("Disconnect")
+                self.disconnect_button.setText(tr("Disconnect"))
                 self.disconnect_button.setEnabled(True)
                 self.refresh_local_backups()
                 self._refresh_cloud_status(force=True)
@@ -2620,17 +2621,17 @@ class CloudSavePanel(QWidget):
             else:
                 QMessageBox.warning(
                     self,
-                    "Connection Failed",
-                    f"Could not connect to repository:\n{repo_path}\n\n"
-                    "Ensure Git is installed and the path is valid."
+                    tr("Connection Failed"),
+                    tr("Could not connect to repository:\n{0}\n\n"
+                    "Ensure Git is installed and the path is valid.", repo_path)
                 )
                 
         except Exception as e:
             logging.error(f"Error connecting to Git: {e}")
             QMessageBox.critical(
                 self,
-                "Connection Error",
-                f"Error connecting to Git repository:\n{str(e)}"
+                tr("Connection Error"),
+                tr("Error connecting to Git repository:\n{0}", str(e))
             )
     
     def _on_connect_or_logout_clicked(self):
@@ -2651,9 +2652,9 @@ class CloudSavePanel(QWidget):
             if smb_provider and smb_provider.is_connected:
                 # Disconnect
                 smb_provider.disconnect()
-                self.connection_status_label.setText("● Not Connected")
+                self.connection_status_label.setText(tr("● Not Connected"))
                 self.connection_status_label.setStyleSheet("color: #FF5555;")
-                self.connect_button.setText("Connect to Network Folder")
+                self.connect_button.setText(tr("Connect to Network Folder"))
                 self.disconnect_button.setEnabled(False)
                 
                 # Disable action buttons
@@ -2684,9 +2685,9 @@ class CloudSavePanel(QWidget):
             if ftp_provider and ftp_provider.is_connected:
                 # Disconnect
                 ftp_provider.disconnect()
-                self.connection_status_label.setText("● Not Connected")
+                self.connection_status_label.setText(tr("● Not Connected"))
                 self.connection_status_label.setStyleSheet("color: #FF5555;")
-                self.connect_button.setText("Connect to FTP Server")
+                self.connect_button.setText(tr("Connect to FTP Server"))
                 self.disconnect_button.setEnabled(False)
                 
                 # Disable action buttons
@@ -2717,9 +2718,9 @@ class CloudSavePanel(QWidget):
             if webdav_provider and webdav_provider.is_connected:
                 # Disconnect
                 webdav_provider.disconnect()
-                self.connection_status_label.setText("● Not Connected")
+                self.connection_status_label.setText(tr("● Not Connected"))
                 self.connection_status_label.setStyleSheet("color: #FF5555;")
-                self.connect_button.setText("Connect to WebDAV")
+                self.connect_button.setText(tr("Connect to WebDAV"))
                 self.disconnect_button.setEnabled(False)
                 
                 # Disable action buttons
@@ -2750,9 +2751,9 @@ class CloudSavePanel(QWidget):
             if git_provider and git_provider.is_connected:
                 # Disconnect
                 git_provider.disconnect()
-                self.connection_status_label.setText("● Not Connected")
+                self.connection_status_label.setText(tr("● Not Connected"))
                 self.connection_status_label.setStyleSheet("color: #FF5555;")
-                self.disconnect_button.setText("Connect to Git")
+                self.disconnect_button.setText(tr("Connect to Git"))
                 self.disconnect_button.setEnabled(True)
                 
                 # Disable action buttons
@@ -2778,8 +2779,8 @@ class CloudSavePanel(QWidget):
         else:
             QMessageBox.information(
                 self,
-                "Not Implemented",
-                f"Connection for {provider_type} is not yet implemented."
+                tr("Not Implemented"),
+                tr("Connection for {0} is not yet implemented.", provider_type)
             )
     
     def _on_connect_clicked(self):
@@ -2800,7 +2801,7 @@ class CloudSavePanel(QWidget):
         # Show progress
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)  # Indeterminate progress
-        self.progress_bar.setFormat("Authenticating...")
+        self.progress_bar.setFormat(tr("Authenticating..."))
         self.connect_button.setEnabled(False)
         
         # Create worker with unique ID
@@ -2882,12 +2883,12 @@ class CloudSavePanel(QWidget):
             self._set_connected(False)
             QMessageBox.warning(
                 self,
-                "Connection Failed",
-                f"Could not connect to Google Drive.\n\n"
-                f"{error_message}\n\n"
+                tr("Connection Failed"),
+                tr("Could not connect to Google Drive.\n\n"
+                "{0}\n\n"
                 "Check your internet connection and complete authorization in the browser. "
                 "If the browser cannot load the localhost page, copy its full address and "
-                "paste it into the authorization window."
+                "paste it into the authorization window.", error_message)
             )
         
         # Close the auth URL dialog if it's open
@@ -2911,7 +2912,7 @@ class CloudSavePanel(QWidget):
 
         # Create dialog
         dialog = QDialog(self)
-        dialog.setWindowTitle("Google Drive Authorization")
+        dialog.setWindowTitle(tr("Google Drive Authorization"))
         dialog.setMinimumWidth(550)
         dialog.setModal(False)  # Non-modal so user can interact with browser
 
@@ -2919,11 +2920,11 @@ class CloudSavePanel(QWidget):
 
         # Instruction label
         instruction_label = QLabel(
-            "A browser window should open for authorization.\n\n"
+            tr("A browser window should open for authorization.\n\n"
             "If the browser didn't open automatically, copy the URL below\n"
             "and paste it into your browser to authorize SaveState.\n\n"
             "SteamOS/AppImage fallback: if authorization finishes on a page that cannot\n"
-            "load, copy the complete URL from that page's address bar and paste it below."
+            "load, copy the complete URL from that page's address bar and paste it below.")
         )
         instruction_label.setWordWrap(True)
         layout.addWidget(instruction_label)
@@ -2941,7 +2942,7 @@ class CloudSavePanel(QWidget):
 
         callback_field = QLineEdit()
         callback_field.setPlaceholderText(
-            "Paste failed http://127.0.0.1:PORT/?code=...&state=... URL here"
+            tr("Paste failed http://127.0.0.1:PORT/?code=...&state=... URL here")
         )
         callback_field.setClearButtonEnabled(True)
         layout.addWidget(callback_field)
@@ -2954,24 +2955,24 @@ class CloudSavePanel(QWidget):
         button_layout = QHBoxLayout()
 
         # Copy button
-        copy_button = QPushButton("Copy URL")
+        copy_button = QPushButton(tr("Copy URL"))
         def copy_url():
             clipboard = QApplication.clipboard()
             clipboard.setText(self._auth_url)
-            copy_button.setText("Copied!")
+            copy_button.setText(tr("Copied!"))
             logging.info("Auth URL copied to clipboard")
             # Reset button text after 2 seconds
-            QTimer.singleShot(2000, lambda: copy_button.setText("Copy URL") if copy_button else None)
+            QTimer.singleShot(2000, lambda: copy_button.setText(tr("Copy URL")) if copy_button else None)
         copy_button.clicked.connect(copy_url)
         button_layout.addWidget(copy_button)
 
-        submit_button = QPushButton("Submit Redirect URL")
+        submit_button = QPushButton(tr("Submit Redirect URL"))
 
         def submit_callback_url():
             callback_url = callback_field.text().strip()
             success, message = self.drive_manager.submit_auth_callback_url(callback_url)
             if success:
-                callback_status.setText("Authorization response submitted. Finishing connection…")
+                callback_status.setText(tr("Authorization response submitted. Finishing connection…"))
                 callback_status.setStyleSheet("color: #5cb85c; font-size: 11px;")
                 callback_field.setEnabled(False)
                 submit_button.setEnabled(False)
@@ -2986,7 +2987,7 @@ class CloudSavePanel(QWidget):
         button_layout.addStretch()
         
         # Cancel button
-        cancel_button = QPushButton("Cancel")
+        cancel_button = QPushButton(tr("Cancel"))
         cancel_button.clicked.connect(self._cancel_auth_from_dialog)
         button_layout.addWidget(cancel_button)
 
@@ -2994,8 +2995,8 @@ class CloudSavePanel(QWidget):
         
         # Info label
         info_label = QLabel(
-            "This dialog closes automatically when authorization completes. "
-            "Redirect URLs contain a temporary code; do not share them."
+            tr("This dialog closes automatically when authorization completes. "
+            "Redirect URLs contain a temporary code; do not share them.")
         )
         info_label.setStyleSheet("color: gray; font-size: 11px;")
         layout.addWidget(info_label)
@@ -3085,9 +3086,9 @@ class CloudSavePanel(QWidget):
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.information(
                 self,
-                "Authentication Cancelled",
-                "Authentication timed out or was cancelled.\n\n"
-                "Try connecting again and complete the browser authorization within three minutes."
+                tr("Authentication Cancelled"),
+                tr("Authentication timed out or was cancelled.\n\n"
+                "Try connecting again and complete the browser authorization within three minutes.")
             )
         except Exception as e:
             logging.error(f"Error restoring UI after timeout: {e}")
@@ -3117,7 +3118,7 @@ class CloudSavePanel(QWidget):
             provider_thinks_connected = active_provider and active_provider.is_connected
             
             # Check if UI thinks we're connected (button shows "Disconnect")
-            ui_shows_connected = self.disconnect_button.text() == "Disconnect"
+            ui_shows_connected = self.disconnect_button.text() == tr("Disconnect")
             
             # If UI shows connected but provider is not, sync the UI
             if ui_shows_connected and not provider_thinks_connected:
@@ -3126,25 +3127,25 @@ class CloudSavePanel(QWidget):
                 
                 # Force update the button text and status
                 if provider_type == "smb":
-                    self.disconnect_button.setText("Connect to Network Folder")
+                    self.disconnect_button.setText(tr("Connect to Network Folder"))
                 elif provider_type == "ftp":
-                    self.disconnect_button.setText("Connect to FTP Server")
+                    self.disconnect_button.setText(tr("Connect to FTP Server"))
                 elif provider_type == "webdav":
-                    self.disconnect_button.setText("Connect to WebDAV")
+                    self.disconnect_button.setText(tr("Connect to WebDAV"))
                 elif provider_type == "git":
-                    self.disconnect_button.setText("Connect to Git")
+                    self.disconnect_button.setText(tr("Connect to Git"))
                 
                 self.disconnect_button.setEnabled(True)
-                self.connection_status_label.setText("● Not Connected")
+                self.connection_status_label.setText(tr("● Not Connected"))
                 self.connection_status_label.setStyleSheet("color: #FF5555;")
                 self._repopulate_table()
                 
                 # Show message that connection was lost
                 QMessageBox.warning(
                     self,
-                    "Connection Lost",
-                    f"The connection to {provider_type} was lost or is no longer accessible.\n\n"
-                    f"You can try connecting again."
+                    tr("Connection Lost"),
+                    tr("The connection to {0} was lost or is no longer accessible.\n\n"
+                    "You can try connecting again.", provider_type)
                 )
                 return
             
@@ -3165,24 +3166,24 @@ class CloudSavePanel(QWidget):
                 
                 # Force update the button text and status
                 if provider_type == "smb":
-                    self.disconnect_button.setText("Connect to Network Folder")
+                    self.disconnect_button.setText(tr("Connect to Network Folder"))
                     self.disconnect_button.setEnabled(True)
-                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setText(tr("● Not Connected"))
                     self.connection_status_label.setStyleSheet("color: #FF5555;")
                 elif provider_type == "ftp":
-                    self.disconnect_button.setText("Connect to FTP Server")
+                    self.disconnect_button.setText(tr("Connect to FTP Server"))
                     self.disconnect_button.setEnabled(True)
-                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setText(tr("● Not Connected"))
                     self.connection_status_label.setStyleSheet("color: #FF5555;")
                 elif provider_type == "webdav":
-                    self.disconnect_button.setText("Connect to WebDAV")
+                    self.disconnect_button.setText(tr("Connect to WebDAV"))
                     self.disconnect_button.setEnabled(True)
-                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setText(tr("● Not Connected"))
                     self.connection_status_label.setStyleSheet("color: #FF5555;")
                 elif provider_type == "git":
-                    self.disconnect_button.setText("Connect to Git")
+                    self.disconnect_button.setText(tr("Connect to Git"))
                     self.disconnect_button.setEnabled(True)
-                    self.connection_status_label.setText("● Not Connected")
+                    self.connection_status_label.setText(tr("● Not Connected"))
                     self.connection_status_label.setStyleSheet("color: #FF5555;")
                 
                 self._repopulate_table()
@@ -3202,11 +3203,11 @@ class CloudSavePanel(QWidget):
         # Show confirmation dialog (important since button is near disconnect)
         reply = QMessageBox.question(
             self,
-            "Confirm Logout",
-            "Are you sure you want to logout from Google Drive?\n\n"
+            tr("Confirm Logout"),
+            tr("Are you sure you want to logout from Google Drive?\n\n"
             "This will delete your saved credentials and you will need to\n"
             "re-authenticate next time you connect.\n\n"
-            "This action cannot be undone!",
+            "This action cannot be undone!"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -3235,23 +3236,23 @@ class CloudSavePanel(QWidget):
         if logout_error is not None:
             QMessageBox.critical(
                 self,
-                "Logout Error",
-                f"An error occurred during logout:\n{logout_error}"
+                tr("Logout Error"),
+                tr("An error occurred during logout:\n{0}", logout_error)
             )
         else:
             if credentials_removed:
                 QMessageBox.information(
                     self,
-                    "Logout Successful",
-                    "You have been logged out successfully.\n\n"
-                    "Your saved credentials have been deleted."
+                    tr("Logout Successful"),
+                    tr("You have been logged out successfully.\n\n"
+                    "Your saved credentials have been deleted.")
                 )
             else:
                 logging.warning("No saved Google Drive credentials found during logout")
                 QMessageBox.information(
                     self,
-                    "Logout Complete",
-                    "Logged out (no saved credentials found)."
+                    tr("Logout Complete"),
+                    tr("Logged out (no saved credentials found).")
                 )
 
         # Update settings panel if open
@@ -3265,11 +3266,11 @@ class CloudSavePanel(QWidget):
         """Update UI based on connection status."""
         if connected:
             # Transform connect button to logout button
-            self.connect_button.setText("Logout")
-            self.connect_button.setToolTip("Delete saved credentials and logout from Google Drive")
+            self.connect_button.setText(tr("Logout"))
+            self.connect_button.setToolTip(tr("Delete saved credentials and logout from Google Drive"))
             self.connect_button.setEnabled(True)
             
-            self.connection_status_label.setText("● Connected")
+            self.connection_status_label.setText(tr("● Connected"))
             self.connection_status_label.setStyleSheet("color: #4CAF50;")
             self.disconnect_button.setEnabled(True)
             
@@ -3277,11 +3278,11 @@ class CloudSavePanel(QWidget):
             self._update_action_buttons_state()
         else:
             # Restore connect button
-            self.connect_button.setText("Connect to Google Drive")
+            self.connect_button.setText(tr("Connect to Google Drive"))
             self.connect_button.setToolTip("")
             self.connect_button.setEnabled(True)
             
-            self.connection_status_label.setText("● Not Connected")
+            self.connection_status_label.setText(tr("● Not Connected"))
             self.connection_status_label.setStyleSheet("color: #FF5555;")
             self.disconnect_button.setEnabled(False)
             
@@ -3331,7 +3332,7 @@ class CloudSavePanel(QWidget):
     def _save_linked_profiles(self, updated_profiles, folder_name=None):
         from core import core_logic
         if not core_logic.save_profiles(updated_profiles):
-            QMessageBox.critical(self, "Cannot Save Profile", "The profile could not be saved. Nothing was linked.")
+            QMessageBox.critical(self, tr("Cannot Save Profile"), tr("The profile could not be saved. Nothing was linked."))
             return False
         self.profiles = updated_profiles
         if folder_name is not None:
@@ -3351,17 +3352,17 @@ class CloudSavePanel(QWidget):
     def _setup_downloaded_folder(self, folder_name, manifest=None, announce=False):
         if isinstance(manifest, dict) and manifest.get('emulator') in ('xemu', 'Ymir'):
             QMessageBox.warning(
-                self, "Special Backup",
-                "This backup uses an emulator-specific restore format. Set up its emulator "
-                "profile on this device before linking the downloaded backups."
+                self, tr("Special Backup"),
+                tr("This backup uses an emulator-specific restore format. Set up its emulator "
+                "profile on this device before linking the downloaded backups.")
             )
             return False
         paths = manifest.get('paths') if isinstance(manifest, dict) else None
         if not isinstance(paths, list) or not paths or not all(isinstance(path, str) for path in paths):
             QMessageBox.warning(
-                self, "Backup Manifest Unavailable",
-                "SaveState could not read the original save paths from this backup. "
-                "Configure a local profile for this game before restoring it."
+                self, tr("Backup Manifest Unavailable"),
+                tr("SaveState could not read the original save paths from this backup. "
+                "Configure a local profile for this game before restoring it.")
             )
             return False
         dialog = CloudProfileLinkDialog(
@@ -3373,9 +3374,9 @@ class CloudSavePanel(QWidget):
             return False
         if announce:
             QMessageBox.information(
-                self, "Profile Ready",
-                "The backup is linked to this device's Save Path. Exit Cloud, then use "
-                "Manage Backups to choose a backup to restore."
+                self, tr("Profile Ready"),
+                tr("The backup is linked to this device's Save Path. Exit Cloud, then use "
+                "Manage Backups to choose a backup to restore.")
             )
         return True
 
@@ -3439,24 +3440,24 @@ class CloudSavePanel(QWidget):
         if self._current_worker is not None or getattr(self, '_current_operation', None) == 'storage_check':
             QMessageBox.warning(
                 self, 
-                "Operation in Progress", 
-                "Please wait for the current operation to complete before starting a new one."
+                tr("Operation in Progress"), 
+                tr("Please wait for the current operation to complete before starting a new one.")
             )
             return
         
         selected = self._get_selected_backups()
         if not selected:
-            QMessageBox.warning(self, "No Selection", "Please select backups to upload.")
+            QMessageBox.warning(self, tr("No Selection"), tr("Please select backups to upload."))
             return
         
         # Get active provider
         active_provider = self._get_active_provider()
         if not active_provider:
-            QMessageBox.warning(self, "No Provider", "No storage provider is selected.")
+            QMessageBox.warning(self, tr("No Provider"), tr("No storage provider is selected."))
             return
             
         if not active_provider.is_connected:
-            QMessageBox.warning(self, "Not Connected", "Please connect to the storage provider first.")
+            QMessageBox.warning(self, tr("Not Connected"), tr("Please connect to the storage provider first."))
             return
 
         # Disable buttons immediately and show cancel button
@@ -3467,7 +3468,7 @@ class CloudSavePanel(QWidget):
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("Preparing upload...")
+        self.progress_bar.setFormat(tr("Preparing upload..."))
         
         # Force immediate UI update
         from PySide6.QtWidgets import QApplication
@@ -3478,7 +3479,7 @@ class CloudSavePanel(QWidget):
         if self.cloud_settings.get('max_cloud_storage_enabled', False):
             max_storage_gb = self.cloud_settings.get('max_cloud_storage_gb', 5)
             
-            self.progress_bar.setFormat("Checking storage...")
+            self.progress_bar.setFormat(tr("Checking storage..."))
             
             # Launch background worker
             try:
@@ -3527,11 +3528,11 @@ class CloudSavePanel(QWidget):
                 
                 QMessageBox.warning(
                     self,
-                    "Storage Limit Reached",
-                    f"Cloud storage limit reached!\n\n"
-                    f"Current: {current_gb} GB\n"
-                    f"Limit: {max_gb} GB\n\n"
-                    f"Please delete old backups or increase the limit in settings."
+                    tr("Storage Limit Reached"),
+                    tr("Cloud storage limit reached!\n\n"
+                    "Current: {0} GB\n"
+                    "Limit: {1} GB\n\n"
+                    "Please delete old backups or increase the limit in settings.", current_gb, max_gb)
                 )
                 self._pending_upload_selection = None
                 return
@@ -3543,11 +3544,11 @@ class CloudSavePanel(QWidget):
                     # Or just show dialog on top.
                     reply = QMessageBox.question(
                         self,
-                        "Storage Warning",
-                        f"Cloud storage is at {int((current_gb/max_gb)*100)}% of limit.\n\n"
-                        f"Current: {current_gb} GB\n"
-                        f"Limit: {max_gb} GB\n\n"
-                        f"Continue with upload?",
+                        tr("Storage Warning"),
+                        tr("Cloud storage is at {0}% of limit.\n\n"
+                        "Current: {1} GB\n"
+                        "Limit: {2} GB\n\n"
+                        "Continue with upload?", int((current_gb/max_gb)*100), current_gb, max_gb),
                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                     )
                     if reply == QMessageBox.StandardButton.No:
@@ -3601,8 +3602,8 @@ class CloudSavePanel(QWidget):
         if not active_provider:
             QMessageBox.warning(
                 self,
-                "No Provider",
-                "No storage provider is selected. Please select a provider first."
+                tr("No Provider"),
+                tr("No storage provider is selected. Please select a provider first.")
             )
             self._enable_buttons_after_operation()
             self._set_delete_button_to_delete_mode()
@@ -3611,8 +3612,8 @@ class CloudSavePanel(QWidget):
         if not active_provider.is_connected:
             QMessageBox.warning(
                 self,
-                "Not Connected",
-                "Please connect to the storage provider first."
+                tr("Not Connected"),
+                tr("Please connect to the storage provider first.")
             )
             self._enable_buttons_after_operation()
             self._set_delete_button_to_delete_mode()
@@ -3626,7 +3627,7 @@ class CloudSavePanel(QWidget):
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("Starting upload...")
+        self.progress_bar.setFormat(tr("Starting upload..."))
         self._disable_buttons_during_operation()
         
         # Transform delete button to cancel mode IMMEDIATELY
@@ -3735,25 +3736,25 @@ class CloudSavePanel(QWidget):
         self._set_delete_button_to_delete_mode()
         
         # Decide message based on summary (skips vs updates)
-        title = "Upload Complete"
-        msg = f"Successfully uploaded {success_count} of {total_count} backups."
+        title = tr("Upload Complete")
+        msg = tr("Successfully uploaded {0} of {1} backups.", success_count, total_count)
         if isinstance(self._last_upload_summary, dict):
             changed = int(self._last_upload_summary.get('profiles_changed', 0))
             unchanged = int(self._last_upload_summary.get('profiles_unchanged', 0))
             files_up = int(self._last_upload_summary.get('files_uploaded', 0))
             files_skip = int(self._last_upload_summary.get('files_skipped', 0))
             if changed == 0 and unchanged > 0:
-                title = "No Upload Needed"
-                msg = f"No changes uploaded. {unchanged} profile(s) had newer or identical backups in the cloud."
+                title = tr("No Upload Needed")
+                msg = tr("No changes uploaded. {0} profile(s) had newer or identical backups in the cloud.", unchanged)
             elif unchanged > 0:
-                title = "Upload Complete (Partial)"
+                title = tr("Upload Complete (Partial)")
                 msg = (
-                    f"Uploaded changes for {changed} of {total_count} profile(s). "
-                    f"{unchanged} up-to-date (cloud newer or identical)."
+                    tr("Uploaded changes for {0} of {1} profile(s). "
+                    "{2} up-to-date (cloud newer or identical).", changed, total_count, unchanged)
                 )
             # Add file-level stats when available
             if files_up or files_skip:
-                msg += f"\nFiles: {files_up} uploaded, {files_skip} skipped."
+                msg += tr("\nFiles: {0} uploaded, {1} skipped.", files_up, files_skip)
         
         # Show notifications
         self._show_notification(title, msg)
@@ -3777,14 +3778,14 @@ class CloudSavePanel(QWidget):
         if self._current_worker is not None:
             QMessageBox.warning(
                 self, 
-                "Operation in Progress", 
-                "Please wait for the current operation to complete before starting a new one."
+                tr("Operation in Progress"), 
+                tr("Please wait for the current operation to complete before starting a new one.")
             )
             return
         
         selected = self._get_selected_backups()
         if not selected:
-            QMessageBox.warning(self, "No Selection", "Please select backups to download.")
+            QMessageBox.warning(self, tr("No Selection"), tr("Please select backups to download."))
             return
         
         logging.info(f"Downloading {len(selected)} backups from cloud...")
@@ -3792,11 +3793,11 @@ class CloudSavePanel(QWidget):
         # Get active provider
         active_provider = self._get_active_provider()
         if not active_provider:
-            QMessageBox.warning(self, "No Provider", "No storage provider is selected.")
+            QMessageBox.warning(self, tr("No Provider"), tr("No storage provider is selected."))
             return
             
         if not active_provider.is_connected:
-            QMessageBox.warning(self, "Not Connected", "Please connect to the storage provider first.")
+            QMessageBox.warning(self, tr("Not Connected"), tr("Please connect to the storage provider first."))
             return
 
         # Reset cancellation flag if supported
@@ -3807,7 +3808,7 @@ class CloudSavePanel(QWidget):
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("Starting download...")
+        self.progress_bar.setFormat(tr("Starting download..."))
         self._disable_buttons_during_operation()
         
         # Transform delete button to cancel mode IMMEDIATELY
@@ -3913,8 +3914,8 @@ class CloudSavePanel(QWidget):
         self._set_delete_button_to_delete_mode()
         
         # Determine message based on stats
-        title = "Download Complete"
-        msg = f"Successfully processed {success_count} of {total_count} backups."
+        title = tr("Download Complete")
+        msg = tr("Successfully processed {0} of {1} backups.", success_count, total_count)
         
         unlinked = []
         manifests = {}
@@ -3924,15 +3925,15 @@ class CloudSavePanel(QWidget):
             failed = stats.get('failed', 0)
             
             if downloaded == 0 and skipped > 0:
-                 title = "No Download Needed"
-                 msg = "No files needed to be downloaded. Local files are identical to cloud versions (MD5 match) or newer."
+                 title = tr("No Download Needed")
+                 msg = tr("No files needed to be downloaded. Local files are identical to cloud versions (MD5 match) or newer.")
             elif downloaded > 0:
-                msg = f"Downloaded {downloaded} file(s)."
+                msg = tr("Downloaded {0} file(s).", downloaded)
                 if skipped > 0:
-                    msg += f" Skipped {skipped} file(s) (already up-to-date)."
+                    msg += tr(" Skipped {0} file(s) (already up-to-date).", skipped)
             
             if failed > 0:
-                msg += f"\n\nWarning: {failed} file(s) failed to download or verify."
+                msg += tr("\n\nWarning: {0} file(s) failed to download or verify.", failed)
             
             manifests = stats.get('manifests') or {}
             linked_profiles = {
@@ -3990,13 +3991,13 @@ class CloudSavePanel(QWidget):
 
         message = download_message
         if linked_count:
-            message += f"\n{linked_count} profile(s) linked to this device."
+            message += tr("\n{0} profile(s) linked to this device.", linked_count)
         if pending_count:
             message += (
-                f"\n{pending_count} backup folder(s) still need setup. "
-                "Double-click a 'Needs setup' row to resume."
+                tr("\n{0} backup folder(s) still need setup. "
+                "Double-click a 'Needs setup' row to resume.", pending_count)
             )
-        self._show_notification("Download Complete", message)
+        self._show_notification(tr("Download Complete"), message)
         self._repopulate_table()
     
     def _on_delete_clicked(self):
@@ -4005,37 +4006,37 @@ class CloudSavePanel(QWidget):
         if self._current_worker is not None:
             QMessageBox.warning(
                 self, 
-                "Operation in Progress", 
-                "Please wait for the current operation to complete before starting a new one."
+                tr("Operation in Progress"), 
+                tr("Please wait for the current operation to complete before starting a new one.")
             )
             return
         
         selected = self._get_selected_backups()
         if not selected:
-            QMessageBox.warning(self, "No Selection", "Please select backups to delete from cloud.")
+            QMessageBox.warning(self, tr("No Selection"), tr("Please select backups to delete from cloud."))
             return
         
         # Get active provider
         active_provider = self._get_active_provider()
         if not active_provider:
-            QMessageBox.warning(self, "No Provider", "No storage provider is selected.")
+            QMessageBox.warning(self, tr("No Provider"), tr("No storage provider is selected."))
             return
             
         if not active_provider.is_connected:
-            QMessageBox.warning(self, "Not Connected", "Please connect to the storage provider first.")
+            QMessageBox.warning(self, tr("Not Connected"), tr("Please connect to the storage provider first."))
             return
 
         # Determine provider name for dialog
-        provider_name = "Cloud Storage"
+        provider_name = tr("Cloud Storage")
         if hasattr(active_provider, 'name'):
             provider_name = active_provider.name
         
         # Ask for confirmation
         reply = QMessageBox.question(
             self,
-            "Confirm Deletion",
-            f"Are you sure you want to delete {len(selected)} backup(s) from {provider_name}?\n\n"
-            "This action cannot be undone!",
+            tr("Confirm Deletion"),
+            tr("Are you sure you want to delete {0} backup(s) from {1}?\n\n"
+            "This action cannot be undone!", len(selected), provider_name),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -4053,7 +4054,7 @@ class CloudSavePanel(QWidget):
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, len(selected))
         self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("Starting deletion...")
+        self.progress_bar.setFormat(tr("Starting deletion..."))
         self._disable_buttons_during_operation()
         
         # Transform delete button to cancel mode IMMEDIATELY
@@ -4127,14 +4128,14 @@ class CloudSavePanel(QWidget):
         
         # Show notification
         self._show_notification(
-            "Deletion Complete",
-            f"Successfully deleted {success_count} of {total_count} backups from Google Drive."
+            tr("Deletion Complete"),
+            tr("Successfully deleted {0} of {1} backups from Google Drive.", success_count, total_count)
         )
         
         QMessageBox.information(
             self,
-            "Deletion Complete",
-            f"Successfully deleted {success_count} of {total_count} backups from cloud."
+            tr("Deletion Complete"),
+            tr("Successfully deleted {0} of {1} backups from cloud.", success_count, total_count)
         )
         
         # Refresh cloud status
@@ -4579,8 +4580,8 @@ class CloudSavePanel(QWidget):
         """Handle cloud status refresh error."""
         QMessageBox.warning(
             self,
-            "Refresh Error",
-            f"Could not refresh cloud status:\n{error_message}"
+            tr("Refresh Error"),
+            tr("Could not refresh cloud status:\n{0}", error_message)
         )
     
     def _on_cloud_settings_saved(self, settings):
@@ -4714,7 +4715,7 @@ class CloudSavePanel(QWidget):
             )
         except Exception as e:
             logging.error(f"is_online_sync_available check failed: {e}")
-            return False, "the cloud provider is unavailable"
+            return False, tr("the cloud provider is unavailable")
 
     def _refresh_online_sync_ui_state(self):
         """Notify the main window that cloud availability changed (connect/disconnect)."""
@@ -4916,8 +4917,8 @@ class CloudSavePanel(QWidget):
         
         # Show notification
         self._show_notification(
-            "Periodic Sync Cancelled",
-            "Automatic sync was cancelled."
+            tr("Periodic Sync Cancelled"),
+            tr("Automatic sync was cancelled.")
         )
         
         # Refresh cloud status in case some files were synced before cancellation
@@ -4955,13 +4956,13 @@ class CloudSavePanel(QWidget):
 
         # Show notification (skip for quiet event-driven uploads after auto-backup)
         if not quiet:
-            provider_name = "Cloud"
+            provider_name = tr("Cloud")
             if active_provider and hasattr(active_provider, 'name'):
                 provider_name = active_provider.name
 
             self._show_notification(
-                "Periodic Sync Complete",
-                f"Synced {success_count} of {total_count} profiles to {provider_name}."
+                tr("Periodic Sync Complete"),
+                tr("Synced {0} of {1} profiles to {2}.", success_count, total_count, provider_name)
             )
         
         # Refresh cloud status
@@ -5082,7 +5083,7 @@ class CloudSavePanel(QWidget):
         try:
             if self.main_window and hasattr(self.main_window, 'cloud_button') and self.main_window.cloud_button:
                 self.main_window.cloud_button.setEnabled(not connecting)
-                self.main_window.cloud_button.setText("Connecting..." if connecting else "Cloud Sync")
+                self.main_window.cloud_button.setText(tr("Connecting...") if connecting else tr("Cloud Sync"))
         except Exception:
             pass
 

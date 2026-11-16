@@ -9,6 +9,7 @@ import os
 import logging
 import platform
 import re
+from common.i18n import tr
 
 
 def is_at_drive_root(path: str) -> bool:
@@ -208,7 +209,7 @@ def validate_backup_directory(backup_dir: str, attempt_create: bool = True) -> d
     }
     
     if not backup_dir or not isinstance(backup_dir, str):
-        result['error'] = "Backup directory path is not configured"
+        result['error'] = tr("Backup directory path is not configured")
         return result
     
     backup_dir = os.path.normpath(backup_dir)
@@ -231,9 +232,9 @@ def validate_backup_directory(backup_dir: str, attempt_create: bool = True) -> d
             return result
         except OSError as e:
             logging.warning(f"Could not create backup directory {backup_dir}: {e}")
-            result['error'] = f"Cannot create directory: {e}"
+            result['error'] = tr("Cannot create directory: {0}", e)
     else:
-        result['error'] = "Directory does not exist"
+        result['error'] = tr("Directory does not exist")
     
     # If path was at drive root and creation failed, search on other drives
     if result['is_at_root'] and result['folder_name']:
@@ -266,15 +267,15 @@ def show_backup_directory_dialog(parent, validation_result: dict) -> str | None:
     error = validation_result.get('error', 'Directory not found')
     
     # Build the message
-    msg = f"The backup folder could not be found at:\n{original_path}\n\n"
+    msg = tr("The backup folder could not be found at:\n{0}\n\n", original_path)
     
     if alternates:
-        msg += f"However, a folder named '{folder_name}' was found on other drives.\n"
-        msg += "Would you like to use one of these locations instead?\n\n"
+        msg += tr("However, a folder named '{0}' was found on other drives.\n", folder_name)
+        msg += tr("Would you like to use one of these locations instead?\n\n")
         
         # Create a custom dialog with options
         dialog = QDialog(parent)
-        dialog.setWindowTitle("Backup Folder Not Found")
+        dialog.setWindowTitle(tr("Backup Folder Not Found"))
         dialog.setMinimumWidth(500)
         dialog.setMinimumHeight(300)
         
@@ -295,12 +296,12 @@ def show_backup_directory_dialog(parent, validation_result: dict) -> str | None:
         # Buttons
         buttons_layout = QHBoxLayout()
         
-        use_selected_button = QPushButton("Use Selected Location")
+        use_selected_button = QPushButton(tr("Use Selected Location"))
         use_selected_button.setDefault(True)
         
-        browse_button = QPushButton("Browse for Another Folder...")
-        create_original_button = QPushButton("Create at Original Location")
-        cancel_button = QPushButton("Cancel (Exit App)")
+        browse_button = QPushButton(tr("Browse for Another Folder..."))
+        create_original_button = QPushButton(tr("Create at Original Location"))
+        cancel_button = QPushButton(tr("Cancel (Exit App)"))
         
         buttons_layout.addWidget(use_selected_button)
         buttons_layout.addWidget(browse_button)
@@ -322,7 +323,7 @@ def show_backup_directory_dialog(parent, validation_result: dict) -> str | None:
         def on_browse():
             new_path = QFileDialog.getExistingDirectory(
                 dialog,
-                "Select Backup Folder",
+                tr("Select Backup Folder"),
                 os.path.dirname(original_path) if os.path.exists(os.path.dirname(original_path)) else ""
             )
             if new_path:
@@ -335,7 +336,7 @@ def show_backup_directory_dialog(parent, validation_result: dict) -> str | None:
                 selected_path[0] = original_path
                 dialog.accept()
             except OSError as e:
-                QMessageBox.critical(dialog, "Error", f"Cannot create folder:\n{e}")
+                QMessageBox.critical(dialog, tr("Error"), tr("Cannot create folder:\n{0}", e))
         
         def on_cancel():
             dialog.reject()
@@ -351,10 +352,10 @@ def show_backup_directory_dialog(parent, validation_result: dict) -> str | None:
         
     else:
         # No alternates found, show a custom dialog with clear button labels
-        msg += "You can:\n• Create a new folder at the original location\n• Browse for an existing folder\n• Cancel and exit the application"
+        msg += tr("You can:\n• Create a new folder at the original location\n• Browse for an existing folder\n• Cancel and exit the application")
         
         dialog = QDialog(parent)
-        dialog.setWindowTitle("Backup Folder Not Found")
+        dialog.setWindowTitle(tr("Backup Folder Not Found"))
         dialog.setMinimumWidth(450)
         
         layout = QVBoxLayout()
@@ -366,11 +367,11 @@ def show_backup_directory_dialog(parent, validation_result: dict) -> str | None:
         # Buttons with clear labels
         buttons_layout = QHBoxLayout()
         
-        create_button = QPushButton("Create Folder")
+        create_button = QPushButton(tr("Create Folder"))
         create_button.setDefault(True)
         
-        browse_button = QPushButton("Browse...")
-        cancel_button = QPushButton("Cancel")
+        browse_button = QPushButton(tr("Browse..."))
+        cancel_button = QPushButton(tr("Cancel"))
         
         buttons_layout.addWidget(create_button)
         buttons_layout.addWidget(browse_button)
@@ -388,7 +389,7 @@ def show_backup_directory_dialog(parent, validation_result: dict) -> str | None:
                 selected_path[0] = original_path
                 dialog.accept()
             except OSError as e:
-                QMessageBox.critical(dialog, "Error", f"Cannot create folder:\n{e}")
+                QMessageBox.critical(dialog, tr("Error"), tr("Cannot create folder:\n{0}", e))
         
         def on_browse():
             # Start from a sensible directory
@@ -398,7 +399,7 @@ def show_backup_directory_dialog(parent, validation_result: dict) -> str | None:
             
             new_path = QFileDialog.getExistingDirectory(
                 dialog,
-                "Select Backup Folder",
+                tr("Select Backup Folder"),
                 start_dir
             )
             if new_path:

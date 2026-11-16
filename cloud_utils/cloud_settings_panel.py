@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QCheckBox, QSpinBox, QFormLayout, QGridLayout, QProgressBar
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject
+from common.i18n import tr
 
 
 class StorageStatusWorker(QObject):
@@ -98,14 +99,14 @@ class CloudSettingsPanel(QWidget):
         
         # --- Header ---
         header_layout = QHBoxLayout()
-        title_label = QLabel("<h2>Cloud Save Settings</h2>")
+        title_label = QLabel(tr("<h2>Cloud Save Settings</h2>"))
         title_label.setObjectName("CloudSettingsTitle")
         header_layout.addWidget(title_label)
         header_layout.addStretch(1)
         main_layout.addLayout(header_layout)
         
         # --- Description ---
-        description = QLabel("Configure sync behavior, backup management, and notifications.")
+        description = QLabel(tr("Configure sync behavior, backup management, and notifications."))
         description.setWordWrap(True)
         description.setStyleSheet("color: #AAAAAA; font-size: 9pt; padding-bottom: 4px;")
         main_layout.addWidget(description)
@@ -119,13 +120,13 @@ class CloudSettingsPanel(QWidget):
         left_column.setSpacing(8)
         
         # Connection Settings (NEW)
-        connection_group = QGroupBox("Connection")
+        connection_group = QGroupBox(tr("Connection"))
         connection_layout = QVBoxLayout()
         connection_layout.setContentsMargins(8, 12, 8, 12)
         connection_layout.setSpacing(8)
         
-        self.auto_connect_checkbox = QCheckBox("Auto-connect on startup")
-        self.auto_connect_checkbox.setToolTip("Automatically connect to Google Drive when SaveState starts")
+        self.auto_connect_checkbox = QCheckBox(tr("Auto-connect on startup"))
+        self.auto_connect_checkbox.setToolTip(tr("Automatically connect to Google Drive when SaveState starts"))
         self.auto_connect_checkbox.setChecked(self.settings.get('auto_connect_on_startup', False))
         connection_layout.addWidget(self.auto_connect_checkbox)
         
@@ -134,28 +135,28 @@ class CloudSettingsPanel(QWidget):
         left_column.addWidget(connection_group)
         
         # Automatic Sync
-        auto_sync_group = QGroupBox("Automatic Sync")
+        auto_sync_group = QGroupBox(tr("Automatic Sync"))
         auto_sync_layout = QVBoxLayout()
         auto_sync_layout.setContentsMargins(8, 12, 8, 12)
         auto_sync_layout.setSpacing(8)
         
-        self.auto_sync_startup_checkbox = QCheckBox("Sync on startup")
-        self.auto_sync_startup_checkbox.setToolTip("Sync all profiles when SaveState starts")
+        self.auto_sync_startup_checkbox = QCheckBox(tr("Sync on startup"))
+        self.auto_sync_startup_checkbox.setToolTip(tr("Sync all profiles when SaveState starts"))
         self.auto_sync_startup_checkbox.setChecked(self.settings['auto_sync_on_startup'])
         auto_sync_layout.addWidget(self.auto_sync_startup_checkbox)
         
-        self.auto_sync_enabled_checkbox = QCheckBox("Enable periodic sync")
-        self.auto_sync_enabled_checkbox.setToolTip("Run background sync at regular intervals")
+        self.auto_sync_enabled_checkbox = QCheckBox(tr("Enable periodic sync"))
+        self.auto_sync_enabled_checkbox.setToolTip(tr("Run background sync at regular intervals"))
         self.auto_sync_enabled_checkbox.setChecked(self.settings['auto_sync_enabled'])
         self.auto_sync_enabled_checkbox.toggled.connect(self._on_auto_sync_toggled)
         auto_sync_layout.addWidget(self.auto_sync_enabled_checkbox)
         
         interval_layout = QHBoxLayout()
-        interval_layout.addWidget(QLabel("Interval:"))
+        interval_layout.addWidget(QLabel(tr("Interval:")))
         self.sync_interval_spin = QSpinBox()
         self.sync_interval_spin.setRange(1, 168)
         self.sync_interval_spin.setValue(self.settings['auto_sync_interval_hours'])
-        self.sync_interval_spin.setSuffix(" hrs")
+        self.sync_interval_spin.setSuffix(tr(" hrs"))
         self.sync_interval_spin.setEnabled(self.settings['auto_sync_enabled'])
         self.sync_interval_spin.setFixedWidth(110)
         interval_layout.addWidget(self.sync_interval_spin)
@@ -169,13 +170,13 @@ class CloudSettingsPanel(QWidget):
         left_column.addWidget(auto_sync_group)
         
         # Profile Sync
-        profile_group = QGroupBox("Profile Sync")
+        profile_group = QGroupBox(tr("Profile Sync"))
         profile_layout = QVBoxLayout()
         profile_layout.setContentsMargins(8, 12, 8, 12)
         profile_layout.setSpacing(8)
         
-        self.sync_all_profiles_checkbox = QCheckBox("Sync all profiles")
-        self.sync_all_profiles_checkbox.setToolTip("Sync all profiles automatically")
+        self.sync_all_profiles_checkbox = QCheckBox(tr("Sync all profiles"))
+        self.sync_all_profiles_checkbox.setToolTip(tr("Sync all profiles automatically"))
         self.sync_all_profiles_checkbox.setChecked(self.settings['sync_all_profiles'])
         profile_layout.addWidget(self.sync_all_profiles_checkbox)
         
@@ -184,26 +185,26 @@ class CloudSettingsPanel(QWidget):
         left_column.addWidget(profile_group)
         
         # Backup Management
-        backup_group = QGroupBox("Backup Management")
+        backup_group = QGroupBox(tr("Backup Management"))
         backup_layout = QVBoxLayout()
         backup_layout.setContentsMargins(8, 12, 8, 12)
         backup_layout.setSpacing(8)
         
-        self.max_backups_checkbox = QCheckBox("Limit backups per profile")
+        self.max_backups_checkbox = QCheckBox(tr("Limit backups per profile"))
         self.max_backups_checkbox.setChecked(self.settings['max_cloud_backups_enabled'])
         self.max_backups_checkbox.toggled.connect(self._on_max_backups_toggled)
-        self.max_backups_checkbox.setToolTip("Delete oldest backups when limit reached")
+        self.max_backups_checkbox.setToolTip(tr("Delete oldest backups when limit reached"))
         backup_layout.addWidget(self.max_backups_checkbox)
         
         count_layout = QHBoxLayout()
         count_layout.addSpacing(20)
-        self.max_backups_label = QLabel("Keep:")
+        self.max_backups_label = QLabel(tr("Keep:"))
         self.max_backups_label.setEnabled(self.settings['max_cloud_backups_enabled'])
         count_layout.addWidget(self.max_backups_label)
         self.max_backups_spin = QSpinBox()
         self.max_backups_spin.setRange(1, 100)
         self.max_backups_spin.setValue(self.settings['max_cloud_backups_count'])
-        self.max_backups_spin.setSuffix(" backups")
+        self.max_backups_spin.setSuffix(tr(" backups"))
         self.max_backups_spin.setFixedWidth(130)
         self.max_backups_spin.setEnabled(self.settings['max_cloud_backups_enabled'])
         count_layout.addWidget(self.max_backups_spin)
@@ -222,18 +223,18 @@ class CloudSettingsPanel(QWidget):
         right_column.setSpacing(8)
         
         # Storage Status (separate panel)
-        status_group = QGroupBox("Storage Status")
+        status_group = QGroupBox(tr("Storage Status"))
         status_layout = QVBoxLayout()
         status_layout.setContentsMargins(8, 12, 8, 12)
         status_layout.setSpacing(8)
 
         # Google Drive overall usage
         drive_row = QHBoxLayout()
-        drive_row.addWidget(QLabel("Google Drive:"))
+        drive_row.addWidget(QLabel(tr("Google Drive:")))
         self.drive_usage_bar = QProgressBar()
         self.drive_usage_bar.setRange(0, 100)
         self.drive_usage_bar.setValue(0)
-        self.drive_usage_bar.setFormat("Not connected")
+        self.drive_usage_bar.setFormat(tr("Not connected"))
         self.drive_usage_bar.setTextVisible(True)
         self.drive_usage_bar.setFixedWidth(220)
         drive_row.addWidget(self.drive_usage_bar)
@@ -242,11 +243,11 @@ class CloudSettingsPanel(QWidget):
         
         # SaveState app folder usage in cloud
         folder_row = QHBoxLayout()
-        folder_row.addWidget(QLabel("SaveState (cloud):"))
+        folder_row.addWidget(QLabel(tr("SaveState (cloud):")))
         self.savestate_usage_bar = QProgressBar()
         self.savestate_usage_bar.setRange(0, 100)
         self.savestate_usage_bar.setValue(0)
-        self.savestate_usage_bar.setFormat("Not connected")
+        self.savestate_usage_bar.setFormat(tr("Not connected"))
         self.savestate_usage_bar.setTextVisible(True)
         self.savestate_usage_bar.setFixedWidth(220)
         folder_row.addWidget(self.savestate_usage_bar)
@@ -264,7 +265,7 @@ class CloudSettingsPanel(QWidget):
         right_column.addWidget(status_group)
 
         # Advanced Settings
-        advanced_group = QGroupBox("Advanced")
+        advanced_group = QGroupBox(tr("Advanced"))
         advanced_layout = QVBoxLayout()
         advanced_layout.setContentsMargins(8, 12, 8, 12)
         advanced_layout.setSpacing(8)
@@ -273,15 +274,15 @@ class CloudSettingsPanel(QWidget):
         bandwidth_row = QHBoxLayout()
         bandwidth_row.setContentsMargins(0, 0, 0, 0)
         bandwidth_row.setSpacing(12)
-        self.bandwidth_limit_checkbox = QCheckBox("Limit bandwidth")
+        self.bandwidth_limit_checkbox = QCheckBox(tr("Limit bandwidth"))
         self.bandwidth_limit_checkbox.setChecked(self.settings['bandwidth_limit_enabled'])
         self.bandwidth_limit_checkbox.toggled.connect(self._on_bandwidth_limit_toggled)
-        self.bandwidth_limit_checkbox.setToolTip("Limit upload/download speed")
+        self.bandwidth_limit_checkbox.setToolTip(tr("Limit upload/download speed"))
         bandwidth_row.addWidget(self.bandwidth_limit_checkbox)
         self.bandwidth_limit_spin = QSpinBox()
         self.bandwidth_limit_spin.setRange(1, 1000)
         self.bandwidth_limit_spin.setValue(self.settings['bandwidth_limit_mbps'])
-        self.bandwidth_limit_spin.setSuffix(" Mbps")
+        self.bandwidth_limit_spin.setSuffix(tr(" Mbps"))
         self.bandwidth_limit_spin.setFixedWidth(120)
         self.bandwidth_limit_spin.setEnabled(self.settings['bandwidth_limit_enabled'])
         bandwidth_row.addWidget(self.bandwidth_limit_spin)
@@ -293,26 +294,26 @@ class CloudSettingsPanel(QWidget):
         right_column.addWidget(advanced_group)
         
         # Storage Limit
-        storage_group = QGroupBox("Storage Limit")
+        storage_group = QGroupBox(tr("Storage Limit"))
         storage_layout = QVBoxLayout()
         storage_layout.setContentsMargins(8, 12, 8, 12)
         storage_layout.setSpacing(8)
         
-        self.max_storage_checkbox = QCheckBox("Limit total cloud storage")
+        self.max_storage_checkbox = QCheckBox(tr("Limit total cloud storage"))
         self.max_storage_checkbox.setChecked(self.settings['max_cloud_storage_enabled'])
         self.max_storage_checkbox.toggled.connect(self._on_max_storage_toggled)
-        self.max_storage_checkbox.setToolTip("Stop uploading when limit is reached")
+        self.max_storage_checkbox.setToolTip(tr("Stop uploading when limit is reached"))
         storage_layout.addWidget(self.max_storage_checkbox)
         
         storage_limit_layout = QHBoxLayout()
         storage_limit_layout.addSpacing(20)
-        self.max_storage_label = QLabel("Max:")
+        self.max_storage_label = QLabel(tr("Max:"))
         self.max_storage_label.setEnabled(self.settings['max_cloud_storage_enabled'])
         storage_limit_layout.addWidget(self.max_storage_label)
         self.max_storage_spin = QSpinBox()
         self.max_storage_spin.setRange(1, 1000)
         self.max_storage_spin.setValue(self.settings['max_cloud_storage_gb'])
-        self.max_storage_spin.setSuffix(" GB")
+        self.max_storage_spin.setSuffix(tr(" GB"))
         self.max_storage_spin.setFixedWidth(120)
         self.max_storage_spin.setEnabled(self.settings['max_cloud_storage_enabled'])
         storage_limit_layout.addWidget(self.max_storage_spin)
@@ -324,14 +325,14 @@ class CloudSettingsPanel(QWidget):
         right_column.addWidget(storage_group)
         
         # Notifications
-        notif_group = QGroupBox("Notifications")
+        notif_group = QGroupBox(tr("Notifications"))
         notif_layout = QVBoxLayout()
         notif_layout.setContentsMargins(8, 12, 8, 12)
         notif_layout.setSpacing(8)
         
-        self.show_notifications_checkbox = QCheckBox("Show sync notifications")
+        self.show_notifications_checkbox = QCheckBox(tr("Show sync notifications"))
         self.show_notifications_checkbox.setChecked(self.settings['show_sync_notifications'])
-        self.show_notifications_checkbox.setToolTip("Show notifications when sync completes")
+        self.show_notifications_checkbox.setToolTip(tr("Show notifications when sync completes"))
         notif_layout.addWidget(self.show_notifications_checkbox)
         
         notif_group.setLayout(notif_layout)
@@ -347,11 +348,11 @@ class CloudSettingsPanel(QWidget):
         buttons_layout = QHBoxLayout()
         buttons_layout.addStretch(1)
         
-        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button = QPushButton(tr("Cancel"))
         self.cancel_button.clicked.connect(self._on_cancel_clicked)
         buttons_layout.addWidget(self.cancel_button)
         
-        self.save_button = QPushButton("Save")
+        self.save_button = QPushButton(tr("Save"))
         self.save_button.setObjectName("SaveButton")
         self.save_button.clicked.connect(self._on_save_clicked)
         buttons_layout.addWidget(self.save_button)
@@ -467,8 +468,8 @@ class CloudSettingsPanel(QWidget):
     def refresh_storage_status(self):
         """Refresh storage usage in background to avoid UI stalls."""
         # Set immediate placeholder state
-        self.drive_usage_bar.setFormat("Loading...")
-        self.savestate_usage_bar.setFormat("Loading...")
+        self.drive_usage_bar.setFormat(tr("Loading..."))
+        self.savestate_usage_bar.setFormat(tr("Loading..."))
         self.savestate_unlimited_label.setVisible(False)
         self.savestate_usage_bar.setVisible(True)
 
@@ -482,9 +483,9 @@ class CloudSettingsPanel(QWidget):
 
         if not drive_manager or not getattr(drive_manager, 'is_connected', False):
             # Not connected: set steady state and exit
-            self.drive_usage_bar.setFormat("Not connected")
+            self.drive_usage_bar.setFormat(tr("Not connected"))
             self.drive_usage_bar.setValue(0)
-            self.savestate_usage_bar.setFormat("Not connected")
+            self.savestate_usage_bar.setFormat(tr("Not connected"))
             self.savestate_usage_bar.setValue(0)
             return
 
@@ -505,8 +506,8 @@ class CloudSettingsPanel(QWidget):
             self._usage_thread.start()
         except Exception:
             # Fallback: show error-like state
-            self.drive_usage_bar.setFormat("Error")
-            self.savestate_usage_bar.setFormat("Error")
+            self.drive_usage_bar.setFormat(tr("Error"))
+            self.savestate_usage_bar.setFormat(tr("Error"))
 
     def _on_storage_status_ready(self, request_id: int, data: object):
         """Apply storage status once background worker finishes."""
@@ -517,9 +518,9 @@ class CloudSettingsPanel(QWidget):
         try:
             info = data if isinstance(data, dict) else {}
             if not info.get('connected'):
-                self.drive_usage_bar.setFormat("Not connected")
+                self.drive_usage_bar.setFormat(tr("Not connected"))
                 self.drive_usage_bar.setValue(0)
-                self.savestate_usage_bar.setFormat("Not connected")
+                self.savestate_usage_bar.setFormat(tr("Not connected"))
                 self.savestate_usage_bar.setValue(0)
                 return
 
@@ -532,7 +533,7 @@ class CloudSettingsPanel(QWidget):
                 self.drive_usage_bar.setFormat(f"{self._format_bytes(used)} / {self._format_bytes(total)}")
             else:
                 self.drive_usage_bar.setValue(0)
-                self.drive_usage_bar.setFormat("Unavailable")
+                self.drive_usage_bar.setFormat(tr("Unavailable"))
 
             # SaveState folder
             folder_bytes = int(info.get('folder_bytes', 0))
@@ -559,7 +560,7 @@ class CloudSettingsPanel(QWidget):
             else:
                 self.savestate_usage_bar.setVisible(False)
                 self.savestate_unlimited_label.setVisible(True)
-                self.savestate_unlimited_label.setText(f"{self._format_bytes(folder_bytes)} (no limit)")
+                self.savestate_unlimited_label.setText(tr("{0} (no limit)", self._format_bytes(folder_bytes)))
         except Exception:
-            self.drive_usage_bar.setFormat("Error")
-            self.savestate_usage_bar.setFormat("Error")
+            self.drive_usage_bar.setFormat(tr("Error"))
+            self.savestate_usage_bar.setFormat(tr("Error"))

@@ -15,6 +15,7 @@ from common.steam_cloud_utils import (
 from common.utils import resource_path
 import logging
 import os
+from common.i18n import tr
 
 CLOUD_ICON_YES_PATH = "icons/steam-cloud-yes.png"
 CLOUD_ICON_NO_PATH = "icons/steam-cloud-no.png"
@@ -61,7 +62,7 @@ class SteamDialog(QDialog):
     def __init__(self, main_window_ref, parent=None):
         super().__init__(parent)
         self.main_window_ref = main_window_ref
-        self.setWindowTitle("Steam Games Management")
+        self.setWindowTitle(tr("Steam Games Management"))
         self.setMinimumWidth(650)
         self.setMinimumHeight(400)
 
@@ -83,7 +84,7 @@ class SteamDialog(QDialog):
         # --- Create UI Widgets ---
         # TreeWidget with 4 columns: Checkbox, Game Name, Cloud icon, AppID
         self.game_list_widget = QTreeWidget()
-        self.game_list_widget.setHeaderLabels(["", "Game Name", "Cloud", "AppID"])
+        self.game_list_widget.setHeaderLabels(["", tr("Game Name"), tr("Cloud"), "AppID"])
         self.game_list_widget.setColumnCount(4)
         
         header_item = self.game_list_widget.headerItem()
@@ -101,7 +102,7 @@ class SteamDialog(QDialog):
         header.resizeSection(3, 120)  # AppID column width
         header.setStretchLastSection(False)
         
-        self.game_list_widget.headerItem().setToolTip(2, "Steam Cloud Saves")
+        self.game_list_widget.headerItem().setToolTip(2, tr("Steam Cloud Saves"))
         self.game_list_widget.setIconSize(CLOUD_ICON_SIZE)
         
         self.game_list_widget.setHeaderHidden(False)
@@ -128,23 +129,23 @@ class SteamDialog(QDialog):
             }
         """)
 
-        self.status_label = QLabel("Select a game and click Configure.")
+        self.status_label = QLabel(tr("Select a game and click Configure."))
         
         self.search_bar = QLineEdit()
-        self.search_bar.setPlaceholderText("Search...")
+        self.search_bar.setPlaceholderText(tr("Search..."))
         self.search_bar.setVisible(False)
 
         # Single configure button - text changes based on selection (single vs batch)
-        self.configure_button = QPushButton("Configure Selected Profile")
+        self.configure_button = QPushButton(tr("Configure Selected Profile"))
         self.configure_button.setEnabled(False)
         self._is_batch_mode = False  # Track current mode
         
-        self.refresh_button = QPushButton("Refresh Games List")
-        self.close_button = QPushButton("Close")
+        self.refresh_button = QPushButton(tr("Refresh Games List"))
+        self.close_button = QPushButton(tr("Close"))
 
         # --- Layout ---
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Installed Steam Games:"))
+        layout.addWidget(QLabel(tr("Installed Steam Games:")))
         layout.addWidget(self.game_list_widget)
         layout.addWidget(self.status_label)
         
@@ -179,7 +180,7 @@ class SteamDialog(QDialog):
     def start_steam_scan(self):
         """Refresh the Steam games list by re-scanning installed games."""
         self._stop_cloud_status_worker()
-        self.status_label.setText("Scanning Steam games...")
+        self.status_label.setText(tr("Scanning Steam games..."))
         QApplication.processEvents()  # Update UI to show scanning message
         
         try:
@@ -200,11 +201,11 @@ class SteamDialog(QDialog):
             logging.info(f"[SteamDialog] Steam refresh complete. Found {len(self.steam_games_data)} games.")
         except Exception as e:
             logging.error(f"[SteamDialog] Error during Steam refresh: {e}", exc_info=True)
-            self.status_label.setText(f"Error refreshing: {e}")
+            self.status_label.setText(tr("Error refreshing: {0}", e))
             return
         
         self.populate_game_list(force_cloud_refresh=True)
-        self.status_label.setText(f"List updated. {len(self.steam_games_data)} games found.")
+        self.status_label.setText(tr("List updated. {0} games found.", len(self.steam_games_data)))
 
 
     def populate_game_list(self, force_cloud_refresh=False):
@@ -216,16 +217,16 @@ class SteamDialog(QDialog):
         
         if not self.steam_games_data:
             # Add a dummy item if no games found
-            item = QTreeWidgetItem(["", "No games found.", "", ""])
+            item = QTreeWidgetItem(["", tr("No games found."), "", ""])
             self.game_list_widget.addTopLevelItem(item)
             self.configure_button.setEnabled(False)
-            self.configure_button.setText("Configure Selected Profile")
+            self.configure_button.setText(tr("Configure Selected Profile"))
             return
 
         sorted_games = sorted(self.steam_games_data.items(), key=lambda item: item[1]['name'])
         
         for appid, game_data in sorted_games:
-            profile_exists_marker = "[EXISTING PROFILE]" if game_data['name'] in self.profiles else ""
+            profile_exists_marker = tr("[EXISTING PROFILE]") if game_data['name'] in self.profiles else ""
             # Display name without AppID
             display_text = f"{game_data['name']} {profile_exists_marker}".strip()
             cached_status = get_cached_cloud_status(appid)
@@ -234,7 +235,7 @@ class SteamDialog(QDialog):
             cloud_text = ""
             
             # Create TreeItem with empty first column (for checkbox), Name in Col 1, Cloud icon in Col 2, AppID in Col 3
-            item = QTreeWidgetItem(["", display_text, cloud_text, f"AppID: {appid}"])
+            item = QTreeWidgetItem(["", display_text, cloud_text, tr("AppID: {0}", appid)])
             self._apply_cloud_status_icon(item, cached_status)
             
             # Store appid in both column 0 (for checkbox handling) and column 1 (for selection handling)
@@ -311,7 +312,7 @@ class SteamDialog(QDialog):
         if not needs_lookup:
             return
 
-        self.status_label.setText("Checking Steam Cloud support...")
+        self.status_label.setText(tr("Checking Steam Cloud support..."))
         self._cloud_status_worker = SteamCloudStatusWorker(
             needs_lookup,
             force_refresh=force_refresh,
@@ -325,7 +326,7 @@ class SteamDialog(QDialog):
     def _on_cloud_status_progress(self, appid, current, total):
         game_name = self.steam_games_data.get(appid, {}).get("name", appid)
         self.status_label.setText(
-            f"Checking Steam Cloud support ({current}/{total}): {game_name}"
+            tr("Checking Steam Cloud support ({0}/{1}): {2}", current, total, game_name)
         )
         QApplication.processEvents()
 
@@ -338,10 +339,10 @@ class SteamDialog(QDialog):
 
         if self.steam_games_data:
             self.status_label.setText(
-                f"Loaded {len(self.steam_games_data)} games. Select a game and click Configure."
+                tr("Loaded {0} games. Select a game and click Configure.", len(self.steam_games_data))
             )
         else:
-            self.status_label.setText("Select a game and click Configure.")
+            self.status_label.setText(tr("Select a game and click Configure."))
 
     def _update_cloud_status_column(self, results):
         for i in range(self.game_list_widget.topLevelItemCount()):
@@ -367,16 +368,16 @@ class SteamDialog(QDialog):
         item.setTextAlignment(2, Qt.AlignmentFlag.AlignCenter)
         if status is True:
             item.setIcon(2, self._icon_cloud_yes)
-            item.setToolTip(2, "Steam Cloud Saves: Yes")
+            item.setToolTip(2, tr("Steam Cloud Saves: Yes"))
         elif status is False:
             item.setIcon(2, self._icon_cloud_no)
-            item.setToolTip(2, "Steam Cloud Saves: No")
+            item.setToolTip(2, tr("Steam Cloud Saves: No"))
         elif status is None:
             item.setIcon(2, self._icon_cloud_unknown)
-            item.setToolTip(2, "Steam Cloud Saves: Unknown")
+            item.setToolTip(2, tr("Steam Cloud Saves: Unknown"))
         else:
             item.setIcon(2, QIcon())
-            item.setToolTip(2, "Checking Steam Cloud support...")
+            item.setToolTip(2, tr("Checking Steam Cloud support..."))
     
     def _on_checkbox_changed(self, appid, state):
         """Handle checkbox state change for multi-selection."""
@@ -397,12 +398,12 @@ class SteamDialog(QDialog):
         if count >= 2:
             # Batch mode: 2+ checkboxes selected - use MultiProfileDialog
             self._is_batch_mode = True
-            self.configure_button.setText(f"Configure Selected ({count})")
+            self.configure_button.setText(tr("Configure Selected ({0})", count))
             self.configure_button.setEnabled(True)
         elif count == 1:
             # Single checkbox selected - use normal single-profile flow
             self._is_batch_mode = False
-            self.configure_button.setText("Configure Selected (1)")
+            self.configure_button.setText(tr("Configure Selected (1)"))
             self.configure_button.setEnabled(True)
         else:
             # No checkboxes - use row selection for single mode
@@ -412,7 +413,7 @@ class SteamDialog(QDialog):
                 current_item is not None and 
                 current_item.data(1, Qt.ItemDataRole.UserRole) is not None
             )
-            self.configure_button.setText("Configure Selected Profile")
+            self.configure_button.setText(tr("Configure Selected Profile"))
             self.configure_button.setEnabled(has_valid_selection)
     
     @Slot()
@@ -459,7 +460,7 @@ class SteamDialog(QDialog):
             # Handle case where "No games found" item is selected or similar
             if "No games found" in current_item.text(1):
                 return
-            QMessageBox.warning(self, "Error", "Unable to get data for the selected game.")
+            QMessageBox.warning(self, tr("Error"), tr("Unable to get data for the selected game."))
             return
 
         profile_name = game_data['name']
@@ -471,7 +472,7 @@ class SteamDialog(QDialog):
     def _emit_batch_selection_and_accept(self):
         """Emit signal for batch game selection and close dialog."""
         if not self.checked_items:
-            QMessageBox.warning(self, "No Selection", "Please select at least one game using the checkboxes.")
+            QMessageBox.warning(self, tr("No Selection"), tr("Please select at least one game using the checkboxes."))
             return
         
         # Build list of selected games data
@@ -486,7 +487,7 @@ class SteamDialog(QDialog):
                 })
         
         if not selected_games:
-            QMessageBox.warning(self, "Error", "Could not retrieve data for selected games.")
+            QMessageBox.warning(self, tr("Error"), tr("Could not retrieve data for selected games."))
             return
         
         logging.info(f"[SteamDialog] Batch selection: {len(selected_games)} games. Emitting signal and closing.")
@@ -510,7 +511,7 @@ class SteamDialog(QDialog):
             
         profile_name = game_data['name']
         logging.info(f"[SteamDialog] Game double-clicked: '{profile_name}' (AppID: {appid}). Emitting signal and closing.")
-        self.status_label.setText(f"Selected: {profile_name}")
+        self.status_label.setText(tr("Selected: {0}", profile_name))
         
         # Emit the signal and close the dialog, just like clicking the Configure button
         self.game_selected_for_config.emit(appid, profile_name)
@@ -560,8 +561,8 @@ class SteamDialog(QDialog):
         profile_name = getattr(self, 'current_configuring_profile_name', None)
         if not profile_name:
             logging.error("[SteamDialog] Could not retrieve profile name in on_steam_search_finished. Aborting config.")
-            QMessageBox.critical(self, "Internal Error",
-                                 "Unable to retrieve the profile name being configured.")
+            QMessageBox.critical(self, tr("Internal Error"),
+                                 tr("Unable to retrieve the profile name being configured."))
             self.reject() 
             return
 
@@ -575,16 +576,16 @@ class SteamDialog(QDialog):
             if not existing_path:
                 # No suggestions and no existing profile -> Force manual input
                 logging.debug("  No existing path found. Forcing manual input.")
-                QMessageBox.information(self, "Path Not Found",
-                                        f"Unable to automatically find a path for '{profile_name}'.\n"
-                                        "Please enter it manually.")
+                QMessageBox.information(self, tr("Path Not Found"),
+                                        tr("Unable to automatically find a path for '{0}'.\n"
+                                        "Please enter it manually.", profile_name))
                 confirmed_path = self._ask_for_manual_path(profile_name, existing_path) 
             else:
                 # No suggestions, but profile exists -> Ask if to keep or enter manually
                 logging.debug(f"  Existing path '{existing_path}' found. Asking user.")
-                reply = QMessageBox.question(self, "No New Path Found",
-                                             f"The automatic search did not find any new paths.\n"
-                                             f"Do you want to keep the current path?\n'{existing_path}'",
+                reply = QMessageBox.question(self, tr("No New Path Found"),
+                                             tr("The automatic search did not find any new paths.\n"
+                                             "Do you want to keep the current path?\n'{0}'", existing_path),
                                              QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
                                              QMessageBox.StandardButton.Yes)
                 if reply == QMessageBox.StandardButton.Yes:
@@ -595,7 +596,7 @@ class SteamDialog(QDialog):
                      confirmed_path = self._ask_for_manual_path(profile_name, existing_path) 
                 else: 
                     logging.debug("  User cancelled.")
-                    self.status_label.setText("Configuration cancelled.")
+                    self.status_label.setText(tr("Configuration cancelled."))
                     self.reject()
                     return 
         # --- END RESTORED BLOCK ---
@@ -628,12 +629,12 @@ class SteamDialog(QDialog):
                 from gui_components.save_path_selection_dialog import SavePathSelectionDialog
             except Exception as e_imp:
                 logging.error(f"Failed to import SavePathSelectionDialog: {e_imp}")
-                QMessageBox.critical(self, "UI Error", "Internal UI component missing.")
+                QMessageBox.critical(self, tr("UI Error"), tr("Internal UI component missing."))
                 self.reject(); return
 
             dialog_text = (
-                f"These potential paths have been found for '{profile_name}'.\n"
-                "Select the correct one (sorted by probability) or choose manual entry:"
+                tr("These potential paths have been found for '{0}'.\n"
+                "Select the correct one (sorted by probability) or choose manual entry:", profile_name)
             )
             # Read shorten flag from settings if available
             shorten_flag = True
@@ -645,7 +646,7 @@ class SteamDialog(QDialog):
 
             dlg = SavePathSelectionDialog(
                 items=items_for_dialog,
-                title="Confirm Save Path",
+                title=tr("Confirm Save Path"),
                 prompt_text=dialog_text,
                 show_scores=show_scores,
                 shorten_paths=shorten_flag,
@@ -661,7 +662,7 @@ class SteamDialog(QDialog):
                     if not confirmed_path:
                         self.reject(); return
             else:
-                self.status_label.setText("Configuration cancelled.")
+                self.status_label.setText(tr("Configuration cancelled."))
                 self.reject(); return
 
         # --- Save Profile  ---
@@ -669,13 +670,13 @@ class SteamDialog(QDialog):
              logging.info(f"Saving profile '{profile_name}' with path '{confirmed_path}'")
              self.profiles[profile_name] = confirmed_path
              if core_logic.save_profiles(self.profiles):
-                  self.status_label.setText(f"Profile '{profile_name}' configured.")
+                  self.status_label.setText(tr("Profile '{0}' configured.", profile_name))
                   self.profile_configured.emit(profile_name, confirmed_path)
                   self.accept() 
              else:
-                  QMessageBox.critical(self, "Save Error",
-                                         "Unable to save the profiles file.")
-                  self.status_label.setText("Error while saving profiles.")
+                  QMessageBox.critical(self, tr("Save Error"),
+                                         tr("Unable to save the profiles file."))
+                  self.status_label.setText(tr("Error while saving profiles."))
                   self.reject() 
         else:
              # confirmed_path è None (manuale annullato o errore validazione nel blocco 'if not guesses')
@@ -696,8 +697,8 @@ class SteamDialog(QDialog):
             logging.warning("[SteamDialog] MainWindow validator not found, using basic os.path.exists validation.")
             def basic_validator(path_to_validate, _profile_name):
                 if not path_to_validate or not os.path.exists(path_to_validate):
-                     QMessageBox.warning(self, "Path Error", 
-                                         "The specified path does not exist.") 
+                     QMessageBox.warning(self, tr("Path Error"), 
+                                         tr("The specified path does not exist.")) 
                      return None
                 return path_to_validate 
             validator_func = basic_validator
@@ -707,8 +708,8 @@ class SteamDialog(QDialog):
         """Ask the user to enter a path manually and validate it."""
         validator_func = self._get_validator_func()
         manual_path, ok = QInputDialog.getText(
-            self, "Manual Path", 
-            f"Enter the COMPLETE save path for '{profile_name}':", 
+            self, tr("Manual Path"), 
+            tr("Enter the COMPLETE save path for '{0}':", profile_name), 
             text=existing_path if existing_path else "" 
         )
 
@@ -721,7 +722,7 @@ class SteamDialog(QDialog):
                 # The validator has failed (and should have shown a message)
                 return None
         elif ok and not manual_path: 
-             QMessageBox.warning(self, "Path Error", "The path cannot be empty.") 
+             QMessageBox.warning(self, tr("Path Error"), tr("The path cannot be empty.")) 
              return None 
         else: 
             return None 
@@ -805,7 +806,7 @@ if __name__ == '__main__':
                      return path
                  else:
                      print("MockValidator: Path is invalid.")
-                     QMessageBox.warning(None, "Path Error", f"Mock Validator: Path '{path}' is not a valid directory.")
+                     QMessageBox.warning(None, tr("Path Error"), tr("Mock Validator: Path '{0}' is not a valid directory.", path))
                      return None
         profile_creation_manager = MockProfileManager()
 

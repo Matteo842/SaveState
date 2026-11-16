@@ -12,6 +12,7 @@ import glob
 import zipfile
 import shutil
 import uuid
+from common.i18n import tr
 
 # Import the appropriate guess_save_path function based on platform
 if platform.system() == "Linux":
@@ -231,7 +232,7 @@ def _safe_extractall(zipf: zipfile.ZipFile, target_dir: str) -> tuple:
         try:
             zipf.extract(member, target_dir)
         except Exception as e:
-            error_messages.append(f"Error extracting '{member}': {e}")
+            error_messages.append(tr("Error extracting '{0}': {1}", member, e))
             logging.error(f"Error extracting '{member}': {e}")
             all_success = False
     
@@ -307,14 +308,14 @@ def create_group_profile(group_name: str, profile_names: list, profiles_dict: di
     """
     # Validate group name
     if not group_name or not isinstance(group_name, str):
-        return False, "Group name cannot be empty"
+        return False, tr("Group name cannot be empty")
     
     if group_name in profiles_dict:
-        return False, f"A profile with name '{group_name}' already exists"
+        return False, tr("A profile with name '{0}' already exists", group_name)
     
     # Validate profile names
     if not profile_names or not isinstance(profile_names, list):
-        return False, "At least one profile must be selected for the group"
+        return False, tr("At least one profile must be selected for the group")
     
     valid_profiles = []
     for name in profile_names:
@@ -326,20 +327,20 @@ def create_group_profile(group_name: str, profile_names: list, profiles_dict: di
         
         # Don't allow adding groups to groups (no nested groups)
         if is_group_profile(profile_data):
-            return False, f"Cannot add group '{name}' to another group (nested groups not supported)"
+            return False, tr("Cannot add group '{0}' to another group (nested groups not supported)", name)
         
         # Check if profile is already in another group
         if profile_data.get('member_of_group'):
             existing_group = profile_data.get('member_of_group')
-            return False, f"Profile '{name}' is already a member of group '{existing_group}'"
+            return False, tr("Profile '{0}' is already a member of group '{1}'", name, existing_group)
         
         valid_profiles.append(name)
     
     if not valid_profiles:
-        return False, "No valid profiles found to add to the group"
+        return False, tr("No valid profiles found to add to the group")
     
     if len(valid_profiles) < 1:
-        return False, "At least one profile is required to create a group"
+        return False, tr("At least one profile is required to create a group")
     
     # Create the group profile
     group_data = {
@@ -388,15 +389,15 @@ def update_group_profile(group_name: str, new_profile_names: list, profiles_dict
         Tuple (success: bool, error_message: str or None)
     """
     if group_name not in profiles_dict:
-        return False, f"Group '{group_name}' not found"
+        return False, tr("Group '{0}' not found", group_name)
     
     group_data = profiles_dict[group_name]
     if not is_group_profile(group_data):
-        return False, f"'{group_name}' is not a group profile"
+        return False, tr("'{0}' is not a group profile", group_name)
     
     # Validate new profile names
     if not new_profile_names or not isinstance(new_profile_names, list):
-        return False, "At least one profile must be selected for the group"
+        return False, tr("At least one profile must be selected for the group")
     
     # Get current member list
     current_members = group_data.get('profiles', [])
@@ -415,24 +416,24 @@ def update_group_profile(group_name: str, new_profile_names: list, profiles_dict
         
         # Don't allow adding groups to groups
         if is_group_profile(profile_data):
-            return False, f"Cannot add group '{name}' to another group"
+            return False, tr("Cannot add group '{0}' to another group", name)
         
         # Check if profile is already in another group (but allow if it's in this group)
         member_of = profile_data.get('member_of_group')
         if member_of and member_of != group_name:
-            return False, f"Profile '{name}' is already a member of group '{member_of}'"
+            return False, tr("Profile '{0}' is already a member of group '{1}'", name, member_of)
         
         valid_profiles.append(name)
     
     if not valid_profiles:
-        return False, "No valid profiles found for the group"
+        return False, tr("No valid profiles found for the group")
     
     # Handle renaming
     final_group_name = new_group_name if new_group_name and new_group_name != group_name else group_name
     
     if new_group_name and new_group_name != group_name:
         if new_group_name in profiles_dict:
-            return False, f"A profile with name '{new_group_name}' already exists"
+            return False, tr("A profile with name '{0}' already exists", new_group_name)
     
     # Remove member_of_group from profiles no longer in the group
     for old_member in current_members:
@@ -502,11 +503,11 @@ def ungroup_profile(group_name: str, profiles_dict: dict) -> tuple:
         Tuple (success: bool, error_message: str or None)
     """
     if group_name not in profiles_dict:
-        return False, f"Group '{group_name}' not found"
+        return False, tr("Group '{0}' not found", group_name)
     
     group_data = profiles_dict[group_name]
     if not is_group_profile(group_data):
-        return False, f"'{group_name}' is not a group profile"
+        return False, tr("'{0}' is not a group profile", group_name)
     
     # Get member profiles
     member_profiles = group_data.get('profiles', [])
@@ -646,7 +647,7 @@ def remove_profile_from_group(profile_name: str, profiles_dict: dict) -> tuple:
         Tuple (success: bool, group_deleted: bool, error_message: str or None)
     """
     if profile_name not in profiles_dict:
-        return False, False, f"Profile '{profile_name}' not found"
+        return False, False, tr("Profile '{0}' not found", profile_name)
     
     profile_data = profiles_dict[profile_name]
     group_name = profile_data.get('member_of_group')
@@ -1020,10 +1021,10 @@ def _validate_source_paths(paths_to_process: list) -> tuple:
                 invalid_paths.append(path)
                 logging.warning(f"Path does not exist: '{path}'")
         except OSError as e_os:
-            invalid_paths.append(f"{path} (Error: OSError: {e_os})")
+            invalid_paths.append(tr("{0} (Error: OSError: {1})", path, e_os))
             logging.error(f"OS error checking path '{path}': {e_os}")
         except Exception as e_val:
-            invalid_paths.append(f"{path} (Error: {type(e_val).__name__} - {e_val})")
+            invalid_paths.append(tr("{0} (Error: {1} - {2})", path, type(e_val).__name__, e_val))
             logging.error(f"General error checking path '{path}': {e_val}")
     
     if invalid_paths:
@@ -1056,14 +1057,14 @@ def _check_source_size_limit(paths_to_process: list, max_source_size_mb: int) ->
     total_size_bytes = _get_actual_total_source_size(paths_to_process)
     
     if total_size_bytes == -1:
-        return False, "ERROR: Critical error while calculating total source size."
+        return False, tr("ERROR: Critical error while calculating total source size.")
     
     current_size_mb = total_size_bytes / (1024 * 1024)
     logging.info(f"Total source size: {current_size_mb:.2f} MB")
     
     if total_size_bytes > max_source_size_bytes:
-        msg = (f"ERROR: Backup cancelled!\n"
-               f"Total source size ({current_size_mb:.2f} MB) exceeds the limit ({max_source_size_mb} MB).")
+        msg = (tr("ERROR: Backup cancelled!\n"
+               "Total source size ({0:.2f} MB) exceeds the limit ({1} MB).", current_size_mb, max_source_size_mb))
         return False, msg
     
     return True, None
@@ -1220,13 +1221,13 @@ def _perform_ymir_backup(profile_name: str, profile_data: dict, archive_path: st
     backup_ram_path, saturn_save_id = _detect_ymir_saturn_save(profile_data)
     
     if not backup_ram_path or not saturn_save_id:
-        return False, "Could not detect Ymir backup RAM file or Saturn save ID"
+        return False, tr("Could not detect Ymir backup RAM file or Saturn save ID")
     
     try:
         from emulator_utils.ymir_manager import extract_saturn_save
     except ImportError as e:
         logging.error(f"Could not import ymir_manager: {e}")
-        return False, f"Ymir manager not available: {e}"
+        return False, tr("Ymir manager not available: {0}", e)
     
     # Create a temporary directory for the extracted save
     temp_dir = tempfile.mkdtemp(prefix="savestate_ymir_")
@@ -1240,7 +1241,7 @@ def _perform_ymir_backup(profile_name: str, profile_data: dict, archive_path: st
         extracted_path = extract_saturn_save(backup_ram_path, saturn_save_id, bup_path)
         
         if not extracted_path or not os.path.isfile(extracted_path):
-            return False, f"Failed to extract Saturn save '{saturn_save_id}' from backup RAM"
+            return False, tr("Failed to extract Saturn save '{0}' from backup RAM", saturn_save_id)
         
         logging.debug(f"Ymir: Save extracted to '{extracted_path}' ({os.path.getsize(extracted_path)} bytes)")
         
@@ -1265,11 +1266,11 @@ def _perform_ymir_backup(profile_name: str, profile_data: dict, archive_path: st
             zipf.write(extracted_path, arcname=bup_filename)
             logging.debug(f"Ymir: Added '{bup_filename}' to backup archive")
         
-        return True, f"Ymir save '{saturn_save_id}' backed up successfully"
+        return True, tr("Ymir save '{0}' backed up successfully", saturn_save_id)
         
     except Exception as e:
         logging.error(f"Ymir backup failed: {e}", exc_info=True)
-        return False, f"Ymir backup failed: {e}"
+        return False, tr("Ymir backup failed: {0}", e)
     
     finally:
         # Clean up temporary directory
@@ -1298,13 +1299,13 @@ def _perform_ymir_restore(profile_name: str, profile_data: dict, archive_path: s
     backup_ram_path, saturn_save_id = _detect_ymir_saturn_save(profile_data)
     
     if not backup_ram_path:
-        return False, "Could not detect Ymir backup RAM file"
+        return False, tr("Could not detect Ymir backup RAM file")
     
     try:
         from emulator_utils.ymir_manager import import_saturn_save
     except ImportError as e:
         logging.error(f"Could not import ymir_manager: {e}")
-        return False, f"Ymir manager not available: {e}"
+        return False, tr("Ymir manager not available: {0}", e)
     
     # Create a temporary directory for extraction
     temp_dir = tempfile.mkdtemp(prefix="savestate_ymir_restore_")
@@ -1319,7 +1320,7 @@ def _perform_ymir_restore(profile_name: str, profile_data: dict, archive_path: s
                     break
             
             if not bup_file:
-                return False, "No .bup save file found in the backup archive"
+                return False, tr("No .bup save file found in the backup archive")
             
             # Extract the .bup file
             logging.debug(f"Ymir: Extracting '{bup_file}' from archive...")
@@ -1327,20 +1328,20 @@ def _perform_ymir_restore(profile_name: str, profile_data: dict, archive_path: s
             extracted_bup_path = os.path.join(temp_dir, bup_file)
             
             if not os.path.isfile(extracted_bup_path):
-                return False, f"Failed to extract .bup file from archive"
+                return False, tr("Failed to extract .bup file from archive")
         
         # Import the save into backup RAM
         logging.debug(f"Ymir: Importing save into '{backup_ram_path}'...")
         success = import_saturn_save(backup_ram_path, extracted_bup_path, overwrite=True)
         
         if success:
-            return True, f"Ymir save restored successfully to '{backup_ram_path}'"
+            return True, tr("Ymir save restored successfully to '{0}'", backup_ram_path)
         else:
-            return False, "Failed to import save into backup RAM"
+            return False, tr("Failed to import save into backup RAM")
         
     except Exception as e:
         logging.error(f"Ymir restore failed: {e}", exc_info=True)
-        return False, f"Ymir restore failed: {e}"
+        return False, tr("Ymir restore failed: {0}", e)
     
     finally:
         # Clean up temporary directory
@@ -1418,7 +1419,7 @@ def _perform_xemu_backup(profile_name: str, profile_data: dict, archive_path: st
 
     hdd_path, title_id = _resolve_xemu_targets(profile_data, fallback_paths=fallback_paths)
     if not hdd_path or not title_id:
-        return False, "xemu profile incomplete: need Title ID and HDD (.qcow2) path"
+        return False, tr("xemu profile incomplete: need Title ID and HDD (.qcow2) path")
 
     try:
         from emulator_utils.xemu_lab.backup import (
@@ -1429,7 +1430,7 @@ def _perform_xemu_backup(profile_name: str, profile_data: dict, archive_path: st
         from emulator_utils.xemu_lab.safety import SafetyError, assert_xemu_closed
     except ImportError as e:
         logging.error(f"Could not import xemu_lab: {e}")
-        return False, f"xemu lab not available: {e}"
+        return False, tr("xemu lab not available: {0}", e)
 
     temp_dir = tempfile.mkdtemp(prefix="savestate_xemu_")
     try:
@@ -1472,14 +1473,14 @@ def _perform_xemu_backup(profile_name: str, profile_data: dict, archive_path: st
                 os.path.getsize(bin_path),
             )
 
-        return True, f"xemu Title ID {title_id} backed up successfully (XBSV)"
+        return True, tr("xemu Title ID {0} backed up successfully (XBSV)", title_id)
 
     except BackupError as e:
         logging.error(f"xemu backup rejected: {e}")
-        return False, f"xemu backup failed: {e}"
+        return False, tr("xemu backup failed: {0}", e)
     except Exception as e:
         logging.error(f"xemu backup failed: {e}", exc_info=True)
-        return False, f"xemu backup failed: {e}"
+        return False, tr("xemu backup failed: {0}", e)
     finally:
         try:
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -1497,7 +1498,7 @@ def _perform_xemu_restore(profile_name: str, profile_data: dict, archive_path: s
 
     hdd_path, title_id = _resolve_xemu_targets(profile_data, fallback_paths=fallback_paths)
     if not hdd_path or not title_id:
-        return False, "xemu profile incomplete: need Title ID and HDD (.qcow2) path"
+        return False, tr("xemu profile incomplete: need Title ID and HDD (.qcow2) path")
 
     try:
         from emulator_utils.xemu_lab.backup import load_backup
@@ -1505,7 +1506,7 @@ def _perform_xemu_restore(profile_name: str, profile_data: dict, archive_path: s
         from emulator_utils.xemu_lab.safety import SafetyError
     except ImportError as e:
         logging.error(f"Could not import xemu_lab: {e}")
-        return False, f"xemu lab not available: {e}"
+        return False, tr("xemu lab not available: {0}", e)
 
     temp_dir = tempfile.mkdtemp(prefix="savestate_xemu_restore_")
     try:
@@ -1531,7 +1532,7 @@ def _perform_xemu_restore(profile_name: str, profile_data: dict, archive_path: s
             json_member = json_member or fallback_json
 
             if not bin_member:
-                return False, "No XBSV .bin found in the backup archive (not an xemu surgical backup?)"
+                return False, tr("No XBSV .bin found in the backup archive (not an xemu surgical backup?)")
 
             logging.debug("xemu: extracting '%s' from archive...", bin_member)
             zipf.extract(bin_member, temp_dir)
@@ -1544,12 +1545,12 @@ def _perform_xemu_restore(profile_name: str, profile_data: dict, archive_path: s
         try:
             backup = load_backup(extracted_bin, json_path=extracted_json)
         except Exception as e:
-            return False, f"Invalid XBSV backup in archive: {e}"
+            return False, tr("Invalid XBSV backup in archive: {0}", e)
 
         backup_tid = str(getattr(backup, "title_id", "")).strip().lower()
         if backup_tid and backup_tid != title_id:
             return False, (
-                f"Backup Title ID ({backup_tid}) does not match profile ({title_id})"
+                tr("Backup Title ID ({0}) does not match profile ({1})", backup_tid, title_id)
             )
 
         logging.info(
@@ -1569,24 +1570,24 @@ def _perform_xemu_restore(profile_name: str, profile_data: dict, archive_path: s
         remapped = getattr(report, "clusters_remapped", 0)
         if not verified:
             return False, (
-                f"xemu restore finished but verification failed "
-                f"(mode={mode}, remapped={remapped})"
+                tr("xemu restore finished but verification failed "
+                "(mode={0}, remapped={1})", mode, remapped)
             )
 
         detail = f"mode={mode}"
         if remapped:
             detail += f", remapped={remapped}"
-        return True, f"xemu Title ID {title_id} restored successfully ({detail})"
+        return True, tr("xemu Title ID {0} restored successfully ({1})", title_id, detail)
 
     except SafetyError as e:
         logging.error(f"xemu restore blocked: {e}")
         return False, str(e)
     except RestoreError as e:
         logging.error(f"xemu restore rejected: {e}")
-        return False, f"xemu restore failed: {e}"
+        return False, tr("xemu restore failed: {0}", e)
     except Exception as e:
         logging.error(f"xemu restore failed: {e}", exc_info=True)
-        return False, f"xemu restore failed: {e}"
+        return False, tr("xemu restore failed: {0}", e)
     finally:
         try:
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -1701,7 +1702,7 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
     paths_ok, invalid_paths = _validate_source_paths(paths_to_process)
     if not paths_ok:
         error_details = "\n".join(invalid_paths)
-        error_message = f"One or more source paths do not exist or caused errors:\n{error_details}"
+        error_message = tr("One or more source paths do not exist or caused errors:\n{0}", error_details)
         logging.error(f"Backup error '{profile_name}': {error_message}")
         return False, error_message
 
@@ -1721,7 +1722,7 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
     try:
         os.makedirs(profile_backup_dir, exist_ok=True)
     except Exception as e:
-        msg = f"ERROR: Unable to create backup directory '{profile_backup_dir}': {e}"
+        msg = tr("ERROR: Unable to create backup directory '{0}': {1}", profile_backup_dir, e)
         logging.error(msg, exc_info=True)
         return False, msg
 
@@ -1749,8 +1750,8 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
             deleted_files = manage_backups(
                 profile_name, backup_base_dir, max_backups, profile_data=profile_data
             )
-            deleted_msg = f" Deleted {len(deleted_files)} obsolete backups." if deleted_files else ""
-            return True, f"Backup completed successfully:\n'{archive_name}'" + deleted_msg
+            deleted_msg = tr(" Deleted {0} obsolete backups.", len(deleted_files)) if deleted_files else ""
+            return True, tr("Backup completed successfully:") + f"\n'{archive_name}'" + deleted_msg
         try:
             if os.path.exists(archive_path):
                 os.remove(archive_path)
@@ -1768,8 +1769,8 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
             if success:
                 # Manage old backups
                 deleted_files = manage_backups(profile_name, backup_base_dir, max_backups, profile_data=profile_data)
-                deleted_msg = f" Deleted {len(deleted_files)} obsolete backups." if deleted_files else ""
-                return True, f"Backup completed successfully:\n'{archive_name}'" + deleted_msg
+                deleted_msg = tr(" Deleted {0} obsolete backups.", len(deleted_files)) if deleted_files else ""
+                return True, tr("Backup completed successfully:") + f"\n'{archive_name}'" + deleted_msg
             else:
                 # Try to delete failed archive
                 try:
@@ -1809,7 +1810,7 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
         logging.info(f"Backup archive created successfully: '{archive_path}'")
 
     except (IOError, OSError, zipfile.BadZipFile, zipfile.LargeZipFile) as e:
-        msg = f"ERROR during ZIP archive creation '{archive_path}': {e}"
+        msg = tr("ERROR during ZIP archive creation '{0}': {1}", archive_path, e)
         logging.error(msg, exc_info=True)
         # Try to delete the potentially corrupted/incomplete archive
         try:
@@ -1820,7 +1821,7 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
             logging.error(f"Unable to delete incomplete archive '{archive_path}': {del_e}")
         return False, msg
     except Exception as e: # Catch other unexpected errors
-         msg = f"UNEXPECTED ERROR during ZIP backup creation '{profile_name}': {e}"
+         msg = tr("UNEXPECTED ERROR during ZIP backup creation '{0}': {1}", profile_name, e)
          logging.error(msg, exc_info=True)
          try:
              if os.path.exists(archive_path): os.remove(archive_path); logging.warning(f"Failed archive removed: {archive_name}")
@@ -1830,10 +1831,10 @@ def perform_backup(profile_name, source_paths, backup_base_dir, max_backups, max
 
     # --- Gestione Vecchi Backup ---
     deleted_files = manage_backups(profile_name, backup_base_dir, max_backups, profile_data=profile_data)
-    deleted_msg = f" Deleted {len(deleted_files)} obsolete backups." if deleted_files else ""
+    deleted_msg = tr(" Deleted {0} obsolete backups.", len(deleted_files)) if deleted_files else ""
     # --- FINE Gestione ---
 
-    return True, f"Backup completed successfully:\n'{archive_name}'" + deleted_msg
+    return True, tr("Backup completed successfully:") + f"\n'{archive_name}'" + deleted_msg
 
 # --- Support Function for Folder Size Calculation ---
 def list_available_backups(profile_name, backup_base_dir, profile_data=None):
@@ -1859,7 +1860,7 @@ def list_available_backups(profile_name, backup_base_dir, profile_data=None):
                 backup_datetime = datetime.fromtimestamp(mtime)
                 #date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
             except Exception:
-                date_str = "Unknown date"
+                date_str = tr("Unknown date")
             backups.append((fname, fpath, backup_datetime))
     except Exception as e:
         logging.error(f"Error listing backups for '{profile_name}': {e}")
@@ -1879,10 +1880,10 @@ def _validate_restore_archive(archive_path: str) -> tuple:
         Tuple (success: bool, error_message: str or None)
     """
     if not os.path.isfile(archive_path):
-        return False, f"ERROR: Restore archive not found: '{archive_path}'"
+        return False, tr("ERROR: Restore archive not found: '{0}'", archive_path)
     
     if not zipfile.is_zipfile(archive_path):
-        return False, f"ERROR: The selected file is not a valid ZIP archive: '{archive_path}'"
+        return False, tr("ERROR: The selected file is not a valid ZIP archive: '{0}'", archive_path)
     
     return True, None
 
@@ -1905,7 +1906,7 @@ def _cleanup_destination_path(dest_path: str) -> tuple:
             logging.info(f"Creating missing parent directory: '{parent_dir}'")
             os.makedirs(parent_dir, exist_ok=True)
     except Exception as e:
-        return False, f"ERROR creating parent directory '{parent_dir}': {e}"
+        return False, tr("ERROR creating parent directory '{0}': {1}", parent_dir, e)
 
     # Clean existing content
     if os.path.isdir(dest_path):
@@ -1921,7 +1922,7 @@ def _cleanup_destination_path(dest_path: str) -> tuple:
                     logging.debug(f"  Removed file: {item_path}")
             logging.info(f"Contents of '{dest_path}' successfully cleaned.")
         except Exception as e:
-            return False, f"ERROR during cleanup of destination directory '{dest_path}': {e}"
+            return False, tr("ERROR during cleanup of destination directory '{0}': {1}", dest_path, e)
     
     elif os.path.isfile(dest_path):
         logging.warning(f"Removing existing single file: '{dest_path}'")
@@ -1931,7 +1932,7 @@ def _cleanup_destination_path(dest_path: str) -> tuple:
         except FileNotFoundError:
             logging.info(f"Destination file '{dest_path}' did not exist, no removal necessary.")
         except Exception as e:
-            return False, f"ERROR removing destination file '{dest_path}': {e}"
+            return False, tr("ERROR removing destination file '{0}': {1}", dest_path, e)
     else:
         logging.info(f"Destination path '{dest_path}' does not exist (will be created).")
     
@@ -1969,16 +1970,16 @@ def _preflight_generic_restore(zipf: zipfile.ZipFile, archive_path: str,
     Neither strategy is safe if it would restore only some destinations.
     """
     if not paths_to_process or any(not isinstance(p, str) or not p for p in paths_to_process):
-        return None, "ERROR: No valid restore destination was provided."
+        return None, tr("ERROR: No valid restore destination was provided.")
 
     archive_real = os.path.normcase(os.path.realpath(archive_path))
     destination_reals = [os.path.normcase(os.path.realpath(p)) for p in paths_to_process]
     for index, destination in enumerate(destination_reals):
         if destination == os.path.dirname(destination):
-            return None, "ERROR: A filesystem root cannot be used as a restore destination."
+            return None, tr("ERROR: A filesystem root cannot be used as a restore destination.")
         try:
             if os.path.commonpath((archive_real, destination)) == destination:
-                return None, "ERROR: The restore archive is inside a destination and would be deleted."
+                return None, tr("ERROR: The restore archive is inside a destination and would be deleted.")
         except ValueError:
             # Different drives cannot contain one another.
             pass
@@ -1986,7 +1987,7 @@ def _preflight_generic_restore(zipf: zipfile.ZipFile, archive_path: str,
             try:
                 common = os.path.commonpath((destination, other))
                 if common == destination or common == other:
-                    return None, "ERROR: Restore destinations overlap."
+                    return None, tr("ERROR: Restore destinations overlap.")
             except ValueError:
                 pass
 
@@ -1998,22 +1999,22 @@ def _preflight_generic_restore(zipf: zipfile.ZipFile, archive_path: str,
         if ('\\' in info.filename or any(part in ('', '.', '..') for part in parts)
                 or member.startswith('/') or re.match(r'^[A-Za-z]:', member)
                 or not _is_safe_zip_path(member, paths_to_process[0])):
-            return None, f"SECURITY: Unsafe path in restore archive: '{info.filename}'"
+            return None, tr("SECURITY: Unsafe path in restore archive: '{0}'", info.filename)
         member_key = os.path.normcase(member)
         if member_key in seen_members:
-            return None, f"ERROR: Duplicate path in restore archive: '{info.filename}'"
+            return None, tr("ERROR: Duplicate path in restore archive: '{0}'", info.filename)
         seen_members.add(member_key)
         if not info.is_dir() and member != 'savestate/manifest.json':
             payload_members.append(member)
 
     if not payload_members:
-        return None, "ERROR: Restore archive contains no save files."
+        return None, tr("ERROR: Restore archive contains no save files.")
 
     if not is_multiple_paths:
         destination = paths_to_process[0]
         if os.path.isfile(destination):
             if len(payload_members) != 1:
-                return None, "ERROR: A single save file needs exactly one file in the backup."
+                return None, tr("ERROR: A single save file needs exactly one file in the backup.")
             return {'strategy': 'single_file', 'member': payload_members[0]}, None
 
         # A single folder backup contains one top-level folder named after the
@@ -2021,12 +2022,12 @@ def _preflight_generic_restore(zipf: zipfile.ZipFile, archive_path: str,
         # while extracting into the staged destination.
         archive_root = payload_members[0].split('/', 1)[0]
         if any(not member.startswith(archive_root + '/') for member in payload_members):
-            return None, "ERROR: A single save folder backup contains files outside its source folder."
+            return None, tr("ERROR: A single save folder backup contains files outside its source folder.")
         return {'strategy': 'single_folder', 'archive_root': archive_root}, None
 
     destination_names = [os.path.basename(path) for path in paths_to_process]
     if len({os.path.normcase(name) for name in destination_names}) != len(destination_names):
-        return None, "ERROR: Restore destinations have duplicate names."
+        return None, tr("ERROR: Restore destinations have duplicate names.")
     dest_map = dict(zip(destination_names, paths_to_process))
     matched_names = {
         member.split('/', 1)[0]
@@ -2035,15 +2036,15 @@ def _preflight_generic_restore(zipf: zipfile.ZipFile, archive_path: str,
     }
     if len(matched_names) == len(dest_map):
         if any(member.split('/', 1)[0] not in dest_map for member in payload_members):
-            return None, "ERROR: Restore archive contains save files outside the selected destinations."
+            return None, tr("ERROR: Restore archive contains save files outside the selected destinations.")
         for name, destination in dest_map.items():
             members = [member for member in payload_members if member.split('/', 1)[0] == name]
             if any(member == name for member in members) and any(member != name for member in members):
-                return None, f"ERROR: Archive mixes a file and a folder named '{name}'."
+                return None, tr("ERROR: Archive mixes a file and a folder named '{0}'.", name)
             if os.path.isfile(destination) and any(member != name for member in members):
-                return None, f"ERROR: Archive folder '{name}' cannot replace a save file."
+                return None, tr("ERROR: Archive folder '{0}' cannot replace a save file.", name)
             if os.path.isdir(destination) and any(member == name for member in members):
-                return None, f"ERROR: Archive file '{name}' cannot replace a save folder."
+                return None, tr("ERROR: Archive file '{0}' cannot replace a save folder.", name)
         return {'strategy': 'folders', 'dest_map': dest_map}, None
     # On another OS the selected folders may have different names. The
     # manifest preserves the source path order; use it only when it maps every
@@ -2071,23 +2072,23 @@ def _preflight_generic_restore(zipf: zipfile.ZipFile, archive_path: str,
             pass
 
     if matched_names:
-        return None, "ERROR: Restore archive does not contain files for every destination."
+        return None, tr("ERROR: Restore archive does not contain files for every destination.")
 
     # The old fallback is only meaningful for individual files, and it must
     # match each destination to exactly one distinct archive member.
     if any(os.path.isdir(path) for path in paths_to_process):
-        return None, "ERROR: Backup folders do not match the restore destinations."
+        return None, tr("ERROR: Backup folders do not match the restore destinations.")
     filename_matches = {}
     for destination in paths_to_process:
         filename = os.path.basename(destination)
         candidates = [member for member in payload_members if member.rsplit('/', 1)[-1] == filename]
         if len(candidates) != 1:
-            return None, f"ERROR: Expected one archive file for destination '{filename}', found {len(candidates)}."
+            return None, tr("ERROR: Expected one archive file for destination '{0}', found {1}.", filename, len(candidates))
         filename_matches[destination] = candidates[0]
     if len(set(filename_matches.values())) != len(filename_matches):
-        return None, "ERROR: Multiple restore destinations match the same archive file."
+        return None, tr("ERROR: Multiple restore destinations match the same archive file.")
     if set(filename_matches.values()) != set(payload_members):
-        return None, "ERROR: Restore archive has additional save files that cannot be mapped."
+        return None, tr("ERROR: Restore archive has additional save files that cannot be mapped.")
     return {'strategy': 'filenames', 'matches': filename_matches}, None
 
 
@@ -2116,7 +2117,7 @@ def _prepare_restore_staging(paths_to_process: list) -> tuple:
             staging_paths[destination] = staging
         return staging_paths, None
     except Exception as e:
-        return None, f"ERROR: Could not prepare restore staging paths: {e}"
+        return None, tr("ERROR: Could not prepare restore staging paths: {0}", e)
 
 
 def _remove_staged_restore(staging_paths: dict) -> list:
@@ -2126,7 +2127,7 @@ def _remove_staged_restore(staging_paths: dict) -> list:
         try:
             _remove_restore_path(staging)
         except Exception as e:
-            errors.append(f"Could not remove partial restore '{staging}': {e}")
+            errors.append(tr("Could not remove partial restore '{0}': {1}", staging, e))
     return errors
 
 
@@ -2159,17 +2160,17 @@ def _commit_staged_restore(staging_paths: dict) -> tuple:
             try:
                 _remove_restore_path(destination)
             except Exception as rollback_error:
-                errors.append(f"Could not remove new saves at '{destination}': {rollback_error}")
+                errors.append(tr("Could not remove new saves at '{0}': {1}", destination, rollback_error))
         for destination, previous in reversed(previous_paths):
             try:
                 if os.path.lexists(destination):
-                    errors.append(f"Old saves remain at '{previous}' because '{destination}' is occupied")
+                    errors.append(tr("Old saves remain at '{0}' because '{1}' is occupied", previous, destination))
                     continue
                 os.rename(previous, destination)
             except Exception as rollback_error:
-                errors.append(f"Old saves remain at '{previous}': {rollback_error}")
+                errors.append(tr("Old saves remain at '{0}': {1}", previous, rollback_error))
         errors.extend(_remove_staged_restore(staging_paths))
-        message = f"ERROR: Could not install restored saves: {e}"
+        message = tr("ERROR: Could not install restored saves: {0}", e)
         if errors:
             message += "\n" + "\n".join(errors)
         return None, message
@@ -2182,7 +2183,7 @@ def _discard_previous_destinations(previous_paths: list) -> list:
         try:
             _remove_restore_path(previous)
         except Exception as e:
-            warnings.append(f"Previous saves remain at '{previous}': {e}")
+            warnings.append(tr("Previous saves remain at '{0}': {1}", previous, e))
     return warnings
 
 
@@ -2202,7 +2203,7 @@ def _extract_by_filename_matching(zipf: zipfile.ZipFile, filename_matches: dict)
     
     for dest_path, zip_path in filename_matches.items():
         if not _is_safe_zip_path(zip_path.replace('\\', '/'), os.path.dirname(dest_path)):
-            msg = f"SECURITY: Blocked suspicious ZIP path: '{zip_path}'"
+            msg = tr("SECURITY: Blocked suspicious ZIP path: '{0}'", zip_path)
             logging.error(msg)
             return False, msg
 
@@ -2216,7 +2217,7 @@ def _extract_by_filename_matching(zipf: zipfile.ZipFile, filename_matches: dict)
             logging.info(f"Successfully extracted {zip_path} to {dest_path}")
         except Exception as e:
             logging.error(f"Error extracting {zip_path} to {dest_path}: {e}")
-            return False, f"Error during alternative extraction method: {e}"
+            return False, tr("Error during alternative extraction method: {0}", e)
 
     return True, None
 
@@ -2257,7 +2258,7 @@ def _extract_member_to_destination(zipf: zipfile.ZipFile, member_path: str,
     
     # Security check: Zip Slip protection
     if not _is_safe_zip_path(relative_path, target_dest_path_base):
-        msg = f"SECURITY: Blocked unsafe ZIP path (potential path traversal): '{member_path}'"
+        msg = tr("SECURITY: Blocked unsafe ZIP path (potential path traversal): '{0}'", member_path)
         logging.error(msg)
         error_messages.append(msg)
         return False
@@ -2281,7 +2282,7 @@ def _extract_member_to_destination(zipf: zipfile.ZipFile, member_path: str,
         logging.debug(f"  Extracted file {member_path} -> {full_extract_path}")
         return True
     except Exception as e:
-        msg = f"ERROR extracting file '{member_path}' to '{full_extract_path}': {e}"
+        msg = tr("ERROR extracting file '{0}' to '{1}': {2}", member_path, full_extract_path, e)
         logging.error(msg, exc_info=True)
         error_messages.append(msg)
         return False
@@ -2370,7 +2371,7 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path, pr
                     alt_success, alt_error = _extract_by_filename_matching(zipf, staged_matches)
                     if not alt_success:
                         extracted_successfully = False
-                        error_messages.append(alt_error or "File extraction failed.")
+                        error_messages.append(alt_error or tr("File extraction failed."))
                 else:
                     # Standard multi-path extraction
                     dest_map = {
@@ -2390,7 +2391,7 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path, pr
                     )
                     if not success:
                         extracted_successfully = False
-                        error_messages.append(error or "File extraction failed.")
+                        error_messages.append(error or tr("File extraction failed."))
                 else:
                     os.makedirs(single_dest_path, exist_ok=True)
                     dest_map = {restore_plan['archive_root']: single_dest_path}
@@ -2399,17 +2400,17 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path, pr
                             extracted_successfully = False
 
     except zipfile.BadZipFile:
-        msg = f"ERROR: The file is not a valid ZIP archive or is corrupted: '{archive_to_restore_path}'"
+        msg = tr("ERROR: The file is not a valid ZIP archive or is corrupted: '{0}'", archive_to_restore_path)
         logging.error(msg)
         error_messages.append(msg)
         extracted_successfully = False
     except (IOError, OSError) as e: # Catch IO/OS errors
-        msg = f"ERROR IO/OS during extraction: {e}"
+        msg = tr("ERROR IO/OS during extraction: {0}", e)
         logging.error(msg, exc_info=True)
         error_messages.append(msg)
         extracted_successfully = False
     except Exception as e:
-        msg = f"FATAL ERROR unexpected during the restore process: {e}"
+        msg = tr("FATAL ERROR unexpected during the restore process: {0}", e)
         logging.error(msg, exc_info=True)
         error_messages.append(msg)
         extracted_successfully = False
@@ -2428,18 +2429,18 @@ def perform_restore(profile_name, destination_paths, archive_to_restore_path, pr
 
     # --- Risultato Finale ---
     if extracted_successfully:
-        msg = f"Restore completed successfully for profile '{profile_name}'."
+        msg = tr("Restore completed successfully for profile '{0}'.", profile_name)
         logging.info(msg)
         final_message = msg
         if error_messages: # Aggiunge avvisi anche in caso di successo parziale
-             final_message += "\n\nATTENZIONE: Sono stati riscontrati alcuni errori durante l'estrazione:\n" + "\n".join(error_messages)
+             final_message += "\n\n" + tr("WARNING: Some errors occurred during extraction:") + "\n" + "\n".join(error_messages)
         return True, final_message
     else:
-        msg = f"Restore for profile '{profile_name}' failed or completed with errors."
+        msg = tr("Restore for profile '{0}' failed or completed with errors.", profile_name)
         logging.error(msg)
         final_message = msg
         if error_messages:
-            final_message += "\n\nDettaglio errori:\n" + "\n".join(error_messages)
+            final_message += "\n\n" + tr("Error details:") + "\n" + "\n".join(error_messages)
         return False, final_message
 
 # --- Steam Detection Logic ---
@@ -2469,11 +2470,11 @@ def delete_single_backup_file(file_path):
     Returns (False, message) if the backup is locked.
     """
     if not file_path:
-        msg = "ERROR: No file path specified for deletion."
+        msg = tr("ERROR: No file path specified for deletion.")
         logging.error(msg)
         return False, msg
     if not os.path.isfile(file_path):
-        msg = f"ERROR: File to delete not found or is not a valid file: '{file_path}'"
+        msg = tr("ERROR: File to delete not found or is not a valid file: '{0}'", file_path)
         logging.error(msg)
         return False, msg # Considera errore se file non esiste
     
@@ -2482,7 +2483,7 @@ def delete_single_backup_file(file_path):
         from gui_components import lock_backup_manager
         if lock_backup_manager.is_backup_locked(file_path):
             backup_name = os.path.basename(file_path)
-            msg = f"Cannot delete '{backup_name}': backup is locked. Unlock it first."
+            msg = tr("Cannot delete '{0}': backup is locked. Unlock it first.", backup_name)
             logging.warning(msg)
             return False, msg
     except ImportError:
@@ -2503,15 +2504,15 @@ def delete_single_backup_file(file_path):
             pass
         except Exception as e_note:
             logging.warning(f"Failed to remove backup note for '{backup_name}': {e_note}")
-        msg = f"File '{backup_name}' deleted successfully."
+        msg = tr("File '{0}' deleted successfully.", backup_name)
         logging.info(msg)
         return True, msg
     except OSError as e:
-        msg = f"ERROR OS during deletion of '{backup_name}': {e}"
+        msg = tr("ERROR OS during deletion of '{0}': {1}", backup_name, e)
         logging.error(msg)
         return False, msg
     except Exception as e:
-        msg = f"ERROR unexpected during deletion of '{backup_name}': {e}"
+        msg = tr("ERROR unexpected during deletion of '{0}': {1}", backup_name, e)
         logging.exception(msg) # Logga traceback
         return False, msg
 
@@ -2676,20 +2677,20 @@ def validate_backup_zip(zip_path: str) -> tuple:
     import zipfile
     
     if not os.path.isfile(zip_path):
-        return False, None, f"File not found: {zip_path}"
+        return False, None, tr("File not found: {0}", zip_path)
     
     if not zipfile.is_zipfile(zip_path):
-        return False, None, "Not a valid ZIP file"
+        return False, None, tr("Not a valid ZIP file")
     
     manifest = read_manifest_from_zip(zip_path)
     if manifest is None:
-        return False, None, "No valid manifest.json found in savestate/ folder"
+        return False, None, tr("No valid manifest.json found in savestate/ folder")
     
     # Validate manifest has required fields
     required_fields = ["profile_name", "created_at"]
     for field in required_fields:
         if field not in manifest:
-            return False, manifest, f"Manifest missing required field: {field}"
+            return False, manifest, tr("Manifest missing required field: {0}", field)
     
     return True, manifest, ""
 

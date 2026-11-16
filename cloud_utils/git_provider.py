@@ -22,6 +22,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 
 from cloud_utils.storage_provider import StorageProvider, ProviderType, select_zip_files_for_upload
+from common.i18n import tr
 
 
 class GitProvider(StorageProvider):
@@ -56,7 +57,7 @@ class GitProvider(StorageProvider):
     
     @property
     def name(self) -> str:
-        return "Git Repository"
+        return tr("Git Repository")
     
     @property
     def icon_name(self) -> str:
@@ -85,7 +86,7 @@ class GitProvider(StorageProvider):
         """
         cwd = cwd or self._repo_path
         if not cwd:
-            return False, "No repository path"
+            return False, tr("No repository path")
         
         try:
             run_kwargs = dict(
@@ -102,9 +103,9 @@ class GitProvider(StorageProvider):
             output = (result.stdout + result.stderr).strip()
             return result.returncode == 0, output
         except FileNotFoundError:
-            return False, "Git is not installed or not in PATH"
+            return False, tr("Git is not installed or not in PATH")
         except subprocess.TimeoutExpired:
-            return False, "Git command timed out"
+            return False, tr("Git command timed out")
         except Exception as e:
             return False, str(e)
     
@@ -223,17 +224,17 @@ class GitProvider(StorageProvider):
         }
         
         if not self._repo_path:
-            result['message'] = 'No repository path configured'
+            result['message'] = tr('No repository path configured')
             return result
         
         if not self._git_available():
-            result['message'] = 'Git is not installed or not in PATH'
+            result['message'] = tr('Git is not installed or not in PATH')
             return result
         
         try:
             if not self.is_connected:
                 if not self.connect():
-                    result['message'] = 'Connection failed'
+                    result['message'] = tr('Connection failed')
                     return result
             
             # Test write by creating and removing a test file
@@ -243,11 +244,11 @@ class GitProvider(StorageProvider):
                 test_file.unlink()
                 result['details']['writable'] = True
             except Exception as e:
-                result['message'] = f'Write test failed: {e}'
+                result['message'] = tr('Write test failed: {0}', e)
                 return result
             
             result['success'] = True
-            result['message'] = 'Connection successful'
+            result['message'] = tr('Connection successful')
             return result
             
         except Exception as e:
@@ -307,11 +308,11 @@ class GitProvider(StorageProvider):
         }
         
         if not self.is_connected:
-            result['error'] = 'Not connected'
+            result['error'] = tr('Not connected')
             return result
         
         if not os.path.isdir(local_path):
-            result['error'] = f'Local path not found: {local_path}'
+            result['error'] = tr('Local path not found: {0}', local_path)
             return result
         
         try:
@@ -413,7 +414,7 @@ class GitProvider(StorageProvider):
         }
         
         if not self.is_connected:
-            result['error'] = 'Not connected'
+            result['error'] = tr('Not connected')
             return result
         
         try:
@@ -421,7 +422,7 @@ class GitProvider(StorageProvider):
             
             profile_dir = self._backup_root / profile_name
             if not profile_dir.is_dir():
-                result['error'] = f'Profile not found: {profile_name}'
+                result['error'] = tr('Profile not found: {0}', profile_name)
                 return result
             
             os.makedirs(local_path, exist_ok=True)

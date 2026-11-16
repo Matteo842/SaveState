@@ -20,6 +20,7 @@ from core import settings_manager
 import config
 from gui.gui_utils import WorkerThread, SteamSearchWorkerThread, open_folder_in_file_manager, NotificationPopup
 from common.utils import sanitize_filename, resource_path
+from common.i18n import tr
 
 
 class MainWindowHandlers:
@@ -46,9 +47,9 @@ class MainWindowHandlers:
             self.main_window.log_dock_widget.setVisible(is_visible)
             # Update tooltip on the main window's button
             if is_visible:
-                self.main_window.toggle_log_button.setToolTip("Hide Log")
+                self.main_window.toggle_log_button.setToolTip(tr("Hide Log"))
             else:
-                self.main_window.toggle_log_button.setToolTip("Show Log")
+                self.main_window.toggle_log_button.setToolTip(tr("Show Log"))
 
     # Starts the timer when the log button is pressed (for long press detection).
     @Slot()
@@ -121,14 +122,14 @@ class MainWindowHandlers:
             logging.info(f"'backup_base_dir' not in settings, using default: {backup_dir}")
 
         if not backup_dir: # If still no backup_dir (e.g., config.BACKUP_BASE_DIR was also None/empty, though unlikely)
-            QMessageBox.warning(self.main_window, "Error", "Backup base directory not configured in settings or config file.")
+            QMessageBox.warning(self.main_window, tr("Error"), tr("Backup base directory not configured in settings or config file."))
             return
 
         backup_dir = os.path.normpath(backup_dir)
 
         if not os.path.isdir(backup_dir):
-            reply = QMessageBox.question(self.main_window, "Folder Not Found",
-                                         "The specified backup folder does not exist:\n'{0}'\n\nDo you want to try to create it?".format(backup_dir),
+            reply = QMessageBox.question(self.main_window, tr("Folder Not Found"),
+                                         tr("The specified backup folder does not exist:\n'{0}'\n\nDo you want to try to create it?", backup_dir),
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                          QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.Yes:
@@ -136,7 +137,7 @@ class MainWindowHandlers:
                     os.makedirs(backup_dir, exist_ok=True)
                     logging.info(f"Backup folder created: {backup_dir}")
                 except Exception as e:
-                    QMessageBox.critical(self.main_window, "Error Creation", "Unable to create folder:\n{0}".format(e))
+                    QMessageBox.critical(self.main_window, tr("Error Creation"), tr("Unable to create folder:\n{0}", e))
                     return
             else:
                 return
@@ -145,18 +146,18 @@ class MainWindowHandlers:
         success, message = open_folder_in_file_manager(backup_dir)
         if not success:
             logging.error(f"Failed to open backup folder: {message}")
-            QMessageBox.critical(self.main_window, "Error Opening", f"Unable to open folder:\n{message}")
+            QMessageBox.critical(self.main_window, tr("Error Opening"), tr("Unable to open folder:\n{0}", message))
 
     # Import configuration (profiles, favorites, settings) from backup mirror
     @Slot()
     def handle_import_config_from_backup(self):
         backup_dir = self.main_window.current_settings.get("backup_base_dir", config.BACKUP_BASE_DIR)
         if not backup_dir:
-            QMessageBox.warning(self.main_window, "Import Error", "Backup base directory is not configured.")
+            QMessageBox.warning(self.main_window, tr("Import Error"), tr("Backup base directory is not configured."))
             return
         mirror_dir = os.path.join(backup_dir, ".savestate")
         if not os.path.isdir(mirror_dir):
-            QMessageBox.warning(self.main_window, "Import Error", f"Mirror folder not found:\n{mirror_dir}")
+            QMessageBox.warning(self.main_window, tr("Import Error"), tr("Mirror folder not found:\n{0}", mirror_dir))
             return
 
         # Files to import
@@ -187,7 +188,7 @@ class MainWindowHandlers:
                 logging.error(f"Failed importing {fname}: {e}")
 
         if not imported:
-            QMessageBox.information(self.main_window, "Import", "No mirror files found to import.")
+            QMessageBox.information(self.main_window, tr("Import"), tr("No mirror files found to import."))
             return
 
         # Reload runtime state when possible
@@ -209,7 +210,7 @@ class MainWindowHandlers:
             except Exception:
                 pass
 
-        QMessageBox.information(self.main_window, "Import", "Imported: " + ", ".join(imported) + "\nYou can now use Restore without creating a dummy profile.")
+        QMessageBox.information(self.main_window, tr("Import"), tr("Imported: {0}\nYou can now use Restore without creating a dummy profile.", ", ".join(imported)))
 
     # Opens the settings dialog and applies changes if confirmed.
     @Slot()
@@ -279,7 +280,7 @@ class MainWindowHandlers:
             # 3. Save the updated settings to the configuration file.
             if settings_manager.save_settings(self.main_window.current_settings):
                 logging.info("Settings saved successfully after dialog confirmation.")
-                self.main_window.status_label.setText("Settings saved.")
+                self.main_window.status_label.setText(tr("Settings saved."))
                 # Decide whether to reload runtime modules/data
                 new_portable = bool(self.main_window.current_settings.get("portable_config_only", False))
                 need_runtime_reload = new_portable or (new_portable != old_portable)
@@ -326,8 +327,8 @@ class MainWindowHandlers:
                     logging.warning("Unable to update global drag listener state after settings save.")
             else:
                 logging.error("Failed to save settings after dialog confirmation.")
-                QMessageBox.warning(self.main_window, "Save Error",
-                                   "Failed to save settings to file.")
+                QMessageBox.warning(self.main_window, tr("Save Error"),
+                                   tr("Failed to save settings to file."))
         else:
             logging.debug("Settings dialog cancelled.")
 
@@ -391,19 +392,19 @@ class MainWindowHandlers:
                 if cm is not None:
                     if enabled and not cm.is_running():
                         cm.start()
-                        self.main_window.status_label.setText("Controller support enabled.")
+                        self.main_window.status_label.setText(tr("Controller support enabled."))
                     elif not enabled and cm.is_running():
                         cm.stop()
                         # Thread killed — disconnection signals won't fire; clean up manually.
                         self.main_window._ctrl_deactivate()
-                        self.main_window.status_label.setText("Controller support disabled.")
+                        self.main_window.status_label.setText(tr("Controller support disabled."))
                     else:
                         # Already in the right state — just refresh badge labels/colors
                         if enabled and cm.is_running():
                             self.main_window._ctrl_update_badges()
-                        self.main_window.status_label.setText("Controller settings saved.")
+                        self.main_window.status_label.setText(tr("Controller settings saved."))
             else:
-                self.main_window.status_label.setText("Failed to save controller settings.")
+                self.main_window.status_label.setText(tr("Failed to save controller settings."))
                 logging.error("Failed to save controller settings.")
 
             self.main_window.exit_controller_panel()
@@ -414,7 +415,7 @@ class MainWindowHandlers:
     def handle_settings_browse(self):
         """Opens dialog to select backup folder from inline settings panel."""
         directory = QFileDialog.getExistingDirectory(
-            self.main_window, "Select Base Folder for Backups", 
+            self.main_window, tr("Select Base Folder for Backups"), 
             self.main_window.settings_path_edit.text()
         )
         if directory:
@@ -446,18 +447,18 @@ class MainWindowHandlers:
                 f"&nbsp;&nbsp;• {escape(name)}" for name in profile_names
             )
             msg_box = QMessageBox(mw)
-            msg_box.setWindowTitle("Disable automatic backup?")
+            msg_box.setWindowTitle(tr("Disable automatic backup?"))
             msg_box.setIcon(QMessageBox.Icon.Question)
             msg_box.setTextFormat(Qt.TextFormat.RichText)
             msg_box.setText(
-                "Automatic backup needs SaveState to keep running in the system tray "
-                "after you close the window."
+                tr("Automatic backup needs SaveState to keep running in the system tray "
+                "after you close the window.")
             )
             msg_box.setInformativeText(
-                "<b>The following profile(s) have automatic backup enabled:</b><br><br>"
-                f"{profile_lines}<br><br>"
+                tr("<b>The following profile(s) have automatic backup enabled:</b><br><br>"
+                "{0}<br><br>"
                 "Turn off \"Minimize to tray on close\" and "
-                "<b>disable automatic backup on all listed profiles?</b>"
+                "<b>disable automatic backup on all listed profiles?</b>", profile_lines)
             )
             msg_box.setStandardButtons(
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
@@ -485,8 +486,8 @@ class MainWindowHandlers:
             if not core_logic.save_profiles(mw.profiles):
                 QMessageBox.critical(
                     mw,
-                    "Save Failed",
-                    "Could not save profile changes. Minimize to tray was not disabled.",
+                    tr("Save Failed"),
+                    tr("Could not save profile changes. Minimize to tray was not disabled."),
                 )
                 cb.blockSignals(True)
                 cb.setChecked(True)
@@ -532,8 +533,8 @@ class MainWindowHandlers:
             if new_path and not os.path.isdir(new_path):
                 reply = QMessageBox.question(
                     self.main_window,
-                    "Create Directory?",
-                    f"The path '{new_path}' does not exist.\nDo you want to create it?",
+                    tr("Create Directory?"),
+                    tr("The path '{0}' does not exist.\nDo you want to create it?", new_path),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.Yes
                 )
@@ -544,8 +545,8 @@ class MainWindowHandlers:
                     except OSError as e:
                         QMessageBox.critical(
                             self.main_window,
-                            "Creation Failed",
-                            f"Failed to create directory '{new_path}'.\n\nError: {e}"
+                            tr("Creation Failed"),
+                            tr("Failed to create directory '{0}'.\n\nError: {1}", new_path, e)
                         )
                         return
                 else:
@@ -556,7 +557,7 @@ class MainWindowHandlers:
                not self.main_window.profile_creation_manager or \
                not hasattr(self.main_window.profile_creation_manager, 'validate_save_path'):
                 logging.error("Unable to validate path: profile_creation_manager missing.")
-                QMessageBox.critical(self.main_window, "Internal Error", "Unable to validate path.")
+                QMessageBox.critical(self.main_window, tr("Internal Error"), tr("Unable to validate path."))
                 return
             
             validated_new_path = self.main_window.profile_creation_manager.validate_save_path(
@@ -595,10 +596,10 @@ class MainWindowHandlers:
                     if appdata_has_configs:
                         reply = QMessageBox.question(
                             self.main_window,
-                            "Remove AppData Configuration?",
-                            ("You enabled portable mode and a configuration folder was found in AppData:\n\n"
-                             f"{appdata_dir}\n\n"
-                             "Do you want to delete the AppData configuration after migrating files to the backup folder?"),
+                            tr("Remove AppData Configuration?"),
+                            (tr("You enabled portable mode and a configuration folder was found in AppData:\n\n"
+                             "{0}\n\n"
+                             "Do you want to delete the AppData configuration after migrating files to the backup folder?", appdata_dir)),
                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                             QMessageBox.StandardButton.Yes
                         )
@@ -628,7 +629,7 @@ class MainWindowHandlers:
             # Save to file
             if settings_manager.save_settings(self.main_window.current_settings):
                 logging.info("Settings saved successfully from inline panel.")
-                self.main_window.status_label.setText("Settings saved.")
+                self.main_window.status_label.setText(tr("Settings saved."))
                 
                 # Reload if portable changed
                 new_portable = bool(self.main_window.current_settings.get("portable_config_only", False))
@@ -679,8 +680,8 @@ class MainWindowHandlers:
                     want_autostart = self.main_window.settings_start_with_windows_checkbox.isChecked()
                     if autostart_utils.is_supported() and want_autostart != autostart_utils.is_enabled():
                         if not autostart_utils.set_enabled(want_autostart):
-                            QMessageBox.warning(self.main_window, "Start on login",
-                                               "Could not update the startup entry.")
+                            QMessageBox.warning(self.main_window, tr("Start on login"),
+                                               tr("Could not update the startup entry."))
                 except Exception as e_autostart:
                     logging.warning(f"Start with Windows update failed: {e_autostart}")
 
@@ -688,12 +689,12 @@ class MainWindowHandlers:
                 self.main_window.exit_settings_panel()
             else:
                 logging.error("Failed to save settings from inline panel.")
-                QMessageBox.warning(self.main_window, "Save Error",
-                                   "Failed to save settings to file.")
+                QMessageBox.warning(self.main_window, tr("Save Error"),
+                                   tr("Failed to save settings to file."))
         except Exception as e:
             logging.error(f"Error saving settings from inline panel: {e}", exc_info=True)
-            QMessageBox.critical(self.main_window, "Error",
-                               f"An error occurred while saving settings:\n\n{str(e)}")
+            QMessageBox.critical(self.main_window, tr("Error"),
+                               tr("An error occurred while saving settings:\n\n{0}", str(e)))
 
     # --- Profile Actions (Delete, Backup, Restore, Manage, Shortcut) ---
     # Handles the deletion of the selected profile(s) after confirmation.
@@ -720,13 +721,13 @@ class MainWindowHandlers:
             member_count = len(core_logic.get_group_member_profiles(profile_name, self.main_window.profiles))
             if not skip_confirmation:
                 msg_box = QMessageBox(self.main_window)
-                msg_box.setWindowTitle("Confirm Group Deletion")
+                msg_box.setWindowTitle(tr("Confirm Group Deletion"))
                 msg_box.setIcon(QMessageBox.Icon.Warning)
                 msg_box.setTextFormat(Qt.TextFormat.RichText)
                 msg_box.setText(
-                    f"Are you sure you want to delete the group '{profile_name}'?<br><br>"
-                    f"<b>This group contains {member_count} profile(s).</b><br><br>"
-                    f"The member profiles will NOT be deleted - they will become visible again."
+                    tr("Are you sure you want to delete the group '{0}'?<br><br>"
+                    "<b>This group contains {1} profile(s).</b><br><br>"
+                    "The member profiles will NOT be deleted - they will become visible again.", profile_name, member_count)
                 )
                 msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
                 msg_box.setDefaultButton(QMessageBox.StandardButton.No)
@@ -739,23 +740,23 @@ class MainWindowHandlers:
                 success, error = core_logic.ungroup_profile(profile_name, self.main_window.profiles)
                 if success:
                     if core_logic.save_profiles(self.main_window.profiles):
-                        self.main_window.status_label.setText(f"Group '{profile_name}' deleted ({member_count} profiles now visible).")
+                        self.main_window.status_label.setText(tr("Group '{0}' deleted ({1} profiles now visible).", profile_name, member_count))
                         self.main_window.profile_table_manager.update_profile_table()
                     else:
-                        QMessageBox.critical(self.main_window, "Error", "Group deleted from memory but unable to save changes.")
+                        QMessageBox.critical(self.main_window, tr("Error"), tr("Group deleted from memory but unable to save changes."))
                         self.main_window.profiles = core_logic.load_profiles()
                 else:
-                    QMessageBox.warning(self.main_window, "Deletion Failed", error)
+                    QMessageBox.warning(self.main_window, tr("Deletion Failed"), error)
             return
 
         if not skip_confirmation:
             msg_box = QMessageBox(self.main_window)
-            msg_box.setWindowTitle("Confirm Deletion")
+            msg_box.setWindowTitle(tr("Confirm Deletion"))
             msg_box.setIcon(QMessageBox.Icon.Warning)
             msg_box.setTextFormat(Qt.TextFormat.RichText)
             msg_box.setText(
-                f"Are you sure you want to delete the profile '{profile_name}'?<br><br>"
-                f"<b>This does not delete already created backup files.</b>"
+                tr("Are you sure you want to delete the profile '{0}'?<br><br>"
+                "<b>This does not delete already created backup files.</b>", profile_name)
             )
             msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             msg_box.setDefaultButton(QMessageBox.StandardButton.No)
@@ -768,17 +769,17 @@ class MainWindowHandlers:
             if success:
                 # Show appropriate status message based on result
                 if result_code == "empty_folder_removed":
-                    self.main_window.status_label.setText(f"Profile '{profile_name}' deleted (empty backup folder removed).")
+                    self.main_window.status_label.setText(tr("Profile '{0}' deleted (empty backup folder removed).", profile_name))
                 elif result_code == "backup_preserved":
-                    self.main_window.status_label.setText(f"Profile '{profile_name}' deleted (backup files preserved).")
+                    self.main_window.status_label.setText(tr("Profile '{0}' deleted (backup files preserved).", profile_name))
                 elif result_code == "folder_check_error":
-                    self.main_window.status_label.setText(f"Profile '{profile_name}' deleted (could not check backup folder).")
+                    self.main_window.status_label.setText(tr("Profile '{0}' deleted (could not check backup folder).", profile_name))
                 else:
-                    self.main_window.status_label.setText(f"Profile '{profile_name}' deleted.")
+                    self.main_window.status_label.setText(tr("Profile '{0}' deleted.", profile_name))
                 self.main_window.profile_table_manager.update_profile_table()
             else:
                 if result_code == "save_failed":
-                    QMessageBox.critical(self.main_window, "Error", "Profile deleted from memory but unable to save changes.")
+                    QMessageBox.critical(self.main_window, tr("Error"), tr("Profile deleted from memory but unable to save changes."))
                     self.main_window.profiles = core_logic.load_profiles()
                     self.main_window.profile_table_manager.update_profile_table()
 
@@ -861,7 +862,7 @@ class MainWindowHandlers:
         if not skip_confirmation:
             # Build confirmation message
             msg_box = QMessageBox(self.main_window)
-            msg_box.setWindowTitle("Confirm Multiple Deletion")
+            msg_box.setWindowTitle(tr("Confirm Multiple Deletion"))
             msg_box.setIcon(QMessageBox.Icon.Warning)
             msg_box.setTextFormat(Qt.TextFormat.RichText)
             
@@ -869,17 +870,17 @@ class MainWindowHandlers:
             display_names = profile_names[:5]
             names_list = "<br>".join([f"• {name}" for name in display_names])
             if profile_count > 5:
-                names_list += f"<br>• ... and {profile_count - 5} more"
+                names_list += tr("<br>• ... and {0} more", profile_count - 5)
             
             group_warning = ""
             if groups_in_selection:
-                group_warning = f"<br><br><b>Note:</b> {len(groups_in_selection)} group(s) will be ungrouped (members become visible)."
+                group_warning = tr("<br><br><b>Note:</b> {0} group(s) will be ungrouped (members become visible).", len(groups_in_selection))
             
             msg_box.setText(
-                f"Are you sure you want to delete <b>{profile_count}</b> profiles?<br><br>"
-                f"{names_list}"
-                f"{group_warning}<br><br>"
-                f"<b>This does not delete already created backup files.</b>"
+                tr("Are you sure you want to delete <b>{0}</b> profiles?<br><br>"
+                "{1}"
+                "{2}<br><br>"
+                "<b>This does not delete already created backup files.</b>", profile_count, names_list, group_warning)
             )
             msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             msg_box.setDefaultButton(QMessageBox.StandardButton.No)
@@ -916,13 +917,13 @@ class MainWindowHandlers:
         # Save all changes at once
         if core_logic.save_profiles(self.main_window.profiles):
             if failed_count == 0:
-                self.main_window.status_label.setText(f"Deleted {deleted_count} profile(s).")
+                self.main_window.status_label.setText(tr("Deleted {0} profile(s).", deleted_count))
             else:
-                self.main_window.status_label.setText(f"Deleted {deleted_count} profile(s), {failed_count} failed.")
+                self.main_window.status_label.setText(tr("Deleted {0} profile(s), {1} failed.", deleted_count, failed_count))
             self.main_window.profile_table_manager.update_profile_table()
         else:
-            QMessageBox.critical(self.main_window, "Error", 
-                               f"Deleted {deleted_count} profile(s) from memory but unable to save changes.")
+            QMessageBox.critical(self.main_window, tr("Error"), 
+                               tr("Deleted {0} profile(s) from memory but unable to save changes.", deleted_count))
             self.main_window.profiles = core_logic.load_profiles()
             self.main_window.profile_table_manager.update_profile_table()
 
@@ -942,10 +943,10 @@ class MainWindowHandlers:
         self._cancel_backup_event.set()
         
         # Update UI to reflect cancellation is pending
-        self.main_window.status_label.setText("Cancelling backup after current profile completes...")
+        self.main_window.status_label.setText(tr("Cancelling backup after current profile completes..."))
         btn = self.main_window.backup_button
         btn.setEnabled(False)
-        btn.setText("⏳ Cancelling...")
+        btn.setText(tr("⏳ Cancelling..."))
 
     def _enter_cancel_mode(self):
         """Transform the backup button into a cancel button for multi-profile operations.
@@ -958,7 +959,7 @@ class MainWindowHandlers:
         self._backup_button_original_style = btn.styleSheet()
         self._backup_cancel_mode = True
         
-        btn.setText("✕ Cancel Backup")
+        btn.setText(tr("✕ Cancel Backup"))
         btn.setIcon(QIcon())  # Remove icon to avoid confusion
         btn.setEnabled(True)  # Must be enabled so user can click to cancel
         btn.setStyleSheet("""
@@ -1008,13 +1009,13 @@ class MainWindowHandlers:
         # Restore text based on current mode
         backup_mode = getattr(self.main_window, 'backup_mode', 'single')
         if backup_mode == 'all':
-            btn.setText("Backup All")
+            btn.setText(tr("Backup All"))
         else:
             selection_count = self.main_window.profile_table_manager.get_selection_count()
             if selection_count > 1:
-                btn.setText("Backup Selected")
+                btn.setText(tr("Backup Selected"))
             else:
-                btn.setText("Backup")
+                btn.setText(tr("Backup"))
         
         # Restore toggle button visibility
         self.main_window.update_action_button_states()
@@ -1027,13 +1028,13 @@ class MainWindowHandlers:
         profiles = self.main_window.profiles
         if not profiles:
             if not skip_confirmation:
-                QMessageBox.information(self.main_window, "No Profiles", "There are no profiles to backup.")
+                QMessageBox.information(self.main_window, tr("No Profiles"), tr("There are no profiles to backup."))
             return
         
         # Check for existing worker thread
         if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
             if not skip_confirmation:
-                QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+                QMessageBox.information(self.main_window, tr("Operation in Progress"), tr("Another operation is already in progress."))
             else:
                 logging.warning("Skipped scheduled backup via macro: worker thread currently running.")
             return
@@ -1042,12 +1043,12 @@ class MainWindowHandlers:
             # Confirmation dialog with bold profile count
             profile_count = len(profiles)
             msg_box = QMessageBox(self.main_window)
-            msg_box.setWindowTitle("Backup All Profiles")
+            msg_box.setWindowTitle(tr("Backup All Profiles"))
             msg_box.setIcon(QMessageBox.Icon.Question)
             msg_box.setTextFormat(Qt.TextFormat.RichText)
             msg_box.setText(
-                f"This will backup all <b>{profile_count}</b> profile(s).<br><br>"
-                f"Do you want to proceed?"
+                tr("This will backup all <b>{0}</b> profile(s).<br><br>"
+                "Do you want to proceed?", profile_count)
             )
             msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
@@ -1065,7 +1066,7 @@ class MainWindowHandlers:
         # Reset cancel flag and show cancel button
         self._cancel_backup_event.clear()
         
-        self.main_window.status_label.setText(f"Starting backup for all {profile_count} profiles...")
+        self.main_window.status_label.setText(tr("Starting backup for all {0} profiles...", profile_count))
         self.main_window.set_controls_enabled(False)
         self._enter_cancel_mode()
         
@@ -1091,7 +1092,7 @@ class MainWindowHandlers:
                 logging.info(f"[Backup All] Processing {idx}/{profile_count}: '{profile_name}'")
                 
                 if not isinstance(profile_data, dict):
-                    skipped.append(f"{profile_name} (invalid data)")
+                    skipped.append(tr("{0} (invalid data)", profile_name))
                     logging.warning(f"[Backup All] Skipping '{profile_name}': invalid profile data")
                     continue
                 
@@ -1120,7 +1121,7 @@ class MainWindowHandlers:
                 elif isinstance(path_data, str) and path_data:
                     source_paths = [path_data]
                 else:
-                    skipped.append(f"{profile_name} (no valid path)")
+                    skipped.append(tr("{0} (no valid path)", profile_name))
                     logging.warning(f"[Backup All] Skipping '{profile_name}': no valid source path")
                     continue
                 
@@ -1133,7 +1134,7 @@ class MainWindowHandlers:
                         logging.warning(f"[Backup All] Path does not exist for '{profile_name}': {sp}")
                 
                 if not valid_paths:
-                    skipped.append(f"{profile_name} (path not found)")
+                    skipped.append(tr("{0} (path not found)", profile_name))
                     logging.warning(f"[Backup All] Skipping '{profile_name}': all source paths are missing")
                     continue
                 
@@ -1150,7 +1151,7 @@ class MainWindowHandlers:
                         break
                 
                 if is_recursive:
-                    failed.append(f"{profile_name}: Source path is inside backup folder (would cause recursive backup)")
+                    failed.append(tr("{0}: Source path is inside backup folder (would cause recursive backup)", profile_name))
                     continue
                 
                 # Perform the backup
@@ -1178,18 +1179,18 @@ class MainWindowHandlers:
             
             # Build summary
             if was_cancelled:
-                summary = f"Backup All cancelled by user.\n\n"
+                summary = tr("Backup All cancelled by user.\n\n")
             else:
-                summary = f"Backup All completed.\n\n"
-            summary += f"✓ Successful: {len(results)}\n"
+                summary = tr("Backup All completed.\n\n")
+            summary += tr("✓ Successful: {0}\n", len(results))
             if failed:
-                summary += f"✗ Failed: {len(failed)}\n"
+                summary += tr("✗ Failed: {0}\n", len(failed))
             if skipped:
-                summary += f"⊘ Skipped: {len(skipped)}\n"
+                summary += tr("⊘ Skipped: {0}\n", len(skipped))
             if was_cancelled:
                 not_processed = profile_count - len(results) - len(failed) - len(skipped)
                 if not_processed > 0:
-                    summary += f"⊘ Not started (cancelled): {not_processed}\n"
+                    summary += tr("⊘ Not started (cancelled): {0}\n", not_processed)
             
             all_success = len(failed) == 0 and len(skipped) == 0 and not was_cancelled
             
@@ -1221,14 +1222,14 @@ class MainWindowHandlers:
                 self._shortcut_background_notification = False
                 notif_success = success and len(failed) == 0
                 if was_cancelled:
-                    notif_title = "Backup Cancelled"
-                    notif_msg = f"Backup All cancelled.\n✓ {len(results)} completed before cancellation."
+                    notif_title = tr("Backup Cancelled")
+                    notif_msg = tr("Backup All cancelled.\n✓ {0} completed before cancellation.", len(results))
                 elif notif_success:
-                    notif_title = "Backup Complete"
-                    notif_msg = f"Backup All completed successfully.\n✓ {len(results)} profile(s) backed up."
+                    notif_title = tr("Backup Complete")
+                    notif_msg = tr("Backup All completed successfully.\n✓ {0} profile(s) backed up.", len(results))
                 else:
-                    notif_title = "Backup Error"
-                    notif_msg = f"Backup All: {len(results)} succeeded, {len(failed)} failed."
+                    notif_title = tr("Backup Error")
+                    notif_msg = tr("Backup All: {0} succeeded, {1} failed.", len(results), len(failed))
                 self._show_controller_shortcut_notification(notif_success, notif_title, notif_msg)
             
             # Show detailed result
@@ -1238,30 +1239,30 @@ class MainWindowHandlers:
                     # Cancellation report
                     detail_msg = message
                     if len(results) > 0:
-                        detail_msg += f"\n\nBackups completed before cancellation are safe and preserved."
-                    QMessageBox.information(self.main_window, "Backup Cancelled", detail_msg)
+                        detail_msg += tr("\n\nBackups completed before cancellation are safe and preserved.")
+                    QMessageBox.information(self.main_window, tr("Backup Cancelled"), detail_msg)
                 elif success and len(failed) == 0:
-                    QMessageBox.information(self.main_window, "Backup All Completed", message)
+                    QMessageBox.information(self.main_window, tr("Backup All Completed"), message)
                 else:
                     # Build detailed message
                     detail_msg = message + "\n"
                     if failed:
-                        detail_msg += "\n--- Failed ---\n" + "\n".join(failed[:10])
+                        detail_msg += "\n" + tr("--- Failed ---") + "\n" + "\n".join(failed[:10])
                         if len(failed) > 10:
-                            detail_msg += f"\n... and {len(failed) - 10} more"
+                            detail_msg += tr("\n... and {0} more", len(failed) - 10)
                     if skipped:
-                        detail_msg += "\n\n--- Skipped ---\n" + "\n".join(skipped[:5])
+                        detail_msg += "\n\n" + tr("--- Skipped ---") + "\n" + "\n".join(skipped[:5])
                         if len(skipped) > 5:
-                            detail_msg += f"\n... and {len(skipped) - 5} more"
+                            detail_msg += tr("\n... and {0} more", len(skipped) - 5)
                     
-                    QMessageBox.warning(self.main_window, "Backup All Completed with Issues", detail_msg)
+                    QMessageBox.warning(self.main_window, tr("Backup All Completed with Issues"), detail_msg)
             
             if was_cancelled:
-                self.main_window.status_label.setText(f"Backup cancelled: {len(results)} profile(s) backed up before cancellation.")
+                self.main_window.status_label.setText(tr("Backup cancelled: {0} profile(s) backed up before cancellation.", len(results)))
             elif success and len(failed) == 0:
-                self.main_window.status_label.setText(f"Backup All completed: {len(results)} profile(s) backed up.")
+                self.main_window.status_label.setText(tr("Backup All completed: {0} profile(s) backed up.", len(results)))
             else:
-                self.main_window.status_label.setText(f"Backup All: {len(results)} succeeded, {len(failed)} failed, {len(skipped)} skipped.")
+                self.main_window.status_label.setText(tr("Backup All: {0} succeeded, {1} failed, {2} skipped.", len(results), len(failed), len(skipped)))
             
             # Refresh the profile table to show updated backup info
             self.main_window.profile_table_manager.update_profile_table()
@@ -1280,17 +1281,17 @@ class MainWindowHandlers:
         if mw.backup_mode == "single":
             mw.backup_mode = "all"
             # Update UI to "Backup All" state
-            mw.backup_button.setText("Backup All")
-            mw.backup_button.setToolTip("Back up ALL profiles sequentially")
+            mw.backup_button.setText(tr("Backup All"))
+            mw.backup_button.setToolTip(tr("Back up ALL profiles sequentially"))
             mw.backup_mode_toggle.setText("-")
-            mw.backup_mode_toggle.setToolTip("Switch to 'Backup Single' mode")
+            mw.backup_mode_toggle.setToolTip(tr("Switch to 'Backup Single' mode"))
         else:
             mw.backup_mode = "single"
             # Update UI to "Backup" state
-            mw.backup_button.setText("Backup")
-            mw.backup_button.setToolTip("Back up the selected profile")
+            mw.backup_button.setText(tr("Backup"))
+            mw.backup_button.setToolTip(tr("Back up the selected profile"))
             mw.backup_mode_toggle.setText("+")
-            mw.backup_mode_toggle.setToolTip("Switch to 'Backup All' mode")
+            mw.backup_mode_toggle.setToolTip(tr("Switch to 'Backup All' mode"))
 
         # Refresh button state enablement
         mw.update_action_button_states()
@@ -1305,7 +1306,7 @@ class MainWindowHandlers:
         # Check for existing worker thread
         if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
             if not skip_confirmation:
-                QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+                QMessageBox.information(self.main_window, tr("Operation in Progress"), tr("Another operation is already in progress."))
             else:
                 logging.warning("Skipped scheduled backup via macro: worker thread currently running.")
             return
@@ -1313,12 +1314,12 @@ class MainWindowHandlers:
         if not skip_confirmation:
             # Confirmation dialog
             msg_box = QMessageBox(self.main_window)
-            msg_box.setWindowTitle("Backup Selected Profiles")
+            msg_box.setWindowTitle(tr("Backup Selected Profiles"))
             msg_box.setIcon(QMessageBox.Icon.Question)
             msg_box.setTextFormat(Qt.TextFormat.RichText)
             msg_box.setText(
-                f"Backup <b>{profile_count}</b> selected profile(s)?<br><br>"
-                f"<small>{', '.join(selected_profile_names[:5])}{' ...' if profile_count > 5 else ''}</small>"
+                tr("Backup <b>{0}</b> selected profile(s)?<br><br>"
+                "<small>{1}{2}</small>", profile_count, ', '.join(selected_profile_names[:5]), ' ...' if profile_count > 5 else '')
             )
             msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
@@ -1337,7 +1338,7 @@ class MainWindowHandlers:
         self._cancel_backup_event.clear()
         show_cancel = profile_count >= 2
         
-        self.main_window.status_label.setText(f"Backing up {profile_count} selected profiles...")
+        self.main_window.status_label.setText(tr("Backing up {0} selected profiles...", profile_count))
         self.main_window.set_controls_enabled(False)
         if show_cancel:
             self._enter_cancel_mode()
@@ -1365,7 +1366,7 @@ class MainWindowHandlers:
                 
                 profile_data = profiles.get(profile_name)
                 if not profile_data or not isinstance(profile_data, dict):
-                    skipped.append(f"{profile_name} (invalid data)")
+                    skipped.append(tr("{0} (invalid data)", profile_name))
                     logging.warning(f"[Backup Selected] Skipping '{profile_name}': invalid profile data")
                     continue
                 
@@ -1392,14 +1393,14 @@ class MainWindowHandlers:
                     source_paths = [profile_data['path']]
                 
                 if not source_paths:
-                    skipped.append(f"{profile_name} (no valid path)")
+                    skipped.append(tr("{0} (no valid path)", profile_name))
                     logging.warning(f"[Backup Selected] Skipping '{profile_name}': no valid source path")
                     continue
                 
                 # Check paths exist
                 valid_paths = [p for p in source_paths if os.path.exists(p)]
                 if not valid_paths:
-                    skipped.append(f"{profile_name} (path not found)")
+                    skipped.append(tr("{0} (path not found)", profile_name))
                     logging.warning(f"[Backup Selected] Skipping '{profile_name}': paths do not exist")
                     continue
                 
@@ -1427,18 +1428,18 @@ class MainWindowHandlers:
             
             # Build summary
             if was_cancelled:
-                summary = f"Backup cancelled by user.\n\n"
+                summary = tr("Backup cancelled by user.\n\n")
             else:
-                summary = f"Backup completed.\n\n"
-            summary += f"✓ Successful: {len(results)}\n"
+                summary = tr("Backup completed.\n\n")
+            summary += tr("✓ Successful: {0}\n", len(results))
             if failed:
-                summary += f"✗ Failed: {len(failed)}\n"
+                summary += tr("✗ Failed: {0}\n", len(failed))
             if skipped:
-                summary += f"⊘ Skipped: {len(skipped)}\n"
+                summary += tr("⊘ Skipped: {0}\n", len(skipped))
             if was_cancelled:
                 not_processed = profile_count - len(results) - len(failed) - len(skipped)
                 if not_processed > 0:
-                    summary += f"⊘ Not started (cancelled): {not_processed}\n"
+                    summary += tr("⊘ Not started (cancelled): {0}\n", not_processed)
             
             all_success = len(failed) == 0 and len(skipped) == 0 and not was_cancelled
             
@@ -1470,14 +1471,14 @@ class MainWindowHandlers:
                 if len(selected_profile_names) > 3:
                     profile_names += f' +{len(selected_profile_names) - 3} more'
                 if was_cancelled:
-                    notif_title = "Backup Cancelled"
-                    notif_msg = f"Backup cancelled.\n✓ {len(results)} completed before cancellation."
+                    notif_title = tr("Backup Cancelled")
+                    notif_msg = tr("Backup cancelled.\n✓ {0} completed before cancellation.", len(results))
                 elif notif_success:
-                    notif_title = "Backup Complete"
-                    notif_msg = f"Backup completed successfully:\n'{profile_names}'"
+                    notif_title = tr("Backup Complete")
+                    notif_msg = tr("Backup completed successfully:\n'{0}'", profile_names)
                 else:
-                    notif_title = "Backup Error"
-                    notif_msg = f"Backup failed for: {profile_names}"
+                    notif_title = tr("Backup Error")
+                    notif_msg = tr("Backup failed for: {0}", profile_names)
                 self._show_controller_shortcut_notification(
                     notif_success,
                     notif_title,
@@ -1492,31 +1493,31 @@ class MainWindowHandlers:
                 if was_cancelled:
                     detail_msg = message
                     if len(results) > 0:
-                        detail_msg += f"\n\nBackups completed before cancellation are safe and preserved."
-                    QMessageBox.information(self.main_window, "Backup Cancelled", detail_msg)
+                        detail_msg += tr("\n\nBackups completed before cancellation are safe and preserved.")
+                    QMessageBox.information(self.main_window, tr("Backup Cancelled"), detail_msg)
                 elif success and len(failed) == 0:
-                    QMessageBox.information(self.main_window, "Backup Completed", message)
+                    QMessageBox.information(self.main_window, tr("Backup Completed"), message)
                 else:
                     detail_msg = message + "\n"
                     if failed:
-                        detail_msg += "\n--- Failed ---\n" + "\n".join(failed[:10])
+                        detail_msg += "\n" + tr("--- Failed ---") + "\n" + "\n".join(failed[:10])
                         if len(failed) > 10:
-                            detail_msg += f"\n... and {len(failed) - 10} more"
+                            detail_msg += tr("\n... and {0} more", len(failed) - 10)
                     if skipped:
-                        detail_msg += "\n\n--- Skipped ---\n" + "\n".join(skipped[:5])
+                        detail_msg += "\n\n" + tr("--- Skipped ---") + "\n" + "\n".join(skipped[:5])
                         if len(skipped) > 5:
-                            detail_msg += f"\n... and {len(skipped) - 5} more"
+                            detail_msg += tr("\n... and {0} more", len(skipped) - 5)
                     
-                    QMessageBox.warning(self.main_window, "Backup Completed with Issues", detail_msg)
+                    QMessageBox.warning(self.main_window, tr("Backup Completed with Issues"), detail_msg)
                     
             if was_cancelled:
                 self.main_window.status_label.setText(
-                    f"Backup cancelled: {len(results)} profile(s) backed up before cancellation."
+                    tr("Backup cancelled: {0} profile(s) backed up before cancellation.", len(results))
                 )
             elif success and len(failed) == 0:
-                self.main_window.status_label.setText(f"Backup completed: {len(results)} profile(s) backed up.")
+                self.main_window.status_label.setText(tr("Backup completed: {0} profile(s) backed up.", len(results)))
             else:
-                self.main_window.status_label.setText(f"Backup: {len(results)} succeeded, {len(failed)} failed, {len(skipped)} skipped.")
+                self.main_window.status_label.setText(tr("Backup: {0} succeeded, {1} failed, {2} skipped.", len(results), len(failed), len(skipped)))
             
             self.main_window.profile_table_manager.update_profile_table()
         
@@ -1550,7 +1551,7 @@ class MainWindowHandlers:
 
         profile_data = self.main_window.profiles.get(profile_name)
         if not profile_data or not isinstance(profile_data, dict):
-            QMessageBox.critical(self.main_window, "Internal Error", "Corrupted or missing profile data for '{0}'.".format(profile_name))
+            QMessageBox.critical(self.main_window, tr("Internal Error"), tr("Corrupted or missing profile data for '{0}'.", profile_name))
             logging.error(f"Invalid profile data for '{profile_name}': {profile_data}")
             return
         
@@ -1561,10 +1562,10 @@ class MainWindowHandlers:
 
         # Check for existing worker thread
         if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
-            QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+            QMessageBox.information(self.main_window, tr("Operation in Progress"), tr("Another operation is already in progress."))
             return
 
-        self.main_window.status_label.setText("Starting backup for '{0}'...".format(profile_name))
+        self.main_window.status_label.setText(tr("Starting backup for '{0}'...", profile_name))
         self.main_window.set_controls_enabled(False) # Disable controls
 
         # Determine effective settings using helper (respects group > profile > global priority)
@@ -1626,7 +1627,7 @@ class MainWindowHandlers:
                     )
                     return success_worker, result_message_worker
                 except Exception as e_bk_worker:
-                    err_msg = f"Exception in PCSX2 backup task for '{p_name_worker}': {e_bk_worker}"
+                    err_msg = tr("Exception in PCSX2 backup task for '{0}': {1}", p_name_worker, e_bk_worker)
                     logging.error(err_msg, exc_info=True)
                     return False, err_msg
 
@@ -1644,15 +1645,15 @@ class MainWindowHandlers:
             elif isinstance(path_data, str) and path_data:
                 source_paths = [path_data]
             else:
-                QMessageBox.critical(self.main_window, "Profile Data Error",
-                                     "No valid source path ('paths' or 'path') found in profile '{0}'. Unable to backup.".format(profile_name))
+                QMessageBox.critical(self.main_window, tr("Profile Data Error"),
+                                     tr("No valid source path ('paths' or 'path') found in profile '{0}'. Unable to backup.", profile_name))
                 logging.error(f"Invalid source path data for profile '{profile_name}': paths={paths_data}, path={path_data}")
                 self.main_window.set_controls_enabled(True)
                 return
             
             # Settings needed for core_logic.perform_backup
             if not hasattr(self.main_window, 'current_settings') or not self.main_window.current_settings:
-                QMessageBox.critical(self.main_window, self.tr("Internal Error"), self.tr("Settings not loaded correctly."))
+                QMessageBox.critical(self.main_window, tr("Internal Error"), tr("Settings not loaded correctly."))
                 logging.error("current_settings not found on main_window or is empty.")
                 self.main_window.set_controls_enabled(True)
                 return
@@ -1675,10 +1676,10 @@ class MainWindowHandlers:
                     logging.warning(f"[Backup] Path does not exist for '{profile_name}': {sp}")
             
             if not valid_paths:
-                QMessageBox.critical(self.main_window, "Path Not Found",
-                    f"Cannot backup '{profile_name}':\n\n"
-                    f"The save path does not exist:\n{chr(10).join(missing_paths)}\n\n"
-                    f"The game may have been uninstalled. Please edit the profile to update the path, or delete this profile.")
+                QMessageBox.critical(self.main_window, tr("Path Not Found"),
+                    tr("Cannot backup '{0}':\n\n"
+                    "The save path does not exist:\n{1}\n\n"
+                    "The game may have been uninstalled. Please edit the profile to update the path, or delete this profile.", profile_name, chr(10).join(missing_paths)))
                 logging.error(f"[Backup] Blocked: all source paths missing for '{profile_name}'")
                 self.main_window.set_controls_enabled(True)
                 return
@@ -1690,11 +1691,11 @@ class MainWindowHandlers:
             for sp in source_paths:
                 norm_sp = os.path.normpath(sp).lower()
                 if norm_sp.startswith(backup_base_norm):
-                    QMessageBox.critical(self.main_window, "Invalid Source Path",
-                        f"CRITICAL ERROR: Cannot backup '{profile_name}'!\n\n"
-                        f"The source path is INSIDE the backup folder:\n{sp}\n\n"
-                        f"This would cause recursive backups (backup of backups) and data loss.\n\n"
-                        f"Please edit this profile and set the correct save game path.")
+                    QMessageBox.critical(self.main_window, tr("Invalid Source Path"),
+                        tr("CRITICAL ERROR: Cannot backup '{0}'!\n\n"
+                        "The source path is INSIDE the backup folder:\n{1}\n\n"
+                        "This would cause recursive backups (backup of backups) and data loss.\n\n"
+                        "Please edit this profile and set the correct save game path.", profile_name, sp))
                     logging.error(f"[Backup] BLOCKED RECURSIVE: '{profile_name}' source path is inside backup folder: {sp}")
                     self.main_window.set_controls_enabled(True)
                     return
@@ -1710,21 +1711,22 @@ class MainWindowHandlers:
                     free_gb = free_bytes / (1024 * 1024 * 1024)
                     logging.debug(f"Free space detected on disk for '{backup_base_dir}': {free_gb:.2f} GB")
                     if free_bytes < min_bytes_required:
-                        msg = self.tr("Insufficient disk space for backup!\n\n" +
-                                   "Free space: {0:.2f} GB\n" +
-                                   "Minimum required space: {1} GB\n\n" +
-                                   "Free up space on the destination disk ('{2}') or disable the check in settings.").format(free_gb, min_gb_required, backup_base_dir)
-                        QMessageBox.warning(self.main_window, self.tr("Insufficient Disk Space"), msg)
+                        msg = tr("Insufficient disk space for backup!\n\n"
+                                 "Free space: {0:.2f} GB\n"
+                                 "Minimum required space: {1} GB\n\n"
+                                 "Free up space on the destination disk ('{2}') or disable the check in settings.",
+                                 free_gb, min_gb_required, backup_base_dir)
+                        QMessageBox.warning(self.main_window, tr("Insufficient Disk Space"), msg)
                         self.main_window.set_controls_enabled(True)
                         return
                 except FileNotFoundError:
-                     msg = self.tr("Error checking space: the specified backup path does not seem to be valid or accessible:\n{0}").format(backup_base_dir)
-                     QMessageBox.critical(self.main_window, self.tr("Backup Path Error"), msg)
+                     msg = tr("Error checking space: the specified backup path does not seem to be valid or accessible:\n{0}", backup_base_dir)
+                     QMessageBox.critical(self.main_window, tr("Backup Path Error"), msg)
                      self.main_window.set_controls_enabled(True)
                      return
                 except Exception as e_space:
-                     msg = self.tr("An error occurred while checking free disk space:\n{0}").format(e_space)
-                     QMessageBox.critical(self.main_window, self.tr("Error Checking Space"), msg)
+                     msg = tr("An error occurred while checking free disk space:\n{0}", e_space)
+                     QMessageBox.critical(self.main_window, tr("Error Checking Space"), msg)
                      logging.error("Error while checking free disk space.", exc_info=True)
                      self.main_window.set_controls_enabled(True)
                      return
@@ -1769,10 +1771,10 @@ class MainWindowHandlers:
             if group_profiles:
                 QMessageBox.warning(
                     self.main_window,
-                    "Groups in Selection",
-                    f"Groups cannot be batch-restored with regular profiles.\n\n"
-                    f"Groups selected: {', '.join(group_profiles)}\n\n"
-                    f"Please restore groups individually."
+                    tr("Groups in Selection"),
+                    tr("Groups cannot be batch-restored with regular profiles.\n\n"
+                    "Groups selected: {0}\n\n"
+                    "Please restore groups individually.", ', '.join(group_profiles))
                 )
                 if not regular_profiles:
                     return
@@ -1788,7 +1790,7 @@ class MainWindowHandlers:
         if profile_name:
             profile_data = self.main_window.profiles.get(profile_name)
             if not profile_data or not isinstance(profile_data, dict):
-                QMessageBox.critical(self.main_window, "Internal Error", "Corrupted or missing profile data for '{0}'.".format(profile_name))
+                QMessageBox.critical(self.main_window, tr("Internal Error"), tr("Corrupted or missing profile data for '{0}'.", profile_name))
                 logging.error(f"Invalid profile data for '{profile_name}': {profile_data}")
                 return
             
@@ -1827,8 +1829,8 @@ class MainWindowHandlers:
         member_profiles = core_logic.get_group_member_profiles(group_name, self.main_window.profiles)
         
         if not member_profiles:
-            QMessageBox.warning(self.main_window, "Empty Group", 
-                              f"Group '{group_name}' has no member profiles to restore.")
+            QMessageBox.warning(self.main_window, tr("Empty Group"), 
+                              tr("Group '{0}' has no member profiles to restore.", group_name))
             return
         
         logging.info(f"Restore requested for group '{group_name}' with {len(member_profiles)} members")
@@ -1850,7 +1852,7 @@ class MainWindowHandlers:
                 
         except Exception as e:
             logging.error(f"Error handling group restore: {e}", exc_info=True)
-            QMessageBox.critical(self.main_window, "Error", f"Failed to restore group: {e}")
+            QMessageBox.critical(self.main_window, tr("Error"), tr("Failed to restore group: {0}", e))
     
     def _execute_batch_restore(self, selected_profiles: list):
         """
@@ -1914,47 +1916,47 @@ class MainWindowHandlers:
         
         # Check if anything to restore
         if not restore_items:
-            msg = "No profiles can be restored.\n\n"
+            msg = tr("No profiles can be restored.\n\n")
             if skipped_profiles:
-                msg += f"Skipped (no backups): {', '.join(skipped_profiles)}\n"
+                msg += tr("Skipped (no backups): {0}\n", ', '.join(skipped_profiles))
             if pcsx2_profiles:
-                msg += f"PCSX2 profiles (use individual restore): {', '.join(pcsx2_profiles)}"
-            QMessageBox.warning(self.main_window, "Nothing to Restore", msg)
+                msg += tr("PCSX2 profiles (use individual restore): {0}", ', '.join(pcsx2_profiles))
+            QMessageBox.warning(self.main_window, tr("Nothing to Restore"), msg)
             return
         
         # Build confirmation message
-        msg = f"The following {len(restore_items)} profile(s) will be restored from their latest backup:\n\n"
+        msg = tr("The following {0} profile(s) will be restored from their latest backup:\n\n", len(restore_items))
         for item in restore_items:
-            date_str = item['backup_date'].strftime("%Y-%m-%d %H:%M") if item['backup_date'] else "Unknown"
+            date_str = item['backup_date'].strftime("%Y-%m-%d %H:%M") if item['backup_date'] else tr("Unknown")
             msg += f"• {item['profile_name']} ({date_str})\n"
         
         if skipped_profiles:
-            msg += f"\nSkipped (no backups): {', '.join(skipped_profiles)}"
+            msg += tr("\nSkipped (no backups): {0}", ', '.join(skipped_profiles))
         if pcsx2_profiles:
-            msg += f"\nPCSX2 profiles (use individual restore): {', '.join(pcsx2_profiles)}"
+            msg += tr("\nPCSX2 profiles (use individual restore): {0}", ', '.join(pcsx2_profiles))
         
-        msg += "\n\nWARNING: This will overwrite existing save files!\nProceed?"
+        msg += tr("\n\nWARNING: This will overwrite existing save files!\nProceed?")
         
         reply = QMessageBox.warning(
             self.main_window,
-            "Confirm Batch Restore",
+            tr("Confirm Batch Restore"),
             msg,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
         
         if reply != QMessageBox.StandardButton.Yes:
-            self.main_window.status_label.setText("Batch restore cancelled.")
+            self.main_window.status_label.setText(tr("Batch restore cancelled."))
             return
         
         # Check if another operation is running
         if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
-            QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+            QMessageBox.information(self.main_window, tr("Operation in Progress"), tr("Another operation is already in progress."))
             return
         
         # Start batch restore in background
         self.main_window.set_controls_enabled(False)
-        self.main_window.status_label.setText(f"Restoring {len(restore_items)} profiles...")
+        self.main_window.status_label.setText(tr("Restoring {0} profiles...", len(restore_items)))
         
         def batch_restore_worker(items):
             """Worker function for batch restore."""
@@ -1985,9 +1987,9 @@ class MainWindowHandlers:
             successful = [r for r in results if r['success']]
             failed = [r for r in results if not r['success']]
             
-            summary = f"Restored {len(successful)}/{len(results)} profiles."
+            summary = tr("Restored {0}/{1} profiles.", len(successful), len(results))
             if failed:
-                summary += f"\n\nFailed profiles:\n"
+                summary += tr("\n\nFailed profiles:\n")
                 for r in failed:
                     summary += f"• {r['profile']}: {r['message']}\n"
             
@@ -2001,11 +2003,11 @@ class MainWindowHandlers:
     def _on_xemu_restore_completed(self, success: bool, message: str):
         """Status update after XemuRestoreDialog finishes an in-dialog restore."""
         if success:
-            text = message or "xemu restore completed."
+            text = message or tr("xemu restore completed.")
             self.main_window.status_label.setText(text)
             logging.info("xemu restore UI completed: %s", text)
         else:
-            text = message or "xemu restore failed."
+            text = message or tr("xemu restore failed.")
             self.main_window.status_label.setText(text)
             logging.error("xemu restore UI failed: %s", text)
         if hasattr(self.main_window, "set_controls_enabled"):
@@ -2039,7 +2041,7 @@ class MainWindowHandlers:
             archive_to_restore = dialog.get_selected_path()
             if archive_to_restore:
                 if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
-                    QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+                    QMessageBox.information(self.main_window, tr("Operation in Progress"), tr("Another operation is already in progress."))
                     return
 
                 is_pcsx2_selective_profile = (profile_data.get('emulator') == 'PCSX2' and
@@ -2053,16 +2055,15 @@ class MainWindowHandlers:
                     mc_target_save_dir_name = profile_data['save_dir'].strip('/')
                     archive_filename = os.path.basename(archive_to_restore)
 
-                    confirm_msg = "WARNING!\nRestoring '{archive}' will overwrite the save folder '{save_folder}' on memory card '{memcard}'.\n\nProceed?".format(
-                        archive=archive_filename,
+                    confirm_msg = tr("WARNING!\nRestoring '{archive}' will overwrite the save folder '{save_folder}' on memory card '{memcard}'.\n\nProceed?", archive=archive_filename,
                         save_folder=mc_target_save_dir_name,
                         memcard=os.path.basename(memcard_path)
                     )
-                    confirm = QMessageBox.warning(self.main_window, "Confirm PCSX2 Restore", confirm_msg,
+                    confirm = QMessageBox.warning(self.main_window, tr("Confirm PCSX2 Restore"), confirm_msg,
                                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                                   QMessageBox.StandardButton.No)
                     if confirm == QMessageBox.StandardButton.Yes:
-                        self.main_window.status_label.setText("Starting PCSX2 restore for '{0}'...".format(profile_name))
+                        self.main_window.status_label.setText(tr("Starting PCSX2 restore for '{0}'...", profile_name))
                         self.main_window.set_controls_enabled(False)
 
                         def pcsx2_restore_worker_task(p_name_worker, mc_path_worker, mc_save_dir_worker, archive_path_worker):
@@ -2084,7 +2085,7 @@ class MainWindowHandlers:
                                         local_save_data_root = os.path.join(temp_extract_dir, extracted_items[0])
                                         logging.info(f"Using single subfolder '{extracted_items[0]}' as source: {local_save_data_root}")
                                     else:
-                                        err_msg = f"Could not find the expected save data folder '{mc_save_dir_worker}' or a unique subfolder within '{temp_extract_dir}'. Found: {extracted_items}"
+                                        err_msg = tr("Could not find the expected save data folder '{0}' or a unique subfolder within '{1}'. Found: {2}", mc_save_dir_worker, temp_extract_dir, extracted_items)
                                         logging.error(err_msg)
                                         return False, err_msg
                                 else:
@@ -2093,7 +2094,7 @@ class MainWindowHandlers:
                                 from emulator_utils.pcsx2_manager import restore_pcsx2_save
                                 return restore_pcsx2_save(p_name_worker, mc_path_worker, local_save_data_root, mc_save_dir_worker)
                             except Exception as e_worker:
-                                error_message = f"Error in PCSX2 restore worker for '{p_name_worker}': {e_worker}"
+                                error_message = tr("Error in PCSX2 restore worker for '{0}': {1}", p_name_worker, e_worker)
                                 logging.error(error_message, exc_info=True)
                                 return False, error_message
                             finally:
@@ -2112,7 +2113,7 @@ class MainWindowHandlers:
                         self.main_window.worker_thread.start()
                         logging.info(f"Started PCSX2 restore worker thread for '{profile_name}'.")
                     else:
-                        self.main_window.status_label.setText("PCSX2 restore cancelled.")
+                        self.main_window.status_label.setText(tr("PCSX2 restore cancelled."))
                 else:
                     destination_paths = []
                     paths_data = profile_data.get('paths')
@@ -2123,21 +2124,21 @@ class MainWindowHandlers:
                     elif isinstance(path_data, str) and path_data:
                         destination_paths = [path_data]
                     else:
-                        QMessageBox.critical(self.main_window, "Profile Data Error",
-                                             "No valid destination path ('paths' or 'path') found in profile '{0}'. Unable to restore.".format(profile_name))
+                        QMessageBox.critical(self.main_window, tr("Profile Data Error"),
+                                             tr("No valid destination path ('paths' or 'path') found in profile '{0}'. Unable to restore.", profile_name))
                         logging.error(f"Invalid destination path data for profile '{profile_name}': paths={paths_data}, path={path_data}")
                         self.main_window.set_controls_enabled(True)
                         return
 
                     destination_paths_str = "\n".join([f"- {p}" for p in destination_paths])
                     confirm = QMessageBox.warning(self.main_window,
-                                                  "Confirm Final Restore",
-                                                  "WARNING!\nRestoring '{0}' will overwrite files in the following destinations:\n{1}\n\nProceed?".format(os.path.basename(archive_to_restore), destination_paths_str),
+                                                  tr("Confirm Final Restore"),
+                                                  tr("WARNING!\nRestoring '{0}' will overwrite files in the following destinations:\n{1}\n\nProceed?", os.path.basename(archive_to_restore), destination_paths_str),
                                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                                   QMessageBox.StandardButton.No)
 
                     if confirm == QMessageBox.StandardButton.Yes:
-                        self.main_window.status_label.setText("Starting restore for '{0}'...".format(profile_name))
+                        self.main_window.status_label.setText(tr("Starting restore for '{0}'...", profile_name))
                         self.main_window.set_controls_enabled(False)
                         self.main_window.worker_thread = WorkerThread(
                             core_logic.perform_restore,
@@ -2148,11 +2149,11 @@ class MainWindowHandlers:
                         self.main_window.worker_thread.start()
                         logging.info(f"Started generic restore worker thread for '{profile_name}'.")
                     else:
-                        self.main_window.status_label.setText("Restore cancelled.")
+                        self.main_window.status_label.setText(tr("Restore cancelled."))
             else:
-                self.main_window.status_label.setText("No backup selected for restore.")
+                self.main_window.status_label.setText(tr("No backup selected for restore."))
         else:
-            self.main_window.status_label.setText("Backup selection cancelled.")
+            self.main_window.status_label.setText(tr("Backup selection cancelled."))
             
         # Clean up temporary storage
         del self._restore_profile_data
@@ -2163,7 +2164,7 @@ class MainWindowHandlers:
         manifest = dialog.get_manifest()
         
         if not archive_to_restore or not manifest:
-            QMessageBox.warning(self.main_window, "Restore Error", "No valid backup ZIP selected.")
+            QMessageBox.warning(self.main_window, tr("Restore Error"), tr("No valid backup ZIP selected."))
             return
         
         # Get info from manifest
@@ -2173,28 +2174,28 @@ class MainWindowHandlers:
         if not paths_from_zip:
             QMessageBox.warning(
                 self.main_window, 
-                "Invalid Backup", 
-                "The backup ZIP does not contain valid path information."
+                tr("Invalid Backup"), 
+                tr("The backup ZIP does not contain valid path information.")
             )
             return
         
         # Ask user for confirmation and destination
         msg = (
-            f"This backup contains save data for:\n"
-            f"Profile: {profile_name_from_zip}\n\n"
-            f"The backup will be restored to the original location(s):\n"
+            tr("This backup contains save data for:\n"
+            "Profile: {0}\n\n"
+            "The backup will be restored to the original location(s):\n", profile_name_from_zip)
         )
         
         for i, path in enumerate(paths_from_zip[:3]):  # Show max 3 paths
             msg += f"  • {path}\n"
         if len(paths_from_zip) > 3:
-            msg += f"  ... and {len(paths_from_zip) - 3} more\n"
+            msg += tr("  ... and {0} more\n", len(paths_from_zip) - 3)
         
-        msg += "\nDo you want to proceed with the restoration?"
+        msg += tr("\nDo you want to proceed with the restoration?")
         
         reply = QMessageBox.question(
             self.main_window,
-            "Confirm Restore",
+            tr("Confirm Restore"),
             msg,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
@@ -2205,12 +2206,12 @@ class MainWindowHandlers:
         
         # Perform the restore using core_logic
         if hasattr(self.main_window, 'worker_thread') and self.main_window.worker_thread and self.main_window.worker_thread.isRunning():
-            QMessageBox.information(self.main_window, "Operation in Progress", "Another operation is already in progress.")
+            QMessageBox.information(self.main_window, tr("Operation in Progress"), tr("Another operation is already in progress."))
             return
         
         # Start restore in background thread
         self.main_window.set_controls_enabled(False)
-        self.main_window.status_label.setText(f"Restoring backup from ZIP...")
+        self.main_window.status_label.setText(tr("Restoring backup from ZIP..."))
         
         def do_restore_work():
             """Worker function for restore."""
@@ -2225,11 +2226,11 @@ class MainWindowHandlers:
             self.main_window.set_controls_enabled(True)
             success, message = result
             if success:
-                QMessageBox.information(self.main_window, "Restore Successful", message)
-                self.main_window.status_label.setText("Restore completed successfully.")
+                QMessageBox.information(self.main_window, tr("Restore Successful"), message)
+                self.main_window.status_label.setText(tr("Restore completed successfully."))
             else:
-                QMessageBox.critical(self.main_window, "Restore Failed", message)
-                self.main_window.status_label.setText("Restore failed.")
+                QMessageBox.critical(self.main_window, tr("Restore Failed"), message)
+                self.main_window.status_label.setText(tr("Restore failed."))
         
         # Create and start worker thread
         self.main_window.worker_thread = WorkerThread(do_restore_work)
@@ -2241,7 +2242,7 @@ class MainWindowHandlers:
     @Slot()
     def handle_manage_backups(self):
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
-        if not profile_name: QMessageBox.warning(self.main_window, "Error", "No profile selected."); return
+        if not profile_name: QMessageBox.warning(self.main_window, tr("Error"), tr("No profile selected.")); return
         from dialogs.manage_backups_dialog import ManageBackupsDialog
         dialog = ManageBackupsDialog(profile_name, self.main_window) # Pass main_window as parent
         dialog.finished.connect(self.on_manage_backups_finished)
@@ -2258,7 +2259,7 @@ class MainWindowHandlers:
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
         if not profile_name:
              logging.warning("handle_create_shortcut called without selected profile.")
-             QMessageBox.warning(self.main_window, "Failed Action", "No profile selected to create shortcut.")
+             QMessageBox.warning(self.main_window, tr("Failed Action"), tr("No profile selected to create shortcut."))
              return
 
         logging.info(f"Request to create shortcut for profile: '{profile_name}'")
@@ -2266,9 +2267,9 @@ class MainWindowHandlers:
         from common import shortcut_utils
         success, message = shortcut_utils.create_backup_shortcut(profile_name=profile_name)
         if success:
-            QMessageBox.information(self.main_window, "Shortcut Creation", message)
+            QMessageBox.information(self.main_window, tr("Shortcut Creation"), message)
         else:
-            QMessageBox.warning(self.main_window, "Error Creating Shortcut", message)
+            QMessageBox.warning(self.main_window, tr("Error Creating Shortcut"), message)
 
     @Slot()
     def handle_playnite_script(self):
@@ -2276,7 +2277,7 @@ class MainWindowHandlers:
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
         if not profile_name:
             logging.warning("handle_playnite_script called without selected profile.")
-            QMessageBox.warning(self.main_window, "No Selection", "No profile selected.")
+            QMessageBox.warning(self.main_window, tr("No Selection"), tr("No profile selected."))
             return
 
         logging.info(f"Generating Playnite script for profile: '{profile_name}'")
@@ -2286,7 +2287,7 @@ class MainWindowHandlers:
             script_text = shortcut_utils.generate_playnite_script(profile_name)
         except Exception as e:
             logging.error(f"Error generating Playnite script: {e}", exc_info=True)
-            QMessageBox.critical(self.main_window, "Error", f"Failed to generate script: {e}")
+            QMessageBox.critical(self.main_window, tr("Error"), tr("Failed to generate script: {0}", e))
             return
 
         # --- Build the dialog ---
@@ -2296,7 +2297,7 @@ class MainWindowHandlers:
         from PySide6.QtCore import Qt
 
         dialog = QDialog(self.main_window)
-        dialog.setWindowTitle(f"Playnite Integration — {profile_name}")
+        dialog.setWindowTitle(tr("Playnite Integration — {0}", profile_name))
         dialog.setMinimumWidth(600)
         dialog.setMaximumWidth(800)
         dialog.setStyleSheet("""
@@ -2375,11 +2376,11 @@ class MainWindowHandlers:
         layout.setContentsMargins(20, 16, 20, 16)
 
         # Title
-        title_label = QLabel(f"🎮  Playnite — Auto Backup")
+        title_label = QLabel(tr("🎮  Playnite — Auto Backup"))
         title_label.setObjectName("titleLabel")
         layout.addWidget(title_label)
 
-        subtitle = QLabel(f"Profile: {profile_name}")
+        subtitle = QLabel(tr("Profile: {0}", profile_name))
         subtitle.setObjectName("subtitleLabel")
         layout.addWidget(subtitle)
 
@@ -2390,17 +2391,17 @@ class MainWindowHandlers:
         layout.addWidget(sep1)
 
         # Instructions
-        instructions_title = QLabel("📋  How to use:")
+        instructions_title = QLabel(tr("📋  How to use:"))
         instructions_title.setObjectName("stepLabel")
         instructions_title.setStyleSheet("font-weight: bold; padding-top: 6px; font-size: 10pt; color: #ffffff;")
         layout.addWidget(instructions_title)
 
         steps = [
-            "In Playnite, right-click the game and select <b>Edit...</b>",
-            "Go to the <b>Scripts</b> tab",
-            "Paste the script below into <b>\"Script to execute after game exits\"</b>",
-            "Uncheck <b>\"Execute global script\"</b> if you only want this specific action",
-            "Click <b>Save</b>",
+            tr("In Playnite, right-click the game and select <b>Edit...</b>"),
+            tr("Go to the <b>Scripts</b> tab"),
+            tr("Paste the script below into <b>\"Script to execute after game exits\"</b>"),
+            tr("Uncheck <b>\"Execute global script\"</b> if you only want this specific action"),
+            tr("Click <b>Save</b>"),
         ]
 
         for i, step_text in enumerate(steps, 1):
@@ -2431,7 +2432,7 @@ class MainWindowHandlers:
         layout.addSpacing(4)
 
         # Script label
-        script_label = QLabel("PowerShell Script:")
+        script_label = QLabel(tr("PowerShell Script:"))
         script_label.setStyleSheet("font-weight: bold; font-size: 10pt; color: #ffffff;")
         layout.addWidget(script_label)
 
@@ -2445,8 +2446,8 @@ class MainWindowHandlers:
 
         # Info note
         note_label = QLabel(
-            "ℹ️  The backup will run silently when you close the game. "
-            "A notification popup will confirm the result."
+            tr("ℹ️  The backup will run silently when you close the game. "
+            "A notification popup will confirm the result.")
         )
         note_label.setWordWrap(True)
         note_label.setStyleSheet("color: #888888; font-size: 8pt; padding: 2px 0px;")
@@ -2458,21 +2459,21 @@ class MainWindowHandlers:
         button_layout = QHBoxLayout()
         button_layout.setSpacing(10)
 
-        copy_button = QPushButton("📋  Copy to Clipboard")
+        copy_button = QPushButton(tr("📋  Copy to Clipboard"))
         copy_button.setObjectName("copyButton")
         copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        close_button = QPushButton("Close")
+        close_button = QPushButton(tr("Close"))
         close_button.setObjectName("closeButton")
         close_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         def on_copy():
             clipboard = QApplication.clipboard()
             clipboard.setText(script_text)
-            copy_button.setText("✅  Copied!")
+            copy_button.setText(tr("✅  Copied!"))
             # Reset after 2 seconds
             from PySide6.QtCore import QTimer
-            QTimer.singleShot(2000, lambda: copy_button.setText("📋  Copy to Clipboard"))
+            QTimer.singleShot(2000, lambda: copy_button.setText(tr("📋  Copy to Clipboard")))
             logging.info(f"Playnite script for '{profile_name}' copied to clipboard.")
 
         copy_button.clicked.connect(on_copy)
@@ -2491,7 +2492,7 @@ class MainWindowHandlers:
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
         if not profile_name:
             logging.warning("handle_heroic_script called without selected profile.")
-            QMessageBox.warning(self.main_window, "No Selection", "No profile selected.")
+            QMessageBox.warning(self.main_window, tr("No Selection"), tr("No profile selected."))
             return
 
         logging.info(f"Generating Heroic script for profile: '{profile_name}'")
@@ -2499,7 +2500,7 @@ class MainWindowHandlers:
         from common import shortcut_utils
         success, result = shortcut_utils.generate_heroic_script(profile_name)
         if not success:
-            QMessageBox.critical(self.main_window, "Error", result)
+            QMessageBox.critical(self.main_window, tr("Error"), result)
             return
 
         script_path = result
@@ -2510,7 +2511,7 @@ class MainWindowHandlers:
         from PySide6.QtCore import Qt
 
         dialog = QDialog(self.main_window)
-        dialog.setWindowTitle(f"Heroic Integration — {profile_name}")
+        dialog.setWindowTitle(tr("Heroic Integration — {0}", profile_name))
         dialog.setMinimumWidth(600)
         dialog.setMaximumWidth(800)
         dialog.setStyleSheet("""
@@ -2600,11 +2601,11 @@ class MainWindowHandlers:
         layout.setContentsMargins(20, 16, 20, 16)
 
         # Title
-        title_label = QLabel("🎮  Heroic Games Launcher — Auto Backup")
+        title_label = QLabel(tr("🎮  Heroic Games Launcher — Auto Backup"))
         title_label.setObjectName("titleLabel")
         layout.addWidget(title_label)
 
-        subtitle = QLabel(f"Profile: {profile_name}")
+        subtitle = QLabel(tr("Profile: {0}", profile_name))
         subtitle.setObjectName("subtitleLabel")
         layout.addWidget(subtitle)
 
@@ -2615,22 +2616,22 @@ class MainWindowHandlers:
         layout.addWidget(sep1)
 
         # Success message
-        success_label = QLabel("✅  Script file created successfully!")
+        success_label = QLabel(tr("✅  Script file created successfully!"))
         success_label.setStyleSheet("color: #78c878; font-size: 10pt; font-weight: bold; padding: 4px 0px;")
         layout.addWidget(success_label)
 
         # Instructions
-        instructions_title = QLabel("📋  How to use:")
+        instructions_title = QLabel(tr("📋  How to use:"))
         instructions_title.setObjectName("stepLabel")
         instructions_title.setStyleSheet("font-weight: bold; padding-top: 4px; font-size: 10pt; color: #ffffff;")
         layout.addWidget(instructions_title)
 
         steps = [
-            "In Heroic, click the <b>settings icon</b> on the game",
-            "Go to the <b>Advanced</b> tab",
-            'In <b>"Select a script to run when game exits"</b>, click the <b>folder icon</b>',
-            "Navigate to the script path shown below and <b>select the file</b>",
-            "The setting is saved automatically",
+            tr("In Heroic, click the <b>settings icon</b> on the game"),
+            tr("Go to the <b>Advanced</b> tab"),
+            tr('In <b>"Select a script to run when game exits"</b>, click the <b>folder icon</b>'),
+            tr("Navigate to the script path shown below and <b>select the file</b>"),
+            tr("The setting is saved automatically"),
         ]
 
         for i, step_text in enumerate(steps, 1):
@@ -2661,7 +2662,7 @@ class MainWindowHandlers:
         layout.addSpacing(4)
 
         # Script path label
-        path_label = QLabel("Script file path:")
+        path_label = QLabel(tr("Script file path:"))
         path_label.setStyleSheet("font-weight: bold; font-size: 10pt; color: #ffffff;")
         layout.addWidget(path_label)
 
@@ -2675,8 +2676,8 @@ class MainWindowHandlers:
 
         # Info note
         note_label = QLabel(
-            "ℹ️  The backup will run silently when you close the game. "
-            "A notification popup will confirm the result."
+            tr("ℹ️  The backup will run silently when you close the game. "
+            "A notification popup will confirm the result.")
         )
         note_label.setWordWrap(True)
         note_label.setStyleSheet("color: #888888; font-size: 8pt; padding: 2px 0px;")
@@ -2688,24 +2689,24 @@ class MainWindowHandlers:
         button_layout = QHBoxLayout()
         button_layout.setSpacing(10)
 
-        copy_button = QPushButton("📋  Copy Path")
+        copy_button = QPushButton(tr("📋  Copy Path"))
         copy_button.setObjectName("copyButton")
         copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        open_button = QPushButton("📂  Open Folder")
+        open_button = QPushButton(tr("📂  Open Folder"))
         open_button.setObjectName("openButton")
         open_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        close_button = QPushButton("Close")
+        close_button = QPushButton(tr("Close"))
         close_button.setObjectName("closeButton")
         close_button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         def on_copy():
             clipboard = QApplication.clipboard()
             clipboard.setText(script_path)
-            copy_button.setText("✅  Copied!")
+            copy_button.setText(tr("✅  Copied!"))
             from PySide6.QtCore import QTimer
-            QTimer.singleShot(2000, lambda: copy_button.setText("📋  Copy Path"))
+            QTimer.singleShot(2000, lambda: copy_button.setText(tr("📋  Copy Path")))
             logging.info(f"Heroic script path for '{profile_name}' copied to clipboard.")
 
         def on_open_folder():
@@ -2734,8 +2735,8 @@ class MainWindowHandlers:
         """Create a group from the currently selected profiles."""
         selected_profiles = self.main_window.profile_table_manager.get_selected_profile_names()
         if len(selected_profiles) < 1:
-            QMessageBox.warning(self.main_window, "No Selection", 
-                              "Select at least one profile to create a group.")
+            QMessageBox.warning(self.main_window, tr("No Selection"), 
+                              tr("Select at least one profile to create a group."))
             return
         
         logging.info(f"Creating group from {len(selected_profiles)} selected profiles")
@@ -2766,28 +2767,28 @@ class MainWindowHandlers:
                             self.main_window.profiles[group_name]['custom_icon_path'] = custom_icon_decision
                         core_logic.save_profiles(self.main_window.profiles)
                         self.main_window.profile_table_manager.update_profile_table()
-                        settings_info = " (with custom settings)" if group_settings and group_settings.get('enabled') else ""
-                        self.main_window.status_label.setText(f"Created group '{group_name}' with {len(profile_names)} profiles{settings_info}")
+                        settings_info = tr(" (with custom settings)") if group_settings and group_settings.get('enabled') else ""
+                        self.main_window.status_label.setText(tr("Created group '{0}' with {1} profiles{2}", group_name, len(profile_names), settings_info))
                         logging.info(f"Group '{group_name}' created successfully with settings: {group_settings}")
                     else:
-                        QMessageBox.warning(self.main_window, "Group Creation Failed", error)
+                        QMessageBox.warning(self.main_window, tr("Group Creation Failed"), error)
                         logging.error(f"Failed to create group: {error}")
         except Exception as e:
             logging.error(f"Error creating group: {e}", exc_info=True)
-            QMessageBox.critical(self.main_window, "Error", f"Failed to create group: {e}")
+            QMessageBox.critical(self.main_window, tr("Error"), tr("Failed to create group: {0}", e))
     
     @Slot()
     def handle_edit_group(self):
         """Edit an existing group profile."""
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
         if not profile_name:
-            QMessageBox.warning(self.main_window, "No Selection", "Select a group to edit.")
+            QMessageBox.warning(self.main_window, tr("No Selection"), tr("Select a group to edit."))
             return
         
         profile_data = self.main_window.profiles.get(profile_name, {})
         if not core_logic.is_group_profile(profile_data):
-            QMessageBox.warning(self.main_window, "Not a Group", 
-                              f"'{profile_name}' is not a group profile.")
+            QMessageBox.warning(self.main_window, tr("Not a Group"), 
+                              tr("'{0}' is not a group profile.", profile_name))
             return
         
         logging.info(f"Editing group: '{profile_name}'")
@@ -2835,28 +2836,28 @@ class MainWindowHandlers:
 
                         core_logic.save_profiles(self.main_window.profiles)
                         self.main_window.profile_table_manager.update_profile_table()
-                        settings_info = " (settings updated)" if group_settings and group_settings.get('enabled') else ""
-                        self.main_window.status_label.setText(f"Updated group '{new_name}'{settings_info}")
+                        settings_info = tr(" (settings updated)") if group_settings and group_settings.get('enabled') else ""
+                        self.main_window.status_label.setText(tr("Updated group '{0}'{1}", new_name, settings_info))
                         logging.info(f"Group '{new_name}' updated successfully with settings: {group_settings}")
                     else:
-                        QMessageBox.warning(self.main_window, "Group Update Failed", error)
+                        QMessageBox.warning(self.main_window, tr("Group Update Failed"), error)
                         logging.error(f"Failed to update group: {error}")
         except Exception as e:
             logging.error(f"Error editing group: {e}", exc_info=True)
-            QMessageBox.critical(self.main_window, "Error", f"Failed to edit group: {e}")
+            QMessageBox.critical(self.main_window, tr("Error"), tr("Failed to edit group: {0}", e))
     
     @Slot()
     def handle_ungroup(self):
         """Dissolve a group, making member profiles visible again."""
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
         if not profile_name:
-            QMessageBox.warning(self.main_window, "No Selection", "Select a group to ungroup.")
+            QMessageBox.warning(self.main_window, tr("No Selection"), tr("Select a group to ungroup."))
             return
         
         profile_data = self.main_window.profiles.get(profile_name, {})
         if not core_logic.is_group_profile(profile_data):
-            QMessageBox.warning(self.main_window, "Not a Group", 
-                              f"'{profile_name}' is not a group profile.")
+            QMessageBox.warning(self.main_window, tr("Not a Group"), 
+                              tr("'{0}' is not a group profile.", profile_name))
             return
         
         # Get member count for confirmation
@@ -2866,10 +2867,10 @@ class MainWindowHandlers:
         # Confirm ungroup
         reply = QMessageBox.question(
             self.main_window,
-            "Confirm Ungroup",
-            f"Are you sure you want to ungroup '{profile_name}'?\n\n"
-            f"This will dissolve the group and make its {member_count} member profile(s) visible again.\n"
-            f"The member profiles will NOT be deleted.",
+            tr("Confirm Ungroup"),
+            tr("Are you sure you want to ungroup '{0}'?\n\n"
+            "This will dissolve the group and make its {1} member profile(s) visible again.\n"
+            "The member profiles will NOT be deleted.", profile_name, member_count),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -2884,10 +2885,10 @@ class MainWindowHandlers:
         if success:
             core_logic.save_profiles(self.main_window.profiles)
             self.main_window.profile_table_manager.update_profile_table()
-            self.main_window.status_label.setText(f"Ungrouped '{profile_name}' - {member_count} profiles now visible")
+            self.main_window.status_label.setText(tr("Ungrouped '{0}' - {1} profiles now visible", profile_name, member_count))
             logging.info(f"Group '{profile_name}' ungrouped successfully")
         else:
-            QMessageBox.warning(self.main_window, "Ungroup Failed", error)
+            QMessageBox.warning(self.main_window, tr("Ungroup Failed"), error)
             logging.error(f"Failed to ungroup: {error}")
     
     def _handle_backup_group(self, group_name: str):
@@ -2904,8 +2905,8 @@ class MainWindowHandlers:
         
         member_profiles = core_logic.get_group_member_profiles(group_name, self.main_window.profiles)
         if not member_profiles:
-            QMessageBox.warning(self.main_window, "Empty Group", 
-                              f"Group '{group_name}' has no member profiles.")
+            QMessageBox.warning(self.main_window, tr("Empty Group"), 
+                              tr("Group '{0}' has no member profiles.", group_name))
             return
         
         logging.info(f"Starting group backup for '{group_name}' with {len(member_profiles)} profiles")
@@ -2918,7 +2919,7 @@ class MainWindowHandlers:
     def handle_show_edit_profile(self):
         profile_name = self.main_window.profile_table_manager.get_selected_profile_name()
         if not profile_name:
-            QMessageBox.warning(self.main_window, "No Selection", "Select a profile to edit.")
+            QMessageBox.warning(self.main_window, tr("No Selection"), tr("Select a profile to edit."))
             return
         try:
             # Hide side menu while editing
@@ -2932,7 +2933,7 @@ class MainWindowHandlers:
     def handle_profile_edit_browse(self):
         try:
             current = self.main_window.edit_path_edit.text() if hasattr(self.main_window, 'edit_path_edit') else ""
-            directory = QFileDialog.getExistingDirectory(self.main_window, "Select Save Folder", current)
+            directory = QFileDialog.getExistingDirectory(self.main_window, tr("Select Save Folder"), current)
             if directory:
                 self.main_window.edit_path_edit.setText(os.path.normpath(directory))
         except Exception as e:
@@ -2961,14 +2962,14 @@ class MainWindowHandlers:
             else:
                 exe_pattern = "*.AppImage *.desktop *.exe *.ico"
             file_filter = (
-                "Icon sources (*.png *.jpg *.jpeg *.bmp *.webp *.ico *.svg "
-                f"{exe_pattern});;"
+                tr("Icon sources (*.png *.jpg *.jpeg *.bmp *.webp *.ico *.svg "
+                "{0});;"
                 "Images (*.png *.jpg *.jpeg *.bmp *.webp *.ico *.svg);;"
-                f"Programs / shortcuts ({exe_pattern});;"
-                "All files (*)"
+                "Programs / shortcuts ({0});;"
+                "All files (*)", exe_pattern)
             )
             source_path, _ = QFileDialog.getOpenFileName(
-                mw, "Select Profile Icon", "", file_filter
+                mw, tr("Select Profile Icon"), "", file_filter
             )
             if not source_path:
                 return
@@ -2977,9 +2978,9 @@ class MainWindowHandlers:
             if not saved_path:
                 QMessageBox.warning(
                     mw,
-                    "Icon Error",
-                    "Could not load the selected image.\n"
-                    "Make sure the file is a valid image (PNG, JPG, BMP, ICO, WEBP, SVG)."
+                    tr("Icon Error"),
+                    tr("Could not load the selected image.\n"
+                    "Make sure the file is a valid image (PNG, JPG, BMP, ICO, WEBP, SVG).")
                 )
                 return
 
@@ -3004,7 +3005,7 @@ class MainWindowHandlers:
             mw._update_edit_icon_preview(profile_name, data)
         except Exception as e:
             logging.error(f"Error choosing custom icon: {e}", exc_info=True)
-            QMessageBox.critical(self.main_window, "Icon Error", f"An error occurred: {e}")
+            QMessageBox.critical(self.main_window, tr("Icon Error"), tr("An error occurred: {0}", e))
 
     @Slot()
     def handle_profile_edit_reset_icon(self):
@@ -3044,24 +3045,24 @@ class MainWindowHandlers:
         try:
             mw = self.main_window
             if not hasattr(mw, '_editing_profile_original_name'):
-                QMessageBox.warning(mw, "Edit Error", "No profile is being edited.")
+                QMessageBox.warning(mw, tr("Edit Error"), tr("No profile is being edited."))
                 return
             original_name = mw._editing_profile_original_name
             new_name_input = mw.edit_name_edit.text().strip()
             from common import shortcut_utils
             new_name = shortcut_utils.sanitize_profile_name(new_name_input)
             if not new_name:
-                QMessageBox.warning(mw, "Name Error", f"Invalid or empty profile name: '{new_name_input}'.")
+                QMessageBox.warning(mw, tr("Name Error"), tr("Invalid or empty profile name: '{0}'.", new_name_input))
                 return
             # Check name conflict
             if new_name != original_name and new_name in mw.profiles:
-                QMessageBox.warning(mw, "Duplicate Name", f"A profile named '{new_name}' already exists.")
+                QMessageBox.warning(mw, tr("Duplicate Name"), tr("A profile named '{0}' already exists.", new_name))
                 return
 
             # Validate path
             new_path_input = mw.edit_path_edit.text().strip()
             if not new_path_input:
-                QMessageBox.warning(mw, "Path Error", "The path cannot be empty.")
+                QMessageBox.warning(mw, tr("Path Error"), tr("The path cannot be empty."))
                 return
             validator = None
             if hasattr(mw, 'profile_creation_manager') and hasattr(mw.profile_creation_manager, 'validate_save_path'):
@@ -3083,11 +3084,11 @@ class MainWindowHandlers:
                 backup_base_norm = os.path.normpath(backup_base).lower()
                 path_norm = os.path.normpath(validated_path).lower()
                 if path_norm.startswith(backup_base_norm):
-                    QMessageBox.critical(mw, "Invalid Path",
-                        f"CRITICAL ERROR: Cannot save profile with this path!\n\n"
-                        f"The path is INSIDE the backup folder:\n{validated_path}\n\n"
-                        f"This would cause recursive backups and data loss.\n"
-                        f"Please select the actual game save folder, not the backup location.")
+                    QMessageBox.critical(mw, tr("Invalid Path"),
+                        tr("CRITICAL ERROR: Cannot save profile with this path!\n\n"
+                        "The path is INSIDE the backup folder:\n{0}\n\n"
+                        "This would cause recursive backups and data loss.\n"
+                        "Please select the actual game save folder, not the backup location.", validated_path))
                     logging.error(f"[Edit Profile] BLOCKED: '{new_name}' path is inside backup folder: {validated_path}")
                     return
             
@@ -3102,7 +3103,7 @@ class MainWindowHandlers:
             new_data['use_profile_overrides'] = use_overrides
             overrides_dict = dict(new_data.get('overrides') or {})
             overrides_dict['max_backups'] = int(mw.override_max_backups_spin.value())
-            overrides_dict['compression_mode'] = str(mw.override_compression_combo.currentText())
+            overrides_dict['compression_mode'] = str(mw.override_compression_combo.currentData())
             # Read size from combo options (aligned with SettingsDialog options)
             try:
                 size_index = mw.override_max_size_combo.currentIndex()
@@ -3254,15 +3255,15 @@ class MainWindowHandlers:
                     mw.profile_group.setVisible(True)
                 if hasattr(mw, 'exit_profile_edit_mode'):
                     mw.exit_profile_edit_mode()
-                status = f"Profile '{new_name}' updated."
+                status = tr("Profile '{0}' updated.", new_name)
                 if ab_interval_clamped:
                     from cloud_utils.cloud_sync_availability import (
                         MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES,
                     )
                     status += (
-                        f" Backup interval raised to "
-                        f"{MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES} minutes "
-                        f"(minimum for online sync)."
+                        tr(" Backup interval raised to "
+                        "{0} minutes "
+                        "(minimum for online sync).", MIN_AUTO_BACKUP_INTERVAL_WITH_SYNC_MINUTES)
                     )
                 mw.status_label.setText(status)
                 # Reload the automatic backup engine with the new configuration
@@ -3279,10 +3280,10 @@ class MainWindowHandlers:
                 mw._editing_pending_icon_action = None
                 mw._editing_session_temp_icons = []
             else:
-                QMessageBox.critical(mw, "Save Error", "Unable to save the profiles file.")
+                QMessageBox.critical(mw, tr("Save Error"), tr("Unable to save the profiles file."))
         except Exception as e:
             logging.error(f"Error saving profile edits: {e}", exc_info=True)
-            QMessageBox.critical(self.main_window, "Edit Error", f"An error occurred: {e}")
+            QMessageBox.critical(self.main_window, tr("Edit Error"), tr("An error occurred: {0}", e))
 
     @Slot()
     def handle_profile_edit_cancel(self):
@@ -3323,14 +3324,14 @@ class MainWindowHandlers:
                 and not mw.current_settings.get('minimize_to_tray_on_close', False)
             ):
                 msg_box = QMessageBox(mw)
-                msg_box.setWindowTitle("Minimize to tray required")
+                msg_box.setWindowTitle(tr("Minimize to tray required"))
                 msg_box.setIcon(QMessageBox.Icon.Question)
                 msg_box.setTextFormat(Qt.TextFormat.RichText)
                 msg_box.setText(
-                    "Automatic backup needs SaveState to keep running in the background "
+                    tr("Automatic backup needs SaveState to keep running in the background "
                     "after you close the window.<br><br>"
                     "<b>The \"Minimize to tray on close\" setting is currently off. "
-                    "Enable it now</b> so automatic backup can work?"
+                    "Enable it now</b> so automatic backup can work?")
                 )
                 msg_box.setStandardButtons(
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
@@ -3389,9 +3390,9 @@ class MainWindowHandlers:
             mw.auto_backup_process_row.setVisible(is_process)
             # Clarify the interval meaning per mode.
             if mode == "interval_changed":
-                mw.auto_backup_interval_label.setText("Check every:")
+                mw.auto_backup_interval_label.setText(tr("Check every:"))
             else:
-                mw.auto_backup_interval_label.setText("Back up every:")
+                mw.auto_backup_interval_label.setText(tr("Back up every:"))
             if is_process:
                 # Fill the list and highlight the auto-detected process in green.
                 mw._populate_running_processes(preserve_text=True)
@@ -3435,7 +3436,7 @@ class MainWindowHandlers:
             core_logic._cached_id_details = None
 
             steam_path = core_logic.get_steam_install_path()
-            if not steam_path: raise ValueError("Steam installation not found.")
+            if not steam_path: raise ValueError(tr("Steam installation not found."))
 
             # Store data directly on the main_window instance for access by start_steam_configuration
             self.main_window.steam_games_data = core_logic.find_installed_steam_games()
@@ -3445,7 +3446,7 @@ class MainWindowHandlers:
 
         except Exception as e_scan:
             logging.error(f"Error scanning Steam data: {e_scan}", exc_info=True)
-            QMessageBox.critical(self.main_window, "Steam Scan Error", "Unable to read Steam data:\n{0}".format(e_scan))
+            QMessageBox.critical(self.main_window, tr("Steam Scan Error"), tr("Unable to read Steam data:\n{0}", e_scan))
             return
 
         # Pass main_window reference and parent
@@ -3466,7 +3467,7 @@ class MainWindowHandlers:
         game_data = self.main_window.steam_games_data.get(appid)
         if not game_data:
             logging.error(f"Game data for {appid} not found in main_window.steam_games_data.")
-            QMessageBox.critical(self.main_window, "Internal Error", f"Game data missing for AppID {appid}.")
+            QMessageBox.critical(self.main_window, tr("Internal Error"), tr("Game data missing for AppID {0}.", appid))
             return
         install_dir = game_data.get('installdir')
 
@@ -3486,26 +3487,26 @@ class MainWindowHandlers:
                 display_name = user_details.get('display_name', uid)
                 last_mod_str = user_details.get('last_mod_str', 'N/D')
                 # Mark the likely (most recent) Steam ID
-                is_likely_marker = "(Recent)" if uid == likely_id3 else ""
+                is_likely_marker = tr("(Recent)") if uid == likely_id3 else ""
                 choice_str = f"{display_name} {is_likely_marker} [{last_mod_str}]".strip().replace("  ", " ")
                 id_choices_display.append(choice_str)
                 display_to_id_map[choice_str] = uid
                 if uid == likely_id3: index_to_select = i
 
             dialog_label_text = (
-                "Multiple Steam profiles found.\n"
-                "Select the correct one (usually the most recent):"
+                tr("Multiple Steam profiles found.\n"
+                "Select the correct one (usually the most recent):")
             )
             chosen_display_str, ok = QInputDialog.getItem(
-                 self.main_window, "Select Steam Profile", dialog_label_text,
+                 self.main_window, tr("Select Steam Profile"), dialog_label_text,
                  id_choices_display, index_to_select, False
             )
             if ok and chosen_display_str:
                 selected_id3 = display_to_id_map.get(chosen_display_str)
                 if selected_id3: steam_id_to_use = selected_id3
-                else: logging.error("Error mapping choice back to Steam ID"); QMessageBox.warning(self.main_window, "Error", "Selected Steam ID is invalid."); return
+                else: logging.error("Error mapping choice back to Steam ID"); QMessageBox.warning(self.main_window, tr("Error"), tr("Selected Steam ID is invalid.")); return
             else:
-                self.main_window.status_label.setText("Configuration cancelled (no Steam profile selected).")
+                self.main_window.status_label.setText(tr("Configuration cancelled (no Steam profile selected)."))
                 return
         elif not steam_id_to_use and len(possible_ids) == 1: steam_id_to_use = possible_ids[0]
         elif not possible_ids: logging.warning("No Steam user IDs found.")
@@ -3525,7 +3526,7 @@ class MainWindowHandlers:
             logging.info("Activating fade effect...")
             try:
                 # Call methods on main_window to show overlay
-                self.main_window.loading_label.setText("Searching...") # Set text for Steam search
+                self.main_window.loading_label.setText(tr("Searching...")) # Set text for Steam search
                 self.main_window.loading_label.adjustSize() # Ensure label resizes to content
                 self.main_window.overlay_widget.resize(self.main_window.centralWidget().size())
                 self.main_window.overlay_widget.show() # Show overlay first
@@ -3538,7 +3539,7 @@ class MainWindowHandlers:
             logging.error("Cannot show fade effect (components missing or check failed).")
 
         # Start Search Thread
-        self.main_window.status_label.setText("Searching for path for '{0}'...".format(profile_name))
+        self.main_window.status_label.setText(tr("Searching for path for '{0}'...", profile_name))
         QApplication.processEvents()
 
         logging.info("Starting SteamSearchWorkerThread from handler...")
@@ -3596,7 +3597,7 @@ class MainWindowHandlers:
                 display_name = user_details.get('display_name', uid)
                 last_mod_str = user_details.get('last_mod_str', 'N/D')
                 # Mark the likely (most recent) Steam ID
-                is_likely_marker = "(Recent)" if uid == likely_id3 else ""
+                is_likely_marker = tr("(Recent)") if uid == likely_id3 else ""
                 choice_str = f"{display_name} {is_likely_marker} [{last_mod_str}]".strip().replace("  ", " ")
                 id_choices_display.append(choice_str)
                 display_to_id_map[choice_str] = uid
@@ -3604,12 +3605,12 @@ class MainWindowHandlers:
                     index_to_select = i
 
             dialog_label_text = (
-                f"You are configuring {len(selected_games)} games.\n"
+                tr("You are configuring {0} games.\n"
                 "Multiple Steam profiles found.\n"
-                "Select the Steam account to use for ALL games:"
+                "Select the Steam account to use for ALL games:", len(selected_games))
             )
             chosen_display_str, ok = QInputDialog.getItem(
-                self.main_window, "Select Steam Profile", dialog_label_text,
+                self.main_window, tr("Select Steam Profile"), dialog_label_text,
                 id_choices_display, index_to_select, False
             )
             if ok and chosen_display_str:
@@ -3618,10 +3619,10 @@ class MainWindowHandlers:
                     steam_id_to_use = selected_id3
                 else: 
                     logging.error("Error mapping choice back to Steam ID")
-                    QMessageBox.warning(self.main_window, "Error", "Selected Steam ID is invalid.")
+                    QMessageBox.warning(self.main_window, tr("Error"), tr("Selected Steam ID is invalid."))
                     return
             else:
-                self.main_window.status_label.setText("Batch configuration cancelled (no Steam profile selected).")
+                self.main_window.status_label.setText(tr("Batch configuration cancelled (no Steam profile selected)."))
                 return
         elif not steam_id_to_use and len(possible_ids) == 1: 
             steam_id_to_use = possible_ids[0]
@@ -3702,7 +3703,7 @@ class MainWindowHandlers:
             if hasattr(self, '_steam_batch_dialog') and self._steam_batch_dialog:
                 self._steam_batch_dialog.update_progress(
                     self._steam_batch_total,
-                    "Analysis complete!"
+                    tr("Analysis complete!")
                 )
             return
         
@@ -3714,7 +3715,7 @@ class MainWindowHandlers:
         if hasattr(self, '_steam_batch_dialog') and self._steam_batch_dialog:
             self._steam_batch_dialog.update_progress(
                 self._steam_batch_current_index,
-                f"Analyzing: {profile_name}"
+                tr("Analyzing: {0}", profile_name)
             )
         
         # Find appid for this game
@@ -3775,7 +3776,7 @@ class MainWindowHandlers:
                 self._steam_batch_dialog.update_profile(profile_name, best_path, best_score)
             else:
                 # No path found, mark as failed
-                self._steam_batch_dialog.update_profile(profile_name, "(No path found)", -100)
+                self._steam_batch_dialog.update_profile(profile_name, tr("(No path found)"), -100)
         
         # Process next game
         self._process_next_steam_batch_game()
@@ -3815,15 +3816,15 @@ class MainWindowHandlers:
                 # Save all profiles
                 if accepted:
                     if core_logic.save_profiles(self.main_window.profiles):
-                        self.main_window.status_label.setText(f"{len(accepted)} profiles created successfully.")
+                        self.main_window.status_label.setText(tr("{0} profiles created successfully.", len(accepted)))
                         self.main_window.profile_table_manager.update_profile_table()
                         QMessageBox.information(
                             self.main_window, 
-                            "Profiles Created", 
-                            f"{len(accepted)} Steam game profiles have been created."
+                            tr("Profiles Created"), 
+                            tr("{0} Steam game profiles have been created.", len(accepted))
                         )
                     else:
-                        QMessageBox.critical(self.main_window, "Save Error", "Unable to save profiles file.")
+                        QMessageBox.critical(self.main_window, tr("Save Error"), tr("Unable to save profiles file."))
         
         # Cleanup
         self._steam_batch_dialog = None
@@ -3864,15 +3865,15 @@ class MainWindowHandlers:
             logging.info(f"No paths guessed by search thread for '{profile_name}'.")
             if not existing_path:
                 # Ask user to input path manually if none found and none exists
-                QMessageBox.information(self.main_window, "Path Not Found",
-                                        "Could not automatically find a path for '{0}'.\n" +
-                                        "Please enter it manually.".format(profile_name))
+                QMessageBox.information(self.main_window, tr("Path Not Found"),
+                                        tr("Could not automatically find a path for '{0}'.\n"
+                                        "Please enter it manually.", profile_name))
                 confirmed_path = self._ask_user_for_path_manually(profile_name, existing_path)
             else:
                 # Ask user if they want to keep the existing path or enter manually
-                reply = QMessageBox.question(self.main_window, "No New Path Found",
-                                             "Automatic search did not find new paths.\n" +
-                                             "Do you want to keep the current path?\n'{0}'".format(existing_path),
+                reply = QMessageBox.question(self.main_window, tr("No New Path Found"),
+                                             tr("Automatic search did not find new paths.\n"
+                                             "Do you want to keep the current path?\n'{0}'", existing_path),
                                              QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
                                              QMessageBox.StandardButton.Yes)
                 if reply == QMessageBox.StandardButton.Yes: confirmed_path = existing_path
@@ -3883,7 +3884,7 @@ class MainWindowHandlers:
                 from gui_components.save_path_selection_dialog import SavePathSelectionDialog
             except Exception as e_imp:
                 logging.error(f"Failed to import SavePathSelectionDialog: {e_imp}")
-                QMessageBox.critical(self.main_window, "UI Error", "Internal UI component missing.")
+                QMessageBox.critical(self.main_window, tr("UI Error"), tr("Internal UI component missing."))
                 return
 
             items_for_dialog = []
@@ -3903,10 +3904,10 @@ class MainWindowHandlers:
             if existing_path and not any(os.path.normpath(d["path"]) == norm_existing for d in items_for_dialog):
                 logging.warning(f"Existing path '{existing_path}' was not found in the suggested paths list.")
 
-            dialog_label_text = (
+            dialog_label_text = tr(
                 "These potential paths have been found for '{0}'.\n"
-                "Select the correct one (sorted by probability) or choose manual input:"
-            ).format(profile_name)
+                "Select the correct one (sorted by probability) or choose manual input:",
+                profile_name)
 
             shorten_flag = True
             try:
@@ -3916,7 +3917,7 @@ class MainWindowHandlers:
 
             dlg = SavePathSelectionDialog(
                 items=items_for_dialog,
-                title="Confirm Save Path",
+                title=tr("Confirm Save Path"),
                 prompt_text=dialog_label_text,
                 show_scores=self.main_window.developer_mode_enabled,
                 shorten_paths=shorten_flag,
@@ -3954,22 +3955,22 @@ class MainWindowHandlers:
                     logging.debug(f"Adding game_install_dir to profile: {game_install_dir}")
                 self.main_window.profiles[profile_name] = profile_data
                 if core_logic.save_profiles(self.main_window.profiles):
-                    self.main_window.status_label.setText("Profile '{0}' configured.".format(profile_name))
+                    self.main_window.status_label.setText(tr("Profile '{0}' configured.", profile_name))
                     self.main_window.profile_table_manager.update_profile_table()
                     self.main_window.profile_table_manager.select_profile_in_table(profile_name)
-                    QMessageBox.information(self.main_window, "Profile Configured", "Profile '{0}' saved successfully.".format(profile_name))
+                    QMessageBox.information(self.main_window, tr("Profile Configured"), tr("Profile '{0}' saved successfully.", profile_name))
                 else:
-                    QMessageBox.critical(self.main_window, "Save Error", "Unable to save profiles file.")
+                    QMessageBox.critical(self.main_window, tr("Save Error"), tr("Unable to save profiles file."))
                     if profile_name in self.main_window.profiles: del self.main_window.profiles[profile_name]
             # else: Validator already showed error message
         else:
-             self.main_window.status_label.setText("Profile configuration cancelled or failed.")
+             self.main_window.status_label.setText(tr("Profile configuration cancelled or failed."))
 
     # Prompts the user to manually enter the save path for a profile.
     # Helper for manual path input (used by steam search results)
     def _ask_user_for_path_manually(self, profile_name, existing_path):
-        input_path, ok = QInputDialog.getText(self.main_window, "Manual Path",
-                                            "Enter the FULL path to the save game folder for '{0}':".format(profile_name),
+        input_path, ok = QInputDialog.getText(self.main_window, tr("Manual Path"),
+                                            tr("Enter the FULL path to the save game folder for '{0}':", profile_name),
                                             text=existing_path or "")
         if ok and input_path:
              # Use validation from the main window's profile creation manager
@@ -3985,7 +3986,7 @@ class MainWindowHandlers:
     # Callback slot for when the backup/restore worker thread finishes.
     @Slot(bool, str)
     def on_operation_finished(self, success, message):
-        main_message = message.splitlines()[0] if message else "Operation finished without message."
+        main_message = message.splitlines()[0] if message else tr("Operation finished without message.")
         status_text = "Completed: {0}" if success else "ERROR: {0}"
         self.main_window.status_label.setText(status_text.format(main_message))
         self.main_window.set_controls_enabled(True)
@@ -3994,11 +3995,11 @@ class MainWindowHandlers:
         # Show tray notification for controller shortcut triggers (single profile backup path)
         if self._shortcut_background_notification:
             self._shortcut_background_notification = False
-            notif_title = "Backup Complete" if success else "Backup Error"
+            notif_title = tr("Backup Complete") if success else tr("Backup Error")
             self._show_controller_shortcut_notification(success, notif_title, main_message)
 
         if not success:
-            QMessageBox.critical(self.main_window, "Operation Error", message)
+            QMessageBox.critical(self.main_window, tr("Operation Error"), message)
         else:
             logging.debug("Operation thread worker successful, updating profile table view.")
 

@@ -10,6 +10,7 @@ from .pcsx2_mymc.ps2mc_dir import mode_is_file, mode_is_dir, DF_DIR, DF_EXISTS, 
 from .pcsx2_mymc.ps2iconsys import IconSys
 import configparser  # to read PCSX2 config for memcard paths
 import unicodedata  # for normalization of fullwidth characters
+from common.i18n import tr
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
@@ -323,7 +324,7 @@ def backup_pcsx2_save(profile_name: str, memcard_path: str, save_dir: str, # sav
                 except Exception as e_extract:
                     log.error(f"Error during recursive extraction from MC: {e_extract}", exc_info=True)
                     # mc.close() will be called in finally
-                    return False, f"ERROR during PS2 save extraction: {e_extract}"
+                    return False, tr("ERROR during PS2 save extraction: {0}", e_extract)
                 finally:
                     if hasattr(mc, 'f') and mc.f and not mc.f.closed:
                          mc.close()
@@ -346,7 +347,7 @@ def backup_pcsx2_save(profile_name: str, memcard_path: str, save_dir: str, # sav
             
     except Exception as e:
         log.error(f"General ERROR during PS2 backup for profile '{profile_name}': {e}", exc_info=True)
-        return False, f"General ERROR during PS2 backup: {e}"
+        return False, tr("General ERROR during PS2 backup: {0}", e)
 
 
 # --- Selective restore for PS2 profiles ---
@@ -361,7 +362,7 @@ def restore_pcsx2_save(profile_name: str,
     # Ensure mc_target_save_dir_name is just the directory name, no slashes initially for rmdir/mkdir
     mc_target_save_dir_name_cleaned = mc_target_save_dir_name.strip('/')
     if not mc_target_save_dir_name_cleaned:
-        msg = "Target save directory name on MC cannot be empty or root."
+        msg = tr("Target save directory name on MC cannot be empty or root.")
         log.error(msg)
         return False, msg
 
@@ -390,7 +391,7 @@ def restore_pcsx2_save(profile_name: str,
                 mc_instance.mkdir(mc_target_save_dir_name_cleaned)
                 log.info(f"Successfully created target MC directory: '{mc_target_save_dir_name_cleaned}'")
             except Exception as e_mkdir_root:
-                msg = f"Failed to create target directory '{mc_target_save_dir_name_cleaned}' on MC: {e_mkdir_root}"
+                msg = tr("Failed to create target directory '{0}' on MC: {1}", mc_target_save_dir_name_cleaned, e_mkdir_root)
                 log.error(msg, exc_info=True)
                 if mc_instance and hasattr(mc_instance, 'f') and mc_instance.f and not mc_instance.f.closed: mc_instance.close()
                 return False, msg
@@ -404,10 +405,10 @@ def restore_pcsx2_save(profile_name: str,
             # Changes are flushed on mc_instance.close()
 
         log.info(f"Selective PCSX2 restore successful for profile '{profile_name}' to MC dir '{mc_target_save_dir_name_cleaned}'.")
-        return True, f"Restore successful for {profile_name} to {mc_target_save_dir_name_cleaned}."
+        return True, tr("Restore successful for {0} to {1}.", profile_name, mc_target_save_dir_name_cleaned)
 
     except Exception as e:
-        msg = f"General ERROR during PS2 restore for profile '{profile_name}': {e}"
+        msg = tr("General ERROR during PS2 restore for profile '{0}': {1}", profile_name, e)
         log.error(msg, exc_info=True)
         return False, msg
     finally:

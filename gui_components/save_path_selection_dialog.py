@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QStyleOptionComboBox
 
 import config
 from common.utils import shorten_save_path
+from common.i18n import tr
 
 
 class BoldPrefixDelegate(QStyledItemDelegate):
@@ -225,7 +226,7 @@ class SavePathSelectionDialog(QDialog):
                 plain_display = shortened
             
             if show_scores:
-                score_text = f" (Score: {entry['score']})"
+                score_text = tr(" (Score: {0})", entry['score'])
                 display = f"{display}{score_text}"
                 plain_display = f"{plain_display}{score_text}"
                 
@@ -242,7 +243,7 @@ class SavePathSelectionDialog(QDialog):
                 self._combo.setItemData(row_index, prefix_len, Qt.ItemDataRole.UserRole + 1)
 
         # Manual option
-        self._manual_text = "[Enter Manually...]"
+        self._manual_text = tr("[Enter Manually...]")
         self._combo.addItem(self._manual_text, {"manual": True})
 
         # Allow the combobox to grow to contents
@@ -298,30 +299,30 @@ class SavePathSelectionDialog(QDialog):
             self._badge.setStyleSheet(self._style_unknown())
             return
         if data.get("manual"):
-            self._badge.setText("manual")
+            self._badge.setText(tr("manual"))
             self._badge.setStyleSheet(self._style_unknown())
             return
 
         has = data.get("has_saves", None)
         if has is True:
-            self._badge.setText("saves inside")
-            self._badge.setToolTip("Save files detected in this folder (by quick scan).")
+            self._badge.setText(tr("saves inside"))
+            self._badge.setToolTip(tr("Save files detected in this folder (by quick scan)."))
             self._badge.setStyleSheet(self._style_green())
         elif has is False:
             # Fallback quick scan if not provided and allowed
-            self._badge.setText("no saves detected")
-            self._badge.setToolTip("No common save files found at top-level.")
+            self._badge.setText(tr("no saves detected"))
+            self._badge.setToolTip(tr("No common save files found at top-level."))
             self._badge.setStyleSheet(self._style_grey())
         else:
             # Unknown -> do a lightweight check now
             has_any = self._quick_check_contains_saves(data.get("path"))
             if has_any:
-                self._badge.setText("saves inside")
-                self._badge.setToolTip("Save files detected in this folder (by quick scan).")
+                self._badge.setText(tr("saves inside"))
+                self._badge.setToolTip(tr("Save files detected in this folder (by quick scan)."))
                 self._badge.setStyleSheet(self._style_green())
             else:
-                self._badge.setText("unknown")
-                self._badge.setToolTip("Could not detect save files quickly. It may still be correct.")
+                self._badge.setText(tr("unknown"))
+                self._badge.setToolTip(tr("Could not detect save files quickly. It may still be correct."))
                 self._badge.setStyleSheet(self._style_unknown())
 
     def _quick_check_contains_saves(self, path: Optional[str]) -> bool:

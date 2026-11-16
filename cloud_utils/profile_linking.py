@@ -5,6 +5,7 @@ import json
 import zipfile
 
 from core.core_logic import get_backup_folder_name, is_group_profile
+from common.i18n import tr
 
 
 class ProfileLinkError(ValueError):
@@ -64,42 +65,42 @@ def prepare_profile_link(
     one is supplied. Its backup folder can only change when the old folder is empty.
     """
     if not valid_backup_folder_name(folder_name):
-        raise ProfileLinkError("The selected backup folder has an invalid name.")
+        raise ProfileLinkError(tr("The selected backup folder has an invalid name."))
     if not isinstance(profile_name, str) or not profile_name.strip():
-        raise ProfileLinkError("Enter a profile name.")
+        raise ProfileLinkError(tr("Enter a profile name."))
     profile_name = profile_name.strip()
     if create_new and any(name.casefold() == profile_name.casefold() for name in profiles):
-        raise ProfileLinkError("A profile with this name already exists. Select it from the list instead.")
+        raise ProfileLinkError(tr("A profile with this name already exists. Select it from the list instead."))
 
     backup_folder = os.path.join(backup_base_dir, folder_name)
     backup_root_real = os.path.normcase(os.path.realpath(backup_base_dir))
     backup_folder_real = os.path.normcase(os.path.realpath(backup_folder))
     if os.path.dirname(backup_folder_real) != backup_root_real:
-        raise ProfileLinkError("The selected backup folder is outside the backup directory.")
+        raise ProfileLinkError(tr("The selected backup folder is outside the backup directory."))
     if not os.path.isdir(backup_folder) or not any(
         entry.lower().endswith('.zip') and os.path.isfile(os.path.join(backup_folder, entry))
         for entry in os.listdir(backup_folder)
     ):
-        raise ProfileLinkError("Download a backup for this game before linking it.")
+        raise ProfileLinkError(tr("Download a backup for this game before linking it."))
 
     for other_name, other_data in profiles.items():
         if other_name == profile_name or is_group_profile(other_data):
             continue
         if get_backup_folder_name(other_name, other_data).casefold() == folder_name.casefold():
-            raise ProfileLinkError(f"This backup folder is already linked to '{other_name}'.")
+            raise ProfileLinkError(tr("This backup folder is already linked to '{0}'.", other_name))
 
     updated = dict(profiles)
     if profile_name in profiles:
         old_data = profiles[profile_name]
         if not isinstance(old_data, dict) or is_group_profile(old_data):
-            raise ProfileLinkError("A group cannot be linked to one backup folder.")
+            raise ProfileLinkError(tr("A group cannot be linked to one backup folder."))
         old_folder = get_backup_folder_name(profile_name, old_data)
         if old_folder != folder_name:
             old_folder_path = os.path.join(backup_base_dir, old_folder)
             if os.path.isdir(old_folder_path) and os.listdir(old_folder_path):
                 raise ProfileLinkError(
-                    f"'{profile_name}' already has backups in '{old_folder}'. "
-                    "Move or merge those backups before linking this folder. Nothing was changed."
+                    tr("'{0}' already has backups in '{1}'. "
+                    "Move or merge those backups before linking this folder. Nothing was changed.", profile_name, old_folder)
                 )
         new_data = dict(old_data)
         if save_path is not None:
@@ -117,11 +118,11 @@ def prepare_profile_link(
             paths = [configured_paths]
         if not paths or any(not _valid_save_path(path, backup_base_dir) for path in paths):
             raise ProfileLinkError(
-                "This profile has no valid local Save Path. Edit its path before linking."
+                tr("This profile has no valid local Save Path. Edit its path before linking.")
             )
     else:
         if any(name.casefold() == profile_name.casefold() for name in profiles):
-            raise ProfileLinkError("A profile with this name already exists.")
+            raise ProfileLinkError(tr("A profile with this name already exists."))
         normalized = _normalize_save_paths(save_path, backup_base_dir)
         new_data = {'paths': normalized} if isinstance(normalized, list) else {'path': normalized}
 
@@ -134,7 +135,7 @@ def _normalize_save_paths(save_path, backup_base_dir):
     paths = save_path if isinstance(save_path, list) else [save_path]
     if not paths or any(not _valid_save_path(path, backup_base_dir) for path in paths):
         raise ProfileLinkError(
-            "Choose existing local save files or folders outside the backup directory."
+            tr("Choose existing local save files or folders outside the backup directory.")
         )
     normalized = [os.path.normpath(path.strip()) for path in paths]
     return normalized if isinstance(save_path, list) else normalized[0]

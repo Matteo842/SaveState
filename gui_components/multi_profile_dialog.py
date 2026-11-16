@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt, Signal, QTimer, QSize, QEvent
 from PySide6.QtGui import QIcon, QFont, QCursor, QFontMetrics
 
 from common.utils import resource_path, shorten_save_path
+from common.i18n import tr
 
 # Helper function to sanitize display names
 def _sanitize_display_name(name):
@@ -124,7 +125,7 @@ class ProfileListItem(QWidget):
         # Delete button — icons/trash.png (same asset as main profile list)
         self.delete_button = QPushButton()
         self.delete_button.setObjectName("CardDeleteButton")
-        self.delete_button.setToolTip("Remove this profile")
+        self.delete_button.setToolTip(tr("Remove this profile"))
         self.delete_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         # Hit target ~40px; icon smaller than inner area so it isn’t clipped or “zoomed” (cf. profile table 16×16 in 24×24)
         self.delete_button.setFixedSize(36, 36)
@@ -190,7 +191,7 @@ class ProfileListItem(QWidget):
                 self.save_path,
                 self.game_install_dir,
             )
-        score_text = f" (Score: {self.score})" if self.show_score else ""
+        score_text = tr(" (Score: {0})", self.score) if self.show_score else ""
         text = f"{display_path}{score_text}"
         self.save_path_label.setText(text)
         self.save_path_label.setToolTip(self.save_path)
@@ -263,7 +264,7 @@ class MultiProfileDialog(QDialog):
         self.accepted_profiles = {}  # Dictionary to store accepted profiles
         self.analysis_running = False  # Flag to indicate if analysis is in progress
         
-        self.setWindowTitle("Manage Profiles")
+        self.setWindowTitle(tr("Manage Profiles"))
         self.setMinimumWidth(750)
         self.setMinimumHeight(800)
         try:
@@ -284,7 +285,7 @@ class MultiProfileDialog(QDialog):
         tb_layout.setContentsMargins(12, 4, 12, 4)
         tb_layout.setSpacing(6)
         # Window title
-        self.title_label = QLabel("Manage Profiles")
+        self.title_label = QLabel(tr("Manage Profiles"))
         self.title_label.setObjectName("TitleLabel")
         tb_layout.addWidget(self.title_label)
         tb_layout.addStretch(1)
@@ -316,13 +317,13 @@ class MultiProfileDialog(QDialog):
         
         # Header - different text based on mode
         if self.steam_mode:
-            header_text = f"<b>{self.total_files} Steam games selected</b>"
-            desc_text = ("Click 'Start Analysis' to scan for save paths. "
-                        "You can remove games you don't want before starting.")
+            header_text = tr("<b>{0} Steam games selected</b>", self.total_files)
+            desc_text = (tr("Click 'Start Analysis' to scan for save paths. "
+                        "You can remove games you don't want before starting."))
         else:
-            header_text = f"<b>{self.total_files} files detected</b>"
-            desc_text = ("Click 'Start Analysis' to scan for save paths. "
-                        "You can remove items you don't want before starting.")
+            header_text = tr("<b>{0} files detected</b>", self.total_files)
+            desc_text = (tr("Click 'Start Analysis' to scan for save paths. "
+                        "You can remove items you don't want before starting."))
         
         self.header_label = QLabel(header_text)
         self.header_label.setObjectName("MultiProfileHeader")
@@ -338,14 +339,14 @@ class MultiProfileDialog(QDialog):
         
         # Search bar (hidden by default)
         self.search_bar = QLineEdit()
-        self.search_bar.setPlaceholderText("Search profiles...")
+        self.search_bar.setPlaceholderText(tr("Search profiles..."))
         self.search_bar.hide()
         self.search_bar.textChanged.connect(self._on_search_text_changed)
         layout.addWidget(self.search_bar)
         
         # Checkbox to toggle score display
-        self.show_scores_checkbox = QCheckBox("Show scores")
-        self.show_scores_checkbox.setToolTip("Show scores next to save paths")
+        self.show_scores_checkbox = QCheckBox(tr("Show scores"))
+        self.show_scores_checkbox.setToolTip(tr("Show scores next to save paths"))
         layout.addWidget(self.show_scores_checkbox)
         self.show_scores_checkbox.toggled.connect(self.toggle_scores_display)
         
@@ -354,7 +355,7 @@ class MultiProfileDialog(QDialog):
         self.progress_bar.setObjectName("MultiProfileProgress")
         self.progress_bar.setRange(0, self.total_files if self.total_files > 0 else 1)  # Set range based on actual total files
         self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("%v/%m file processed (%p%)")
+        self.progress_bar.setFormat(tr("%v/%m file processed (%p%)"))
         self.progress_bar.hide()
         layout.addWidget(self.progress_bar)
         
@@ -386,12 +387,12 @@ class MultiProfileDialog(QDialog):
         # One stable primary button morphs from scan to add. Its width is
         # calculated once from the longest possible label, matching the Cloud
         # UI pattern and preventing any layout jump during the transition.
-        self.primary_action_button = QPushButton("Start Analysis")
+        self.primary_action_button = QPushButton(tr("Start Analysis"))
         self.primary_action_button.setObjectName("StartAnalysisButton")
         primary_labels = (
-            "Start Analysis",
-            "Analyzing...",
-            f"Add {self.total_files} profiles",
+            tr("Start Analysis"),
+            tr("Analyzing..."),
+            tr("Add {0} profiles", self.total_files),
         )
         font_metrics = QFontMetrics(self.primary_action_button.font())
         primary_width = max(
@@ -414,7 +415,7 @@ class MultiProfileDialog(QDialog):
         self.add_button = self.primary_action_button
         
         # Button to cancel
-        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button = QPushButton(tr("Cancel"))
         self.cancel_button.setObjectName("DangerButton")
         self.cancel_button.setFixedWidth(112)
         self.cancel_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -458,15 +459,15 @@ class MultiProfileDialog(QDialog):
 
         if state == "scan":
             button.setObjectName("StartAnalysisButton")
-            button.setText("Start Analysis")
+            button.setText(tr("Start Analysis"))
             button.setEnabled(self.profile_list.count() > 0)
         elif state == "scanning":
             button.setObjectName("StartAnalysisButton")
-            button.setText("Analyzing...")
+            button.setText(tr("Analyzing..."))
             button.setEnabled(False)
         elif state == "add":
             count = len(self.accepted_profiles)
-            label = f"Add {count} profile" if count == 1 else f"Add {count} profiles"
+            label = tr("Add {0} profile", count) if count == 1 else tr("Add {0} profiles", count)
             button.setObjectName("SaveButton")
             button.setText(label)
             button.setEnabled(count > 0)
@@ -580,22 +581,22 @@ class MultiProfileDialog(QDialog):
         """Start the analysis of selected profiles."""
         # Check if there are profiles to analyze
         if self.profile_list.count() == 0:
-            QMessageBox.warning(self, "No profiles", "No profiles to analyze.")
+            QMessageBox.warning(self, tr("No profiles"), tr("No profiles to analyze."))
             return
         
         # Set analysis running flag
         self.analysis_running = True
         
         # Update interface for analysis phase
-        self.header_label.setText("<b>Analysis in progress...</b>")
-        self.description_label.setText("Scanning for save paths. "
-                                      "Results will appear as they are found.")
+        self.header_label.setText(tr("<b>Analysis in progress...</b>"))
+        self.description_label.setText(tr("Scanning for save paths. "
+                                      "Results will appear as they are found."))
         
         # Show progress bar and status label
         self.progress_bar.setRange(0, self.profile_list.count())
         self.progress_bar.setValue(0)
         self.progress_bar.show()
-        self.status_label.setText("Initializing...")
+        self.status_label.setText(tr("Initializing..."))
         self.status_label.show()
         
         self._set_primary_action_state("scanning")
@@ -652,10 +653,10 @@ class MultiProfileDialog(QDialog):
         # If all files are processed, enable the add button
         if current_file >= self.profile_list.count():
             self.analysis_running = False
-            self.header_label.setText(f"<b>Analysis complete</b>")
-            self.description_label.setText("Profiles will be created with the detected save paths. "
-                                          "You can still remove any you don't want.")
-            self.status_label.setText("Analysis complete.")
+            self.header_label.setText(tr("<b>Analysis complete</b>"))
+            self.description_label.setText(tr("Profiles will be created with the detected save paths. "
+                                          "You can still remove any you don't want."))
+            self.status_label.setText(tr("Analysis complete."))
             self._set_primary_action_state("add")
     
     def remove_profile(self, profile_name):
@@ -685,9 +686,9 @@ class MultiProfileDialog(QDialog):
         """Update the header with the number of profiles."""
         count = self.profile_list.count()
         if self.steam_mode:
-            self.header_label.setText(f"<b>{count} Steam games</b>")
+            self.header_label.setText(tr("<b>{0} Steam games</b>", count))
         else:
-            self.header_label.setText(f"<b>{count} items</b>")
+            self.header_label.setText(tr("<b>{0} items</b>", count))
     
     def get_accepted_profiles(self):
         """Return the accepted profiles."""

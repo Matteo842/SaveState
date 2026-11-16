@@ -19,6 +19,7 @@ from common.launcher_urls import get_steam_app_id, is_known_launcher_url, is_ste
 logger = logging.getLogger(__name__)
 
 from gui_components.drop_event_logic import DropEventMixin  # Import the mixin (absolute to avoid relative import issues)
+from common.i18n import tr
 
 class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
     """
@@ -249,7 +250,7 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             
             # Inizializza la barra di avanzamento
-            self.profile_dialog.update_progress(0, f"Preparation of analysis for {len(files_to_analyze)} file...")
+            self.profile_dialog.update_progress(0, tr("Preparation of analysis for {0} file...", len(files_to_analyze)))
             QApplication.processEvents()
             
             # Dizionario per tenere traccia dei thread attivi
@@ -267,7 +268,7 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                 # 'name_for_detection_thread' can be updated with the Steam name for better detection if needed.
                 name_for_detection_thread = profile_name
                 # Aggiorna la barra di avanzamento
-                self.profile_dialog.update_progress(i, f"Preparazione: {os.path.basename(file_path)}")
+                self.profile_dialog.update_progress(i, tr("Preparing: {0}", os.path.basename(file_path)))
                 QApplication.processEvents()
                 
                 # Controlla di nuovo dopo processEvents (potrebbero essere arrivati segnali)
@@ -562,13 +563,13 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                 # Passa il completed_count effettivo, non una percentuale
                 self.profile_dialog.update_progress(
                     completed_count, 
-                    f"Analysis in progress... {completed_count}/{total_count} completed"
+                    tr("Analysis in progress... {0}/{1} completed", completed_count, total_count)
                 )
         
             # Se tutti i thread sono completati, notifica il completamento
             if completed_count == total_count and total_count > 0:
                 # Notifica il completamento dell'analisi, passando total_count come valore corrente
-                self.profile_dialog.update_progress(total_count, "Analysis completed")
+                self.profile_dialog.update_progress(total_count, tr("Analysis completed"))
                 
                 # Emetti un segnale per notificare il completamento dell'analisi
                 self.profile_dialog.analysis_completed.emit() 
@@ -613,13 +614,13 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                 # Passa il completed_count effettivo, non una percentuale
                 self.profile_dialog.update_progress(
                     completed_count, 
-                    f"Analysis in progress... {completed_count}/{total_count} completed"
+                    tr("Analysis in progress... {0}/{1} completed", completed_count, total_count)
                 )
             
             # Se tutti i thread sono completati, notifica il completamento
             if completed_count == total_count and total_count > 0:
                 # Notifica il completamento dell'analisi, passando total_count come valore corrente
-                self.profile_dialog.update_progress(total_count, "Analysis completed")
+                self.profile_dialog.update_progress(total_count, tr("Analysis completed"))
                 
                 # Emetti un segnale per notificare il completamento dell'analisi
                 self.profile_dialog.analysis_completed.emit()
@@ -769,8 +770,8 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
             QApplication.restoreOverrideCursor()
             
             logging.error("DragDropHandler.on_detection_finished: ProfileCreationManager not available")
-            QMessageBox.critical(mw, "Error", "Internal error: ProfileCreationManager not available.")
-            mw.status_label.setText("Error: ProfileCreationManager not available.")
+            QMessageBox.critical(mw, tr("Error"), tr("Internal error: ProfileCreationManager not available."))
+            mw.status_label.setText(tr("Error: ProfileCreationManager not available."))
             return
 
     # --- Method to handle Steam URL drop ---
@@ -795,12 +796,12 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
         app_id = get_steam_app_id(steam_url_str)
         if not app_id:
             # Usa un messaggio non modale invece di QMessageBox.warning
-            msg_box = QMessageBox(QMessageBox.Icon.Warning, "Invalid Steam URL", 
-                                 "The provided Steam URL is not valid or could not be parsed.", 
+            msg_box = QMessageBox(QMessageBox.Icon.Warning, tr("Invalid Steam URL"), 
+                                 tr("The provided Steam URL is not valid or could not be parsed."), 
                                  QMessageBox.StandardButton.Ok, mw)
             msg_box.setWindowModality(Qt.NonModal)
             msg_box.show()
-            mw.status_label.setText("Invalid Steam URL detected.")
+            mw.status_label.setText(tr("Invalid Steam URL detected."))
             logger.warning(f"Could not parse AppID from Steam URL: {steam_url_str}")
             self._hide_overlay_if_visible(mw)
             return
@@ -816,7 +817,7 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
             self.steam_app_id = app_id
             
             logger.info(f"Steam game found: '{self.game_name_suggestion}' (AppID: {self.steam_app_id}), Install Dir: {self.game_install_dir}")
-            mw.status_label.setText(f"Processing Steam game: {self.game_name_suggestion}...")
+            mw.status_label.setText(tr("Processing Steam game: {0}...", self.game_name_suggestion))
 
             # Disabilitiamo i controlli e impostiamo il cursore di attesa
             # come facciamo nel metodo dropEvent normale
@@ -826,8 +827,8 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
             if not hasattr(mw, 'current_settings'):
                 logger.error("MainWindow is missing 'current_settings'. Cannot proceed with detection.")
                 # Usa un messaggio non modale invece di QMessageBox.critical
-                msg_box = QMessageBox(QMessageBox.Icon.Critical, "Internal Error", 
-                                     "Required application settings are missing. Cannot start game detection.", 
+                msg_box = QMessageBox(QMessageBox.Icon.Critical, tr("Internal Error"), 
+                                     tr("Required application settings are missing. Cannot start game detection."), 
                                      QMessageBox.StandardButton.Ok, mw)
                 msg_box.setWindowModality(Qt.NonModal)
                 msg_box.show()
@@ -840,7 +841,7 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
             # Utilizziamo lo stesso approccio del metodo start_steam_configuration
             # che funziona correttamente con il fade effect
             if hasattr(mw, 'loading_label') and mw.loading_label:
-                mw.loading_label.setText("Searching...") # Set text for search
+                mw.loading_label.setText(tr("Searching...")) # Set text for search
                 mw.loading_label.setStyleSheet("QLabel { color: white; background-color: transparent; font-size: 24pt; font-weight: bold; }")
                 mw.loading_label.adjustSize() # Ensure label resizes to content
             
@@ -889,23 +890,23 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
             # Check if this is a direct call or from dropEvent
             if hasattr(self, 'skip_steam_error_popup') and self.skip_steam_error_popup:
                 # Skip showing error popup, just log and update status
-                mw.status_label.setText(f"Steam game (AppID: {app_id}) not installed. No profile created.")
+                mw.status_label.setText(tr("Steam game (AppID: {0}) not installed. No profile created.", app_id))
                 logger.warning(f"Steam game with AppID {app_id} not found in installed_steam_games_dict.")
                 self._hide_overlay_if_visible(mw)
             else:
                 # Show normal error popup - make it non-modal
-                msg_box = QMessageBox(QMessageBox.Icon.Warning, "Steam Game Not Found", "",
+                msg_box = QMessageBox(QMessageBox.Icon.Warning, tr("Steam Game Not Found"), "",
                                      QMessageBox.StandardButton.Ok, mw)
                 msg_box.setTextFormat(Qt.TextFormat.RichText)
                 msg_box.setText(
-                    f"<b>The Steam game with AppID {app_id} does not appear to be installed</b>, "
+                    tr("<b>The Steam game with AppID {0} does not appear to be installed</b>, "
                     "or its details could not be retrieved from your Steam library.<br><br>"
                     "Please ensure the game is installed and that SaveState has correctly "
-                    "identified your Steam installation."
+                    "identified your Steam installation.", app_id)
                 )
                 msg_box.setWindowModality(Qt.NonModal)
                 msg_box.show()
-                mw.status_label.setText(f"Steam game (AppID: {app_id}) not found or not installed.")
+                mw.status_label.setText(tr("Steam game (AppID: {0}) not found or not installed.", app_id))
                 logger.warning(f"Steam game with AppID {app_id} not found in installed_steam_games_dict.")
                 self._hide_overlay_if_visible(mw)
 
@@ -944,7 +945,7 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                    hasattr(mw, 'overlay_widget') and mw.overlay_widget:
                     
                     logging.debug("PCM.dragEnterEvent: Managing local overlay indication.")
-                    mw.loading_label.setText("Drop Here to Create Profile")
+                    mw.loading_label.setText(tr("Drop Here to Create Profile"))
                     if hasattr(mw, '_center_loading_label'):
                         mw._center_loading_label()
                     

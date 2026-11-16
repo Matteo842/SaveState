@@ -15,6 +15,7 @@ import logging
 import os
 import platform
 from datetime import datetime
+from common.i18n import tr
 
 # --- Cache Variables ---
 # These cache the results of expensive operations to avoid repeated filesystem scans
@@ -670,7 +671,7 @@ def _process_user_folder(entry: str, user_path: str, user_persona_names: dict) -
                     try:
                         last_mod_str = datetime.fromtimestamp(mtime).strftime('%d/%m/%Y %H:%M')
                     except ValueError:
-                        last_mod_str = "Invalid Date"
+                        last_mod_str = tr("Invalid Date")
         except Exception:
             pass
 

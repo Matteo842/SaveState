@@ -57,6 +57,7 @@ import config
 from gui.gui_utils import WorkerThread
 from gui_components import lock_backup_manager
 from common.utils import resource_path
+from common.i18n import tr, trn
 
 
 # Verde Xbox ufficiale (#0E7A0D) + lime chiaro per bordi/LED su UI scura
@@ -496,7 +497,7 @@ class BackupCardDelegate(QStyledItemDelegate):
             painter.drawText(
                 title_rect,
                 Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
-                "No local backups yet",
+                tr("No local backups yet"),
             )
 
             detail_font = QFont(option.font)
@@ -507,7 +508,7 @@ class BackupCardDelegate(QStyledItemDelegate):
             painter.drawText(
                 detail_rect,
                 Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
-                "Import a validated SaveState ZIP below.",
+                tr("Import a validated SaveState ZIP below."),
             )
             painter.restore()
             return
@@ -579,8 +580,8 @@ class BackupCardDelegate(QStyledItemDelegate):
         meta_font.setPointSize(max(8, meta_font.pointSize() - 1))
         painter.setFont(meta_font)
         painter.setPen(QColor("#899289"))
-        date_text = str(index.data(BACKUP_DATE_ROLE) or "Date unavailable")
-        meta = f"{kind} BACKUP  •  {date_text}"
+        date_text = str(index.data(BACKUP_DATE_ROLE) or tr("Date unavailable"))
+        meta = tr("{0} BACKUP  •  {1}", kind, date_text)
         meta_rect = QRectF(
             text_left,
             rect.top() + 32,
@@ -687,7 +688,7 @@ class XemuHddPanel(QWidget):
         self.size_chip = QLabel(self._size_label, self)
         self.size_chip.hide()
 
-        self.count_badge = QLabel("0 GAMES", self)
+        self.count_badge = QLabel(tr("0 GAMES"), self)
         self.count_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.count_badge.setStyleSheet(
             f"""
@@ -708,8 +709,7 @@ class XemuHddPanel(QWidget):
         self._size_label = size_text
         self._game_count = int(game_count)
         self.size_chip.setText(size_text)
-        unit = "GAME" if self._game_count == 1 else "GAMES"
-        self.count_badge.setText(f"{self._game_count} {unit}")
+        self.count_badge.setText(trn("{0} GAME", "{0} GAMES", self._game_count))
         self._layout_children()
         self.update()
 
@@ -860,7 +860,7 @@ class XemuHddPanel(QWidget):
         painter.setFont(font)
         painter.setPen(QColor(XBOX_LIME))
         title_rect = brand.adjusted(8, 0, -brand.width() * 0.38, 0)
-        painter.drawText(title_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "XBOX HDD")
+        painter.drawText(title_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, tr("XBOX HDD"))
 
         size_font = QFont(self.font())
         size_font.setBold(True)
@@ -915,7 +915,7 @@ class XemuRestoreDialog(QDialog):
         self._title_was_present = False
         self._zip_list_item = None
 
-        self.setWindowTitle(f"Restore xemu — {self.game_name}")
+        self.setWindowTitle(tr("Restore xemu — {0}", self.game_name))
         self.setMinimumSize(840, 600)
         self.resize(920, 660)
 
@@ -958,16 +958,16 @@ class XemuRestoreDialog(QDialog):
 
         hero_copy = QVBoxLayout()
         hero_copy.setSpacing(2)
-        eyebrow = QLabel("XEMU  /  SAVE RESTORE")
+        eyebrow = QLabel(tr("XEMU  /  SAVE RESTORE"))
         eyebrow.setObjectName("HeroEyebrow")
         hero_copy.addWidget(eyebrow)
-        hero_title = QLabel(f"Restore {self.game_name}")
+        hero_title = QLabel(tr("Restore {0}", self.game_name))
         hero_title.setObjectName("HeroTitle")
         hero_title.setWordWrap(True)
         hero_copy.addWidget(hero_title)
         hero_subtitle = QLabel(
-            "Choose a backup and write it directly into the live Xbox HDD. "
-            "Other titles remain untouched."
+            tr("Choose a backup and write it directly into the live Xbox HDD. "
+            "Other titles remain untouched.")
         )
         hero_subtitle.setObjectName("HeroSubtitle")
         hero_subtitle.setWordWrap(True)
@@ -977,11 +977,11 @@ class XemuRestoreDialog(QDialog):
         hero_badges = QVBoxLayout()
         hero_badges.setSpacing(6)
         hero_badges.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        mode_badge = QLabel("RAW HDD  •  DIRECT FATX")
+        mode_badge = QLabel(tr("RAW HDD  •  DIRECT FATX"))
         mode_badge.setObjectName("HeroModeBadge")
         mode_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hero_badges.addWidget(mode_badge)
-        title_id_badge = QLabel(f"TITLE ID  {(self.title_id or 'UNKNOWN').upper()}")
+        title_id_badge = QLabel(tr("TITLE ID  {0}", (self.title_id or tr("Unknown")).upper()))
         title_id_badge.setObjectName("TitleIdBadge")
         title_id_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hero_badges.addWidget(title_id_badge)
@@ -1008,15 +1008,15 @@ class XemuRestoreDialog(QDialog):
         left_heading.addWidget(left_step)
         left_titles = QVBoxLayout()
         left_titles.setSpacing(0)
-        left_title = QLabel("Live Xbox HDD")
+        left_title = QLabel(tr("Live Xbox HDD"))
         left_title.setObjectName("SectionTitle")
         left_titles.addWidget(left_title)
-        left_subtitle = QLabel("Destination")
+        left_subtitle = QLabel(tr("Destination"))
         left_subtitle.setObjectName("SectionSubtitle")
         left_titles.addWidget(left_subtitle)
         left_heading.addLayout(left_titles)
         left_heading.addStretch()
-        drive_pill = QLabel("READY" if self.hdd_path else "NOT FOUND")
+        drive_pill = QLabel(tr("READY") if self.hdd_path else tr("NOT FOUND"))
         drive_pill.setObjectName("ReadyPill" if self.hdd_path else "ErrorPill")
         left_heading.addWidget(drive_pill)
         left.addLayout(left_heading)
@@ -1029,7 +1029,7 @@ class XemuRestoreDialog(QDialog):
         drive_info_layout = QVBoxLayout(drive_info)
         drive_info_layout.setContentsMargins(10, 8, 10, 8)
         drive_info_layout.setSpacing(2)
-        drive_caption = QLabel("HDD IMAGE")
+        drive_caption = QLabel(tr("HDD IMAGE"))
         drive_caption.setObjectName("DriveCaption")
         drive_info_layout.addWidget(drive_caption)
         self.hdd_path_label = QLabel("")
@@ -1062,15 +1062,15 @@ class XemuRestoreDialog(QDialog):
         right_heading.addWidget(right_step)
         right_titles = QVBoxLayout()
         right_titles.setSpacing(0)
-        right_title = QLabel("Choose a backup")
+        right_title = QLabel(tr("Choose a backup"))
         right_title.setObjectName("SectionTitle")
         right_titles.addWidget(right_title)
-        right_subtitle = QLabel("Source")
+        right_subtitle = QLabel(tr("Source"))
         right_subtitle.setObjectName("SectionSubtitle")
         right_titles.addWidget(right_subtitle)
         right_heading.addLayout(right_titles)
         right_heading.addStretch()
-        self.backup_count_label = QLabel("0 AVAILABLE")
+        self.backup_count_label = QLabel(tr("0 AVAILABLE"))
         self.backup_count_label.setObjectName("CountPill")
         right_heading.addWidget(self.backup_count_label)
         right.addLayout(right_heading)
@@ -1088,19 +1088,19 @@ class XemuRestoreDialog(QDialog):
         self.backup_list.setItemDelegate(self.backup_delegate)
         right.addWidget(self.backup_list, stretch=1)
 
-        zip_caption = QLabel("EXTERNAL ARCHIVE")
+        zip_caption = QLabel(tr("EXTERNAL ARCHIVE"))
         zip_caption.setObjectName("SourceCaption")
         right.addWidget(zip_caption)
         zip_row = QHBoxLayout()
         zip_row.setSpacing(7)
-        self.load_zip_button = QPushButton("  Import backup from ZIP…")
+        self.load_zip_button = QPushButton(tr("  Import backup from ZIP…"))
         folder_icon = QApplication.instance().style().standardIcon(
             QStyle.StandardPixmap.SP_DirOpenIcon
         )
         self.load_zip_button.setIcon(folder_icon)
         self.load_zip_button.setStyleSheet(_XBOX_BTN_OUTLINE)
         self.load_zip_button.clicked.connect(self._handle_load_from_zip)
-        self.clear_zip_button = QPushButton("Remove ZIP")
+        self.clear_zip_button = QPushButton(tr("Remove ZIP"))
         self.clear_zip_button.setStyleSheet(_XBOX_BTN_OUTLINE)
         self.clear_zip_button.clicked.connect(self._handle_clear_zip)
         self.clear_zip_button.hide()
@@ -1108,7 +1108,7 @@ class XemuRestoreDialog(QDialog):
         zip_row.addWidget(self.clear_zip_button)
         right.addLayout(zip_row)
         zip_helper = QLabel(
-            "Only validated SaveState archives are accepted. Keep xemu closed while restoring."
+            tr("Only validated SaveState archives are accepted. Keep xemu closed while restoring.")
         )
         zip_helper.setObjectName("ZipHelper")
         zip_helper.setWordWrap(True)
@@ -1123,10 +1123,10 @@ class XemuRestoreDialog(QDialog):
         footer_layout.setSpacing(12)
         status_copy = QVBoxLayout()
         status_copy.setSpacing(1)
-        self.status_kicker = QLabel("SELECT A BACKUP")
+        self.status_kicker = QLabel(tr("SELECT A BACKUP"))
         self.status_kicker.setObjectName("StatusKicker")
         status_copy.addWidget(self.status_kicker)
-        self.status_label = QLabel("Choose a local snapshot or import a ZIP to continue.")
+        self.status_label = QLabel(tr("Choose a local snapshot or import a ZIP to continue."))
         self.status_label.setObjectName("StatusText")
         self.status_label.setWordWrap(True)
         status_copy.addWidget(self.status_label)
@@ -1134,7 +1134,7 @@ class XemuRestoreDialog(QDialog):
 
         buttons = QDialogButtonBox()
         self.restore_button = buttons.addButton(
-            "Restore to Xbox HDD", QDialogButtonBox.ButtonRole.AcceptRole
+            tr("Restore to Xbox HDD"), QDialogButtonBox.ButtonRole.AcceptRole
         )
         # Non usare SaveButton (#229954): resta nella palette Xbox del dialog
         self.restore_button.setStyleSheet(_XBOX_BTN_PRIMARY)
@@ -1152,9 +1152,9 @@ class XemuRestoreDialog(QDialog):
         self.backup_list.itemDoubleClicked.connect(lambda _i: self._on_restore_clicked())
 
         if not self.hdd_path:
-            self.games_hint.setText("HDD unavailable · Title scan and restore are disabled.")
+            self.games_hint.setText(tr("HDD unavailable · Title scan and restore are disabled."))
             self.restore_button.setEnabled(False)
-            self.hdd_path_label.setText("No HDD image is configured for this profile.")
+            self.hdd_path_label.setText(tr("No HDD image is configured for this profile."))
         else:
             self.hdd_path_label.setText(self.hdd_path)
 
@@ -1168,7 +1168,7 @@ class XemuRestoreDialog(QDialog):
             games = _scan_hdd_games(self.hdd_path)
         except Exception as exc:
             logging.error("xemu restore UI: HDD scan failed: %s", exc, exc_info=True)
-            self.games_hint.setText(f"Scan failed · {exc}")
+            self.games_hint.setText(tr("Scan failed · {0}", exc))
             self.hdd_panel.set_hdd_info(_format_size_mb(self.hdd_path), 0)
             return
 
@@ -1181,8 +1181,8 @@ class XemuRestoreDialog(QDialog):
             item.setData(CURRENT_TITLE_ROLE, is_current)
             if is_current:
                 present = True
-                item.setText(f"{game['name']}  ·  profile")
-                item.setToolTip(f"{game['title_id']} · {game['area']} · current profile")
+                item.setText(tr("{0}  ·  profile", game['name']))
+                item.setToolTip(f"{game['title_id']} · {game['area']} · " + tr("current profile"))
             else:
                 item.setToolTip(f"{game['title_id']} · {game['area']}")
             self.games_list.addItem(item)
@@ -1191,11 +1191,11 @@ class XemuRestoreDialog(QDialog):
         self.hdd_panel.set_hdd_info(_format_size_mb(self.hdd_path), len(games))
         if present:
             self.games_hint.setText(
-                "Overwrite mode · This title already exists; only its save data will be replaced."
+                tr("Overwrite mode · This title already exists; only its save data will be replaced.")
             )
         else:
             self.games_hint.setText(
-                "New title · Save data will be added, with FATX remapping when needed."
+                tr("New title · Save data will be added, with FATX remapping when needed.")
             )
 
     def _populate_backups(self) -> None:
@@ -1212,7 +1212,7 @@ class XemuRestoreDialog(QDialog):
             self.profile_name, backup_base, profile_data=self.profile_data
         )
         self.backup_count_label.setText(
-            f"{len(backups)} AVAILABLE" if len(backups) != 1 else "1 AVAILABLE"
+            tr("{0} AVAILABLE", len(backups)) if len(backups) != 1 else tr("1 AVAILABLE")
         )
         if not backups:
             empty = QListWidgetItem("")
@@ -1252,7 +1252,7 @@ class XemuRestoreDialog(QDialog):
                 if lock_icon:
                     item.setIcon(lock_icon)
                 item.setToolTip(
-                    f"{display}\n{date_str}\n{path}\nLocked (protected from deletion)"
+                    tr("{0}\n{1}\n{2}\nLocked (protected from deletion)", display, date_str, path)
                 )
             self.backup_list.addItem(item)
 
@@ -1264,14 +1264,14 @@ class XemuRestoreDialog(QDialog):
         self.status_label.setStyleSheet("")
         if ok:
             kind = str(current.data(BACKUP_KIND_ROLE) or "LOCAL").upper()
-            self.status_kicker.setText("READY TO RESTORE")
+            self.status_kicker.setText(tr("READY TO RESTORE"))
             self.status_label.setText(
-                f"{kind.title()} backup selected · It will be written to the live Xbox HDD."
+                tr("{0} backup selected · It will be written to the live Xbox HDD.", kind.title())
             )
         else:
-            self.status_kicker.setText("SELECT A BACKUP")
+            self.status_kicker.setText(tr("SELECT A BACKUP"))
             self.status_label.setText(
-                "Choose a local snapshot or import a ZIP to continue."
+                tr("Choose a local snapshot or import a ZIP to continue.")
             )
 
     def get_selected_path(self) -> Optional[str]:
@@ -1284,15 +1284,15 @@ class XemuRestoreDialog(QDialog):
     def _handle_load_from_zip(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Load Backup ZIP",
+            tr("Load Backup ZIP"),
             "",
-            "ZIP Archives (*.zip);;All Files (*)",
+            tr("ZIP Archives (*.zip);;All Files (*)"),
         )
         if not path:
             return
         ok, result = core_logic.validate_backup_zip(path)
         if not ok:
-            QMessageBox.warning(self, "Invalid Backup", str(result))
+            QMessageBox.warning(self, tr("Invalid Backup"), str(result))
             return
 
         if self._zip_list_item is not None:
@@ -1309,7 +1309,7 @@ class XemuRestoreDialog(QDialog):
         name = os.path.basename(path)
         item = QListWidgetItem(os.path.splitext(name)[0])
         item.setData(PATH_ROLE, path)
-        item.setData(BACKUP_DATE_ROLE, "Imported archive")
+        item.setData(BACKUP_DATE_ROLE, tr("Imported archive"))
         item.setData(BACKUP_KIND_ROLE, "ZIP")
         item.setToolTip(path)
         self.backup_list.insertItem(0, item)
@@ -1321,7 +1321,7 @@ class XemuRestoreDialog(QDialog):
             if self.backup_list.item(row).data(PATH_ROLE)
         )
         self.backup_count_label.setText(
-            f"{available} AVAILABLE" if available != 1 else "1 AVAILABLE"
+            tr("{0} AVAILABLE", available) if available != 1 else tr("1 AVAILABLE")
         )
         self.clear_zip_button.show()
 
@@ -1345,9 +1345,9 @@ class XemuRestoreDialog(QDialog):
         self.backup_list.setEnabled(not busy)
         self._cancel_button.setEnabled(not busy)
         if busy:
-            self.status_kicker.setText("RESTORE IN PROGRESS")
+            self.status_kicker.setText(tr("RESTORE IN PROGRESS"))
             self.status_label.setText(
-                f"Writing {self.game_name} directly into the live Xbox HDD…"
+                tr("Writing {0} directly into the live Xbox HDD…", self.game_name)
             )
             self.status_label.setStyleSheet("")
         mw = self.parent()
@@ -1363,23 +1363,23 @@ class XemuRestoreDialog(QDialog):
 
         if self._title_was_present:
             msg = (
-                f"Restore '{os.path.basename(archive)}' into the live HDD?\n\n"
-                f"Title '{self.game_name}' ({self.title_id}) is already on the disk — "
-                f"its save data will be overwritten.\n\n"
-                f"Other games on the HDD will not be touched."
+                tr("Restore '{0}' into the live HDD?\n\n"
+                "Title '{1}' ({2}) is already on the disk — "
+                "its save data will be overwritten.\n\n"
+                "Other games on the HDD will not be touched.", os.path.basename(archive), self.game_name, self.title_id)
             )
         else:
             msg = (
-                f"Restore '{os.path.basename(archive)}' into the live HDD?\n\n"
-                f"Title '{self.game_name}' ({self.title_id}) is not on the disk yet — "
-                f"it will be added (FATX remap if needed).\n\n"
-                f"Other games on the HDD will not be touched.\n"
-                f"Make sure xemu is closed."
+                tr("Restore '{0}' into the live HDD?\n\n"
+                "Title '{1}' ({2}) is not on the disk yet — "
+                "it will be added (FATX remap if needed).\n\n"
+                "Other games on the HDD will not be touched.\n"
+                "Make sure xemu is closed.", os.path.basename(archive), self.game_name, self.title_id)
             )
 
         confirm = QMessageBox.warning(
             self,
-            "Confirm xemu Restore",
+            tr("Confirm xemu Restore"),
             msg,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -1395,7 +1395,7 @@ class XemuRestoreDialog(QDialog):
             and mw.worker_thread.isRunning()
         ):
             QMessageBox.information(
-                self, "Operation in Progress", "Another operation is already in progress."
+                self, tr("Operation in Progress"), tr("Another operation is already in progress.")
             )
             return
 
@@ -1536,17 +1536,17 @@ class XemuRestoreDialog(QDialog):
             if not was_present:
                 self.hdd_panel.bump_count_pulse()
             self._pulse_existing_title()
-            self.status_kicker.setText("RESTORE COMPLETE")
-            self.status_label.setText(self._worker_message or "Restore completed.")
+            self.status_kicker.setText(tr("RESTORE COMPLETE"))
+            self.status_label.setText(self._worker_message or tr("Restore completed."))
             self.status_label.setStyleSheet("")
         else:
-            self.status_kicker.setText("RESTORE FAILED")
-            self.status_label.setText(self._worker_message or "Restore failed.")
+            self.status_kicker.setText(tr("RESTORE FAILED"))
+            self.status_label.setText(self._worker_message or tr("Restore failed."))
             self.status_label.setStyleSheet("color: #FF8E8E;")
             QMessageBox.critical(
                 self,
-                "xemu Restore Failed",
-                self._worker_message or "Restore failed.",
+                tr("xemu Restore Failed"),
+                self._worker_message or tr("Restore failed."),
             )
 
         self._set_busy(False)

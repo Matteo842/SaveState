@@ -37,6 +37,7 @@ from managers.update_manager import (
     STATE_UPDATE_AVAILABLE,
     STATE_UP_TO_DATE,
 )
+from common.i18n import tr
 
 
 def _human_size(n: int) -> str:
@@ -82,7 +83,7 @@ class UpdateDialog(QDialog):
         super().__init__(parent)
         self._um = update_manager
         self._sm = settings_manager
-        self.setWindowTitle("SaveState Update")
+        self.setWindowTitle(tr("SaveState Update"))
         self.setMinimumWidth(520)
         # Frameless to match the rest of the app look. Keep a close button via our own layout.
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.Dialog)
@@ -140,14 +141,14 @@ class UpdateDialog(QDialog):
         root.addWidget(self.status_label)
 
         # Skip-this-version checkbox (only visible in the "available" state)
-        self.skip_checkbox = QCheckBox("Skip this version")
+        self.skip_checkbox = QCheckBox(tr("Skip this version"))
         self.skip_checkbox.setVisible(False)
         root.addWidget(self.skip_checkbox)
 
         # Button row
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
-        self.open_release_button = QPushButton("View on GitHub")
+        self.open_release_button = QPushButton(tr("View on GitHub"))
         self.open_release_button.clicked.connect(self._open_release_page)
         btn_row.addWidget(self.open_release_button)
         btn_row.addStretch(1)
@@ -155,7 +156,7 @@ class UpdateDialog(QDialog):
         self.primary_button.setDefault(True)
         self.primary_button.clicked.connect(self._on_primary_clicked)
         btn_row.addWidget(self.primary_button)
-        self.close_button = QPushButton("Close")
+        self.close_button = QPushButton(tr("Close"))
         self.close_button.clicked.connect(self.close)
         btn_row.addWidget(self.close_button)
         root.addLayout(btn_row)
@@ -183,8 +184,8 @@ class UpdateDialog(QDialog):
         tag_current = getattr(config, "APP_RELEASE_TAG", "")
 
         self.version_label.setText(
-            f"Current: {tag_current or config.APP_VERSION}"
-            + (f"   →   Latest: {tag_latest}" if tag_latest else "")
+            tr("Current: {0}", tag_current or config.APP_VERSION)
+            + (tr("   →   Latest: {0}", tag_latest) if tag_latest else "")
         )
         self._apply_state(state)
 
@@ -199,37 +200,38 @@ class UpdateDialog(QDialog):
         self.open_release_button.setVisible(bool(release and release.get("html_url")))
 
         if state == STATE_UNSUPPORTED:
-            self.title_label.setText("Updates unavailable")
+            self.title_label.setText(tr("Updates unavailable"))
             self.changelog.setPlainText(
-                "This installation cannot be updated automatically.\n\n"
-                f"Reason: {self._um.last_error or 'unsupported install type'}\n\n"
-                "You can still download the latest release manually from GitHub."
+                tr("This installation cannot be updated automatically.\n\n"
+                "Reason: {0}\n\n"
+                "You can still download the latest release manually from GitHub.",
+                self._um.last_error or tr("unsupported install type"))
             )
-            self.primary_button.setText("Check on GitHub")
+            self.primary_button.setText(tr("Check on GitHub"))
             self.primary_button.setEnabled(True)
             self.status_label.setText("")
             return
 
         if state == STATE_CHECKING:
-            self.title_label.setText("Checking for updates...")
-            self.changelog.setPlainText("Contacting GitHub, please wait...")
-            self.primary_button.setText("Checking...")
+            self.title_label.setText(tr("Checking for updates..."))
+            self.changelog.setPlainText(tr("Contacting GitHub, please wait..."))
+            self.primary_button.setText(tr("Checking..."))
             self.primary_button.setEnabled(False)
             self.status_label.setText("")
             return
 
         if state == STATE_UP_TO_DATE:
-            self.title_label.setText("You're up to date")
-            self.changelog.setPlainText("SaveState is running the latest released version.")
-            self.primary_button.setText("Check again")
+            self.title_label.setText(tr("You're up to date"))
+            self.changelog.setPlainText(tr("SaveState is running the latest released version."))
+            self.primary_button.setText(tr("Check again"))
             self.primary_button.setEnabled(True)
             self.status_label.setText("")
             return
 
         if state == STATE_UPDATE_AVAILABLE:
-            self.title_label.setText(f"Update available: {title_name}")
+            self.title_label.setText(tr("Update available: {0}", title_name))
             self._render_changelog(body)
-            self.primary_button.setText("Download update")
+            self.primary_button.setText(tr("Download update"))
             self.primary_button.setEnabled(True)
             self.skip_checkbox.setVisible(True)
             # Reflect any previously stored skip state for this tag
@@ -243,12 +245,12 @@ class UpdateDialog(QDialog):
             return
 
         if state == STATE_DOWNLOADING:
-            self.title_label.setText(f"Downloading: {title_name}")
+            self.title_label.setText(tr("Downloading: {0}", title_name))
             self._render_changelog(body)
             self.progress_bar.setVisible(True)
             done, total = self._um.progress_tuple
             self._update_progress_widgets(done, total)
-            self.primary_button.setText("Cancel")
+            self.primary_button.setText(tr("Cancel"))
             self.primary_button.setEnabled(True)
             return
 
@@ -258,55 +260,55 @@ class UpdateDialog(QDialog):
             self.progress_bar.setRange(0, 100)
             self.progress_bar.setValue(100)
             if self._um.can_auto_install():
-                self.progress_bar.setFormat("Downloaded - ready to install")
-                self.primary_button.setText("Install and restart")
+                self.progress_bar.setFormat(tr("Downloaded - ready to install"))
+                self.primary_button.setText(tr("Install and restart"))
                 self.primary_button.setEnabled(True)
                 self.status_label.setStyleSheet("color: #bdbdbd;")
                 if self._um.install_type == INSTALL_SOURCE:
-                    self.title_label.setText("Ready to install (source)")
+                    self.title_label.setText(tr("Ready to install (source)"))
                     self.status_label.setText(
-                        "The source tree will be overwritten with the new release, "
-                        "then SaveState will relaunch automatically."
+                        tr("The source tree will be overwritten with the new release, "
+                        "then SaveState will relaunch automatically.")
                     )
                 else:
-                    self.title_label.setText("Ready to install")
+                    self.title_label.setText(tr("Ready to install"))
                     self.status_label.setText(
-                        "SaveState will close and relaunch itself automatically."
+                        tr("SaveState will close and relaunch itself automatically.")
                     )
             else:
                 # Flatpak / Snap / read-only install: auto-install refused.
-                self.title_label.setText("Downloaded (manual install required)")
-                self.progress_bar.setFormat("Downloaded")
-                self.primary_button.setText("Open download folder")
+                self.title_label.setText(tr("Downloaded (manual install required)"))
+                self.progress_bar.setFormat(tr("Downloaded"))
+                self.primary_button.setText(tr("Open download folder"))
                 self.primary_button.setEnabled(True)
                 self.status_label.setStyleSheet("color: #ffb74d;")
-                reason = self._um.swap_unsupported_reason() or "this install type"
+                reason = self._um.swap_unsupported_reason() or tr("this install type")
                 short = _shorten_path(self._um.downloaded_path or "")
                 self.status_label.setText(
-                    f"Auto-install unavailable ({reason}). Saved to: {short}"
+                    tr("Auto-install unavailable ({0}). Saved to: {1}", reason, short)
                 )
             return
 
         if state == STATE_ERROR:
-            self.title_label.setText("Update error")
-            self.changelog.setPlainText(self._um.last_error or "Unknown error")
-            self.primary_button.setText("Retry")
+            self.title_label.setText(tr("Update error"))
+            self.changelog.setPlainText(self._um.last_error or tr("Unknown error"))
+            self.primary_button.setText(tr("Retry"))
             self.primary_button.setEnabled(True)
             self.status_label.setText("")
             return
 
         # STATE_IDLE or anything else
-        self.title_label.setText("Check for updates")
+        self.title_label.setText(tr("Check for updates"))
         self.changelog.setPlainText(
-            "Click 'Check for updates' to contact GitHub and look for a new release."
+            tr("Click 'Check for updates' to contact GitHub and look for a new release.")
         )
-        self.primary_button.setText("Check for updates")
+        self.primary_button.setText(tr("Check for updates"))
         self.primary_button.setEnabled(True)
         self.status_label.setText("")
 
     def _render_changelog(self, body: str):
         if not body:
-            self.changelog.setPlainText("(No release notes provided.)")
+            self.changelog.setPlainText(tr("(No release notes provided.)"))
             return
         # GitHub returns Markdown; Qt's QTextBrowser supports a subset of it
         # via setMarkdown. That's good enough for release notes.

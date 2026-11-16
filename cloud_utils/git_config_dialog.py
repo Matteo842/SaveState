@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QFrame
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject
+from common.i18n import tr
 
 
 class GitConnectionTestWorker(QObject):
@@ -47,7 +48,7 @@ class GitConnectionTestWorker(QObject):
             else:
                 self.finished.emit({
                     'success': False,
-                    'message': 'Failed to connect to repository',
+                    'message': tr('Failed to connect to repository'),
                     'details': None
                 })
                 
@@ -79,7 +80,7 @@ class GitConfigDialog(QDialog):
         self.test_thread = None
         self.test_worker = None
         
-        self.setWindowTitle("Git Repository Configuration")
+        self.setWindowTitle(tr("Git Repository Configuration"))
         self.setModal(True)
         self.setMinimumWidth(500)
         
@@ -91,20 +92,20 @@ class GitConfigDialog(QDialog):
         layout.setSpacing(12)
         
         # Repository settings
-        repo_group = QGroupBox("Repository")
+        repo_group = QGroupBox(tr("Repository"))
         repo_layout = QFormLayout()
         
         path_row = QHBoxLayout()
         self.path_edit = QLineEdit()
-        self.path_edit.setPlaceholderText("C:\\path\\to\\savestate-backups.git")
+        self.path_edit.setPlaceholderText(tr("C:\\path\\to\\savestate-backups.git"))
         path_row.addWidget(self.path_edit)
         
-        browse_btn = QPushButton("Browse...")
+        browse_btn = QPushButton(tr("Browse..."))
         browse_btn.clicked.connect(self._on_browse)
         path_row.addWidget(browse_btn)
-        repo_layout.addRow("Repository Path:", path_row)
+        repo_layout.addRow(tr("Repository Path:"), path_row)
         
-        path_help = QLabel("Local folder for the Git repo. Created if it doesn't exist.")
+        path_help = QLabel(tr("Local folder for the Git repo. Created if it doesn't exist."))
         path_help.setWordWrap(True)
         path_help.setStyleSheet("color: #888888; font-size: 11px;")
         repo_layout.addRow("", path_help)
@@ -112,20 +113,20 @@ class GitConfigDialog(QDialog):
         self.branch_edit = QLineEdit()
         self.branch_edit.setPlaceholderText("main")
         self.branch_edit.setMaxLength(256)
-        repo_layout.addRow("Branch:", self.branch_edit)
+        repo_layout.addRow(tr("Branch:"), self.branch_edit)
         
         repo_group.setLayout(repo_layout)
         layout.addWidget(repo_group)
         
         # Remote settings
-        remote_group = QGroupBox("Remote (Optional)")
+        remote_group = QGroupBox(tr("Remote (Optional)"))
         remote_layout = QFormLayout()
         
         self.remote_edit = QLineEdit()
-        self.remote_edit.setPlaceholderText("https://github.com/user/repo.git or git@github.com:user/repo.git")
-        remote_layout.addRow("Remote URL:", self.remote_edit)
+        self.remote_edit.setPlaceholderText(tr("https://github.com/user/repo.git or git@github.com:user/repo.git"))
+        remote_layout.addRow(tr("Remote URL:"), self.remote_edit)
         
-        remote_help = QLabel("GitHub, GitLab, Bitbucket, or any Git server. Leave empty for local-only.")
+        remote_help = QLabel(tr("GitHub, GitLab, Bitbucket, or any Git server. Leave empty for local-only."))
         remote_help.setWordWrap(True)
         remote_help.setStyleSheet("color: #888888; font-size: 11px;")
         remote_layout.addRow("", remote_help)
@@ -134,21 +135,21 @@ class GitConfigDialog(QDialog):
         layout.addWidget(remote_group)
         
         # Options
-        options_group = QGroupBox("Sync Options")
+        options_group = QGroupBox(tr("Sync Options"))
         options_layout = QVBoxLayout()
         
-        self.auto_push_checkbox = QCheckBox("Auto-push after upload")
+        self.auto_push_checkbox = QCheckBox(tr("Auto-push after upload"))
         self.auto_push_checkbox.setChecked(True)
-        self.auto_push_checkbox.setToolTip("Push to remote after each upload")
+        self.auto_push_checkbox.setToolTip(tr("Push to remote after each upload"))
         options_layout.addWidget(self.auto_push_checkbox)
         
-        self.auto_pull_checkbox = QCheckBox("Auto-pull before operations")
+        self.auto_pull_checkbox = QCheckBox(tr("Auto-pull before operations"))
         self.auto_pull_checkbox.setChecked(True)
-        self.auto_pull_checkbox.setToolTip("Pull from remote before upload/download")
+        self.auto_pull_checkbox.setToolTip(tr("Pull from remote before upload/download"))
         options_layout.addWidget(self.auto_pull_checkbox)
         
-        self.auto_connect_checkbox = QCheckBox("Auto-connect on startup")
-        self.auto_connect_checkbox.setToolTip("Connect to this repo when SaveState starts")
+        self.auto_connect_checkbox = QCheckBox(tr("Auto-connect on startup"))
+        self.auto_connect_checkbox.setToolTip(tr("Connect to this repo when SaveState starts"))
         options_layout.addWidget(self.auto_connect_checkbox)
         
         options_group.setLayout(options_layout)
@@ -159,7 +160,7 @@ class GitConfigDialog(QDialog):
         test_layout = QHBoxLayout(test_frame)
         test_layout.setContentsMargins(0, 0, 0, 0)
         
-        self.test_button = QPushButton("Test Connection")
+        self.test_button = QPushButton(tr("Test Connection"))
         self.test_button.clicked.connect(self._on_test_clicked)
         test_layout.addWidget(self.test_button)
         
@@ -173,11 +174,11 @@ class GitConfigDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch(1)
         
-        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button = QPushButton(tr("Cancel"))
         self.cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(self.cancel_button)
         
-        self.save_button = QPushButton("Save")
+        self.save_button = QPushButton(tr("Save"))
         self.save_button.setObjectName("SaveButton")
         self.save_button.clicked.connect(self._on_save_clicked)
         button_layout.addWidget(self.save_button)
@@ -187,7 +188,7 @@ class GitConfigDialog(QDialog):
     def _on_browse(self):
         path = QFileDialog.getExistingDirectory(
             self,
-            "Select or Create Repository Folder",
+            tr("Select or Create Repository Folder"),
             self.path_edit.text() or os.path.expanduser("~")
         )
         if path:
@@ -207,12 +208,12 @@ class GitConfigDialog(QDialog):
         repo_path = self.path_edit.text().strip()
         if not repo_path:
             QMessageBox.warning(
-                self, "Missing Information",
-                "Please enter a repository path."
+                self, tr("Missing Information"),
+                tr("Please enter a repository path.")
             )
             return
         
-        self.test_status_label.setText("Testing connection...")
+        self.test_status_label.setText(tr("Testing connection..."))
         self.test_status_label.setStyleSheet("color: #AAAAAA;")
         self.test_button.setEnabled(False)
         
@@ -233,7 +234,7 @@ class GitConfigDialog(QDialog):
     def _on_test_finished(self, result: dict):
         self.test_button.setEnabled(True)
         if result.get('success'):
-            self.test_status_label.setText("✓ Connection successful!")
+            self.test_status_label.setText(tr("✓ Connection successful!"))
             self.test_status_label.setStyleSheet("color: #55FF55;")
         else:
             msg = result.get('message', 'Connection failed')
@@ -244,8 +245,8 @@ class GitConfigDialog(QDialog):
         repo_path = self.path_edit.text().strip()
         if not repo_path:
             QMessageBox.warning(
-                self, "Missing Information",
-                "Please enter a repository path."
+                self, tr("Missing Information"),
+                tr("Please enter a repository path.")
             )
             return
         

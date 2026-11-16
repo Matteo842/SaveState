@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QFrame
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject
+from common.i18n import tr
 
 
 class ConnectionTestWorker(QObject):
@@ -42,7 +43,7 @@ class ConnectionTestWorker(QObject):
             else:
                 result = {
                     'success': False,
-                    'message': 'Could not connect to the specified path',
+                    'message': tr('Could not connect to the specified path'),
                     'details': None
                 }
             
@@ -80,7 +81,7 @@ class SMBConfigDialog(QDialog):
         """
         super().__init__(parent)
         
-        self.setWindowTitle("Network Folder Configuration")
+        self.setWindowTitle(tr("Network Folder Configuration"))
         self.setMinimumWidth(500)
         self.setModal(True)
         
@@ -101,45 +102,45 @@ class SMBConfigDialog(QDialog):
         layout.setSpacing(16)
         
         # Header
-        header_label = QLabel("Configure Network Folder")
+        header_label = QLabel(tr("Configure Network Folder"))
         header_label.setProperty("class", "section-header")
         layout.addWidget(header_label)
         
         description = QLabel(
-            "Sync your save backups to a network share or local folder.\n"
+            tr("Sync your save backups to a network share or local folder.\n"
             "Supports smb:// URIs, Windows shares (\\\\server\\share), "
-            "mapped drives, and local folders."
+            "mapped drives, and local folders.")
         )
         description.setWordWrap(True)
         description.setProperty("class", "description")
         layout.addWidget(description)
         
         # Path configuration group
-        path_group = QGroupBox("Network Path")
+        path_group = QGroupBox(tr("Network Path"))
         path_layout = QFormLayout(path_group)
         
         # Path input with browse button
         path_row = QHBoxLayout()
         self.path_edit = QLineEdit()
         self.path_edit.setPlaceholderText(
-            "smb://server/share/folder, \\\\server\\share\\folder, "
-            "or /mnt/nas/folder"
+            tr("smb://server/share/folder, \\\\server\\share\\folder, "
+            "or /mnt/nas/folder")
         )
         path_row.addWidget(self.path_edit, 1)
         
-        self.browse_btn = QPushButton("Browse...")
+        self.browse_btn = QPushButton(tr("Browse..."))
         self.browse_btn.clicked.connect(self._on_browse_clicked)
         path_row.addWidget(self.browse_btn)
         
-        path_layout.addRow("Path:", path_row)
+        path_layout.addRow(tr("Path:"), path_row)
         
         layout.addWidget(path_group)
         
         # Credentials group
-        cred_group = QGroupBox("Authentication (Optional)")
+        cred_group = QGroupBox(tr("Authentication (Optional)"))
         cred_layout = QVBoxLayout(cred_group)
         
-        self.use_credentials_cb = QCheckBox("Use different credentials")
+        self.use_credentials_cb = QCheckBox(tr("Use different credentials"))
         self.use_credentials_cb.toggled.connect(self._on_credentials_toggled)
         cred_layout.addWidget(self.use_credentials_cb)
         
@@ -149,18 +150,18 @@ class SMBConfigDialog(QDialog):
         cred_form_layout.setContentsMargins(20, 10, 0, 0)
         
         self.username_edit = QLineEdit()
-        self.username_edit.setPlaceholderText("domain\\username or username@domain")
-        cred_form_layout.addRow("Username:", self.username_edit)
+        self.username_edit.setPlaceholderText(tr("domain\\username or username@domain"))
+        cred_form_layout.addRow(tr("Username:"), self.username_edit)
 
         self.password_edit = QLineEdit()
         self.password_edit.setEchoMode(QLineEdit.Password)
-        self.password_edit.setPlaceholderText("Leave empty to be prompted on connect")
-        cred_form_layout.addRow("Password:", self.password_edit)
+        self.password_edit.setPlaceholderText(tr("Leave empty to be prompted on connect"))
+        cred_form_layout.addRow(tr("Password:"), self.password_edit)
 
         cred_note = QLabel(
-            "Note: The password is kept only in memory for this session and is "
+            tr("Note: The password is kept only in memory for this session and is "
             "never written to disk. For permanent access, use your system "
-            "credential manager (Windows Credential Manager / GNOME Keyring / KWallet)."
+            "credential manager (Windows Credential Manager / GNOME Keyring / KWallet).")
         )
         cred_note.setProperty("class", "help-text")
         cred_note.setWordWrap(True)
@@ -172,16 +173,16 @@ class SMBConfigDialog(QDialog):
         layout.addWidget(cred_group)
         
         # Auto-connect option
-        self.auto_connect_cb = QCheckBox("Auto-connect on startup")
+        self.auto_connect_cb = QCheckBox(tr("Auto-connect on startup"))
         self.auto_connect_cb.setToolTip(
-            "Automatically connect to this network folder when SaveState starts"
+            tr("Automatically connect to this network folder when SaveState starts")
         )
         layout.addWidget(self.auto_connect_cb)
         
         # Test connection section
         test_layout = QHBoxLayout()
         
-        self.test_btn = QPushButton("Test Connection")
+        self.test_btn = QPushButton(tr("Test Connection"))
         self.test_btn.clicked.connect(self._on_test_clicked)
         test_layout.addWidget(self.test_btn)
         
@@ -198,11 +199,11 @@ class SMBConfigDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
         
-        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn = QPushButton(tr("Cancel"))
         self.cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(self.cancel_btn)
         
-        self.save_btn = QPushButton("Save")
+        self.save_btn = QPushButton(tr("Save"))
         self.save_btn.setObjectName("SaveButton")
         self.save_btn.clicked.connect(self._on_save_clicked)
         button_layout.addWidget(self.save_btn)
@@ -266,7 +267,7 @@ class SMBConfigDialog(QDialog):
         
         folder = QFileDialog.getExistingDirectory(
             self,
-            "Select Network Folder",
+            tr("Select Network Folder"),
             start_path,
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
         )
@@ -279,13 +280,13 @@ class SMBConfigDialog(QDialog):
         path = self.path_edit.text().strip()
         
         if not path:
-            self.test_status.setText("❌ Please enter a path")
+            self.test_status.setText(tr("❌ Please enter a path"))
             self.test_status.setStyleSheet("color: #ff6666;")
             return
         
         # Disable button during test
         self.test_btn.setEnabled(False)
-        self.test_status.setText("⏳ Testing connection...")
+        self.test_status.setText(tr("⏳ Testing connection..."))
         self.test_status.setStyleSheet("color: #a0a0a0;")
         
         # Create provider and test
@@ -314,7 +315,7 @@ class SMBConfigDialog(QDialog):
         self.test_btn.setEnabled(True)
         
         if result.get('success'):
-            self.test_status.setText("✓ Connection successful")
+            self.test_status.setText(tr("✓ Connection successful"))
             self.test_status.setStyleSheet("color: #66ff66;")
         else:
             message = result.get('message', 'Unknown error')
@@ -328,8 +329,8 @@ class SMBConfigDialog(QDialog):
         if not path:
             QMessageBox.warning(
                 self,
-                "Validation Error",
-                "Please enter a network path."
+                tr("Validation Error"),
+                tr("Please enter a network path.")
             )
             return
         

@@ -13,6 +13,7 @@ import logging          # Per loggare eventuali errori interni al thread
 import os               # Per os.walk, os.path, ecc.
 import sys
 import configparser     # Per leggere i file .ini
+from common.i18n import tr
 #import tempfile
 #from datetime import datetime
 
@@ -29,15 +30,15 @@ class WorkerThread(QThread):
         self.setObjectName("WorkerThread")
     def run(self):
         try:
-            self.progress.emit("Operation in progress...") # CORRETTO
+            self.progress.emit(tr("Operation in progress...")) # CORRETTO
             success, message = self.function(*self.args, **self.kwargs)
-            self.progress.emit("Operation completed.") # CORRETTO
+            self.progress.emit(tr("Operation completed.")) # CORRETTO
             self.finished.emit(success, message)
         except Exception as e:
-            error_msg = f"Critical error in worker thread: {e}" # CORRETTO
+            error_msg = tr("Critical error in worker thread: {0}", e) # CORRETTO
             if hasattr(core_logic, 'logging'): core_logic.logging.exception(error_msg)
             else: logging.critical(error_msg, exc_info=True) # Usa critical e aggiunge traceback se possibile
-            self.progress.emit("Error.") # CORRETTO
+            self.progress.emit(tr("Error.")) # CORRETTO
             self.finished.emit(False, error_msg)
             
 # --- Thread per Rilevamento Percorsi in Background ---
@@ -80,11 +81,11 @@ class DetectionWorkerThread(QThread):
         INI_SCORE_BONUS = 1000 # Score fittizio alto per percorsi trovati da INI
 
         try:
-            self.progress.emit(f"Starting search for '{profile_name}'...")
+            self.progress.emit(tr("Starting search for '{0}'...", profile_name))
             path_found_via_ini = False # Flag specifico per INI
 
             if self.game_install_dir:
-                self.progress.emit("Scanning INI files...") # Messaggio più generico
+                self.progress.emit(tr("Scanning INI files...")) # Messaggio più generico
                 # Usa self.current_settings passato nell'init
                 ini_whitelist = self.current_settings.get("ini_whitelist", [])
                 ini_blacklist = self.current_settings.get("ini_blacklist", [])
@@ -230,7 +231,7 @@ class DetectionWorkerThread(QThread):
                 # --- Logica Fallback (Commenti/Prefissi) ---
                 # Esegui solo se il thread è attivo
                 if self.is_running:
-                    self.progress.emit("Checking INI files for fallback paths...")
+                    self.progress.emit(tr("Checking INI files for fallback paths..."))
                     logging.debug(f"Attempting fallback scan on {len(decoded_ini_files)} successfully decoded INI files...")
                     preferred_inis = ['steam_emu.ini'] # Dai priorità
                     # Ordina mettendo prima i preferiti
@@ -307,10 +308,10 @@ class DetectionWorkerThread(QThread):
             # --- Euristica Aggiuntiva (Ora AGGIUNGE ai risultati INI, non sostituisce) ---
             if self.is_running: # L'euristica si esegue sempre se c'è install dir (e non interrotto)
                 if not path_found_via_ini: # Mostra messaggio solo se INI non ha trovato nulla
-                    self.progress.emit("Performing heuristic search...")
+                    self.progress.emit(tr("Performing heuristic search..."))
                     logging.info("No valid paths found via INI scan. Starting generic heuristic search...")
                 else:
-                    self.progress.emit("Performing additional heuristic search...")
+                    self.progress.emit(tr("Performing additional heuristic search..."))
                     logging.info("INI scan found paths. Starting additional heuristic search...")
 
                 try:
@@ -369,7 +370,7 @@ class DetectionWorkerThread(QThread):
                         logging.info("Heuristic search did not yield any valid paths.")
 
                 except Exception as e_heuristic:
-                    error_message = f"Error during heuristic search: {e_heuristic}"
+                    error_message = tr("Error during heuristic search: {0}", e_heuristic)
                     logging.error(f"Error during heuristic search: {e_heuristic}", exc_info=True)
                     # Non cambiare status qui, l'errore è nel messaggio
 
@@ -379,7 +380,7 @@ class DetectionWorkerThread(QThread):
 
         # --- Gestione Errori Generali ---
         except Exception as e:
-            error_message = f"Unexpected error during search: {e}"
+            error_message = tr("Unexpected error during search: {0}", e)
             logging.critical(f"Unexpected critical error in detection thread: {e}")
             logging.exception("Error in detection thread:") # Logga traceback completo
             status = "error"
@@ -404,7 +405,7 @@ class DetectionWorkerThread(QThread):
                  results_dict = {
                      'status': 'error', # Segnala come errore l'interruzione
                      'path_data': [],
-                     'message': "Search interrupted by user.", # Messaggio più specifico
+                     'message': tr("Search interrupted by user."), # Messaggio più specifico
                      'profile_name_suggestion': profile_name,
                      'emulator_name': self.emulator_name, # Also include emulator name in error case
                      'game_install_dir': self.game_install_dir,  # Add game install dir
@@ -955,9 +956,9 @@ def _run_host_command(cmd, env, timeout=3.0):
             close_fds=True,
         )
     except FileNotFoundError:
-        return False, f"{cmd[0]} not found"
+        return False, tr("{0} not found", cmd[0])
     except subprocess.TimeoutExpired:
-        return False, f"{cmd[0]} timed out"
+        return False, tr("{0} timed out", cmd[0])
     except Exception as exc:
         return False, str(exc)
 
@@ -965,7 +966,7 @@ def _run_host_command(cmd, env, timeout=3.0):
         return True, ""
 
     stderr = (completed.stderr or b"").decode("utf-8", "replace").strip()
-    error = f"{cmd[0]} failed with exit code {completed.returncode}"
+    error = tr("{0} failed with exit code {1}", cmd[0], completed.returncode)
     if stderr:
         error = f"{error}: {stderr}"
     return False, error
@@ -991,7 +992,7 @@ def _spawn_host_command(cmd, env):
     try:
         return_code = process.wait(timeout=0.5)
         if return_code != 0:
-            return False, f"{cmd[0]} failed with exit code {return_code}"
+            return False, tr("{0} failed with exit code {1}", cmd[0], return_code)
         return True, ""
     except subprocess.TimeoutExpired:
         return True, ""
@@ -1043,7 +1044,7 @@ def _open_folder_via_filemanager1_dbus(file_uri: str, env) -> tuple[bool, str]:
             return True, "Folder opened with FileManager1 D-Bus"
         logging.debug(f"FileManager1 gdbus failed: {error}")
 
-    return False, "FileManager1 D-Bus unavailable"
+    return False, tr("FileManager1 D-Bus unavailable")
 
 
 def _open_folder_linux(folder_path: str) -> tuple[bool, str]:
@@ -1088,7 +1089,7 @@ def _open_folder_linux(folder_path: str) -> tuple[bool, str]:
         methods.append((name, args, False))
 
     if not methods:
-        return False, "No file manager found on this system"
+        return False, tr("No file manager found on this system")
 
     last_error = None
     for method_name, cmd, wait_for_exit in methods:
@@ -1105,14 +1106,14 @@ def _open_folder_linux(folder_path: str) -> tuple[bool, str]:
             logging.info(f"Successfully opened folder with {method_name}: {folder_path}")
             return True, f"Folder opened with {method_name}"
         except FileNotFoundError:
-            last_error = f"{method_name} not found"
+            last_error = tr("{0} not found", method_name)
             continue
         except Exception as exc:
             last_error = str(exc)
             logging.debug(f"{method_name} failed: {exc}, trying next method")
             continue
 
-    error_msg = f"All file manager methods failed. Last error: {last_error}"
+    error_msg = tr("All file manager methods failed. Last error: {0}", last_error)
     logging.error(error_msg)
     return False, error_msg
 
@@ -1137,12 +1138,12 @@ def open_folder_in_file_manager(folder_path: str) -> tuple[bool, str]:
     import platform
     
     if not folder_path:
-        return False, "No folder path provided"
+        return False, tr("No folder path provided")
     
     folder_path = os.path.normpath(folder_path)
     
     if not os.path.isdir(folder_path):
-        return False, f"Folder does not exist: {folder_path}"
+        return False, tr("Folder does not exist: {0}", folder_path)
     
     system = platform.system()
     
@@ -1168,7 +1169,7 @@ def open_folder_in_file_manager(folder_path: str) -> tuple[bool, str]:
             return _open_folder_linux(folder_path)
             
     except Exception as e:
-        error_msg = f"Error opening folder: {e}"
+        error_msg = tr("Error opening folder: {0}", e)
         logging.error(error_msg, exc_info=True)
         return False, error_msg
 
@@ -1200,7 +1201,7 @@ class SteamSearchWorkerThread(QThread):
         """Esegue la ricerca del percorso."""
         results = [] # Lista vuota di default
         try:
-            self.progress.emit(f"Searching path for '{self.game_name}'...") # Messaggio iniziale
+            self.progress.emit(tr("Searching path for '{0}'...", self.game_name)) # Messaggio iniziale
             logging.info(f"[Steam Worker] Starting guess_save_path for '{self.game_name}' (AppID: {self.appid})")
 
             # Chiama la funzione di core_logic con i parametri specifici per Steam
@@ -1215,12 +1216,12 @@ class SteamSearchWorkerThread(QThread):
                 cancellation_manager=self.cancellation_manager # <-- FIX: passa il cancellation_manager
             )
             logging.info(f"[Steam Worker] guess_save_path finished, found {len(results)} potential paths.")
-            self.progress.emit(f"Search complete for '{self.game_name}'.") # Messaggio finale
+            self.progress.emit(tr("Search complete for '{0}'.", self.game_name)) # Messaggio finale
 
         except Exception as e:
-            error_msg = f"Error during Steam path search thread: {e}"
+            error_msg = tr("Error during Steam path search thread: {0}", e)
             logging.error(error_msg, exc_info=True)
-            self.progress.emit("Error during search.") # Segnala errore
+            self.progress.emit(tr("Error during search.")) # Segnala errore
             # Emettiamo comunque una lista vuota in caso di errore grave nel thread
             results = []
         finally:

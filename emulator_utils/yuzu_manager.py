@@ -8,6 +8,7 @@ import json
 import pickle
 
 from .obfuscation_utils import xor_bytes
+from common.i18n import tr
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
@@ -505,9 +506,9 @@ def find_yuzu_profiles(executable_dir: str | None = None, is_eden: bool = False,
         # Determine folder label based on which emulator was found
         folder_label = ""
         if "citron" in yuzu_appdata_dir.lower():
-            folder_label = "Citron Folder"
+            folder_label = tr("Citron Folder")
         elif "yuzu" in yuzu_appdata_dir.lower():
-            folder_label = "Yuzu Folder"
+            folder_label = tr("Yuzu Folder")
         
         all_profiles = scan_yuzu_save_directory(user_save_root, game_title_map, folder_label)
 

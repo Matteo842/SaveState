@@ -22,6 +22,7 @@ from typing import Dict, List, Optional, Any
 from io import BytesIO
 
 from cloud_utils.storage_provider import StorageProvider, ProviderType, select_zip_files_for_upload
+from common.i18n import tr
 
 
 class FTPProvider(StorageProvider):
@@ -61,7 +62,7 @@ class FTPProvider(StorageProvider):
     
     @property
     def name(self) -> str:
-        return "FTP Server"
+        return tr("FTP Server")
     
     @property
     def icon_name(self) -> str:
@@ -236,14 +237,14 @@ class FTPProvider(StorageProvider):
         }
         
         if not self._host:
-            result['message'] = 'No host configured'
+            result['message'] = tr('No host configured')
             return result
         
         try:
             # Try to connect if not connected
             if not self.is_connected:
                 if not self.connect():
-                    result['message'] = 'Connection failed'
+                    result['message'] = tr('Connection failed')
                     return result
             
             # Check if we can write (try to create and delete a test file)
@@ -258,11 +259,11 @@ class FTPProvider(StorageProvider):
                 self._ftp.cwd("..")
                 result['details']['writable'] = True
             except ftplib.error_perm:
-                result['message'] = 'Path is read-only'
+                result['message'] = tr('Path is read-only')
                 return result
             
             result['success'] = True
-            result['message'] = 'Connection successful'
+            result['message'] = tr('Connection successful')
             return result
             
         except Exception as e:
@@ -298,11 +299,11 @@ class FTPProvider(StorageProvider):
         }
         
         if not self.is_connected:
-            result['error'] = 'Not connected'
+            result['error'] = tr('Not connected')
             return result
         
         if not os.path.isdir(local_path):
-            result['error'] = f'Local path not found: {local_path}'
+            result['error'] = tr('Local path not found: {0}', local_path)
             return result
         
         try:
@@ -438,7 +439,7 @@ class FTPProvider(StorageProvider):
         }
         
         if not self.is_connected:
-            result['error'] = 'Not connected'
+            result['error'] = tr('Not connected')
             return result
         
         try:
@@ -447,7 +448,7 @@ class FTPProvider(StorageProvider):
             try:
                 self._ftp.cwd(profile_path)
             except ftplib.error_perm:
-                result['error'] = f'Profile not found: {profile_name}'
+                result['error'] = tr('Profile not found: {0}', profile_name)
                 return result
             
             # Create local directory if needed
