@@ -92,6 +92,98 @@ def parse_linux_desktop_entry(desktop_path: str):
     return result
 
 
+# Launcher "stub" executables: their shortcuts do not point to the game,
+# they start the launcher and pass it a game ID (e.g. --launch-game=3642).
+ANKER_LAUNCHER_EXE = 'anker-launcher.exe'
+
+
+def _strip_long_path_prefix(path: str) -> str:
+    """Remove the Windows '\\\\?\\' long-path prefix, if present."""
+    if path and path.startswith('\\\\?\\'):
+        return path[4:]
+    return path
+
+
+def _find_anker_game_exe_in_library(game_id: str) -> str | None:
+    """Look up an Anker game in the launcher's library.json and return its exe."""
+    import json
+    appdata = os.environ.get('APPDATA')
+    if not appdata:
+        return None
+    library_file = os.path.join(appdata, 'net.ankergames.launcher', 'library.json')
+    if not os.path.isfile(library_file):
+        return None
+    try:
+        with open(library_file, 'r', encoding='utf-8') as f:
+            library = json.load(f)
+        game = (library.get('games') or {}).get(str(game_id)) or {}
+    except Exception as e:
+        logging.warning(f"Anker: could not read library.json: {e}")
+        return None
+
+    root = _strip_long_path_prefix(game.get('root') or '')
+    if not root or not os.path.isdir(root):
+        return None
+
+    # Exe names come from 'executable' or 'launch_options' (relative paths)
+    candidates = []
+    if game.get('executable'):
+        candidates.append(game['executable'])
+    candidates.extend(game.get('launch_options') or [])
+
+    for rel_exe in candidates:
+        direct = os.path.normpath(os.path.join(root, rel_exe))
+        if os.path.isfile(direct):
+            return direct
+        # The exe is often one or two folders below the root: search a little deeper
+        exe_name = os.path.basename(rel_exe).lower()
+        root_depth = root.rstrip('\\/').count(os.sep)
+        for dirpath, dirnames, filenames in os.walk(root):
+            if dirpath.count(os.sep) - root_depth >= 3:
+                dirnames[:] = []
+            for name in filenames:
+                if name.lower() == exe_name:
+                    return os.path.normpath(os.path.join(dirpath, name))
+    return None
+
+
+def resolve_launcher_stub_shortcut(target_path: str, icon_location, arguments: str) -> str | None:
+    """
+    Some launchers (e.g. Anker) create desktop shortcuts that start the
+    launcher instead of the game. If 'target_path' is such a launcher, return
+    the real game executable; otherwise return None.
+
+    Args:
+        target_path: The shortcut's resolved target.
+        icon_location: The shortcut's icon, as a (path, index) tuple (winshell)
+                       or a "path,index" string (WScript.Shell).
+        arguments: The shortcut's command-line arguments.
+    """
+    if not target_path or os.path.basename(target_path).lower() != ANKER_LAUNCHER_EXE:
+        return None
+
+    # 1) The shortcut icon usually points at the real game exe
+    icon_path = icon_location[0] if isinstance(icon_location, (tuple, list)) else (icon_location or '')
+    icon_path = re.sub(r',\s*-?\d+$', '', str(icon_path or ''))  # drop ",0" icon index
+    icon_path = _strip_long_path_prefix(icon_path)
+    if (icon_path.lower().endswith('.exe') and os.path.isfile(icon_path)
+            and os.path.basename(icon_path).lower() != ANKER_LAUNCHER_EXE):
+        logging.info(f"Anker shortcut: using game exe from shortcut icon: {icon_path}")
+        return os.path.normpath(icon_path)
+
+    # 2) Otherwise, use the game ID from the arguments and the launcher library
+    arguments = arguments or ''
+    match = re.search(r'--launch-game[=\s]+(\d+)', arguments)
+    if match:
+        game_exe = _find_anker_game_exe_in_library(match.group(1))
+        if game_exe:
+            logging.info(f"Anker shortcut: using game exe from library.json (ID {match.group(1)}): {game_exe}")
+            return game_exe
+
+    logging.warning(f"Anker shortcut: could not find the real game exe (arguments: '{arguments}')")
+    return None
+
+
 def sanitize_profile_name(name: str) -> str:
     """Pulisce un nome profilo da parole comuni e caratteri non validi."""
     if not name:

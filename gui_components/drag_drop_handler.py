@@ -354,6 +354,11 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                         shortcut = shell.CreateShortCut(file_path)
                         target_path = shortcut.Targetpath
                         logging.debug(f"Resolved shortcut target: {target_path}")
+                        # Launcher shortcuts (e.g. Anker): use the real game exe
+                        real_game_exe = shortcut_utils.resolve_launcher_stub_shortcut(
+                            target_path, shortcut.IconLocation, shortcut.Arguments)
+                        if real_game_exe:
+                            target_path = real_game_exe
                     except Exception as e:
                         logging.error(f"Error resolving shortcut: {e}")
             

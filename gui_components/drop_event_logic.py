@@ -985,6 +985,15 @@ class DropEventMixin:
                 target_path = resolved_target
                 logging.info(f"PCM.dropEvent (Fallback): Resolved .lnk target to: {target_path}")
 
+                # Launcher shortcuts (e.g. Anker) open the launcher, not the game:
+                # use the real game exe and ignore the launcher's working folder.
+                from common.shortcut_utils import resolve_launcher_stub_shortcut
+                real_game_exe = resolve_launcher_stub_shortcut(
+                    target_path, shortcut.icon_location, shortcut.arguments)
+                if real_game_exe:
+                    target_path = real_game_exe
+                    working_dir = None
+
                 if working_dir and os.path.isdir(working_dir):
                     game_install_dir = os.path.normpath(working_dir)
                 elif os.path.isfile(target_path):
