@@ -31,6 +31,7 @@ LANG_FOLDER = "lang"
 LANGUAGES = {
     "en": "English",
     "it": "Italiano",
+    "es": "Español",
     "zh_CN": "简体中文",
 }
 
@@ -38,6 +39,7 @@ LANGUAGES = {
 LANGUAGE_ENGLISH_NAMES = {
     "en": "English",
     "it": "Italian",
+    "es": "Spanish",
     "zh_CN": "Chinese (Simplified)",
 }
 

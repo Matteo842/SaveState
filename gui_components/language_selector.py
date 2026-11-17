@@ -47,6 +47,13 @@ def _draw_italy(painter, rect):
         painter.fillRect(QRectF(rect.left() + index * band, rect.top(), band + 1, rect.height()), QColor(color))
 
 
+def _draw_spain(painter, rect):
+    """Red, yellow, red. The yellow band is twice as tall. The coat of arms is left out."""
+    quarter = rect.height() / 4
+    painter.fillRect(rect, QColor("#AA151B"))
+    painter.fillRect(QRectF(rect.left(), rect.top() + quarter, rect.width(), quarter * 2), QColor("#F1BF00"))
+
+
 def _draw_china(painter, rect):
     painter.fillRect(rect, QColor("#DE2910"))
     unit = rect.height() / 20  # The flag is designed on a 30 x 20 grid
@@ -94,6 +101,7 @@ def _draw_globe(painter, rect):
 _FLAG_PAINTERS = {
     "en": _draw_united_kingdom,
     "it": _draw_italy,
+    "es": _draw_spain,
     "zh_CN": _draw_china,
     i18n.AUTO: _draw_globe,
 }
