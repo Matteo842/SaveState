@@ -785,10 +785,10 @@ class MultiProfileDialog(QDialog):
         """Handle dialog closure via the X button."""
         logging.info("MultiProfileDialog.closeEvent() called: User closed dialog with X button")
         
-        # Emetti manualmente il segnale finished per notificare la cancellazione
-        logging.info("MultiProfileDialog.closeEvent(): Emitting finished signal manually")
-        self.finished.emit(0)  # Emetti il segnale finished con codice 0 (rejected)
-        
+        # Non emettere finished a mano: super().closeEvent() chiama reject(), che
+        # emette finished una sola volta. Emetterlo anche qui faceva partire la
+        # cancellazione e la chiusura del dialogo due volte.
+
         # Chiama il closeEvent della classe base
         logging.info("MultiProfileDialog.closeEvent(): About to call super().closeEvent()")
         super().closeEvent(event)

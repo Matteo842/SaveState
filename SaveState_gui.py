@@ -2520,7 +2520,11 @@ class MainWindow(QMainWindow):
             if self.current_search_thread.isRunning():
                 logging.info("Waiting for current search thread to finish...")
                 self.current_search_thread.wait(3000)  # Aspetta max 3 secondi
-        
+        # Aspetta (max 3 secondi) i thread del drag & drop multiplo annullati con
+        # Annulla che stanno ancora chiudendo, così non vengono distrutti mentre girano
+        if hasattr(self, 'drag_drop_handler') and self.drag_drop_handler:
+            self.drag_drop_handler.wait_for_stopping_threads(3000)
+
         # Clean up cloud panel auth threads
         if hasattr(self, 'cloud_panel') and self.cloud_panel:
             try:

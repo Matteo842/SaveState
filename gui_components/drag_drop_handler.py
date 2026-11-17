@@ -484,10 +484,9 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
             
                 # Avvia il thread in modo asincrono
                 detection_thread.start()
-            
-                # Breve pausa per evitare di sovraccaricare il sistema
-                QThread.msleep(100)
-        
+                # Nessuna pausa qui: QThread.msleep(100) bloccava la UI per 100 ms
+                # a file (3 secondi con 30 file, e intanto Annulla non rispondeva).
+
         # Imposta un timer per controllare periodicamente lo stato dei thread
         self.check_threads_timer = QTimer()
         self.check_threads_timer.timeout.connect(self._check_detection_threads_status)
@@ -547,52 +546,6 @@ class DragDropHandler(QObject, DropEventMixin):  # Add mixin to inheritance
                 logging.warning(f"No save paths found for: {profile_name}")
         else:
             logging.warning(f"Detection failed for: {profile_name}")
-
-    def _check_detection_threads_status(self):
-        """Controlla lo stato dei thread di rilevamento attivi."""
-        if not hasattr(self, 'active_threads'):
-            return
-        
-        # Conta quanti thread sono completati
-        completed_count = sum(1 for info in self.active_threads.values() if info['completed'])
-        total_count = len(self.active_threads)
-        
-        # Aggiorna la barra di avanzamento solo se il dialogo esiste ancora
-        if self.profile_dialog:
-            if total_count > 0:
-                # Passa il completed_count effettivo, non una percentuale
-                self.profile_dialog.update_progress(
-                    completed_count, 
-                    tr("Analysis in progress... {0}/{1} completed", completed_count, total_count)
-                )
-        
-            # Se tutti i thread sono completati, notifica il completamento
-            if completed_count == total_count and total_count > 0:
-                # Notifica il completamento dell'analisi, passando total_count come valore corrente
-                self.profile_dialog.update_progress(total_count, tr("Analysis completed"))
-                
-                # Emetti un segnale per notificare il completamento dell'analisi
-                self.profile_dialog.analysis_completed.emit() 
-    
-        # Pulizia risorse anche se il dialogo è stato chiuso
-        if completed_count == total_count and total_count > 0:
-            # Ripristina il cursore
-            QApplication.restoreOverrideCursor()
-            
-            # Ferma il timer
-            self.check_threads_timer.stop()
-            
-            # Pulisci i riferimenti ai thread
-            for thread_info in self.active_threads.values():
-                if 'thread' in thread_info and thread_info['thread'] is not None:
-                    thread_info['thread'].deleteLater()
-            
-            self.active_threads = {}
-            
-            logging.info("All detection threads completed.")
-            
-            # Emetti un segnale per notificare il completamento dell'analisi
-            self.profile_dialog.analysis_completed.emit()
 
     def on_detection_progress(self, message):
         """Aggiorna la barra di stato di main_window con i messaggi dal thread."""

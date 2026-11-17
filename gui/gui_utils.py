@@ -428,35 +428,21 @@ class DetectionWorkerThread(QThread):
     def cancel(self):
         self.is_running = False  # Add cancellation method
 
-    def terminate_immediately(self):
-        """Termina il thread in modo sicuro."""
-        if self.isRunning():
-            # Prima prova a impostare il flag di cancellazione
-            self.cancellation_requested = True
-            
-            # Se abbiamo un cancellation_manager, cancellalo anche
-            if hasattr(self, 'cancellation_manager') and self.cancellation_manager:
-                self.cancellation_manager.cancel()
-                logging.debug("Cancellation manager cancelled")
-            
-            # Aspetta più tempo per operazioni I/O (lettura file INI)
-            if self.wait(500):  # Aspetta 500ms per operazioni I/O
-                logging.debug("Thread terminated gracefully")
-                return
-                
-            # Prova ancora con un timeout più lungo per file grandi
-            logging.debug("Thread still running, waiting longer for I/O operations...")
-            if self.wait(1000):  # Aspetta altri 1000ms per file grandi
-                logging.debug("Thread terminated gracefully after extended wait")
-                return
-                
-            # Se il thread è ancora in esecuzione, usa terminate() come ultima risorsa
-            logging.warning("Thread did not terminate gracefully after 1.5s, using terminate()")
-            self.terminate()
-            
-            # Aspetta che terminate() abbia effetto
-            if not self.wait(100):
-                logging.error("Thread failed to terminate even with terminate() call")
+    def request_stop(self):
+        """Chiede al thread di fermarsi, senza aspettare e senza terminate().
+
+        terminate() uccide un thread Python a metà lavoro e può bloccare o far
+        chiudere l'app. Il thread invece si ferma da solo al prossimo controllo
+        del cancellation_manager. L'attesa (una sola per tutti i thread) la fa
+        chi chiama: vedi DropEventMixin.wait_for_stopping_threads().
+        """
+        # Prima prova a impostare il flag di cancellazione
+        self.cancellation_requested = True
+
+        # Se abbiamo un cancellation_manager, cancellalo anche
+        if hasattr(self, 'cancellation_manager') and self.cancellation_manager:
+            self.cancellation_manager.cancel()
+            logging.debug("Cancellation manager cancelled")
 
 # --- Gestore Log Personalizzato per Qt ---
 class QtLogHandler(logging.Handler, QObject):
