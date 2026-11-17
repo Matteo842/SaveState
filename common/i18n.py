@@ -32,6 +32,7 @@ LANGUAGES = {
     "en": "English",
     "it": "Italiano",
     "es": "Español",
+    "pt": "Português (Brasil)",
     "zh_CN": "简体中文",
 }
 
@@ -40,6 +41,7 @@ LANGUAGE_ENGLISH_NAMES = {
     "en": "English",
     "it": "Italian",
     "es": "Spanish",
+    "pt": "Portuguese (Brazil)",
     "zh_CN": "Chinese (Simplified)",
 }
 

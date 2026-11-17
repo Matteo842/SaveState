@@ -54,6 +54,24 @@ def _draw_spain(painter, rect):
     painter.fillRect(QRectF(rect.left(), rect.top() + quarter, rect.width(), quarter * 2), QColor("#F1BF00"))
 
 
+def _draw_brazil(painter, rect):
+    """Green field, yellow diamond, blue circle. The stars and the motto are left out."""
+    painter.fillRect(rect, QColor("#009C3B"))
+    painter.setPen(Qt.PenStyle.NoPen)
+    margin_x = rect.width() * 0.085
+    margin_y = rect.height() * 0.12
+    painter.setBrush(QColor("#FFDF00"))
+    painter.drawPolygon(QPolygonF([
+        QPointF(rect.center().x(), rect.top() + margin_y),
+        QPointF(rect.right() - margin_x, rect.center().y()),
+        QPointF(rect.center().x(), rect.bottom() - margin_y),
+        QPointF(rect.left() + margin_x, rect.center().y()),
+    ]))
+    radius = rect.height() * 0.25
+    painter.setBrush(QColor("#002776"))
+    painter.drawEllipse(rect.center(), radius, radius)
+
+
 def _draw_china(painter, rect):
     painter.fillRect(rect, QColor("#DE2910"))
     unit = rect.height() / 20  # The flag is designed on a 30 x 20 grid
@@ -102,6 +120,7 @@ _FLAG_PAINTERS = {
     "en": _draw_united_kingdom,
     "it": _draw_italy,
     "es": _draw_spain,
+    "pt": _draw_brazil,
     "zh_CN": _draw_china,
     i18n.AUTO: _draw_globe,
 }
