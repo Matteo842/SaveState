@@ -72,6 +72,13 @@ def _draw_brazil(painter, rect):
     painter.drawEllipse(rect.center(), radius, radius)
 
 
+def _draw_russia(painter, rect):
+    """White, blue, red horizontal bands of equal height."""
+    band = rect.height() / 3
+    for index, color in enumerate(("#FFFFFF", "#0039A6", "#D52B1E")):
+        painter.fillRect(QRectF(rect.left(), rect.top() + index * band, rect.width(), band + 1), QColor(color))
+
+
 def _draw_china(painter, rect):
     painter.fillRect(rect, QColor("#DE2910"))
     unit = rect.height() / 20  # The flag is designed on a 30 x 20 grid
@@ -121,6 +128,7 @@ _FLAG_PAINTERS = {
     "it": _draw_italy,
     "es": _draw_spain,
     "pt": _draw_brazil,
+    "ru": _draw_russia,
     "zh_CN": _draw_china,
     i18n.AUTO: _draw_globe,
 }
