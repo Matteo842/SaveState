@@ -384,7 +384,14 @@ class LanguageButton(QPushButton):
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
         self.main_window = main_window
-        self.setFixedSize(64, 30)
+        # The theme gives every QPushButton min-width 80px and side padding.
+        # The stylesheet is applied after the constructor and replaces any size
+        # set here in code, so the size must be in the stylesheet itself.
+        # 62px + 1px border on each side = 64px total width.
+        self.setStyleSheet(
+            "QPushButton { padding: 0px; min-width: 62px; max-width: 62px; "
+            "min-height: 28px; max-height: 28px; }"
+        )
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip(tr("Language"))
         self.clicked.connect(self.open_selector)
