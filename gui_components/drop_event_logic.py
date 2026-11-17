@@ -608,18 +608,29 @@ class DropEventMixin:
                             accepted = multi_dialog.get_accepted_profiles()
                             logging.info(f"User accepted {len(accepted)} profiles from {launcher_key}")
                             
+                            added_count = 0
                             for profile_name, profile_data in accepted.items():
                                 save_path = profile_data.get('path', '')
                                 if save_path and os.path.isdir(save_path):
-                                    # Aggiungi direttamente al profili
-                                    mw.profiles[profile_name] = {'path': save_path}
-                                    logging.info(f"Added profile '{profile_name}' with path '{save_path}'")
-                            
-                            # Salva i profili
-                            if accepted:
-                                mw._save_profiles()
-                                mw.update_profile_table()
-                                mw.status_label.setText(tr("Added {0} profiles from {1}", len(accepted), launcher_key))
+                                    # Nome pulito e unico: se esiste già aggiunge (2), (3), ...
+                                    sanitized_name = sanitize_profile_name(profile_name)
+                                    final_name = sanitized_name
+                                    counter = 2
+                                    while final_name in mw.profiles:
+                                        final_name = f"{sanitized_name} ({counter})"
+                                        counter += 1
+                                    mw.profiles[final_name] = {'path': save_path}
+                                    added_count += 1
+                                    logging.info(f"Added profile '{final_name}' with path '{save_path}'")
+
+                            # Salva i profili su disco e aggiorna la tabella
+                            if added_count:
+                                if mw.core_logic.save_profiles(mw.profiles):
+                                    mw.profile_table_manager.update_profile_table()
+                                    mw.status_label.setText(tr("Added {0} profiles from {1}", added_count, launcher_key))
+                                else:
+                                    logging.error(f"Failed to save profiles from {launcher_key}.")
+                                    QMessageBox.critical(mw, tr("Error"), tr("Unable to save profiles."))
                         else:
                             logging.info(f"User cancelled {launcher_key} profile creation")
                     else:
