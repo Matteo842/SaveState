@@ -89,14 +89,26 @@ class ThemeManager:
             app_instance = QApplication.instance()
             if app_instance:
                 updates_were_enabled = None
+                # Changing the app stylesheet sends ~15,000 internal events (palette/font/style
+                # changes) to every widget. Each app-wide Python event filter adds Python
+                # overhead to every one of them, which made the theme switch about twice as
+                # slow. None of these filters needs those events, so detach them only for the
+                # duration of setStyleSheet and reattach them right after.
+                app_filters = self._get_app_event_filters()
                 try:
                     if hasattr(self.main_window, "updatesEnabled") and hasattr(self.main_window, "setUpdatesEnabled"):
                         updates_were_enabled = self.main_window.updatesEnabled()
                         self.main_window.setUpdatesEnabled(False)
 
+                    for event_filter in app_filters:
+                        app_instance.removeEventFilter(event_filter)
+
                     app_instance.setStyleSheet(qss_to_apply)
                     self._current_applied_theme = theme_name  # Track what we applied
                 finally:
+                    # Reinstall in the original installation order so the filter order is unchanged.
+                    for event_filter in app_filters:
+                        app_instance.installEventFilter(event_filter)
                     if updates_were_enabled is not None:
                         self.main_window.setUpdatesEnabled(updates_were_enabled)
                         if updates_were_enabled:
@@ -112,6 +124,23 @@ class ThemeManager:
 
         except Exception as e:
             logging.error(f"ThemeManager: Error applying theme: {e}", exc_info=True)
+
+    def _get_app_event_filters(self):
+        """Return the app-wide event filters installed by MainWindow, in installation order.
+
+        Only filters that are currently installed are returned, so reinstalling
+        them after the theme change restores exactly the previous state.
+        """
+        mw = self.main_window
+        filters = []
+        for attr_name in ("_dialog_confirm_styler", "_main_search_key_filter", "_ctrl_dialog_badger"):
+            event_filter = getattr(mw, attr_name, None)
+            if event_filter is not None:
+                filters.append(event_filter)
+        # When a controller is connected, MainWindow itself is installed as an app-wide filter.
+        if getattr(mw, "_ctrl_mouse_filter_installed", False):
+            filters.append(mw)
+        return filters
 
     def _update_theme_button(self, theme_name):
         """Update the theme button icon and tooltip based on current theme."""
