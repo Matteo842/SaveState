@@ -13,6 +13,7 @@ import zipfile
 import shutil
 import uuid
 from common.i18n import tr
+from .safe_json import write_json_safely
 
 # Import the appropriate guess_save_path function based on platform
 if platform.system() == "Linux":
@@ -73,8 +74,7 @@ def _mirror_json_to_backup_root(filename: str, json_obj: dict, rotation: int = 1
 
     # Write primary mirror
     mirror_path = os.path.join(mirror_dir, filename)
-    with open(mirror_path, "w", encoding="utf-8") as mf:
-        json.dump(json_obj, mf, indent=4, ensure_ascii=False)
+    write_json_safely(mirror_path, json_obj, indent=4, ensure_ascii=False)
     logging.info(f"Mirror saved: {mirror_path}")
 
     # Write timestamped snapshot only if rotation is enabled (> 0)
@@ -82,8 +82,7 @@ def _mirror_json_to_backup_root(filename: str, json_obj: dict, rotation: int = 1
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         snapshot_path = os.path.join(mirror_dir, f"{os.path.splitext(filename)[0]}-{ts}.json")
         try:
-            with open(snapshot_path, "w", encoding="utf-8") as sf:
-                json.dump(json_obj, sf, indent=2, ensure_ascii=False)
+            write_json_safely(snapshot_path, json_obj, indent=2, ensure_ascii=False)
         except Exception:
             logging.warning(f"Failed to write snapshot mirror for {filename}")
 
@@ -758,6 +757,16 @@ def load_profiles():
             logging.debug(f"File '{PROFILES_FILE_PATH}' caricato.")
         except json.JSONDecodeError:
             logging.warning(f"File profili '{PROFILES_FILE_PATH}' corrotto o vuoto. Sarà sovrascritto al prossimo salvataggio.")
+            # Prima che venga sovrascritto, tieni una copia del file rotto accanto all'originale,
+            # così i dati non vanno persi del tutto. Il nome usa data e ora dell'ultima modifica
+            # del file rotto: se viene letto più volte, la copia resta una sola.
+            try:
+                broken_time = datetime.fromtimestamp(os.path.getmtime(PROFILES_FILE_PATH)).strftime("%Y%m%d_%H%M%S")
+                corrupt_copy_path = f"{PROFILES_FILE_PATH}.corrupt-{broken_time}"
+                shutil.copy2(PROFILES_FILE_PATH, corrupt_copy_path)
+                logging.warning(f"Copia del file profili rotto salvata in '{corrupt_copy_path}'.")
+            except Exception as e_copy:
+                logging.error(f"Impossibile salvare una copia del file profili rotto: {e_copy}")
             profiles_data = {} # Tratta come vuoto se corrotto
         except Exception as e:
             logging.error(f"Errore imprevisto durante la lettura iniziale di '{PROFILES_FILE_PATH}': {e}")
@@ -880,8 +889,7 @@ def save_profiles(profiles):
     try:
         # Assicura che la directory esista
         os.makedirs(os.path.dirname(PROFILES_FILE_PATH), exist_ok=True)
-        with open(PROFILES_FILE_PATH, 'w', encoding='utf-8') as f:
-            json.dump(data_to_save, f, indent=4, ensure_ascii=False)
+        write_json_safely(PROFILES_FILE_PATH, data_to_save, indent=4, ensure_ascii=False)
         logging.info(f"Saved {len(profiles)} profiles in '{PROFILES_FILE_PATH}'.")
         # Mirror only when NOT in portable mode (portable is already in backup root)
         try:

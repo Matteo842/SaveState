@@ -6,6 +6,7 @@ import shutil
 import config # Import for default values
 import logging
 import time
+from .safe_json import write_json_safely
 
 
 # --- Dynamic configuration directory resolution ---
@@ -503,8 +504,7 @@ def save_settings(settings_dict):
 
         # Save settings to the chosen place
         target_settings_path = os.path.join(target_config_dir, SETTINGS_FILENAME)
-        with open(target_settings_path, 'w', encoding='utf-8') as f:
-            json.dump(settings_dict, f, indent=4)
+        write_json_safely(target_settings_path, settings_dict, indent=4)
         logging.info(f"Settings saved to '{target_settings_path}'.")
 
         # If enabling portable mode, migrate other JSONs from AppData to the portable directory
@@ -578,8 +578,7 @@ def save_settings(settings_dict):
                     # Update ONLY the portable flag, preserving everything else
                     existing_appdata_settings["portable_config_only"] = True
                     
-                    with open(appdata_settings_path, 'w', encoding='utf-8') as f:
-                        json.dump(existing_appdata_settings, f, indent=4)
+                    write_json_safely(appdata_settings_path, existing_appdata_settings, indent=4)
                     logging.info(f"Updated AppData settings.json portable mode flag (preserved other settings): {appdata_settings_path}")
                 except Exception as e_appdata:
                     logging.warning(f"Unable to update AppData portable mode flag: {e_appdata}")
@@ -616,8 +615,7 @@ def save_settings(settings_dict):
                     mirror_dir = os.path.join(backup_root_effective, ".savestate")
                     os.makedirs(mirror_dir, exist_ok=True)
                     mirror_path = os.path.join(mirror_dir, "settings.json")
-                    with open(mirror_path, 'w', encoding='utf-8') as mf:
-                        json.dump(settings_dict, mf, indent=4)
+                    write_json_safely(mirror_path, settings_dict, indent=4)
             except Exception:
                 logging.warning("Unable to mirror settings.json to backup root")
 
