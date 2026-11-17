@@ -79,6 +79,15 @@ def _draw_russia(painter, rect):
         painter.fillRect(QRectF(rect.left(), rect.top() + index * band, rect.width(), band + 1), QColor(color))
 
 
+def _draw_japan(painter, rect):
+    """White field with a red disc in the centre."""
+    painter.fillRect(rect, QColor("#FFFFFF"))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor("#BC002D"))
+    radius = rect.height() * 0.3  # The disc is 3/5 of the flag height
+    painter.drawEllipse(rect.center(), radius, radius)
+
+
 def _draw_china(painter, rect):
     painter.fillRect(rect, QColor("#DE2910"))
     unit = rect.height() / 20  # The flag is designed on a 30 x 20 grid
@@ -129,6 +138,7 @@ _FLAG_PAINTERS = {
     "es": _draw_spain,
     "pt": _draw_brazil,
     "ru": _draw_russia,
+    "ja": _draw_japan,
     "zh_CN": _draw_china,
     i18n.AUTO: _draw_globe,
 }

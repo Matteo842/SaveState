@@ -34,6 +34,7 @@ LANGUAGES = {
     "es": "Español",
     "pt": "Português (Brasil)",
     "ru": "Русский",
+    "ja": "日本語",
     "zh_CN": "简体中文",
 }
 
@@ -44,6 +45,7 @@ LANGUAGE_ENGLISH_NAMES = {
     "es": "Spanish",
     "pt": "Portuguese (Brazil)",
     "ru": "Russian",
+    "ja": "Japanese",
     "zh_CN": "Chinese (Simplified)",
 }
 
@@ -215,21 +217,31 @@ def init_language(setting=None):
 CHINESE_FONTS = ["Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC",
                  "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei"]
 
+# Fonts that draw Japanese text well, tried in this order. Japanese kanji look
+# different from Chinese ones, so Japanese must not borrow the Chinese fonts.
+JAPANESE_FONTS = ["Yu Gothic UI", "Meiryo UI", "Meiryo", "Hiragino Sans",
+                  "Noto Sans CJK JP", "Source Han Sans JP", "IPAexGothic"]
+
+# Language code -> fonts used for its characters
+_CJK_FONTS = {"zh_CN": CHINESE_FONTS, "ja": JAPANESE_FONTS}
+
 
 def apply_font_fallbacks():
-    """Chinese only: take the Chinese characters from one good font.
+    """Chinese and Japanese only: take their characters from one good font.
 
-    Without this, a non-Chinese Windows picks them from several fonts and the
-    text looks uneven. Call it once, after QApplication is created.
+    Without this, a Windows in another language picks them from several fonts
+    and the text looks uneven (Japanese may even get Chinese-style kanji).
+    Call it once, after QApplication is created.
     """
-    if _current_language != "zh_CN":
+    fonts = _CJK_FONTS.get(_current_language)
+    if not fonts:
         return
     try:
         from PySide6.QtGui import QFont
         for family in ("Segoe UI", "Arial"):  # The fonts used by the SaveState themes
-            QFont.insertSubstitutions(family, CHINESE_FONTS)
+            QFont.insertSubstitutions(family, fonts)
     except Exception as e:
-        logging.debug(f"i18n: could not set the Chinese fonts: {e}")
+        logging.debug(f"i18n: could not set the {_current_language} fonts: {e}")
 
 
 def install_qt_translator(app):
