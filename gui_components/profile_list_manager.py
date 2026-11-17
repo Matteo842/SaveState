@@ -677,8 +677,9 @@ class ProfileListManager:
         # Rebuild note overlays with updated theme
         if hasattr(self, '_note_overlay_buttons'):
             self._create_note_overlays()
-        if hasattr(self, '_cloud_sync_warning_dots'):
-            self._create_cloud_sync_warning_dots()
+        # Cloud-sync warning icons are NOT rebuilt here: they look the same in both
+        # themes, and rebuilding them runs an internet check (_has_network, up to 2s
+        # per host) on the UI thread, which could freeze the theme switch.
         # Force a repaint of the table to apply the new colors
         self.table_widget.viewport().update()
 
