@@ -259,6 +259,20 @@ def _is_kyty_launcher(path: str | None) -> bool:
     folder = os.path.dirname(path)
     return any(os.path.isfile(os.path.join(folder, exe)) for exe in ('kyty_emulator.exe', 'kyty_emulator'))
 
+def _path_starts_with_keyword(path_lower: str, keyword: str) -> bool:
+    """
+    True when a folder name, the file name, or a dot-separated part of them
+    STARTS with the emulator keyword. A keyword inside a word or later in a
+    name does not count, so game folders are not taken for emulators.
+
+    Match:    'd:\\ppsspp\\ppssppwindows64.exe', 'e:\\eden-windows-msvc\\eden.exe',
+              'org.ppsspp.ppsspp.desktop'
+    No match: 'little nightmares iii' ('ares'), 'sweden', 'garden of eden' ('eden'),
+              'd:\\softwares\\...' ('ares')
+    """
+    parts = path_lower.replace("\\", "/").replace(".", "/").split("/")
+    return any(part.startswith(keyword) for part in parts)
+
 def is_known_emulator(file_path: str) -> tuple[str, str | None]:
     """
     Verifica se il file è un emulatore conosciuto e il suo stato di supporto.
@@ -354,7 +368,7 @@ def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] 
         return EMULATORS['kyty']['name'], find_kytyps5_profiles(target_path)
 
     # --- Explicit Check for Azahar First --- START ---
-    if 'azahar' in target_path_lower:
+    if _path_starts_with_keyword(target_path_lower, 'azahar'):
         emulator_key = 'azahar'
         config = EMULATORS.get(emulator_key)
         if config:
@@ -387,7 +401,7 @@ def detect_and_find_profiles(target_path: str | None) -> tuple[str, list[dict]] 
             continue
             
         # Check if the keyword (e.g., 'ryujinx', 'yuzu', 'citra', 'snes9x', 'desmume', 'cemu') is in the target path
-        if keyword in target_path_lower:
+        if _path_starts_with_keyword(target_path_lower, keyword):
             emulator_name = config['name']
             profile_finder = config['profile_finder']
             log.info(f"Detected known emulator '{emulator_name}' based on target path: {target_path}")
