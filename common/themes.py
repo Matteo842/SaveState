@@ -550,22 +550,41 @@ QLabel#StatusLabel {
     color: #5A5D66;
 }
 
-/* ---- Inputs / Lists / Tables ---- */
-QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+/* ---- Inputs / Lists / Tables ----
+   Sizes (border, radius, padding) are the same as the dark theme, so the
+   layout does not move when switching theme. Only colors differ. */
+QLineEdit, QTextEdit, QListWidget, QTableWidget, QComboBox, QSpinBox {
     background-color: #FFFFFF;
     color: #1F2024;
     border: 1px solid #C9CCD3;
-    border-radius: 6px;
-    padding: 5px 8px;
+    border-radius: 3px;
+    padding: 3px;
     selection-background-color: #4F46E5;
     selection-color: #FFFFFF;
 }
-QLineEdit:hover, QTextEdit:hover, QPlainTextEdit:hover,
-QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover {
+QListWidget, QTableWidget {
+    alternate-background-color: #F8F9FB;
+    gridline-color: #ECEDF0;
+}
+/* Colors only: the dark theme leaves these widgets with their native frame. */
+QPlainTextEdit, QDoubleSpinBox {
+    background-color: #FFFFFF;
+    color: #1F2024;
+    selection-background-color: #4F46E5;
+    selection-color: #FFFFFF;
+}
+QTreeWidget, QTreeView, QListView, QTableView {
+    background-color: #FFFFFF;
+    color: #1F2024;
+    alternate-background-color: #F8F9FB;
+    gridline-color: #ECEDF0;
+    selection-background-color: #EEF2FF;
+    selection-color: #3730A3;
+}
+QLineEdit:hover, QTextEdit:hover, QComboBox:hover, QSpinBox:hover {
     border: 1px solid #A8ADB7;
 }
-QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus,
-QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus {
     border: 1px solid #4F46E5;
     background-color: #FFFFFF;
 }
@@ -575,33 +594,34 @@ QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled, QSpinBox:disabled {
     border-color: #DDE0E5;
 }
 
-QListWidget, QTableWidget, QTreeWidget, QTreeView, QListView, QTableView {
-    background-color: #FFFFFF;
+QListWidget::item {
+    padding: 3px;
     color: #1F2024;
-    border: 1px solid #C9CCD3;
-    border-radius: 6px;
-    padding: 2px;
-    alternate-background-color: #F8F9FB;
-    gridline-color: #ECEDF0;
 }
-QListWidget::item, QTableWidget::item, QTreeWidget::item {
-    padding: 5px;
+QTableWidget::item {
+    padding: 4px;
     color: #1F2024;
     border-bottom: 1px solid #ECEDF0;
 }
-/* Hover only on QListWidget/QTreeWidget: QTableWidget uses a custom delegate
+/* Hover only on QListWidget: QTableWidget uses a custom delegate
    (ProfileSelectionDelegate) and adding ::item:hover here would conflict with
    the delegate's paint, hiding the cell icon/text under the cursor. */
-QListWidget::item:hover, QTreeWidget::item:hover {
+QListWidget::item:hover {
     background-color: #F0F4F4;
 }
-QListWidget::item:selected, QTableWidget::item:selected, QTreeWidget::item:selected {
+QListWidget::item:selected {
     background-color: #EEF2FF;
     color: #3730A3;
 }
-QListWidget::item:selected:active, QTableWidget::item:selected:active {
+QListWidget::item:selected:active {
     background-color: #DDE4FF;
     color: #312E81;
+}
+/* Same as the dark theme: the selection is drawn by ProfileSelectionDelegate. */
+QTableWidget::item:selected {
+    background-color: transparent;
+    color: #1F2024;
+    border: none;
 }
 
 /* ---- Standard Buttons ---- */
@@ -609,8 +629,8 @@ QPushButton {
     background-color: #FFFFFF;
     color: #1F2024;
     border: 1px solid #C9CCD3;
-    border-radius: 6px;
-    padding: 6px 14px;
+    border-radius: 4px;
+    padding: 6px 12px;
     min-width: 80px;
 }
 QPushButton:hover {
@@ -632,7 +652,6 @@ QPushButton:disabled {
 QPushButton:default {
     border: 1px solid #4F46E5;
     color: #3730A3;
-    font-weight: 600;
 }
 
 QPushButton#DangerButton {
@@ -738,13 +757,13 @@ QPushButton#CardDeleteButton:pressed {
 QGroupBox {
     background-color: transparent;
     border: 1px solid #D6D9DF;
-    border-radius: 8px;
-    margin-top: 12px;
-    padding-top: 12px;
-    padding-left: 6px;
-    padding-right: 6px;
-    padding-bottom: 6px;
-    font-weight: 600;
+    border-radius: 4px;
+    margin-top: 10px;
+    padding-top: 10px;
+    padding-left: 5px;
+    padding-right: 5px;
+    padding-bottom: 5px;
+    font-weight: bold;
     color: #1F2024;
 }
 /* Title floats over the GroupBox border line. The background MUST match the
@@ -755,29 +774,19 @@ QGroupBox {
 QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    padding: 0 6px;
+    padding: 0 5px;
     left: 10px;
     color: #4F46E5;
     background-color: #F4F5F7;
 }
 
-/* ---- ComboBox ---- */
-QComboBox::drop-down {
-    border: none;
-    width: 20px;
-}
-QComboBox::down-arrow {
-    width: 10px;
-    height: 10px;
-}
+/* ---- ComboBox ----
+   Drop-down arrow left native, like the dark theme. Popup list: colors only. */
 QComboBox QAbstractItemView {
     background-color: #FFFFFF;
     color: #1F2024;
-    border: 1px solid #C9CCD3;
-    border-radius: 6px;
     selection-background-color: #EEF2FF;
     selection-color: #3730A3;
-    padding: 2px;
 }
 
 /* ---- Tabs ---- */
@@ -813,14 +822,12 @@ QTabBar::tab:hover:!selected {
 QCheckBox, QRadioButton {
     background-color: transparent;
     color: #1F2024;
-    spacing: 6px;
 }
 
 /* ---- Status bar / Progress ---- */
 QStatusBar {
     background-color: #ECEDF0;
     color: #5A5D66;
-    border-top: 1px solid #D6D9DF;
 }
 QStatusBar::item {
     border: none;
@@ -850,20 +857,20 @@ QMessageBox QLabel {
     background-color: transparent;
 }
 QMessageBox QPushButton {
-    min-width: 80px;
-    padding: 5px 14px;
+    min-width: 70px;
+    padding: 4px 10px;
 }
 
 /* ---- Headers (Table headers) ---- */
 QHeaderView::section {
     background-color: #ECEDF0;
     color: #1F2024;
-    padding: 6px 8px;
+    padding: 4px;
     border-top: 0px;
-    border-bottom: 2px solid #4F46E5;
+    border-bottom: 1px solid #4F46E5;
     border-right: 1px solid #DDE0E5;
     border-left: 0px;
-    font-weight: 600;
+    font-weight: bold;
 }
 QHeaderView::section:hover {
     background-color: #E2E4E9;
@@ -876,36 +883,19 @@ QHeaderView::section:last {
 QToolTip {
     background-color: #1F2024;
     color: #FFFFFF;
-    border: 1px solid #1F2024;
-    border-radius: 4px;
-    padding: 4px 8px;
 }
 
 /* ---- Menu ---- */
+/* Item sizes left native, like the dark theme: colors only. */
 QMenu {
     background-color: #FFFFFF;
     color: #1F2024;
-    border: 1px solid #C9CCD3;
-    border-radius: 6px;
-    padding: 4px;
-}
-QMenu::item {
-    padding: 6px 22px 6px 14px;
-    border-radius: 4px;
-}
-QMenu::item:selected {
-    background-color: #EEF2FF;
-    color: #3730A3;
-}
-QMenu::separator {
-    height: 1px;
-    background-color: #E1E3E8;
-    margin: 4px 6px;
+    selection-background-color: #EEF2FF;
+    selection-color: #3730A3;
 }
 QMenuBar {
     background-color: #ECEDF0;
     color: #1F2024;
-    border-bottom: 1px solid #D6D9DF;
 }
 QMenuBar::item:selected {
     background-color: #EEF2FF;
@@ -1027,7 +1017,7 @@ QPushButton#RestoreButton,
 QPushButton#ManageButton {
     background-color: #FFFFFF;
     border: 1px solid #C9CCD3;
-    border-radius: 8px;
+    border-radius: 5px;
     padding: 8px 12px;
     font-weight: bold;
     font-size: 12pt;
@@ -1092,21 +1082,24 @@ QLabel#EmptyStateHint {
 /* ===== CUSTOM SCROLLBAR STYLING (LIGHT THEME) ===== */
 QScrollBar:vertical {
     background-color: transparent;
-    width: 12px;
+    width: 14px;
     margin: 0px;
     border: none;
 }
 QScrollBar::handle:vertical {
     background-color: #C9CCD3;
+    border: 2px solid #4F46E5;
     min-height: 30px;
-    border-radius: 6px;
+    border-radius: 4px;
     margin: 2px;
 }
 QScrollBar::handle:vertical:hover {
-    background-color: #4F46E5;
+    background-color: #A8ADB7;
+    border: 2px solid #4338CA;
 }
 QScrollBar::handle:vertical:pressed {
-    background-color: #3730A3;
+    background-color: #4F46E5;
+    border: 2px solid #4338CA;
 }
 QScrollBar::add-line:vertical,
 QScrollBar::sub-line:vertical {
@@ -1120,21 +1113,24 @@ QScrollBar::sub-page:vertical {
 
 QScrollBar:horizontal {
     background-color: transparent;
-    height: 12px;
+    height: 14px;
     margin: 0px;
     border: none;
 }
 QScrollBar::handle:horizontal {
     background-color: #C9CCD3;
+    border: 2px solid #4F46E5;
     min-width: 30px;
-    border-radius: 6px;
+    border-radius: 4px;
     margin: 2px;
 }
 QScrollBar::handle:horizontal:hover {
-    background-color: #4F46E5;
+    background-color: #A8ADB7;
+    border: 2px solid #4338CA;
 }
 QScrollBar::handle:horizontal:pressed {
-    background-color: #3730A3;
+    background-color: #4F46E5;
+    border: 2px solid #4338CA;
 }
 QScrollBar::add-line:horizontal,
 QScrollBar::sub-line:horizontal {
