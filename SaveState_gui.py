@@ -77,7 +77,7 @@ from gui_components.controller_panel import (
 
 # --- COSTANTI GLOBALI PER IDENTIFICARE L'ISTANZA ---
 # Import from config.py for early access in main.py before heavy imports
-from config import SHARED_MEM_KEY, LOCAL_SERVER_NAME
+from config import SHARED_MEM_KEY, LOCAL_SERVER_NAME, APP_TITLE_VERSION
 # --- FINE COSTANTI ---
 
 
@@ -707,7 +707,7 @@ class MainWindow(QMainWindow):
         title_layout = QHBoxLayout()
         title_layout.setContentsMargins(12, 4, 12, 4)
         title_layout.setSpacing(6)
-        self.title_label = QLabel(tr("SaveState - 2.8.1"))
+        self.title_label = QLabel(f"SaveState - {APP_TITLE_VERSION}")
         self.title_label.setObjectName("TitleLabel")
         title_layout.addWidget(self.title_label)
         # Update indicator sits immediately to the right of the version text,
@@ -1772,9 +1772,9 @@ class MainWindow(QMainWindow):
     def updateUiText(self):
         """Updates the UI text"""
         logging.debug(">>> updateUiText: START <<<")
-        self.setWindowTitle(tr("SaveState - 3.2"))
+        self.setWindowTitle(f"SaveState - {APP_TITLE_VERSION}")
         if hasattr(self, 'title_label'):
-            self.title_label.setText(tr("SaveState - 3.2"))
+            self.title_label.setText(f"SaveState - {APP_TITLE_VERSION}")
         self.profile_table_manager.retranslate_headers()
         # Keep Settings as icon-only in the title bar
         self.settings_button.setText("")

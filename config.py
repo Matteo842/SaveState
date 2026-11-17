@@ -6,13 +6,15 @@ import platform # Aggiunto per system detection
 
 # --- Nome Applicazione (per cartella AppData) ---
 APP_NAME = "SaveState"
-APP_VERSION = "3.2.1" # Restored APP_VERSION
+APP_VERSION = "3.3" # Restored APP_VERSION
+# Version shown in the window title: only "major.minor" (e.g. "3.3.1" -> "3.3").
+APP_TITLE_VERSION = ".".join(APP_VERSION.split(".")[:2])
 
 # --- Auto-update info ---
 # Exact GitHub release tag of the CURRENT build. Must match the tag_name
 # published on GitHub Releases. Bump this on every release.
 # The updater compares this string against the latest release's tag_name.
-APP_RELEASE_TAG = "v3.2.1"
+APP_RELEASE_TAG = "v3.3"
 # GitHub repository in "owner/name" form. Used only when the user opts in
 # to startup update checks. No network requests are made otherwise.
 GITHUB_REPO = "Matteo842/SaveState"
