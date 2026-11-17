@@ -31,6 +31,7 @@ LANG_FOLDER = "lang"
 LANGUAGES = {
     "en": "English",
     "it": "Italiano",
+    "de": "Deutsch",
     "es": "Español",
     "pt": "Português (Brasil)",
     "ru": "Русский",
@@ -42,6 +43,7 @@ LANGUAGES = {
 LANGUAGE_ENGLISH_NAMES = {
     "en": "English",
     "it": "Italian",
+    "de": "German",
     "es": "Spanish",
     "pt": "Portuguese (Brazil)",
     "ru": "Russian",

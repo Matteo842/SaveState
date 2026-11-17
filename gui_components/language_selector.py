@@ -79,6 +79,13 @@ def _draw_russia(painter, rect):
         painter.fillRect(QRectF(rect.left(), rect.top() + index * band, rect.width(), band + 1), QColor(color))
 
 
+def _draw_germany(painter, rect):
+    """Black, red, gold horizontal bands of equal height."""
+    band = rect.height() / 3
+    for index, color in enumerate(("#000000", "#DD0000", "#FFCE00")):
+        painter.fillRect(QRectF(rect.left(), rect.top() + index * band, rect.width(), band + 1), QColor(color))
+
+
 def _draw_japan(painter, rect):
     """White field with a red disc in the centre."""
     painter.fillRect(rect, QColor("#FFFFFF"))
@@ -135,6 +142,7 @@ def _draw_globe(painter, rect):
 _FLAG_PAINTERS = {
     "en": _draw_united_kingdom,
     "it": _draw_italy,
+    "de": _draw_germany,
     "es": _draw_spain,
     "pt": _draw_brazil,
     "ru": _draw_russia,
