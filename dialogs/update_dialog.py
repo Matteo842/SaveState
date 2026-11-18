@@ -391,12 +391,13 @@ class UpdateDialog(QDialog):
                 return
             ok = self._um.apply_and_restart()
             if ok:
-                # Ask the main window to exit cleanly so the helper can swap the file.
+                # Ask the main window to really quit (not just hide to tray)
+                # so the helper can swap the file.
                 parent = self.parent()
-                if parent is not None and hasattr(parent, "close"):
+                if parent is not None and hasattr(parent, "quit_for_update"):
                     # Small delay so our script has time to spawn.
                     from PySide6.QtCore import QTimer
-                    QTimer.singleShot(300, parent.close)
+                    QTimer.singleShot(300, parent.quit_for_update)
             return
 
     def _persist_skip_choice(self):

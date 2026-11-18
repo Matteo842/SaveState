@@ -1553,6 +1553,24 @@ class MainWindow(QMainWindow):
         except Exception:
             logging.exception("maybe_check_updates_on_startup failed")
 
+    def quit_for_update(self):
+        """Really quit SaveState so the update script can replace its files.
+
+        A plain close() is not enough: with "Minimize to tray on close",
+        periodic cloud sync or automatic backups enabled, closeEvent only
+        hides the window and the process keeps running. The update script
+        waits for this process to exit, so it would sit there until the
+        user picked Exit from the tray menu.
+        """
+        self._allow_close = True
+        try:
+            if getattr(self, 'tray_icon', None):
+                self.tray_icon.hide()
+        except Exception:
+            pass
+        self.close()
+        QApplication.quit()
+
     def reset_internal_state(self):
         """Resetta lo stato interno per le operazioni di drag & drop."""
         # Resetta le liste dei thread
