@@ -858,22 +858,27 @@ class UpdateManager(QObject):
         bat_path = os.path.join(tmp_dir, "savestate_update.bat")
         log_path = os.path.join(tmp_dir, "savestate_update.log")
         pid = os.getpid()
+        # Paths are not written into the .bat: they reach it as environment
+        # variables (see _spawn_detached_windows) and are read as !VAR!.
+        env = {
+            "SAVESTATE_TARGET": exe_path,
+            "SAVESTATE_SRC": new_file,
+            "SAVESTATE_LOG": log_path,
+            "SAVESTATE_BAT": bat_path,
+        }
         script = f"""@echo off
 setlocal EnableDelayedExpansion
-set "TARGET={exe_path}"
-set "SRC={new_file}"
-set "LOG={log_path}"
-echo [%date% %time%] Update starting > "%LOG%"
-echo TARGET=%TARGET% >> "%LOG%"
-echo SRC=%SRC% >> "%LOG%"
-echo Waiting for PID {pid} to exit... >> "%LOG%"
+echo [%date% %time%] Update starting > "!SAVESTATE_LOG!"
+echo TARGET=!SAVESTATE_TARGET! >> "!SAVESTATE_LOG!"
+echo SRC=!SAVESTATE_SRC! >> "!SAVESTATE_LOG!"
+echo Waiting for PID {pid} to exit... >> "!SAVESTATE_LOG!"
 set /a waits=0
 :wait_loop
 tasklist /NH /FI "PID eq {pid}" 2>nul | find /I "{pid}" >nul
 if not errorlevel 1 (
     set /a waits+=1
     if !waits! geq 60 (
-        echo PID {pid} did not exit within 60 seconds, giving up. >> "%LOG%"
+        echo PID {pid} did not exit within 60 seconds, giving up. >> "!SAVESTATE_LOG!"
         goto fail
     )
     timeout /t 1 /nobreak >nul
@@ -884,24 +889,24 @@ rem Python process exits. Sleep a couple of seconds before swapping.
 timeout /t 2 /nobreak >nul
 set /a tries=0
 :move_loop
-move /y "%SRC%" "%TARGET%" >> "%LOG%" 2>&1
+move /y "!SAVESTATE_SRC!" "!SAVESTATE_TARGET!" >> "!SAVESTATE_LOG!" 2>&1
 if errorlevel 1 (
     set /a tries+=1
     if !tries! lss 30 (
         timeout /t 1 /nobreak >nul
         goto move_loop
     )
-    echo MOVE failed after %tries% retries. >> "%LOG%"
+    echo MOVE failed after %tries% retries. >> "!SAVESTATE_LOG!"
     goto fail
 )
-echo [%date% %time%] Move OK, restarting %TARGET% >> "%LOG%"
-start "" "%TARGET%"
-del "%~f0"
+echo [%date% %time%] Move OK, restarting !SAVESTATE_TARGET! >> "!SAVESTATE_LOG!"
+start "" "!SAVESTATE_TARGET!"
+del "!SAVESTATE_BAT!"
 exit /b 0
 :fail
-echo [%date% %time%] Update FAILED. >> "%LOG%"
+echo [%date% %time%] Update FAILED. >> "!SAVESTATE_LOG!"
 echo SaveState update failed.
-echo See log file: %LOG%
+echo See log file: !SAVESTATE_LOG!
 echo.
 pause
 exit /b 1
@@ -909,7 +914,7 @@ exit /b 1
         with open(bat_path, "w", encoding="ascii", errors="replace") as f:
             f.write(script)
         logging.info(f"Update bat written to {bat_path} (log will be at {log_path})")
-        _spawn_detached_windows(["cmd.exe", "/c", bat_path])
+        _spawn_detached_windows(["cmd.exe", "/c", bat_path], env)
         self._set_state(STATE_IDLE)
         return True
 
@@ -926,30 +931,38 @@ exit /b 1
         if platform.system() == "Windows":
             bat_path = os.path.join(tmp_dir, "savestate_update.bat")
             log_path = os.path.join(tmp_dir, "savestate_update.log")
-            restart_line = _windows_start_cmd(restart_cmd)
-            cleanup_lines = "\n".join(
-                f'rmdir /s /q "{p}" 2>nul\r\ndel /q "{p}" 2>nul' for p in cleanup_paths
-            )
+            # Paths are not written into the .bat: they reach it as environment
+            # variables (see _spawn_detached_windows) and are read as !VAR!.
+            env = {
+                "SAVESTATE_STAGING": staging,
+                "SAVESTATE_TARGET": target_dir,
+                "SAVESTATE_LOG": log_path,
+                "SAVESTATE_BAT": bat_path,
+            }
+            restart_line = _windows_start_cmd(restart_cmd, env)
+            cleanup = []
+            for i, p in enumerate(cleanup_paths):
+                env[f"SAVESTATE_CLEANUP_{i}"] = p
+                cleanup.append(f'rmdir /s /q "!SAVESTATE_CLEANUP_{i}!" 2>nul\r\n'
+                               f'del /q "!SAVESTATE_CLEANUP_{i}!" 2>nul')
+            cleanup_lines = "\n".join(cleanup)
             # robocopy exit codes: 0..7 are success-ish, >=8 are real errors.
             # /R:30 /W:1 = up to 30 retries with 1s wait (~30s window) which
             # is generous enough to ride out the PyInstaller bootloader keeping
             # the .exe locked for a moment after our PID exits.
             script = f"""@echo off
 setlocal EnableDelayedExpansion
-set "STAGING={staging}"
-set "TARGET={target_dir}"
-set "LOG={log_path}"
-echo [%date% %time%] Update starting > "%LOG%"
-echo STAGING=%STAGING% >> "%LOG%"
-echo TARGET=%TARGET% >> "%LOG%"
-echo Waiting for PID {pid} to exit... >> "%LOG%"
+echo [%date% %time%] Update starting > "!SAVESTATE_LOG!"
+echo STAGING=!SAVESTATE_STAGING! >> "!SAVESTATE_LOG!"
+echo TARGET=!SAVESTATE_TARGET! >> "!SAVESTATE_LOG!"
+echo Waiting for PID {pid} to exit... >> "!SAVESTATE_LOG!"
 set /a waits=0
 :wait_loop
 tasklist /NH /FI "PID eq {pid}" 2>nul | find /I "{pid}" >nul
 if not errorlevel 1 (
     set /a waits+=1
     if !waits! geq 60 (
-        echo PID {pid} did not exit within 60 seconds, giving up. >> "%LOG%"
+        echo PID {pid} did not exit within 60 seconds, giving up. >> "!SAVESTATE_LOG!"
         goto fail
     )
     timeout /t 1 /nobreak >nul
@@ -958,27 +971,27 @@ if not errorlevel 1 (
 rem PyInstaller bootloader can keep the .exe locked for a moment after the
 rem Python process exits. Sleep a couple of seconds before robocopy.
 timeout /t 2 /nobreak >nul
-echo [%date% %time%] Running robocopy... >> "%LOG%"
-robocopy "%STAGING%" "%TARGET%" /E /R:30 /W:1 >> "%LOG%" 2>&1
+echo [%date% %time%] Running robocopy... >> "!SAVESTATE_LOG!"
+robocopy "!SAVESTATE_STAGING!" "!SAVESTATE_TARGET!" /E /R:30 /W:1 >> "!SAVESTATE_LOG!" 2>&1
 set RC=!ERRORLEVEL!
-echo robocopy exit code: !RC! >> "%LOG%"
+echo robocopy exit code: !RC! >> "!SAVESTATE_LOG!"
 rem robocopy returns 0..7 for success, >=8 for real errors. The parens in
 rem the echo MUST be escaped with ^^ otherwise cmd.exe miscounts the IF
 rem block's parens and makes goto fail run unconditionally.
 if !RC! GEQ 8 (
-    echo robocopy failed ^(exit code !RC!^) >> "%LOG%"
+    echo robocopy failed ^(exit code !RC!^) >> "!SAVESTATE_LOG!"
     goto fail
 )
-echo [%date% %time%] Cleanup... >> "%LOG%"
+echo [%date% %time%] Cleanup... >> "!SAVESTATE_LOG!"
 {cleanup_lines}
-echo [%date% %time%] Restarting... >> "%LOG%"
+echo [%date% %time%] Restarting... >> "!SAVESTATE_LOG!"
 {restart_line}
-del "%~f0"
+del "!SAVESTATE_BAT!"
 exit /b 0
 :fail
-echo [%date% %time%] Update FAILED. >> "%LOG%"
+echo [%date% %time%] Update FAILED. >> "!SAVESTATE_LOG!"
 echo SaveState update failed.
-echo See log file: %LOG%
+echo See log file: !SAVESTATE_LOG!
 echo.
 pause
 exit /b 1
@@ -986,7 +999,7 @@ exit /b 1
             with open(bat_path, "w", encoding="ascii", errors="replace") as f:
                 f.write(script)
             logging.info(f"Update bat written to {bat_path} (log will be at {log_path})")
-            _spawn_detached_windows(["cmd.exe", "/c", bat_path])
+            _spawn_detached_windows(["cmd.exe", "/c", bat_path], env)
             self._set_state(STATE_IDLE)
             return True
 
@@ -1109,16 +1122,16 @@ rm -- "$0"
 # Small helpers for script generation
 # ---------------------------------------------------------------------------
 
-def _shell_quote_windows(s: str) -> str:
-    """Conservative quoter for the Windows cmd.exe `start ""` pattern."""
-    s = s.replace('"', '""')
-    return f'"{s}"'
+def _windows_start_cmd(cmd: list[str], env: dict[str, str]) -> str:
+    """Build a `start ""` line that launches `cmd` detached.
 
-
-def _windows_start_cmd(cmd: list[str]) -> str:
-    """Build a `start ""` line that launches `cmd` detached."""
-    quoted = " ".join(_shell_quote_windows(c) for c in cmd)
-    return f'start "" {quoted}'
+    Each argument is stored in `env` and read back as !VAR!, like the
+    other paths of the helper .bat (see _spawn_detached_windows)."""
+    refs = []
+    for i, arg in enumerate(cmd):
+        env[f"SAVESTATE_RESTART_{i}"] = arg
+        refs.append(f'"!SAVESTATE_RESTART_{i}!"')
+    return 'start "" ' + " ".join(refs)
 
 
 def _shell_quote_posix(s: str) -> str:
@@ -1134,7 +1147,7 @@ def _posix_restart_cmd(cmd: list[str]) -> str:
     return f"( nohup {quoted} >/dev/null 2>&1 & ) >/dev/null 2>&1"
 
 
-def _spawn_detached_windows(cmd: list[str]) -> None:
+def _spawn_detached_windows(cmd: list[str], extra_env: dict[str, str]) -> None:
     """Launch the helper script in its own console.
 
     We intentionally do NOT use CREATE_NO_WINDOW: showing a small console
@@ -1142,12 +1155,21 @@ def _spawn_detached_windows(cmd: list[str]) -> None:
     Telegram, etc. all do this) and is a critical fail-safe — when the
     swap fails, the script ends with `pause` and the user can read the
     error message instead of the update silently doing nothing.
+
+    The script's paths are passed in `extra_env`, never written into the
+    .bat: cmd.exe reads a .bat in the old OEM code page, so a path like
+    C:\\Users\\Jörg or a Cyrillic/Chinese user name would turn into `?`.
+    Environment variables keep full Unicode, and reading them as !VAR!
+    (delayed expansion) also keeps characters like ! % & ^ intact.
     """
     import subprocess
     CREATE_NEW_CONSOLE = 0x00000010
     CREATE_NEW_PROCESS_GROUP = 0x00000200
+    env = os.environ.copy()
+    env.update(extra_env)
     subprocess.Popen(
         cmd,
         creationflags=CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP,
         close_fds=True,
+        env=env,
     )
