@@ -171,7 +171,7 @@ jobs:
         path: SaveState_v${{ env.RELEASE_VERSION }}_Win.zip
 
   # =========================================================
-  # 2. LINUX BUILD (Lasciato invariato o puoi usare Nuitka anche qui)
+  # 2. LINUX BUILD (Nuitka standalone dentro l'AppImage)
   # =========================================================
   build-linux:
     if: github.event_name == 'workflow_dispatch' && inputs.post_release_only != true
@@ -190,10 +190,10 @@ jobs:
     - name: 📦 Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y python3-dev fuse libfuse2 file
+        sudo apt-get install -y python3-dev fuse libfuse2 file patchelf
         python3 -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller
+        pip install nuitka zstandard ordered-set
 
     - name: 🔐 Restore Secret JSON
       shell: bash  
@@ -202,8 +202,33 @@ jobs:
       run: |
         python -c "import os; open('cloud_utils/client_secret.json', 'w', encoding='utf-8').write(os.environ['SECRET_CONTENT'])"
 
-    - name: 🔨 Run PyInstaller (Linux)
-      run: pyinstaller --clean SaveState-OneFile-Linux.spec
+    # Stessi moduli e file dati della build Windows. --standalone e non
+    # --onefile: l'AppImage è già il file unico, così all'avvio non viene
+    # estratto niente in /tmp. Il risultato è la cartella dist/main.dist/.
+    - name: 🔨 Run Nuitka Build (Linux)
+      run: |
+        python -m nuitka --standalone \
+          --enable-plugin=pyside6 \
+          --output-dir=dist \
+          --output-filename=SaveState \
+          --assume-yes-for-downloads \
+          --include-module=vdf \
+          --include-module=nbtlib \
+          --include-module=thefuzz \
+          --include-module=psutil \
+          --include-module=xml.etree.ElementTree \
+          --include-module=configparser \
+          --include-package-data=googleapiclient \
+          --include-data-dir=icons=icons \
+          --include-data-dir=lang=lang \
+          --include-data-file=icon.png=icon.png \
+          --include-data-file=backup/backup_runner.py=backup_runner.py \
+          --include-data-file=emulator_utils/citra_titles_map.pkl=emulator_utils/citra_titles_map.pkl \
+          --include-data-file=emulator_utils/switch_game_map.pkl=emulator_utils/switch_game_map.pkl \
+          --include-data-file=emulator_utils/ps4_game_map.pkl=emulator_utils/ps4_game_map.pkl \
+          --include-data-file=emulator_utils/xenia_title_map.pkl=emulator_utils/xenia_title_map.pkl \
+          --include-data-file=cloud_utils/client_secret.json=cloud_utils/client_secret.json \
+          main.py
 
     # --- CREAZIONE APPIMAGE (Logica Icone Avanzata) ---
     - name: 🖼️ Prepare AppDir Structure
@@ -213,7 +238,7 @@ jobs:
         mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps/
         mkdir -p AppDir/usr/share/pixmaps/
 
-        cp dist/SaveState AppDir/usr/bin/
+        cp -a dist/main.dist/. AppDir/usr/bin/
         cp icon.png AppDir/SaveState.png
         cp icon.png AppDir/usr/share/pixmaps/SaveState.png
         ln -s ../../../../../../SaveState.png AppDir/usr/share/icons/hicolor/256x256/apps/SaveState.png

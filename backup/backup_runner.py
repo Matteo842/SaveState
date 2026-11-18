@@ -17,14 +17,14 @@ except ImportError as e_qt:
      QT_AVAILABLE = False
      logging.error(f"PySide6 not found, unable to show GUI notifications: {e_qt}")
 
-# Try to import notify_py for native Linux notifications
+# Try to import notifypy (PyPI package "notify-py") for native Linux notifications
 try:
-    import notify_py  # type: ignore[import-untyped]
+    import notifypy  # type: ignore[import-untyped]
     NATIVE_NOTIFY_AVAILABLE = True
-    logging.info("notify_py imported successfully. Native Linux notifications are available.")
+    logging.info("notifypy imported successfully. Native Linux notifications are available.")
 except ImportError:
     NATIVE_NOTIFY_AVAILABLE = False
-    logging.info("notify_py not found. Native Linux notifications will not be used. Will fallback to Qt notifications on Linux if Qt is available.")
+    logging.info("notifypy not found. Native Linux notifications will not be used. Will fallback to Qt notifications on Linux if Qt is available.")
 
 # Import our modules
 try:
@@ -112,12 +112,15 @@ def show_notification(success, message, force=False, profile_name=None, profile_
     # Attempt Linux native notification first
     if sys.platform.startswith('linux') and NATIVE_NOTIFY_AVAILABLE:
         try:
-            notification = notify_py.Notify()
+            notification = notifypy.Notify()
             notification.title = title
             notification.message = clean_message
+            notification.application_name = "SaveState"
             if notification_icon:
                 notification.icon = notification_icon
-            notification.send(block=False) # Send non-blocking
+            # Wait for the result, so a failed send falls back to the Qt notification below
+            if not notification.send(block=True):
+                raise RuntimeError("the notification was not delivered")
             log_level = logging.INFO if success else logging.ERROR
             logging.log(log_level, f"BACKUP RESULT (Native Linux Notification): {title} - {clean_message}")
             logging.debug("<<< Exiting show_notification after native Linux notification >>>")
