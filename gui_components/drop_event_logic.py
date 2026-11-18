@@ -10,7 +10,7 @@ from common.launcher_urls import get_steam_app_id, is_steam_url
 
 from PySide6.QtWidgets import QMessageBox, QApplication, QDialog  # Import QApplication and QDialog
 from PySide6.QtGui import QDropEvent, QGuiApplication
-from PySide6.QtCore import Qt  # Import Qt
+from PySide6.QtCore import Qt, QPropertyAnimation, QAbstractAnimation  # Import Qt
 from dialogs.emulator_selection_dialog import EmulatorGameSelectionDialog
 from dialogs.retroarch_dialog import RetroArchCoreSelectionDialog
 from gui.gui_utils import DetectionWorkerThread  # Import DetectionWorkerThread
@@ -992,6 +992,7 @@ class DropEventMixin:
 
         elif is_linux_executable: # Already checked it's not a .desktop and is a file
             logging.debug(f"PCM.dropEvent (Fallback): Detected Linux executable: {file_path}")
+            target_path = file_path # L'eseguibile stesso, come per .url e cartelle
             # Prepara il nome del gioco suggerito, pulendolo per ottenere un risultato migliore
             # specialmente per i collegamenti .url (es. "Alan Wake 2.url" -> "Alan Wake 2")
             profile_name = sanitize_profile_name(Path(file_path).stem)
@@ -1309,6 +1310,12 @@ class DropEventMixin:
         # --- Start Fade/Animation Effect ---
         try:
             if hasattr(mw, 'overlay_widget') and mw.overlay_widget:
+                # Il drop ha appena avviato il fade-out dell'overlay "Drop Here".
+                # Se è ancora visibile lo fermiamo: l'overlay resta e passa a
+                # "Searching..." senza tornare a opacità 0 (niente lampeggio).
+                overlay_still_visible = mw.overlay_widget.isVisible()
+                if overlay_still_visible and getattr(mw, 'fade_out_animation', None):
+                    mw.fade_out_animation.stop()
                 mw.overlay_widget.resize(mw.centralWidget().size())
                 # Utilizziamo lo stesso approccio del metodo start_steam_configuration
                 # che funziona correttamente con il fade effect
@@ -1333,7 +1340,16 @@ class DropEventMixin:
                 
                 if hasattr(mw, 'fade_in_animation') and mw.fade_in_animation:
                     mw.fade_in_animation.stop() # Stop if already running
-                    mw.fade_in_animation.start() # Start the animation
+                    if overlay_still_visible:
+                        # Sale dall'opacità attuale fino a 1, con durata e curva del
+                        # fade-in (senza valore iniziale parte dall'opacità attuale).
+                        fade_up = QPropertyAnimation(mw.overlay_opacity_effect, b"opacity", mw)
+                        fade_up.setDuration(mw.fade_in_animation.duration())
+                        fade_up.setEasingCurve(mw.fade_in_animation.easingCurve())
+                        fade_up.setEndValue(1.0)
+                        fade_up.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
+                    else:
+                        mw.fade_in_animation.start() # Start the animation
                     logging.debug("Fade-in animation started for overlay in dropEvent.")
                 
                 # L'overlay rimarrà visibile fino al completamento della ricerca

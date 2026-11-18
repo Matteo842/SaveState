@@ -1655,6 +1655,16 @@ class MainWindow(QMainWindow):
                 
             self.request_show_overlay.emit() # Request to show the "Drop Here" overlay
             event.acceptProposedAction() # Accept the drag operation
+
+            # Windows: il drop di file locali importa winshell/pythoncom (servono per i .lnk).
+            # Li carichiamo ora, mentre l'utente sta ancora trascinando: così il primo drop
+            # dopo l'avvio non paga ~50-130 ms di import. Le volte successive costa ~0.
+            if platform.system() == "Windows" and any(url.isLocalFile() for url in event.mimeData().urls()):
+                try:
+                    import winshell  # noqa: F401
+                    import pythoncom  # noqa: F401
+                except Exception:
+                    pass  # Se mancano, sarà il drop a mostrare l'errore, come prima
         else:
             logging.debug("MainWindow.dragEnterEvent: Invalid data type. Ignoring event.")
             event.ignore() # Ignore if not carrying URLs/Text
