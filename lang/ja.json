@@ -1475,5 +1475,10 @@
   "Automatic": "自動",
   "System language: {0}": "システムの言語: {0}",
   "Unable to save the language setting.": "言語の設定を保存できません。",
-  "The new language will be used the next time SaveState starts.": "新しい言語は次回 SaveState を起動したときに使用されます。"
+  "The new language will be used the next time SaveState starts.": "新しい言語は次回 SaveState を起動したときに使用されます。",
+  "Upload to Cloud": "クラウドにアップロード",
+  "Upload the local backups of the selected profiles to the connected cloud": "選択したプロファイルのローカルバックアップを接続中のクラウドにアップロードします",
+  "Cloud upload started...": "クラウドへのアップロードを開始しました...",
+  "No Backups": "バックアップなし",
+  "No local backups found for the selected profiles.": "選択したプロファイルのローカルバックアップが見つかりません。"
 }

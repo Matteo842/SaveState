@@ -2723,6 +2723,9 @@ class MainWindow(QMainWindow):
                     menu.addAction(act_ungroup)
                     menu.addSeparator()
                     menu.addAction(act_note)
+                    act_upload_cloud = self._make_upload_to_cloud_action()
+                    if act_upload_cloud:
+                        menu.addAction(act_upload_cloud)
                     menu.addSeparator()
                     menu.addAction(act_shortcut)
                     
@@ -2785,6 +2788,9 @@ class MainWindow(QMainWindow):
                     menu.addAction(act_edit)
                     menu.addSeparator()
                     menu.addAction(act_note)
+                    act_upload_cloud = self._make_upload_to_cloud_action()
+                    if act_upload_cloud:
+                        menu.addAction(act_upload_cloud)
                     menu.addSeparator()
                     
                     # Add "Create Group" option when multiple profiles are selected
@@ -2832,6 +2838,42 @@ class MainWindow(QMainWindow):
                 menu.exec(global_pos)
         except Exception as e:
             logging.error(f"Error handling profile table context menu: {e}")
+
+    def _make_upload_to_cloud_action(self):
+        """Return the "Upload to Cloud" menu action, or None if no cloud is connected."""
+        panel = getattr(self, 'cloud_panel', None)
+        try:
+            if panel is None or not panel.is_cloud_connected():
+                return None
+        except Exception as e:
+            logging.debug(f"Cloud connection check failed: {e}")
+            return None
+        act = QAction(tr("Upload to Cloud"), self)
+        act.setToolTip(tr("Upload the local backups of the selected profiles to the connected cloud"))
+        try:
+            cloud_icon_path = resource_path("icons/cloud.png")
+            if os.path.exists(cloud_icon_path):
+                act.setIcon(QIcon(cloud_icon_path))
+        except Exception:
+            pass
+        act.triggered.connect(self._on_upload_to_cloud_from_menu)
+        return act
+
+    def _on_upload_to_cloud_from_menu(self):
+        """Upload the selected profiles' backups using the cloud panel flow."""
+        try:
+            names = self.profile_table_manager.get_selected_profile_names()
+            if not names:
+                return
+            started = self.cloud_panel.upload_profiles(
+                names,
+                self.profiles,
+                self.current_settings.get("backup_base_dir", ""),
+            )
+            if started:
+                self.status_label.setText(tr("Cloud upload started..."))
+        except Exception as e:
+            logging.error(f"Error starting cloud upload from context menu: {e}")
 
     def show_profile_editor(self, profile_name):
         """Show inline editor for the given profile, replacing the profiles UI."""

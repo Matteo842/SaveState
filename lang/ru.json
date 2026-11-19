@@ -1475,5 +1475,10 @@
   "Automatic": "Автоматически",
   "System language: {0}": "Язык системы: {0}",
   "Unable to save the language setting.": "Не удалось сохранить настройку языка.",
-  "The new language will be used the next time SaveState starts.": "Новый язык будет применён при следующем запуске SaveState."
+  "The new language will be used the next time SaveState starts.": "Новый язык будет применён при следующем запуске SaveState.",
+  "Upload to Cloud": "Загрузить в облако",
+  "Upload the local backups of the selected profiles to the connected cloud": "Загрузить локальные копии выбранных профилей в подключённое облако",
+  "Cloud upload started...": "Загрузка в облако начата...",
+  "No Backups": "Нет копий",
+  "No local backups found for the selected profiles.": "Локальные копии для выбранных профилей не найдены."
 }

@@ -1475,5 +1475,10 @@
   "Automatic": "Automatique",
   "System language: {0}": "Langue du système : {0}",
   "Unable to save the language setting.": "Impossible d'enregistrer le réglage de la langue.",
-  "The new language will be used the next time SaveState starts.": "La nouvelle langue sera utilisée au prochain démarrage de SaveState."
+  "The new language will be used the next time SaveState starts.": "La nouvelle langue sera utilisée au prochain démarrage de SaveState.",
+  "Upload to Cloud": "Envoyer vers le cloud",
+  "Upload the local backups of the selected profiles to the connected cloud": "Envoyer les sauvegardes locales des profils sélectionnés vers le cloud connecté",
+  "Cloud upload started...": "Envoi vers le cloud démarré...",
+  "No Backups": "Aucune sauvegarde",
+  "No local backups found for the selected profiles.": "Aucune sauvegarde locale trouvée pour les profils sélectionnés."
 }

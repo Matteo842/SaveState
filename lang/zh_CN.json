@@ -1475,5 +1475,10 @@
   "Automatic": "自动",
   "System language: {0}": "系统语言：{0}",
   "Unable to save the language setting.": "无法保存语言设置。",
-  "The new language will be used the next time SaveState starts.": "新语言将在下次启动 SaveState 时生效。"
+  "The new language will be used the next time SaveState starts.": "新语言将在下次启动 SaveState 时生效。",
+  "Upload to Cloud": "上传到云端",
+  "Upload the local backups of the selected profiles to the connected cloud": "将所选配置文件的本地备份上传到已连接的云端",
+  "Cloud upload started...": "已开始上传到云端...",
+  "No Backups": "无备份",
+  "No local backups found for the selected profiles.": "未找到所选配置文件的本地备份。"
 }

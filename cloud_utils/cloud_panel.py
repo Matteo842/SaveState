@@ -3434,8 +3434,47 @@ class CloudSavePanel(QWidget):
         if self.refresh_search_stack.currentIndex() == 0:
             self.refresh_button.setEnabled(True)
     
+    def is_cloud_connected(self):
+        """Public check used by the main window (e.g. profile context menu)."""
+        return self._is_any_provider_connected()
+
+    def upload_profiles(self, profile_names, profiles, backup_base_dir):
+        """Upload the local backups of the given profiles (groups are expanded).
+
+        Used by the "Upload to Cloud" entry of the main profile context menu.
+        Reuses the same flow as the Upload button of this panel.
+
+        Returns True if the upload was started, False otherwise.
+        """
+        if backup_base_dir:
+            self.backup_base_dir = backup_base_dir
+        folders = []
+        for name in profile_names or []:
+            if is_group_profile(profiles.get(name)):
+                members = get_group_member_profiles(name, profiles)
+            else:
+                members = [name]
+            for member in members:
+                folder = get_backup_folder_name(member, profiles.get(member))
+                if folder in folders:
+                    continue
+                if os.path.isdir(os.path.join(self.backup_base_dir, folder)):
+                    folders.append(folder)
+        if not folders:
+            QMessageBox.warning(
+                self,
+                tr("No Backups"),
+                tr("No local backups found for the selected profiles.")
+            )
+            return False
+        return self._upload_backups(folders)
+
     def _on_upload_clicked(self):
         """Handle upload selected backups to cloud."""
+        self._upload_backups(self._get_selected_backups())
+
+    def _upload_backups(self, selected):
+        """Upload the given backup folder names. Returns True if started."""
         # Check if there's already an operation in progress
         if self._current_worker is not None or getattr(self, '_current_operation', None) == 'storage_check':
             QMessageBox.warning(
@@ -3443,22 +3482,21 @@ class CloudSavePanel(QWidget):
                 tr("Operation in Progress"), 
                 tr("Please wait for the current operation to complete before starting a new one.")
             )
-            return
+            return False
         
-        selected = self._get_selected_backups()
         if not selected:
             QMessageBox.warning(self, tr("No Selection"), tr("Please select backups to upload."))
-            return
+            return False
         
         # Get active provider
         active_provider = self._get_active_provider()
         if not active_provider:
             QMessageBox.warning(self, tr("No Provider"), tr("No storage provider is selected."))
-            return
+            return False
             
         if not active_provider.is_connected:
             QMessageBox.warning(self, tr("Not Connected"), tr("Please connect to the storage provider first."))
-            return
+            return False
 
         # Disable buttons immediately and show cancel button
         self._disable_buttons_during_operation()
@@ -3498,7 +3536,7 @@ class CloudSavePanel(QWidget):
                 self._storage_check_worker.finished.connect(self._storage_check_worker.deleteLater)
                 self._storage_check_thread.finished.connect(self._storage_check_thread.deleteLater)
                 self._storage_check_thread.start()
-                return  # Continue after check completes
+                return True  # Continue after check completes
             except Exception as e:
                 logging.error(f"Could not start storage check worker: {e}")
                 # Fall through to start upload (but first reset UI state slightly to allow start_upload to handle it)
@@ -3506,6 +3544,7 @@ class CloudSavePanel(QWidget):
         
         # No storage limit enabled or check failed to start; start upload immediately
         self._start_upload_selected(selected)
+        return True
     
     def _on_storage_check_finished(self, within_limit: bool, current_gb: float, max_gb: int):
         """Handle completion of background storage limit check."""
