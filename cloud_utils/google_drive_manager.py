@@ -168,6 +168,11 @@ class GoogleDriveManager:
         self._legacy_token_file = self.base_dir / "token.pickle"
         self.last_auth_error = ""
         self._auth_lock = threading.Lock()
+        # The Drive service shares one HTTP connection, which is not
+        # thread-safe. Background workers (status refresh, storage check,
+        # upload...) must send their requests one at a time, otherwise the
+        # SSL socket gets corrupted (SSLError, then a 60s TimeoutError).
+        self._request_lock = threading.RLock()
         self._manual_callback_urls: queue.Queue[str] = queue.Queue()
         self._oauth_callback_port: Optional[int] = None
         self._oauth_expected_state: Optional[str] = None
@@ -1082,10 +1087,11 @@ class GoogleDriveManager:
                 'parents': [parent_id]
             }
             
-            folder = self.service.files().create(
-                body=file_metadata,
-                fields='id'
-            ).execute()
+            with self._request_lock:
+                folder = self.service.files().create(
+                    body=file_metadata,
+                    fields='id'
+                ).execute()
             
             return folder.get('id')
             
@@ -1240,7 +1246,8 @@ class GoogleDriveManager:
         last_exc = None
         for attempt in range(self._max_retries):
             try:
-                return func()
+                with self._request_lock:
+                    return func()
             except HttpError as e:
                 if self._should_retry_http_error(e):
                     self._sleep_with_backoff(attempt, description)
@@ -1336,7 +1343,8 @@ class GoogleDriveManager:
                     return False
                 
                 try:
-                    status, response = request.next_chunk()
+                    with self._request_lock:
+                        status, response = request.next_chunk()
                 except HttpError as e:
                     if self._should_retry_http_error(e) and attempt < self._max_retries:
                         self._sleep_with_backoff(attempt, "upload chunk")
@@ -1407,7 +1415,8 @@ class GoogleDriveManager:
                     return False
                 
                 try:
-                    status, response = request.next_chunk()
+                    with self._request_lock:
+                        status, response = request.next_chunk()
                 except HttpError as e:
                     if self._should_retry_http_error(e) and attempt < self._max_retries:
                         self._sleep_with_backoff(attempt, "update chunk")
@@ -1496,7 +1505,8 @@ class GoogleDriveManager:
                     return False
                 
                 try:
-                    status, done = downloader.next_chunk()
+                    with self._request_lock:
+                        status, done = downloader.next_chunk()
                 except HttpError as e:
                     if self._should_retry_http_error(e) and attempt < self._max_retries:
                         self._sleep_with_backoff(attempt, "download chunk")
@@ -1679,7 +1689,8 @@ class GoogleDriveManager:
                 file_name = file_to_delete['name']
                 
                 try:
-                    self.service.files().delete(fileId=file_id).execute()
+                    with self._request_lock:
+                        self.service.files().delete(fileId=file_id).execute()
                     logging.info(f"Deleted old backup: {file_name}")
                 except Exception as e:
                     logging.error(f"Failed to delete {file_name}: {e}")
