@@ -1306,6 +1306,22 @@ class GoogleDriveManager:
                 logging.error(f"Error listing files in folder: {e}")
             return []
     
+    def _transfer_chunk_size(self, total_size: int) -> int:
+        """Chunk size in bytes for Drive uploads and downloads.
+
+        Each chunk is one request, and the progress bar moves once per chunk.
+        The library default (100 MB) sends most saves in a single request, so
+        the bar jumped from 0 to 100%. Aim for about 20 steps, between 1 MB
+        and 8 MB. Drive needs a multiple of 256 KB.
+        """
+        mb = 1024 * 1024
+        if self.bandwidth_limit_mbps:
+            return mb  # small chunks for accurate throttling
+        unit = 256 * 1024
+        target = max(int(total_size or 0) // 20, 1)
+        size = ((target + unit - 1) // unit) * unit
+        return min(max(size, mb), 8 * mb)
+
     def _upload_file(self, file_path: str, filename: str, parent_id: str) -> bool:
         """Upload a file to Google Drive."""
         try:
@@ -1314,13 +1330,10 @@ class GoogleDriveManager:
                 'parents': [parent_id]
             }
             
-            # Choose chunk size to improve throttling granularity (multiple of 256KB)
-            chunk_size = 1024 * 1024 if self.bandwidth_limit_mbps else None
-            if chunk_size is not None:
-                media = MediaFileUpload(file_path, resumable=True, chunksize=chunk_size)
-            else:
-                media = MediaFileUpload(file_path, resumable=True)
-            
+            # Small chunks so progress and throttling work (see _transfer_chunk_size)
+            chunk_size = self._transfer_chunk_size(os.path.getsize(file_path))
+            media = MediaFileUpload(file_path, resumable=True, chunksize=chunk_size)
+
             request = self.service.files().create(
                 body=file_metadata,
                 media_body=media,
@@ -1388,12 +1401,10 @@ class GoogleDriveManager:
     def _update_file(self, file_id: str, file_path: str) -> bool:
         """Update an existing file in Google Drive."""
         try:
-            chunk_size = 1024 * 1024 if self.bandwidth_limit_mbps else None
-            if chunk_size is not None:
-                media = MediaFileUpload(file_path, resumable=True, chunksize=chunk_size)
-            else:
-                media = MediaFileUpload(file_path, resumable=True)
-            
+            # Small chunks so progress and throttling work (see _transfer_chunk_size)
+            chunk_size = self._transfer_chunk_size(os.path.getsize(file_path))
+            media = MediaFileUpload(file_path, resumable=True, chunksize=chunk_size)
+
             request = self.service.files().update(
                 fileId=file_id,
                 media_body=media
@@ -1472,15 +1483,9 @@ class GoogleDriveManager:
             except Exception:
                 total_size = 0
 
-            # Determine chunk size to match upload behavior
-            # If bandwidth limit is enabled, use 1MB chunks for better throttling granularity
-            # If disabled (None), use default chunk size (usually 100MB+) for max speed
-            chunk_size = 1024 * 1024 if self.bandwidth_limit_mbps else None
-            
-            if chunk_size:
-                downloader = MediaIoBaseDownload(fh, request, chunksize=chunk_size)
-            else:
-                downloader = MediaIoBaseDownload(fh, request)
+            # Same chunk size rule as uploads (see _transfer_chunk_size)
+            chunk_size = self._transfer_chunk_size(total_size)
+            downloader = MediaIoBaseDownload(fh, request, chunksize=chunk_size)
             
             if self.chunk_callback:
                 self.chunk_callback(0, total_size)
