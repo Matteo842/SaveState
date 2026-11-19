@@ -17,14 +17,16 @@ except ImportError as e_qt:
      QT_AVAILABLE = False
      logging.error(f"PySide6 not found, unable to show GUI notifications: {e_qt}")
 
-# Try to import notifypy (PyPI package "notify-py") for native Linux notifications
-try:
-    import notifypy  # type: ignore[import-untyped]
-    NATIVE_NOTIFY_AVAILABLE = True
-    logging.info("notifypy imported successfully. Native Linux notifications are available.")
-except ImportError:
-    NATIVE_NOTIFY_AVAILABLE = False
-    logging.info("notifypy not found. Native Linux notifications will not be used. Will fallback to Qt notifications on Linux if Qt is available.")
+# Try to import notifypy (PyPI package "notify-py") for native Linux notifications.
+# Only on Linux: other systems never use it, so they skip the import time.
+NATIVE_NOTIFY_AVAILABLE = False
+if sys.platform.startswith('linux'):
+    try:
+        import notifypy  # type: ignore[import-untyped]
+        NATIVE_NOTIFY_AVAILABLE = True
+        logging.info("notifypy imported successfully. Native Linux notifications are available.")
+    except ImportError:
+        logging.info("notifypy not found. Native Linux notifications will not be used. Will fallback to Qt notifications on Linux if Qt is available.")
 
 # Import our modules
 try:
