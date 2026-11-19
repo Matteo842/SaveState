@@ -1227,6 +1227,11 @@ class MainWindow(QMainWindow):
         )
         self.cloud_panel.setVisible(False)
         content_layout.addWidget(self.cloud_panel, stretch=1)
+        # Manual cloud upload: progress bar on the profile rows, actions locked
+        self._cloud_upload_profiles = []
+        self.cloud_panel.upload_started.connect(self._on_cloud_upload_started)
+        self.cloud_panel.upload_progress.connect(self._on_cloud_upload_progress)
+        self.cloud_panel.upload_ended.connect(self._on_cloud_upload_ended)
         # --- End Inline Cloud Save Panel ---
 
         actions_group = QGroupBox(tr("Actions"))
@@ -2097,6 +2102,46 @@ class MainWindow(QMainWindow):
             self.cloud_button.setEnabled(True)
         if hasattr(self, 'open_backup_dir_button'):
             self.open_backup_dir_button.setEnabled(has_profiles)
+        self._lock_actions_during_cloud_upload()
+
+    def _lock_actions_during_cloud_upload(self):
+        """While a cloud upload runs, keep Backup / Restore / Manage disabled."""
+        if getattr(self, '_cloud_upload_profiles', None):
+            self.backup_button.setEnabled(False)
+            self.restore_button.setEnabled(False)
+            self.manage_backups_button.setEnabled(False)
+
+    def _on_cloud_upload_started(self, folder_names):
+        """Map the uploaded backup folders to profile rows and lock the actions."""
+        folders = set(folder_names or [])
+        names = []
+        for name, data in self.profiles.items():
+            if core_logic.is_group_profile(data):
+                members = core_logic.get_group_member_profiles(name, self.profiles)
+                if any(core_logic.get_backup_folder_name(m, self.profiles.get(m)) in folders
+                       for m in members):
+                    names.append(name)
+            elif core_logic.get_backup_folder_name(name, data) in folders:
+                names.append(name)
+        # Keep the lock even if no row matches (e.g. backup without a profile)
+        self._cloud_upload_profiles = names or [None]
+        self._on_cloud_upload_progress(0.0)
+        self.update_action_button_states()
+
+    def _on_cloud_upload_progress(self, fraction):
+        delegate = getattr(self.profile_table_manager, 'delegate', None)
+        if delegate is None or not self._cloud_upload_profiles:
+            return
+        delegate.set_upload_progress(self._cloud_upload_profiles, fraction)
+        self.profile_table_widget.viewport().update()
+
+    def _on_cloud_upload_ended(self):
+        self._cloud_upload_profiles = []
+        delegate = getattr(self.profile_table_manager, 'delegate', None)
+        if delegate is not None:
+            delegate.set_upload_progress([])
+            self.profile_table_widget.viewport().update()
+        self.update_action_button_states()
 
     @Slot(str)
     def _on_main_search_text_changed(self, text):
@@ -2231,6 +2276,7 @@ class MainWindow(QMainWindow):
         # Restore button is always enabled - can restore from ZIP without a profile
         self.restore_button.setEnabled(enabled)
         self.manage_backups_button.setEnabled(enabled and has_selection)
+        self._lock_actions_during_cloud_upload()
         # create_shortcut_button removed - functionality available in context menu
         self.new_profile_button.setEnabled(enabled)
         self.steam_button.setEnabled(enabled)
@@ -2857,6 +2903,7 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         act.triggered.connect(self._on_upload_to_cloud_from_menu)
+        act.setEnabled(not self._cloud_upload_profiles)
         return act
 
     def _on_upload_to_cloud_from_menu(self):

@@ -451,6 +451,45 @@ class ProfileSelectionDelegate(QStyledItemDelegate):
         self._is_dark_mode = is_dark_mode
         self._table_widget = table_widget  # Reference to check selection count
     
+        # Cloud upload progress: profile names whose row shows the bar, 0.0-1.0
+        self._upload_profiles = set()
+        self._upload_fraction = 0.0
+
+    def set_upload_progress(self, profile_names, fraction=0.0):
+        """Show an upload progress bar on these rows (empty = hide it).
+        Call parent().viewport().update() after."""
+        self._upload_profiles = set(profile_names or [])
+        self._upload_fraction = min(max(float(fraction), 0.0), 1.0)
+
+    def _paint_upload_bar(self, painter, option, index):
+        """Draw the upload progress bar along the bottom of the row."""
+        name_index = index.sibling(index.row(), 1)
+        if name_index.data(Qt.ItemDataRole.UserRole) not in self._upload_profiles:
+            return
+        table = self._table_widget
+        if table is None:
+            return
+        last_col = table.columnCount() - 1
+        row_left = table.columnViewportPosition(0)
+        row_right = table.columnViewportPosition(last_col) + table.columnWidth(last_col)
+        fill_right = row_left + int((row_right - row_left) * self._upload_fraction)
+
+        if self._is_dark_mode:
+            track_color = QColor("#444444")
+            fill_color = QColor("#A10808")   # same red as the selection line
+        else:
+            track_color = QColor("#C7CBE8")
+            fill_color = QColor("#4F46E5")   # same indigo as the selection line
+
+        bar_height = 4
+        y = option.rect.y() + option.rect.height() - bar_height
+        cell_left = option.rect.x()
+        cell_right = option.rect.x() + option.rect.width()
+        painter.fillRect(cell_left, y, cell_right - cell_left, bar_height, track_color)
+        fill_end = min(fill_right, cell_right)
+        if fill_end > cell_left:
+            painter.fillRect(cell_left, y, fill_end - cell_left, bar_height, fill_color)
+
     def set_dark_mode(self, is_dark: bool):
         """Update the delegate's theme mode. Call parent().viewport().update() after."""
         self._is_dark_mode = is_dark
@@ -528,6 +567,9 @@ class ProfileSelectionDelegate(QStyledItemDelegate):
             # Standard unselected painting
             super().paint(painter, option, index)
             
+        if self._upload_profiles:
+            self._paint_upload_bar(painter, option, index)
+
         painter.restore()
 
 

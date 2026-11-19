@@ -138,6 +138,7 @@ class UploadWorker(QObject):
     """Worker thread for uploading backups to avoid blocking UI."""
     progress = Signal(int, int, str)  # current, total, message
     progress_detailed = Signal(int, int, str)  # bytes_current, bytes_total, message
+    overall_progress = Signal(float)  # whole operation, 0.0 to 1.0
     finished = Signal(int, int)  # success_count, total_count
     summary_ready = Signal(dict)  # aggregated stats for UI messaging
     cancelled = Signal()  # Emitted when operation is cancelled
@@ -151,12 +152,28 @@ class UploadWorker(QObject):
         self.latest_only = bool(latest_only)
         self._cancelled = False
         self._current_file_msg = ""
+        # Position used to compute overall_progress:
+        # profile N of M, file n of m inside that profile.
+        self._profile_idx = 0
+        self._file_idx = 0
+        self._file_total = 1
+
+    def _emit_overall_progress(self, file_fraction=0.0):
+        total = max(len(self.backup_list), 1)
+        file_part = (max(self._file_idx - 1, 0) + file_fraction) / max(self._file_total, 1)
+        value = (max(self._profile_idx - 1, 0) + min(file_part, 1.0)) / total
+        self.overall_progress.emit(min(max(value, 0.0), 1.0))
 
     def _on_file_progress(self, idx, total, message):
         self._current_file_msg = message
+        self._file_idx = idx
+        self._file_total = total
+        self._emit_overall_progress()
         self.progress.emit(idx, total, message)
 
     def _on_chunk_progress(self, current_bytes, total_bytes):
+        if total_bytes > 0:
+            self._emit_overall_progress(current_bytes / total_bytes)
         if self._current_file_msg:
             self.progress_detailed.emit(current_bytes, total_bytes, self._current_file_msg)
     
@@ -190,6 +207,10 @@ class UploadWorker(QObject):
                 
                 # Set initial message via progress signal (callbacks handle detailed updates)
                 self._current_file_msg = f"Uploading {backup_name} ({idx}/{total})"
+                self._profile_idx = idx
+                self._file_idx = 0
+                self._file_total = 1
+                self._emit_overall_progress()
                 self.progress.emit(idx, total, self._current_file_msg)
                 
                 backup_path = os.path.join(self.backup_base_dir, backup_name)
@@ -720,6 +741,10 @@ class CloudSavePanel(QWidget):
     # Signals
     sync_requested = Signal(list)  # Emitted when user wants to sync selected backups
     download_requested = Signal(str)  # Emitted when user wants to download a backup
+    # Manual upload (Upload button or main context menu), used by the main window
+    upload_started = Signal(list)  # backup folder names being uploaded
+    upload_progress = Signal(float)  # 0.0 to 1.0
+    upload_ended = Signal()
     
     def __init__(self, backup_base_dir, profiles, parent=None):
         """
@@ -1755,6 +1780,12 @@ class CloudSavePanel(QWidget):
         # Update all button states based on current selection
         self._update_action_buttons_state()
     
+        # Every way a manual upload can end (done, cancelled, storage limit,
+        # error) passes through here, so this is where the main window is told.
+        if getattr(self, '_manual_upload_active', False):
+            self._manual_upload_active = False
+            self.upload_ended.emit()
+
     def _on_delete_or_cancel_clicked(self):
         """Handle delete button click - acts as delete or cancel depending on mode."""
         # Check if we're in cancel mode (operation in progress)
@@ -3498,6 +3529,9 @@ class CloudSavePanel(QWidget):
             QMessageBox.warning(self, tr("Not Connected"), tr("Please connect to the storage provider first."))
             return False
 
+        self._manual_upload_active = True
+        self.upload_started.emit(list(selected))
+
         # Disable buttons immediately and show cancel button
         self._disable_buttons_during_operation()
         self._set_delete_button_to_cancel_mode()
@@ -3707,6 +3741,7 @@ class CloudSavePanel(QWidget):
         self.upload_thread.started.connect(self.upload_worker.run)
         self.upload_worker.progress.connect(self._on_upload_progress)
         self.upload_worker.progress_detailed.connect(self._on_detailed_progress)
+        self.upload_worker.overall_progress.connect(self.upload_progress)
         self.upload_worker.summary_ready.connect(self._on_upload_summary)
         self.upload_worker.cancelled.connect(self._on_upload_cancelled)
         self.upload_worker.finished.connect(self._on_upload_finished)
