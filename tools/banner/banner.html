@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<!--
+  README hero banner for SaveState.
+  Render with tools/banner/render.py (headless Chrome) -> images/banner.png
+  Canvas: 1200x600 CSS px, rendered at 2x.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --paper: #f1f0eb;
+    --ink: #1d1b1a;
+    --muted: #5d5955;
+    --red: #d8322a;
+    --red-dark: #a10808;
+    --app-bg: #2d2d2d;
+    --app-title: #0d0d0d;
+    --app-hdr: #1e1e1e;
+    --app-row: #3c3c3c;
+    --app-row-sep: #333333;
+    --app-col: #4a4a4a;
+    --app-btn: #222222;
+    --app-text: #e9e9e9;
+    --green: #27ae60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1200px; height: 600px; overflow: hidden; }
+  body {
+    font-family: "Inter", "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+    position: relative;
+  }
+
+  /* ---------- background ---------- */
+  .bg-glow {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(520px 380px at 900px 300px, rgba(216, 50, 42, 0.16), transparent 70%),
+      radial-gradient(600px 400px at 0px 0px, rgba(255, 255, 255, 0.7), transparent 70%);
+  }
+  .bg-grid {
+    position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(29, 27, 26, 0.10) 1px, transparent 1.4px);
+    background-size: 22px 22px;
+    -webkit-mask-image: linear-gradient(100deg, transparent 0%, transparent 45%, #000 75%);
+            mask-image: linear-gradient(100deg, transparent 0%, transparent 45%, #000 75%);
+  }
+
+  /* ---------- left column ---------- */
+  .left { position: absolute; left: 60px; top: 50px; width: 520px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand img {
+    width: 58px; height: 58px; border-radius: 14px;
+    box-shadow: 0 2px 0 rgba(0,0,0,0.08), 0 6px 16px rgba(0,0,0,0.12);
+  }
+  .brand span {
+    font-family: "Bahnschrift", "Segoe UI", sans-serif;
+    font-size: 26px; font-weight: 600; letter-spacing: 0.5px;
+  }
+  h1 {
+    margin-top: 42px;
+    font-family: "Bahnschrift", "Segoe UI", sans-serif;
+    font-weight: 700;
+    font-size: 60px; line-height: 1.02; letter-spacing: -1px;
+  }
+  h1 em { font-style: normal; color: var(--red); }
+  .sub {
+    margin-top: 22px; width: 440px;
+    font-size: 16.5px; line-height: 1.6; color: var(--muted);
+  }
+  .sub b { color: var(--ink); font-weight: 600; }
+  .pills { margin-top: 26px; display: flex; gap: 8px; }
+  .pill {
+    font-size: 13.5px; font-weight: 500;
+    padding: 7px 14px; border-radius: 999px;
+    background: rgba(255,255,255,0.75);
+    border: 1px solid rgba(29,27,26,0.14);
+  }
+  .platforms {
+    position: absolute; left: 60px; bottom: 44px;
+    font-size: 13.5px; color: var(--muted); letter-spacing: 0.3px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .platforms .dot { width: 4px; height: 4px; border-radius: 50%; background: #b3aea8; }
+
+  /* ---------- app window mockup (native 900x750, scaled) ---------- */
+  .window-wrap {
+    position: absolute; left: 598px; top: 58px;
+    width: 900px; height: 590px;
+    transform: scale(0.64); transform-origin: 0 0;
+  }
+  .window {
+    width: 900px; height: 590px;
+    background: var(--app-bg);
+    border-radius: 14px; overflow: hidden;
+    font-family: "Segoe UI", sans-serif; color: var(--app-text);
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,0.5),
+      0 30px 60px -10px rgba(40, 10, 10, 0.45),
+      0 12px 24px rgba(0,0,0,0.25);
+    position: relative;
+  }
+  .titlebar {
+    height: 44px; background: var(--app-title);
+    display: flex; align-items: center; padding: 0 16px;
+  }
+  .titlebar .title { font-weight: 700; font-size: 23px; letter-spacing: 0.2px; }
+  .titlebar .icons { margin-left: auto; display: flex; align-items: center; gap: 22px; }
+  .titlebar .icons img { width: 24px; height: 24px; }
+  .titlebar .icons .gear { width: 26px; height: 26px; margin-left: 28px; }
+  .titlebar .wc { color: #555; font-size: 22px; width: 18px; text-align: center; }
+
+  fieldset {
+    border: 1px solid #3f3f3f; border-radius: 4px;
+    position: absolute;
+  }
+  legend {
+    color: #c01414; font-weight: 700; font-size: 17px;
+    padding: 0 4px; margin-left: 14px;
+  }
+  .g-profiles { left: 15px; top: 60px; width: 870px; height: 408px; }
+  .g-actions  { left: 15px; top: 482px; width: 870px; height: 98px; }
+  .g-general  { left: 15px; top: 592px; width: 640px; height: 82px; }
+  .g-cloud    { left: 673px; top: 592px; width: 212px; height: 82px; }
+
+  table.profiles {
+    position: absolute; left: 18px; top: 22px; width: 812px;
+    border-collapse: collapse; font-size: 16px;
+  }
+  .profiles th {
+    background: var(--app-hdr); height: 44px; font-weight: 700;
+    border-bottom: 2px solid #6b1111;
+  }
+  .profiles td {
+    background: var(--app-row); height: 45px;
+    border-bottom: 1px solid var(--app-row-sep);
+    white-space: nowrap;
+  }
+  .profiles td.star { width: 42px; text-align: center; background: var(--app-row); border-right: 1px solid #333; }
+  .profiles td.star img { width: 18px; height: 18px; vertical-align: middle; }
+  .profiles td.name { padding-left: 10px; width: 420px; }
+  .profiles td.name .ico {
+    display: inline-block; width: 18px; height: 18px; margin-right: 9px;
+    vertical-align: -3px; border-radius: 3px;
+  }
+  .profiles td.info { text-align: right; padding-right: 10px; border-left: 1px solid #333; }
+  .profiles td.act { width: 56px; text-align: center; border-left: 1px solid #333; }
+  .profiles td.act img { width: 20px; height: 20px; vertical-align: middle; opacity: 0.9; }
+  .profiles tr.sel td { background: #262626; border-bottom: 2px solid #a10808; }
+  .scrollbar {
+    position: absolute; right: 16px; top: 30px; width: 12px; height: 110px;
+    border-radius: 6px; background: #4a4a4a; border: 2px solid #8a1010;
+  }
+
+  .actions { position: absolute; left: 32px; top: 512px; display: flex; gap: 26px; }
+  .bigbtn {
+    width: 251px; height: 50px; background: var(--app-btn);
+    border: 1px solid #555; border-radius: 4px;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    font-size: 20px; font-weight: 700;
+  }
+  .bigbtn img { width: 24px; height: 24px; }
+  .bigbtn.backup { color: #3498db; position: relative; }
+  .bigbtn.backup .plus { position: absolute; right: 14px; color: #bbb; font-weight: 400; }
+  .bigbtn.restore { color: var(--green); }
+  .general { position: absolute; left: 30px; top: 616px; display: flex; gap: 8px; }
+  .smallbtn {
+    height: 40px; padding: 0 14px; background: #3e3e3e;
+    border: 1px solid #555; border-radius: 4px;
+    display: flex; align-items: center; gap: 4px; font-size: 16px;
+  }
+  .smallbtn img { width: 20px; height: 20px; }
+  .cloudbtn { position: absolute; left: 688px; top: 616px; width: 182px; justify-content: center; }
+
+  /* ---------- floating cards ---------- */
+  .card {
+    position: absolute; background: #fff; border-radius: 12px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.06), 0 18px 40px -8px rgba(0,0,0,0.28);
+    font-family: "Inter", "Segoe UI", sans-serif;
+  }
+  .drop { left: 552px; top: 418px; width: 300px; padding: 13px 15px; }
+  .drop .row { display: flex; align-items: center; gap: 12px; }
+  .drop .file {
+    width: 38px; height: 38px; border-radius: 9px; background: #1b2838;
+    display: flex; align-items: center; justify-content: center; flex: none;
+  }
+  .drop .file img { width: 22px; height: 22px; }
+  .drop .h { font-size: 14px; font-weight: 600; }
+  .drop .h .ok { color: var(--green); }
+  .drop .s { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .drop .path {
+    margin-top: 10px; padding: 7px 10px; border-radius: 7px;
+    background: #f4f3f0; border: 1px solid #e7e4df;
+    font-family: "Cascadia Mono", Consolas, monospace; font-size: 10.5px; color: #3c3936;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .toast { left: 912px; top: 452px; width: 258px; padding: 12px 15px; }
+  .toast .top { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .toast .top img { width: 18px; height: 18px; border-radius: 4px; }
+  .toast .top .x { margin-left: auto; color: #aaa; }
+  .toast .h { margin-top: 6px; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .toast .check {
+    width: 20px; height: 20px; border-radius: 50%; background: var(--green);
+    color: #fff; font-size: 13px; display: flex; align-items: center; justify-content: center;
+  }
+  .toast .s { margin-top: 4px; font-size: 13px; color: var(--muted); }
+  .toast .cloud { margin-top: 8px; display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #2f6fb3; font-weight: 500; }
+  .toast .cloud img { width: 18px; height: 18px; }
+
+  .note {
+    position: absolute; left: 412px; top: 238px;
+    font-family: "Segoe Print", cursive; font-size: 16px; color: var(--red);
+    transform: rotate(-3deg);
+  }
+  svg.arrow { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+</style>
+</head>
+<body>
+  <div class="bg-glow"></div>
+  <div class="bg-grid"></div>
+
+  <div class="left">
+    <div class="brand">
+      <img src="../../icon.png" alt="">
+      <span>SaveState</span>
+    </div>
+    <h1>Never lose<br><em>a save again.</em></h1>
+    <p class="sub">
+      Free, open-source save backup for <b>Windows</b> and <b>Linux</b>.
+      Drop a game shortcut, SaveState finds the save folder,
+      and one click backs it up &mdash; locally or to the cloud.
+    </p>
+    <div class="pills">
+      <span class="pill">No installer</span>
+      <span class="pill">No account</span>
+      <span class="pill">No admin rights</span>
+      <span class="pill">Open source</span>
+    </div>
+  </div>
+  <div class="platforms">
+    Steam <span class="dot"></span> Epic <span class="dot"></span> GOG <span class="dot"></span>
+    Playnite <span class="dot"></span> Heroic <span class="dot"></span> 35+ emulators
+  </div>
+
+  <!-- app window -->
+  <div class="window-wrap">
+    <div class="window">
+      <div class="titlebar">
+        <span class="title">SaveState</span>
+        <div class="icons">
+          <img src="../../icons/controller.png" alt="">
+          <img src="../../icons/sun.png" alt="">
+          <img class="gear" src="../../icons/settings.png" alt="">
+          <span class="wc">&#8211;</span>
+          <span class="wc">&#10005;</span>
+        </div>
+      </div>
+
+      <fieldset class="g-profiles"><legend>Profiles</legend></fieldset>
+      <fieldset class="g-actions"><legend>Actions</legend></fieldset>
+      <fieldset class="g-general"><legend>General</legend></fieldset>
+      <fieldset class="g-cloud"><legend>&nbsp;</legend></fieldset>
+
+      <div style="position:absolute;left:15px;top:68px;width:870px;">
+        <table class="profiles">
+          <tr><th></th><th>Profile</th><th>Backup Info</th><th></th></tr>
+          <tr><td class="star"><img src="../../icons/star.png"></td><td class="name"><span class="ico" style="background:#7a1d1d"></span>Hollow Knight: Silksong</td><td class="info">Backups: 3 | Last: 24/11/2026 21:14</td><td class="act"></td></tr>
+          <tr class="sel"><td class="star"><img src="../../icons/star.png"></td><td class="name"><span class="ico" style="background:#b08d3c"></span>Elden Ring</td><td class="info">Backups: 5 | Last: 25/11/2026 09:02</td><td class="act"><img src="../../icons/trash.png"></td></tr>
+          <tr><td class="star"><img src="../../icons/star.png"></td><td class="name"><span class="ico" style="background:#3a6e4a"></span>Stardew Valley</td><td class="info">Backups: 4 | Last: 22/11/2026 01:42</td><td class="act"></td></tr>
+          <tr><td class="star"><img src="../../icons/emptystar.png"></td><td class="name"><img class="ico" src="../../icons/controller.png">Dolphin - Super Mario Sunshine</td><td class="info">Backups: 2 | Last: 19/11/2026 18:57</td><td class="act"></td></tr>
+          <tr><td class="star"><img src="../../icons/emptystar.png"></td><td class="name"><span class="ico" style="background:#c46a1a"></span>Deep Rock Galactic</td><td class="info">Backups: 3 | Last: 17/11/2026 06:49</td><td class="act"></td></tr>
+          <tr><td class="star"><img src="../../icons/emptystar.png"></td><td class="name"><img class="ico" src="../../icons/controller.png">RetroArch - Chrono Trigger</td><td class="info">Backup: 1 | Last: 12/11/2026 22:31</td><td class="act"></td></tr>
+          <tr><td class="star"><img src="../../icons/emptystar.png"></td><td class="name"><span class="ico" style="background:#5b4a8a"></span>Hades II</td><td class="info">No backups</td><td class="act"></td></tr>
+        </table>
+        <div class="scrollbar"></div>
+      </div>
+
+      <div class="actions">
+        <div class="bigbtn backup"><img src="../../icons/backup.png">Backup<span class="plus">+</span></div>
+        <div class="bigbtn restore"><img src="../../icons/restore.png">Restore</div>
+        <div class="bigbtn" style="color:#eee"><svg width="22" height="24" viewBox="0 0 22 24" style="margin-right:4px"><rect x="2" y="1" width="18" height="22" rx="2" fill="#f4f4f4"/><g stroke="#3a3a3a" stroke-width="1.8" stroke-linecap="round"><path d="M6 7h10M6 11h10M6 15h10M6 19h7"/></g></svg>Manage Backups</div>
+      </div>
+      <div class="general">
+        <div class="smallbtn"><img src="../../icons/configure.png">New Profile...</div>
+        <div class="smallbtn"><img src="../../icons/steam.png">Manage Steam</div>
+        <div class="smallbtn"><img src="../../icons/desktop.png">Open Backup Folder</div>
+      </div>
+      <div class="smallbtn cloudbtn"><img src="../../icons/cloud.png">Cloud Sync</div>
+    </div>
+  </div>
+
+  <!-- floating: drag & drop -->
+  <div class="note">just drop a shortcut</div>
+  <svg class="arrow" width="1200" height="600">
+    <g fill="none" stroke="#d8322a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M548 280 C 560 290, 574 290, 588 282"/>
+      <path d="M577 277 L 589 282 L 580 291"/>
+    </g>
+  </svg>
+  <div class="card drop">
+    <div class="row">
+      <div class="file"><img src="../../icons/steam.png" alt=""></div>
+      <div>
+        <div class="h">Hollow Knight Silksong.url <span class="ok">&#10003;</span></div>
+        <div class="s">Save folder found automatically</div>
+      </div>
+    </div>
+    <div class="path">&hellip;\Team Cherry\Hollow Knight Silksong</div>
+  </div>
+
+  <!-- floating: backup done -->
+  <div class="card toast">
+    <div class="top"><img src="../../icon.png" alt="">SaveState <span class="x">&#10005;</span></div>
+    <div class="h"><span class="check">&#10003;</span>Backup completed</div>
+    <div class="s">Elden Ring &middot; 5 of 5 backups kept</div>
+    <div class="cloud"><img src="../../icons/cloud-sync.png" alt="">Synced to Google Drive</div>
+  </div>
+</body>
+</html>
