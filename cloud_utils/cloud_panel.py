@@ -1016,7 +1016,7 @@ class CloudSavePanel(QWidget):
         self.configure_provider_button.clicked.connect(self._on_configure_provider_clicked)
         # Load configure icon
         try:
-            configure_icon_path = resource_path("icons/configure.png")
+            configure_icon_path = resource_path("icons/configure.svg")
             if os.path.exists(configure_icon_path):
                 configure_icon = QIcon(configure_icon_path)
                 # Verify icon is valid (not null/empty)

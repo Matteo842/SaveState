@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState "Controller settings" icon: redrawn from the original controller.png.
+       Light gamepad with a navy outline, dark top band with two slots, two sticks,
+       a d-pad and four colored face buttons. -->
+  <g stroke="#36406A" stroke-width="2.2" stroke-linejoin="round">
+    <!-- Body: gray shade, lighter body a bit smaller on top (leaves the shade along sides and bottom), then outline -->
+    <path fill="#B2BCCC" stroke="none" d="M32 12.3 L40 12.3 C41.2 10.6 46.3 10.6 47.5 12.3 L51 12.6 C54 14 55.6 18 56.6 21
+      C58.2 26 60.6 34 61.6 40 C62.6 46 61 49.6 58.5 51.6 C56.5 53 54 53 52 51 C50 48.5 48.6 45 46.6 42.6
+      C45.6 41.4 44.6 40.9 43 40.9 L21 40.9 C19.4 40.9 18.4 41.4 17.4 42.6 C15.4 45 14 48.5 12 51
+      C10 53 7.5 53 5.5 51.6 C3 49.6 1.4 46 2.4 40 C3.4 34 5.8 26 7.4 21 C8.4 18 10 14 13 12.6
+      L16.5 12.3 C17.7 10.6 22.8 10.6 24 12.3 z"/>
+    <path fill="#DFE2E8" stroke="none" transform="translate(32 13) scale(0.955 0.93) translate(-32 -13)" d="M32 12.3 L40 12.3 C41.2 10.6 46.3 10.6 47.5 12.3 L51 12.6 C54 14 55.6 18 56.6 21
+      C58.2 26 60.6 34 61.6 40 C62.6 46 61 49.6 58.5 51.6 C56.5 53 54 53 52 51 C50 48.5 48.6 45 46.6 42.6
+      C45.6 41.4 44.6 40.9 43 40.9 L21 40.9 C19.4 40.9 18.4 41.4 17.4 42.6 C15.4 45 14 48.5 12 51
+      C10 53 7.5 53 5.5 51.6 C3 49.6 1.4 46 2.4 40 C3.4 34 5.8 26 7.4 21 C8.4 18 10 14 13 12.6
+      L16.5 12.3 C17.7 10.6 22.8 10.6 24 12.3 z"/>
+    <path fill="none" d="M32 12.3 L40 12.3 C41.2 10.6 46.3 10.6 47.5 12.3 L51 12.6 C54 14 55.6 18 56.6 21
+      C58.2 26 60.6 34 61.6 40 C62.6 46 61 49.6 58.5 51.6 C56.5 53 54 53 52 51 C50 48.5 48.6 45 46.6 42.6
+      C45.6 41.4 44.6 40.9 43 40.9 L21 40.9 C19.4 40.9 18.4 41.4 17.4 42.6 C15.4 45 14 48.5 12 51
+      C10 53 7.5 53 5.5 51.6 C3 49.6 1.4 46 2.4 40 C3.4 34 5.8 26 7.4 21 C8.4 18 10 14 13 12.6
+      L16.5 12.3 C17.7 10.6 22.8 10.6 24 12.3 z"/>
+    <!-- Top band -->
+    <path fill="#636B8C" d="M22 12.4 C23.5 16 24.5 18.8 28 18.8 L36 18.8 C39.5 18.8 40.5 16 42 12.4 z"/>
+    <!-- Left stick -->
+    <circle cx="16.5" cy="22" r="4.1" fill="#6A6E86"/>
+    <!-- Right stick -->
+    <circle cx="37.5" cy="32" r="4.1" fill="#959CB2"/>
+    <!-- D-pad -->
+    <path fill="#959CB2" d="M21.7 27.6 h3.6 v2.6 h2.6 v3.6 h-2.6 v2.6 h-3.6 v-2.6 h-2.6 v-3.6 h2.6 z"/>
+  </g>
+  <!-- Slots on the top band -->
+  <g fill="#36406A">
+    <rect x="27.6" y="14.6" width="2.2" height="2.2" rx="0.4"/>
+    <rect x="30.8" y="14.6" width="5.4" height="2.2" rx="0.4"/>
+  </g>
+  <!-- Face buttons -->
+  <g stroke="#36406A" stroke-width="2">
+    <circle cx="45.5" cy="18.6" r="2.2" fill="#F4B658"/>
+    <circle cx="41"   cy="23.5" r="2.2" fill="#C25569"/>
+    <circle cx="50"   cy="23.5" r="2.2" fill="#7BAA6E"/>
+    <circle cx="45.5" cy="28.4" r="2.2" fill="#879EC9"/>
+  </g>
+</svg>

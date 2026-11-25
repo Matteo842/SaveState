@@ -570,7 +570,7 @@ class MainWindow(QMainWindow):
         self.settings_button.setFixedSize(QSize(28, 28))
         self.theme_button.setFlat(True)
         self.theme_button.setFixedSize(QSize(28, 28))
-        controller_icon_path = resource_path("icons/controller.png")
+        controller_icon_path = resource_path("icons/controller.svg")
         if os.path.exists(controller_icon_path):
             self.controller_button.setIcon(QIcon(controller_icon_path))
             self.controller_button.setIconSize(QSize(20, 20))
