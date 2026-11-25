@@ -611,7 +611,7 @@ class ProfileListManager:
             logging.warning(f"Non-favorite icon 'emptystar.png' not found in {empty_star_icon_path}")
         
         # --- Loading Trash Icon ---
-        trash_icon_path = resource_path("icons/trash.png")
+        trash_icon_path = resource_path("icons/trash.svg")
         self.trash_icon_path = trash_icon_path if os.path.exists(trash_icon_path) else None
         # --- End Loading Icons ---
 

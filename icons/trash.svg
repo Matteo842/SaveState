@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState "Delete profile" icon: a white trash can.
+       The three slots are holes cut into the body (fill-rule evenodd). -->
+  <g fill="#FFFFFF">
+    <!-- Handle -->
+    <path d="M27 2 h10 a3 3 0 0 1 3 3 v5 h-3 v-5 h-10 v5 h-3 v-5 a3 3 0 0 1 3 -3 z"/>
+    <!-- Lid -->
+    <rect x="7" y="9" width="50" height="7" rx="3"/>
+    <!-- Body with three slots -->
+    <path fill-rule="evenodd" d="
+      M10 19 h44 l-3.6 39 a4 4 0 0 1 -4 3.6 h-28.8 a4 4 0 0 1 -4 -3.6 z
+      M18.25 25.75 a1.75 1.75 0 0 1 3.5 0 v28.5 a1.75 1.75 0 0 1 -3.5 0 z
+      M30.25 25.75 a1.75 1.75 0 0 1 3.5 0 v28.5 a1.75 1.75 0 0 1 -3.5 0 z
+      M42.25 25.75 a1.75 1.75 0 0 1 3.5 0 v28.5 a1.75 1.75 0 0 1 -3.5 0 z"/>
+  </g>
+</svg>

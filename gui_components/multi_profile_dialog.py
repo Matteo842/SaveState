@@ -122,7 +122,7 @@ class ProfileListItem(QWidget):
         # Add the info layout to the main layout
         layout.addLayout(info_layout, 1)  # Stretch factor 1 to give more space
         
-        # Delete button — icons/trash.png (same asset as main profile list)
+        # Delete button — icons/trash.svg (same asset as main profile list)
         self.delete_button = QPushButton()
         self.delete_button.setObjectName("CardDeleteButton")
         self.delete_button.setToolTip(tr("Remove this profile"))
@@ -138,7 +138,7 @@ class ProfileListItem(QWidget):
                 self.delete_button.setIcon(trash_icon)
                 icon_set = True
         if not icon_set:
-            trash_path = resource_path("icons/trash.png")
+            trash_path = resource_path("icons/trash.svg")
             if os.path.exists(trash_path):
                 trash_icon = QIcon(trash_path)
                 if not trash_icon.isNull():
