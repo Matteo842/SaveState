@@ -34,10 +34,41 @@ MediaFileUpload = None
 MediaIoBaseDownload = None
 HttpError = None
 
+_ipv4_first_installed = False
+
+
+def _prefer_ipv4_addresses():
+    """Try IPv4 addresses before IPv6 ones when opening network connections.
+
+    Google returns many IPv6 addresses first. On networks where IPv6 is
+    configured but does not actually work, Python waits for each IPv6
+    address to time out (about 20 seconds each) before trying IPv4, so
+    connecting to Google Drive can take minutes or look frozen.
+
+    Only the order changes: IPv6 addresses are still tried if IPv4 fails.
+    Note: this affects every connection made by the app after it runs.
+    """
+    global _ipv4_first_installed
+    if _ipv4_first_installed:
+        return
+    import socket
+
+    original_getaddrinfo = socket.getaddrinfo
+
+    def getaddrinfo_ipv4_first(*args, **kwargs):
+        results = original_getaddrinfo(*args, **kwargs)
+        # sorted() keeps the original order inside each group.
+        return sorted(results, key=lambda result: result[0] != socket.AF_INET)
+
+    socket.getaddrinfo = getaddrinfo_ipv4_first
+    _ipv4_first_installed = True
+
+
 def _lazy_init():
     global Request, Credentials, InstalledAppFlow, build, MediaFileUpload, MediaIoBaseDownload, HttpError
     if build is not None:
         return
+    _prefer_ipv4_addresses()
     from google.auth.transport.requests import Request as _Request
     from google.oauth2.credentials import Credentials as _Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow as _InstalledAppFlow
