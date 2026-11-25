@@ -664,7 +664,7 @@ class MainWindow(QMainWindow):
 
         self.restore_button = QPushButton(tr("Restore"))
         self.restore_button.setObjectName("RestoreButton")
-        restore_icon_path = resource_path("icons/restore.png")
+        restore_icon_path = resource_path("icons/restore.svg")
         if os.path.exists(restore_icon_path):
             restore_icon = QIcon(restore_icon_path)
             self.restore_button.setIcon(restore_icon)

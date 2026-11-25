@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState "Restore" icon: two big green round arrows chasing each other.
+       Each arrow: a dark wide line, a green line on top (= green with dark outline),
+       and a green arrow head with a dark outline (#1B1F27). -->
+  <defs>
+    <linearGradient id="green" gradientUnits="userSpaceOnUse" x1="0" y1="8" x2="0" y2="56">
+      <stop offset="0" stop-color="#5BE08A"/>
+      <stop offset="1" stop-color="#1FA855"/>
+    </linearGradient>
+  </defs>
+  <!-- Top arrow (left to right, head on the right) -->
+  <path d="M13.21 25.16 A20 20 0 0 1 47.54 19.41" fill="none" stroke="#1B1F27" stroke-width="14" stroke-linecap="round"/>
+  <path d="M13.21 25.16 A20 20 0 0 1 47.54 19.41" fill="none" stroke="url(#green)" stroke-width="7" stroke-linecap="round"/>
+  <path d="M58.21 12.79 L56.93 32.76 L37.73 27.13 Z" fill="url(#green)" stroke="#1B1F27" stroke-width="3.5" stroke-linejoin="round"/>
+  <!-- Bottom arrow (right to left, head on the left) -->
+  <path d="M50.79 38.84 A20 20 0 0 1 16.46 44.59" fill="none" stroke="#1B1F27" stroke-width="14" stroke-linecap="round"/>
+  <path d="M50.79 38.84 A20 20 0 0 1 16.46 44.59" fill="none" stroke="url(#green)" stroke-width="7" stroke-linecap="round"/>
+  <path d="M5.79 51.21 L7.07 31.24 L26.27 36.87 Z" fill="url(#green)" stroke="#1B1F27" stroke-width="3.5" stroke-linejoin="round"/>
+</svg>
