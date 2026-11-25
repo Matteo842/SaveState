@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState "local only" icon: the same floppy disk used in cloud-local.svg, alone and centered. -->
+  <g transform="translate(10 10) scale(1.375)">
+    <!-- Body -->
+    <path fill="#33476B" d="M3 0 h22 l7 7 v22 a3 3 0 0 1 -3 3 h-26 a3 3 0 0 1 -3 -3 v-26 a3 3 0 0 1 3 -3 z"/>
+    <!-- Metal shutter -->
+    <rect x="7" y="0" width="16" height="10" rx="1" fill="#D9DEE6"/>
+    <rect x="17" y="2" width="3.5" height="6" rx="0.8" fill="#33476B"/>
+    <!-- Label -->
+    <rect x="5" y="16" width="22" height="13" rx="1.5" fill="#FFFFFF"/>
+    <g stroke="#9AA7BA" stroke-width="1.6" stroke-linecap="round"><path d="M9 21 h14 M9 25 h10"/></g>
+  </g>
+</svg>

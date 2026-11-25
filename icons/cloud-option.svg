@@ -1,8 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <!-- SaveState cloud settings icon: cloud with a gear. -->
-  <defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="14" x2="0" y2="50"><stop offset="0" stop-color="#6BB8F5"/><stop offset="1" stop-color="#2F7FD8"/></linearGradient></defs>
-  <g transform="translate(32 34) scale(1.12) translate(-32 -32)">
-  <g fill="url(#g)"><circle cx="18" cy="38" r="12"/><circle cx="33" cy="30" r="16"/><circle cx="46" cy="38" r="12"/><rect x="18" y="38" width="28" height="12"/></g>
-  <g fill="#FFFFFF"><rect x="30.2" y="25.5" width="3.6" height="5" rx="1" transform="rotate(0 32 36)"/><rect x="30.2" y="25.5" width="3.6" height="5" rx="1" transform="rotate(45 32 36)"/><rect x="30.2" y="25.5" width="3.6" height="5" rx="1" transform="rotate(90 32 36)"/><rect x="30.2" y="25.5" width="3.6" height="5" rx="1" transform="rotate(135 32 36)"/><rect x="30.2" y="25.5" width="3.6" height="5" rx="1" transform="rotate(180 32 36)"/><rect x="30.2" y="25.5" width="3.6" height="5" rx="1" transform="rotate(225 32 36)"/><rect x="30.2" y="25.5" width="3.6" height="5" rx="1" transform="rotate(270 32 36)"/><rect x="30.2" y="25.5" width="3.6" height="5" rx="1" transform="rotate(315 32 36)"/><path fill-rule="evenodd" d="M32 28.6 a7.4 7.4 0 1 1 0 14.8 a7.4 7.4 0 1 1 0 -14.8 z M32 33 a3 3 0 1 0 0 6 a3 3 0 1 0 0 -6 z"/></g>
-  </g>
+  <!-- SaveState cloud settings icon: a big blue gear (same size as the normal settings gear)
+       with a white cloud in the middle. Readable at 16 px in the title bar. -->
+  <defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="3" x2="0" y2="61"><stop offset="0" stop-color="#6BB8F5"/><stop offset="1" stop-color="#2F7FD8"/></linearGradient></defs>
+  <path fill="url(#g)" stroke="url(#g)" stroke-width="2" stroke-linejoin="round" d="M23.90 11.54 L25.85 3.66 L38.15 3.66 L40.10 11.54 L40.74 11.81 L47.69 7.61 L56.39 16.31 L52.19 23.26 L52.46 23.90 L60.34 25.85 L60.34 38.15 L52.46 40.10 L52.19 40.74 L56.39 47.69 L47.69 56.39 L40.74 52.19 L40.10 52.46 L38.15 60.34 L25.85 60.34 L23.90 52.46 L23.26 52.19 L16.31 56.39 L7.61 47.69 L11.81 40.74 L11.54 40.10 L3.66 38.15 L3.66 25.85 L11.54 23.90 L11.81 23.26 L7.61 16.31 L16.31 7.61 L23.26 11.81 z"/>
+  <g fill="#FFFFFF" transform="translate(32 33) scale(0.48) translate(-32 -32)"><circle cx="18" cy="38" r="12"/><circle cx="33" cy="30" r="16"/><circle cx="46" cy="38" r="12"/><rect x="18" y="38" width="28" height="12"/></g>
 </svg>

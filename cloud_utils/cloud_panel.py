@@ -866,16 +866,14 @@ class CloudSavePanel(QWidget):
     def _preload_icons(self):
         """Pre-load and cache all icons used in the backup table to avoid per-row disk I/O."""
         try:
-            # Cache state icons (32x32 scaled)
-            for icon_name in ("cloud-local.svg", "local.png", "cloud.svg"):
+            # Cache state icons (32x32 on screen).
+            # Render them at the screen scaling (for example 48x48 real pixels at 150%),
+            # otherwise Qt stretches a 32x32 image and the icons look blurry.
+            screen_scale = self.devicePixelRatioF()
+            for icon_name in ("cloud-local.svg", "local.svg", "cloud.svg"):
                 icon_path = resource_path(f"icons/{icon_name}")
                 if os.path.exists(icon_path):
-                    pixmap = QPixmap(icon_path)
-                    self._icon_cache[icon_name] = pixmap.scaled(
-                        32, 32,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
+                    self._icon_cache[icon_name] = QIcon(icon_path).pixmap(QSize(32, 32), screen_scale)
 
             # Cache checkmark style for checkboxes
             checkmark_path = resource_path("icons/checkmark.png")
@@ -1609,7 +1607,7 @@ class CloudSavePanel(QWidget):
             icon_name = "cloud-local.svg"
             tooltip = tr("Available locally and in cloud")
         elif has_local:
-            icon_name = "local.png"
+            icon_name = "local.svg"
             tooltip = tr("Available locally only")
         elif has_cloud:
             icon_name = "cloud.svg"
