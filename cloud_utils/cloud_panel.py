@@ -1218,9 +1218,9 @@ class CloudSavePanel(QWidget):
         self.exit_button.setObjectName("ExitButton")  # Set object name for CSS styling
         self.exit_button.setToolTip(tr("Exit Cloud Panel"))
         self.exit_button.clicked.connect(self._on_exit_clicked)
-        # Try to load exit.png, fallback to standard icon
+        # Try to load exit.svg, fallback to standard icon
         try:
-            exit_icon_path = resource_path("icons/exit.png")
+            exit_icon_path = resource_path("icons/exit.svg")
             if os.path.exists(exit_icon_path):
                 exit_icon = QIcon(exit_icon_path)
                 self.exit_button.setIcon(exit_icon)

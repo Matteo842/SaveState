@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState "Exit" icon: a dark doorway, an open red door and a white arrow going out.
+       Navy (#33476B) is the same as the floppy in local.svg; red is the SaveState red.
+       Every element has its own dark outline (#1B1F27) so the shapes stay separate at small sizes. -->
+  <defs>
+    <linearGradient id="door" gradientUnits="userSpaceOnUse" x1="34" y1="0" x2="52" y2="64">
+      <stop offset="0" stop-color="#EF5A4F"/>
+      <stop offset="1" stop-color="#C0261D"/>
+    </linearGradient>
+  </defs>
+  <g stroke="#1B1F27" stroke-width="3" stroke-linejoin="round">
+    <!-- Doorway -->
+    <rect x="19" y="6" width="33" height="52" rx="3" fill="#33476B"/>
+    <!-- Open door (hinge on the right, free edge closer to us) -->
+    <path d="M52 6 L34 2 L34 62 L52 58 z" fill="url(#door)"/>
+    <!-- Arrow going out to the left -->
+    <path d="M4 32 L17 19.5 V27.5 H30 V36.5 H17 V44.5 z" fill="#FFFFFF"/>
+  </g>
+  <!-- Door knob -->
+  <circle cx="38" cy="33" r="1.9" fill="#7A1A14"/>
+</svg>
