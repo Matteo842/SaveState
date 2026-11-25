@@ -616,10 +616,10 @@ class ProfileListManager:
         # --- End Loading Icons ---
 
         # --- Loading Note Icon ---
-        note_icon_path = resource_path("icons/note.png")
+        note_icon_path = resource_path("icons/note.svg")
         self.note_icon_path = note_icon_path if os.path.exists(note_icon_path) else None
         if not self.note_icon_path:
-            logging.info("Note icon 'note.png' not found. Will use fallback text.")
+            logging.info("Note icon 'note.svg' not found. Will use fallback text.")
         # --- End Loading Note Icon ---
 
         # --- Cloud desync warning icon (sync enabled but cloud offline) ---

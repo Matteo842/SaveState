@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState "Note" icon: two sticky notes (orange behind, yellow in front)
+       with three lines of text. Dark outline on every element (#1B1F27). -->
+  <defs>
+    <linearGradient id="yellow" gradientUnits="userSpaceOnUse" x1="0" y1="12" x2="0" y2="58">
+      <stop offset="0" stop-color="#FFE06B"/>
+      <stop offset="1" stop-color="#F5BE1E"/>
+    </linearGradient>
+  </defs>
+  <g stroke="#1B1F27" stroke-width="3.5" stroke-linejoin="round">
+    <!-- Back note, turned a little -->
+    <rect x="16" y="5" width="42" height="44" rx="4" fill="#F08A24" transform="rotate(10 37 27)"/>
+    <!-- Front note -->
+    <rect x="5" y="13" width="44" height="45" rx="4" fill="url(#yellow)"/>
+  </g>
+  <!-- Lines of text -->
+  <g stroke="#8A6A10" stroke-width="3.5" stroke-linecap="round">
+    <path d="M12 25 h30 M12 34 h30 M12 43 h18"/>
+  </g>
+</svg>

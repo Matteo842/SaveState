@@ -2768,7 +2768,7 @@ class MainWindow(QMainWindow):
                     act_note = QAction(tr("Edit Note") if has_note else tr("Add Note"), self)
                     act_note.setToolTip(tr("Add or edit a text note for this profile"))
                     try:
-                        note_icon_path = resource_path("icons/note.png")
+                        note_icon_path = resource_path("icons/note.svg")
                         if os.path.exists(note_icon_path):
                             act_note.setIcon(QIcon(note_icon_path))
                     except Exception:
@@ -2834,7 +2834,7 @@ class MainWindow(QMainWindow):
                     act_note = QAction(tr("Edit Note") if has_note else tr("Add Note"), self)
                     act_note.setToolTip(tr("Add or edit a text note for this profile"))
                     try:
-                        note_icon_path = resource_path("icons/note.png")
+                        note_icon_path = resource_path("icons/note.svg")
                         if os.path.exists(note_icon_path):
                             act_note.setIcon(QIcon(note_icon_path))
                     except Exception:

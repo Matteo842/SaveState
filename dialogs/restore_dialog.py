@@ -172,7 +172,7 @@ class RestoreDialog(QDialog):
         # --- Load note icon for overlay buttons ---
         self.note_icon_path = None
         try:
-            note_path = resource_path("icons/note.png")
+            note_path = resource_path("icons/note.svg")
             if os.path.exists(note_path):
                 self.note_icon_path = note_path
         except Exception as e:
