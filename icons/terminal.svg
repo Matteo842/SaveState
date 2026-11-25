@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- SaveState "Log" icon, normal log button (blue): redrawn from the original terminal.png on the same 24 px grid.
+       Colored rounded square with a white terminal prompt "&gt;_". -->
+  <rect x="2" y="3" width="20" height="18" rx="1" fill="#2675E2"/>
+  <!-- Prompt -->
+  <polyline points="5.7,7.6 9.9,12 5.7,16.4" fill="none" stroke="#EDEBEA" stroke-width="1.6" stroke-linecap="round"/>
+  <rect x="11.1" y="15.1" width="8" height="1.6" fill="#EDEBEA"/>
+</svg>

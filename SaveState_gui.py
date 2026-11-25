@@ -516,8 +516,8 @@ class MainWindow(QMainWindow):
         self.toggle_log_button.setObjectName("LogToggleButton")
         
         # Carica entrambe le icone per il pulsante log
-        icon_normal_path = resource_path("icons/terminal.png")
-        icon_dev_path = resource_path("icons/terminalDev.png") # Nuova icona
+        icon_normal_path = resource_path("icons/terminal.svg")
+        icon_dev_path = resource_path("icons/terminalDev.svg") # Nuova icona
 
         if os.path.exists(icon_normal_path):
             self.log_icon_normal = QIcon(icon_normal_path)
