@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState "Switch to light theme" icon: a gold sun with 8 thick rounded rays.
+       No outline: it sits on the dark title bar, where a dark outline would not show. -->
+  <defs><linearGradient id="gold" gradientUnits="userSpaceOnUse" x1="0" y1="14" x2="0" y2="50"><stop offset="0" stop-color="#FFDD6E"/><stop offset="1" stop-color="#F2A623"/></linearGradient></defs>
+  <g fill="#F7B733"><rect x="28" y="1" width="8" height="14" rx="4" transform="rotate(0 32 32)"/><rect x="28" y="1" width="8" height="14" rx="4" transform="rotate(45 32 32)"/><rect x="28" y="1" width="8" height="14" rx="4" transform="rotate(90 32 32)"/><rect x="28" y="1" width="8" height="14" rx="4" transform="rotate(135 32 32)"/><rect x="28" y="1" width="8" height="14" rx="4" transform="rotate(180 32 32)"/><rect x="28" y="1" width="8" height="14" rx="4" transform="rotate(225 32 32)"/><rect x="28" y="1" width="8" height="14" rx="4" transform="rotate(270 32 32)"/><rect x="28" y="1" width="8" height="14" rx="4" transform="rotate(315 32 32)"/></g>
+  <circle cx="32" cy="32" r="17" fill="url(#gold)"/>
+</svg>

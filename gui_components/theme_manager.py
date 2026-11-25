@@ -53,8 +53,8 @@ class ThemeManager:
         """Load the sun/moon icons from files."""
         logging.debug("ThemeManager: Loading theme icons...")
         try:
-            sun_icon_path = resource_path("icons/sun.png")
-            moon_icon_path = resource_path("icons/moon.png")
+            sun_icon_path = resource_path("icons/sun.svg")
+            moon_icon_path = resource_path("icons/moon.svg")
             self.sun_icon = QIcon(sun_icon_path) if os.path.exists(sun_icon_path) else None
             self.moon_icon = QIcon(moon_icon_path) if os.path.exists(moon_icon_path) else None
             if not self.sun_icon: logging.warning(f"ThemeManager: Sun icon not found or failed to load from: {sun_icon_path}")

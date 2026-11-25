@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState "Switch to dark theme" icon: a gold crescent moon.
+       Dark outline (#1B1F27). -->
+  <defs><linearGradient id="gold" gradientUnits="userSpaceOnUse" x1="0" y1="8" x2="0" y2="60"><stop offset="0" stop-color="#FFDD6E"/><stop offset="1" stop-color="#F2A623"/></linearGradient></defs>
+  <path d="M28.30 8.06 A26 26 0 1 0 55.38 39.65 A21 21 0 0 1 28.30 8.06 z" fill="url(#gold)" stroke="#1B1F27" stroke-width="3.5" stroke-linejoin="round"/>
+</svg>
