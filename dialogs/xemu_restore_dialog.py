@@ -1225,7 +1225,7 @@ class XemuRestoreDialog(QDialog):
         try:
             from PySide6.QtGui import QIcon
 
-            icon_path = resource_path("icons/Lock.png")
+            icon_path = resource_path("icons/lock.svg")
             if os.path.exists(icon_path):
                 lock_icon = QIcon(icon_path)
         except Exception:

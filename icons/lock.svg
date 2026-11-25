@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState "Locked backup" icon: gold padlock with a silver shackle.
+       Every element has its own dark outline (#1B1F27). Readable on the blue lock checkbox. -->
+  <defs>
+    <linearGradient id="gold" gradientUnits="userSpaceOnUse" x1="0" y1="28" x2="0" y2="60">
+      <stop offset="0" stop-color="#FFD866"/>
+      <stop offset="1" stop-color="#E5A21A"/>
+    </linearGradient>
+  </defs>
+  <!-- Shackle: dark wide line, then silver line on top = silver with dark outline -->
+  <path d="M20 31 V21 a12 12 0 0 1 24 0 V31" fill="none" stroke="#1B1F27" stroke-width="11"/>
+  <path d="M20 31 V21 a12 12 0 0 1 24 0 V31" fill="none" stroke="#D3D8E0" stroke-width="5"/>
+  <!-- Body -->
+  <rect x="9" y="28" width="46" height="32" rx="5" fill="url(#gold)" stroke="#1B1F27" stroke-width="3.5"/>
+  <!-- Keyhole -->
+  <path d="M32 36.5 a5 5 0 0 1 2.6 9.3 L36 52 h-8 l1.4 -6.2 A5 5 0 0 1 32 36.5 z" fill="#1B1F27"/>
+</svg>

@@ -161,7 +161,7 @@ class RestoreDialog(QDialog):
         # --- Load lock icon ---
         self.lock_icon = None
         try:
-            icon_path = resource_path("icons/Lock.png")
+            icon_path = resource_path("icons/lock.svg")
             if os.path.exists(icon_path):
                 self.lock_icon = QIcon(icon_path)
                 logging.debug(f"Lock icon loaded for RestoreDialog: {icon_path}")
