@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState "Shortcut" icon: a white curved arrow on a blue rounded square,
+       the classic "shortcut" sign. Dark outline on every element (#1B1F27). -->
+  <!-- Square -->
+  <rect x="4" y="4" width="56" height="56" rx="8" fill="#2F7FD8" stroke="#1B1F27" stroke-width="3.5"/>
+  <!-- Curved arrow: dark wide line, then white line on top = white with dark outline -->
+  <path d="M20 47 C20 34 26 27.5 36 27.5" fill="none" stroke="#1B1F27" stroke-width="10" stroke-linecap="round"/>
+  <path d="M20 47 C20 34 26 27.5 36 27.5" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+  <!-- Arrow head -->
+  <path d="M34 17 L48 27.5 L34 38 z" fill="#FFFFFF" stroke="#1B1F27" stroke-width="2.5" stroke-linejoin="round"/>
+</svg>

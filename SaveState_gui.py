@@ -2750,7 +2750,7 @@ class MainWindow(QMainWindow):
                         pass
                     
                     try:
-                        desktop_icon_path = resource_path("icons/desktop.png")
+                        desktop_icon_path = resource_path("icons/desktop_shortcut.svg")
                         if os.path.exists(desktop_icon_path):
                             act_shortcut.setIcon(QIcon(desktop_icon_path))
                     except Exception:
@@ -2818,7 +2818,7 @@ class MainWindow(QMainWindow):
                     
                     # Optional icons
                     try:
-                        desktop_icon_path = resource_path("icons/desktop.png")
+                        desktop_icon_path = resource_path("icons/desktop_shortcut.svg")
                         if os.path.exists(desktop_icon_path):
                             act_shortcut.setIcon(QIcon(desktop_icon_path))
                     except Exception:
