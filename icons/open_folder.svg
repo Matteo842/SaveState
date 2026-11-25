@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- SaveState "Open Backup Folder" icon: an open amber folder with a sheet inside.
+       Fixed colors, readable on both dark and light themes. -->
+  <!-- Back of the folder, with the tab -->
+  <path fill="#D9952B" d="M2 5 a1.5 1.5 0 0 1 1.5 -1.5 h5.2 l2 2.2 h8.8 a1.5 1.5 0 0 1 1.5 1.5 v11.3 a1.5 1.5 0 0 1 -1.5 1.5 h-16 a1.5 1.5 0 0 1 -1.5 -1.5 z"/>
+  <!-- Sheet inside -->
+  <rect x="5" y="7" width="13" height="6" rx="0.8" fill="#F4F4F4"/>
+  <!-- Front flap -->
+  <path fill="#F2B544" d="M4.5 9.5 H22 a1 1 0 0 1 0.97 1.24 L21 19 a1.3 1.3 0 0 1 -1.26 1 H2.3 a1 1 0 0 1 -0.97 -1.24 L3.3 10.4 a1.2 1.2 0 0 1 1.2 -0.9 z"/>
+</svg>

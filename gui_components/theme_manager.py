@@ -22,6 +22,7 @@ except ImportError:
 import config # To access LIGHT_THEME_QSS and DARK_THEME_QSS
 from core import settings_manager # To save theme settings
 from common.i18n import tr
+from gui_components.svg_icons import themed_svg_icon
 
 class ThemeManager:
     # Manages the light/dark theme and the toggle button.
@@ -80,6 +81,7 @@ class ThemeManager:
                 logging.debug(f"ThemeManager: Theme '{theme_name}' already applied, skipping setStyleSheet.")
                 # Still update button icon in case it got out of sync
                 self._update_theme_button(theme_name)
+                self._update_themed_icons(theme_name)
                 return
             
             logging.debug(f"ThemeManager: Applying theme '{theme_name}'")
@@ -121,6 +123,7 @@ class ThemeManager:
 
             # Update the theme button icon and tooltip
             self._update_theme_button(theme_name)
+            self._update_themed_icons(theme_name)
 
         except Exception as e:
             logging.error(f"ThemeManager: Error applying theme: {e}", exc_info=True)
@@ -173,6 +176,17 @@ class ThemeManager:
             logging.debug(f"ThemeManager: Button icon/tooltip updated for '{theme_name}' theme.")
         except Exception as e:
             logging.error(f"ThemeManager: Error updating theme button: {e}", exc_info=True)
+
+    def _update_themed_icons(self, theme_name):
+        """Repaint SaveState's own SVG icons in the text color of the theme."""
+        try:
+            # Same colors as the button text in common/themes.py (#ManageButton).
+            color = "#37474F" if theme_name == 'light' else "#e0e0e0"
+            manage_button = getattr(self.main_window, "manage_backups_button", None)
+            if manage_button is not None:
+                manage_button.setIcon(themed_svg_icon("icons/manage_backups.svg", color))
+        except Exception as e:
+            logging.error(f"ThemeManager: Error updating SVG icons: {e}", exc_info=True)
 
     # Inverts the theme in settings, saves it, and applies the new theme.
     def handle_theme_toggle(self):

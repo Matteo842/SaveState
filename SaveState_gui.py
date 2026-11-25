@@ -671,12 +671,17 @@ class MainWindow(QMainWindow):
 
         self.manage_backups_button = QPushButton(tr("Manage Backups"))
         self.manage_backups_button.setObjectName("ManageButton")
-        manage_icon = style.standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView) # Icona Vista Dettagliata?
-        self.manage_backups_button.setIcon(manage_icon)
-        
+        # The icon (icons/manage_backups.svg) is set by ThemeManager,
+        # because its color follows the dark/light theme.
+
         self.open_backup_dir_button = QPushButton(tr("Open Backup Folder"))
-        open_folder_icon = style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon) # Icona Apri Cartella
-        self.open_backup_dir_button.setIcon(open_folder_icon)
+        open_folder_icon_path = resource_path("icons/open_folder.svg")
+        if os.path.exists(open_folder_icon_path):
+            self.open_backup_dir_button.setIcon(QIcon(open_folder_icon_path))
+        else:
+            logging.warning(f"Open folder icon not found: {open_folder_icon_path}")
+            # Fallback to standard icon if custom icon is not found
+            self.open_backup_dir_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
         
         # Imposta dimensione icone (opzionale, regola i px se necessario)
         icon_size = QSize(16, 16) # Larghezza, Altezza in pixel

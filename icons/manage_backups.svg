@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="22" height="24" viewBox="0 0 22 24">
+  <!-- SaveState "Manage Backups" icon: a sheet with a list of backups.
+       The lines are holes cut into the sheet (fill-rule evenodd), so the icon
+       is a single color. "currentColor" is replaced at runtime with the theme
+       color (see gui_components/svg_icons.py). -->
+  <path fill="currentColor" fill-rule="evenodd" d="
+    M4 1 h14 a2 2 0 0 1 2 2 v18 a2 2 0 0 1 -2 2 h-14 a2 2 0 0 1 -2 -2 v-18 a2 2 0 0 1 2 -2 z
+    M6 6.1 h10 a0.9 0.9 0 0 1 0 1.8 h-10 a0.9 0.9 0 0 1 0 -1.8 z
+    M6 10.1 h10 a0.9 0.9 0 0 1 0 1.8 h-10 a0.9 0.9 0 0 1 0 -1.8 z
+    M6 14.1 h10 a0.9 0.9 0 0 1 0 1.8 h-10 a0.9 0.9 0 0 1 0 -1.8 z
+    M6 18.1 h7 a0.9 0.9 0 0 1 0 1.8 h-7 a0.9 0.9 0 0 1 0 -1.8 z"/>
+</svg>
