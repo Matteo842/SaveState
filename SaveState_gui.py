@@ -585,8 +585,13 @@ class MainWindow(QMainWindow):
         self.progress_bar = BusyIndicator()
         self.progress_bar.setVisible(False)
         
-        new_icon = style.standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder) # Icona Nuova Cartella?
-        self.new_profile_button.setIcon(new_icon)
+        new_profile_icon_path = resource_path("icons/new_profile.svg")
+        if os.path.exists(new_profile_icon_path):
+            self.new_profile_button.setIcon(QIcon(new_profile_icon_path))
+        else:
+            logging.warning(f"New profile icon not found: {new_profile_icon_path}")
+            # Fallback to standard icon if custom icon is not found
+            self.new_profile_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder))
         
         steam_icon_path = resource_path("icons/steam.png") 
         if os.path.exists(steam_icon_path): # Controlla se il file esiste

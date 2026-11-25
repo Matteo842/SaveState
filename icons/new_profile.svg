@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState "New profile" icon: a big green plus with a dark outline.
+       It fills the whole icon so it stays readable at 16 px on the button. -->
+  <defs>
+    <linearGradient id="green" gradientUnits="userSpaceOnUse" x1="0" y1="5" x2="0" y2="59">
+      <stop offset="0" stop-color="#5CCB72"/>
+      <stop offset="1" stop-color="#2E9447"/>
+    </linearGradient>
+  </defs>
+  <path d="M26 5 h12 a4 4 0 0 1 4 4 V22 H55 a4 4 0 0 1 4 4 v12 a4 4 0 0 1 -4 4 H42 V55 a4 4 0 0 1 -4 4 h-12 a4 4 0 0 1 -4 -4 V42 H9 a4 4 0 0 1 -4 -4 v-12 a4 4 0 0 1 4 -4 H22 V9 a4 4 0 0 1 4 -4 z" fill="url(#green)" stroke="#1B1F27" stroke-width="3.5" stroke-linejoin="round"/>
+</svg>
