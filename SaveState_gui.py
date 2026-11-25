@@ -547,7 +547,7 @@ class MainWindow(QMainWindow):
         #self.toggle_log_button.setToolTip(self.tr("Mostra/Nascondi Log (Tieni premuto per Opzioni Sviluppatore)"))
 
         
-        icon_path = resource_path("icons/settings.png") # Percorso relativo dell'icona
+        icon_path = resource_path("icons/settings.svg") # Percorso relativo dell'icona
         if os.path.exists(icon_path): # Controlla se il file esiste
             self.settings_icon_normal = QIcon(icon_path)  # Save normal icon
             self.settings_button.setIcon(self.settings_icon_normal)

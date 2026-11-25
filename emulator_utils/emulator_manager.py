@@ -31,6 +31,7 @@ from .ares_manager import find_ares_profiles
 # RetroArch support (core-based front-end)
 from .retroarch_manager import list_retroarch_cores, find_retroarch_profiles
 from .xemu_manager import find_xemu_profiles
+from .xbased_manager import find_xbased_profiles
 from .kytyps5_manager import find_kytyps5_profiles
 # Eden è un fork di Yuzu, quindi utilizza lo stesso codice
 
@@ -50,7 +51,7 @@ KNOWN_EMULATORS = [
     'rpcs3', 'yuzu', 'lichii', 'eglantine', 'eden', 'citron', 'ppsspp', 'citra', 'azahar', 'ryujinx', 'dolphin',
     'duckstation', 'mgba', 'snes9x', 'desmume', 'melonds', 'cemu', 'flycast', 'shadps4',
     'sameboy', 'xenia', 'pcsx2', 'gopher64', 'vita3k', 'mednafen', 'mednaffe', 'ymir', 
-    'ares', 'retroarch', 'xemu', 'kyty',
+    'ares', 'retroarch', 'xemu', 'xbased', 'kyty',
 ]
 
 UNKNOWN_EMULATORS = [
@@ -198,6 +199,12 @@ EMULATORS: Dict[str, Dict[str, Any]] = {
     'xemu': {
         'name': 'xemu',
         'profile_finder': lambda path: find_xemu_profiles(path)
+    },
+    # xbased keeps the Xbox hard disk as plain folders (hdd/Partition1/UDATA),
+    # so it uses the standard folder backup, not the xemu QCOW2 engine.
+    'xbased': {
+        'name': 'xbased',
+        'profile_finder': lambda path: find_xbased_profiles(path)
     },
     # Key is 'kyty' (not 'kytyps5') so both launcher.exe in a KytyPS5 folder
     # and kyty_emulator.exe in any folder are matched by path keyword.

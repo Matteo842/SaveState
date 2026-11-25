@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState "Settings" icon: redrawn from the original settings.png, pixel by pixel.
+       Light gear with short wide teeth and a thin dark outline, a narrow muted red ring
+       between two thin dark lines, and a see-through hole in the middle. -->
+  <!-- Gear (the second shape in the path is the hole) -->
+  <path fill="#EAF2FF" fill-rule="evenodd" stroke="#0A0B0C" stroke-width="2.2" stroke-linejoin="round" d="M25.40 7.89 L26.27 3.60 Q26.80 1.00 29.40 1.00 L34.60 1.00 Q37.20 1.00 37.73 3.60 L38.60 7.89 A25 25 0 0 1 44.38 10.28 L48.03 7.87 Q50.24 6.40 52.08 8.24 L55.76 11.92 Q57.60 13.76 56.13 15.97 L53.72 19.62 A25 25 0 0 1 56.11 25.40 L60.40 26.27 Q63.00 26.80 63.00 29.40 L63.00 34.60 Q63.00 37.20 60.40 37.73 L56.11 38.60 A25 25 0 0 1 53.72 44.38 L56.13 48.03 Q57.60 50.24 55.76 52.08 L52.08 55.76 Q50.24 57.60 48.03 56.13 L44.38 53.72 A25 25 0 0 1 38.60 56.11 L37.73 60.40 Q37.20 63.00 34.60 63.00 L29.40 63.00 Q26.80 63.00 26.27 60.40 L25.40 56.11 A25 25 0 0 1 19.62 53.72 L15.97 56.13 Q13.76 57.60 11.92 55.76 L8.24 52.08 Q6.40 50.24 7.87 48.03 L10.28 44.38 A25 25 0 0 1 7.89 38.60 L3.60 37.73 Q1.00 37.20 1.00 34.60 L1.00 29.40 Q1.00 26.80 3.60 26.27 L7.89 25.40 A25 25 0 0 1 10.28 19.62 L7.87 15.97 Q6.40 13.76 8.24 11.92 L11.92 8.24 Q13.76 6.40 15.97 7.87 L19.62 10.28 A25 25 0 0 1 25.40 7.89 z M32 20 a12 12 0 1 0 0.01 0 z"/>
+  <!-- Red ring -->
+  <circle cx="32" cy="32" r="15.75" fill="none" stroke="#A44040" stroke-width="4"/>
+  <!-- Thin dark lines outside and inside the red ring -->
+  <circle cx="32" cy="32" r="18.75" fill="none" stroke="#171F2E" stroke-width="2.5"/>
+  <circle cx="32" cy="32" r="12.75" fill="none" stroke="#171F2E" stroke-width="2.5"/>
+</svg>
