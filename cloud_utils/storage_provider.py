@@ -109,7 +109,7 @@ class StorageProvider(ABC):
         Return the icon filename for this provider.
         Override in subclasses if a custom icon is needed.
         """
-        return "cloud.png"
+        return "cloud.svg"
     
     # -------------------------------------------------------------------------
     # Connection Management

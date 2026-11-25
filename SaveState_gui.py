@@ -495,7 +495,7 @@ class MainWindow(QMainWindow):
         self.cloud_button = QPushButton(tr("Cloud Sync"))
         
         # Cloud icon
-        cloud_icon_path = resource_path("icons/cloud-sync.png")
+        cloud_icon_path = resource_path("icons/cloud-sync.svg")
         if os.path.exists(cloud_icon_path):
             cloud_icon = QIcon(cloud_icon_path)
             self.cloud_button.setIcon(cloud_icon)
@@ -557,7 +557,7 @@ class MainWindow(QMainWindow):
             self.settings_icon_normal = None
         
         # Cloud settings icon
-        cloud_settings_icon_path = resource_path("icons/cloud option.png")
+        cloud_settings_icon_path = resource_path("icons/cloud-option.svg")
         if os.path.exists(cloud_settings_icon_path):
             self.settings_icon_cloud = QIcon(cloud_settings_icon_path)
         else:
@@ -2902,7 +2902,7 @@ class MainWindow(QMainWindow):
         act = QAction(tr("Upload to Cloud"), self)
         act.setToolTip(tr("Upload the local backups of the selected profiles to the connected cloud"))
         try:
-            cloud_icon_path = resource_path("icons/cloud.png")
+            cloud_icon_path = resource_path("icons/cloud.svg")
             if os.path.exists(cloud_icon_path):
                 act.setIcon(QIcon(cloud_icon_path))
         except Exception:

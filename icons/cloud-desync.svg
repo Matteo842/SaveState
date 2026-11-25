@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState cloud warning icon: amber cloud with "!" (cloud sync paused / offline). -->
+  <defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="14" x2="0" y2="50"><stop offset="0" stop-color="#FFC857"/><stop offset="1" stop-color="#EE8E22"/></linearGradient></defs>
+  <g transform="translate(32 34) scale(1.12) translate(-32 -32)">
+  <g fill="url(#g)"><circle cx="18" cy="38" r="12"/><circle cx="33" cy="30" r="16"/><circle cx="46" cy="38" r="12"/><rect x="18" y="38" width="28" height="12"/></g>
+  <g fill="#FFFFFF"><rect x="30" y="24" width="4" height="13" rx="2"/><circle cx="32" cy="42.5" r="2.4"/></g>
+  </g>
+</svg>

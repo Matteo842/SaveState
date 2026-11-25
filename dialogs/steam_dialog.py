@@ -19,9 +19,9 @@ from common.i18n import tr
 
 CLOUD_ICON_YES_PATH = "icons/steam-cloud-yes.png"
 CLOUD_ICON_NO_PATH = "icons/steam-cloud-no.png"
-CLOUD_ICON_YES_FALLBACK = "icons/cloud-sync.png"
-CLOUD_ICON_NO_FALLBACK = "icons/cloud-desync.png"
-CLOUD_ICON_UNKNOWN_PATH = "icons/cloud.png"
+CLOUD_ICON_YES_FALLBACK = "icons/cloud-sync.svg"
+CLOUD_ICON_NO_FALLBACK = "icons/cloud-desync.svg"
+CLOUD_ICON_UNKNOWN_PATH = "icons/cloud.svg"
 CLOUD_ICON_SIZE = QSize(22, 22)
 
 

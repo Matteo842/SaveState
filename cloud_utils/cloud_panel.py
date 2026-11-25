@@ -867,7 +867,7 @@ class CloudSavePanel(QWidget):
         """Pre-load and cache all icons used in the backup table to avoid per-row disk I/O."""
         try:
             # Cache state icons (32x32 scaled)
-            for icon_name in ("cloud_local.png", "local.png", "cloud.png"):
+            for icon_name in ("cloud-local.svg", "local.png", "cloud.svg"):
                 icon_path = resource_path(f"icons/{icon_name}")
                 if os.path.exists(icon_path):
                     pixmap = QPixmap(icon_path)
@@ -1606,13 +1606,13 @@ class CloudSavePanel(QWidget):
         
         # Determine which icon to use
         if has_local and has_cloud:
-            icon_name = "cloud_local.png"
+            icon_name = "cloud-local.svg"
             tooltip = tr("Available locally and in cloud")
         elif has_local:
             icon_name = "local.png"
             tooltip = tr("Available locally only")
         elif has_cloud:
-            icon_name = "cloud.png"
+            icon_name = "cloud.svg"
             tooltip = tr("Available in cloud only")
         else:
             icon_name = None

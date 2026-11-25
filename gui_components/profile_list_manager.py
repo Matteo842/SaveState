@@ -623,13 +623,13 @@ class ProfileListManager:
         # --- End Loading Note Icon ---
 
         # --- Cloud desync warning icon (sync enabled but cloud offline) ---
-        cloud_desync_icon_path = resource_path("icons/cloud-desync.png")
+        cloud_desync_icon_path = resource_path("icons/cloud-desync.svg")
         self.cloud_desync_icon_path = (
             cloud_desync_icon_path if os.path.exists(cloud_desync_icon_path) else None
         )
         if not self.cloud_desync_icon_path:
             logging.warning(
-                f"Cloud desync icon 'cloud-desync.png' not found in {cloud_desync_icon_path}"
+                f"Cloud desync icon 'cloud-desync.svg' not found in {cloud_desync_icon_path}"
             )
         # --- End Cloud desync icon ---
 

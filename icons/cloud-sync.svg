@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState cloud sync icon: cloud with two round arrows. -->
+  <defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="14" x2="0" y2="50"><stop offset="0" stop-color="#6BB8F5"/><stop offset="1" stop-color="#2F7FD8"/></linearGradient></defs>
+  <g transform="translate(32 34) scale(1.12) translate(-32 -32)">
+  <g fill="url(#g)"><circle cx="18" cy="38" r="12"/><circle cx="33" cy="30" r="16"/><circle cx="46" cy="38" r="12"/><rect x="18" y="38" width="28" height="12"/></g>
+  <g stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round" fill="none"><path d="M24.48 33.26 A8 8 0 0 1 38.13 30.86"/><path d="M39.52 38.74 A8 8 0 0 1 25.87 41.14"/></g><g fill="#FFFFFF" stroke="#FFFFFF" stroke-width="1.2" stroke-linejoin="round"><path d="M40.40 33.60 L40.10 27.40 L34.60 31.50 z"/><path d="M23.60 38.40 L23.90 44.60 L29.40 40.50 z"/></g>
+  </g>
+</svg>
