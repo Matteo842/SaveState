@@ -606,7 +606,7 @@ class MainWindow(QMainWindow):
         
         self.backup_button = QPushButton(tr("Backup"))
         self.backup_button.setObjectName("BackupButton")
-        backup_icon_path = resource_path("icons/backup.png")
+        backup_icon_path = resource_path("icons/backup.svg")
         if os.path.exists(backup_icon_path):
              backup_icon = QIcon(backup_icon_path)
              self.backup_button.setIcon(backup_icon)

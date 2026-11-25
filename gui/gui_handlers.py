@@ -1002,7 +1002,7 @@ class MainWindowHandlers:
             self._backup_button_original_style = None
         
         # Restore icon
-        backup_icon_path = resource_path("icons/backup.png")
+        backup_icon_path = resource_path("icons/backup.svg")
         if os.path.exists(backup_icon_path):
             btn.setIcon(QIcon(backup_icon_path))
         

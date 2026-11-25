@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState "Backup" icon: blue floppy with a green arrow going down,
+       drawn only inside the white label. Dark outline on every element (#1B1F27). -->
+  <defs>
+    <linearGradient id="blue" gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="60">
+      <stop offset="0" stop-color="#6BB8F5"/>
+      <stop offset="1" stop-color="#2F7FD8"/>
+    </linearGradient>
+    <linearGradient id="green" gradientUnits="userSpaceOnUse" x1="0" y1="32" x2="0" y2="52">
+      <stop offset="0" stop-color="#5BE08A"/>
+      <stop offset="1" stop-color="#1FA855"/>
+    </linearGradient>
+  </defs>
+  <g stroke="#1B1F27" stroke-width="3.5" stroke-linejoin="round">
+    <!-- Floppy body -->
+    <path d="M9 5 H45 L59 19 V55 A4 4 0 0 1 55 59 H9 A4 4 0 0 1 5 55 V9 A4 4 0 0 1 9 5 Z" fill="url(#blue)"/>
+    <!-- Metal shutter -->
+    <rect x="16" y="5" width="24" height="15" rx="1.5" fill="#D9DEE6"/>
+    <!-- White label -->
+    <rect x="12" y="27" width="40" height="29" rx="2.5" fill="#FFFFFF"/>
+    <!-- Arrow, fully inside the label -->
+    <path d="M27 31.5 H37 V41 H44 L32 52 L20 41 H27 Z" fill="url(#green)"/>
+  </g>
+  <!-- Slot in the shutter -->
+  <rect x="30.5" y="8.5" width="5" height="8" rx="1" fill="#33476B"/>
+</svg>

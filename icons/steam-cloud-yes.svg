@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="382" height="256" viewBox="0 0 382 256">
+  <!-- SaveState "Steam Cloud: Yes" icon: redrawn from the original steam-cloud-yes.png.
+       Green cloud with a black outline and the white Steam logo. -->
+  <!-- Cloud: the same shapes twice. First with a wide black line (outline),
+       then filled on top without line, so only the outer edge stays black. -->
+  <g stroke="#000000" stroke-width="10" fill="#000000">
+    <circle cx="132" cy="92" r="86"/>
+    <circle cx="222" cy="106" r="64"/>
+    <circle cx="84" cy="171" r="78"/>
+    <circle cx="298" cy="171" r="78"/>
+    <rect x="84" y="92" width="214" height="157"/>
+  </g>
+  <g fill="#85A553">
+    <circle cx="132" cy="92" r="86"/>
+    <circle cx="222" cy="106" r="64"/>
+    <circle cx="84" cy="171" r="78"/>
+    <circle cx="298" cy="171" r="78"/>
+    <rect x="84" y="92" width="214" height="157"/>
+  </g>
+  <!-- Steam logo -->
+  <g fill="#FDFDFD">
+    <!-- Arm from the big ring to the lower small ring -->
+    <path d="M242 157 L290 188 L247 214 L216 199 z"/>
+    <!-- Big ring -->
+    <circle cx="282.5" cy="150.5" r="41.5"/>
+    <circle cx="282.5" cy="150.5" r="28.5" fill="#85A553"/>
+    <circle cx="282.5" cy="150.5" r="20.5"/>
+    <!-- Left small ring -->
+    <circle cx="62" cy="174.5" r="26.5"/>
+    <circle cx="62" cy="174.5" r="18.5" fill="#85A553"/>
+    <circle cx="62" cy="174.5" r="13.5"/>
+    <!-- Lower small ring -->
+    <circle cx="219" cy="218.5" r="26.5"/>
+    <circle cx="219" cy="218.5" r="18.5" fill="#85A553"/>
+    <circle cx="219" cy="218.5" r="12.5"/>
+    <!-- Bar between the two small rings -->
+    <line x1="62" y1="173.3" x2="219" y2="218.1" stroke="#FDFDFD" stroke-width="29"/>
+  </g>
+</svg>
