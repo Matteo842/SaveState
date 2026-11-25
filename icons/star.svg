@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- SaveState "Favorite" icon: gold star with a dark outline.
+       Same star shape and position as emptystar.svg, so toggling does not make it jump. -->
+  <defs>
+    <linearGradient id="gold" gradientUnits="userSpaceOnUse" x1="0" y1="7" x2="0" y2="60">
+      <stop offset="0" stop-color="#FFE07A"/>
+      <stop offset="1" stop-color="#E9A91C"/>
+    </linearGradient>
+  </defs>
+  <path d="M32.00 7.00 L39.94 25.08 L59.58 27.04 L44.84 40.17 L49.05 59.46 L32.00 49.50 L14.95 59.46 L19.16 40.17 L4.42 27.04 L24.06 25.08 z" fill="url(#gold)" stroke="#1B1F27" stroke-width="3.5" stroke-linejoin="round"/>
+</svg>

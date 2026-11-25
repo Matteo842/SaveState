@@ -601,14 +601,14 @@ class ProfileListManager:
         self.profiles = main_window.profiles # Access the profiles through main_window
 
         # --- Loading Favorite Icons ---
-        star_icon_path = resource_path("icons/star.png")
-        empty_star_icon_path = resource_path("icons/emptystar.png")
+        star_icon_path = resource_path("icons/star.svg")
+        empty_star_icon_path = resource_path("icons/emptystar.svg")
         self.star_icon = QIcon(star_icon_path) if os.path.exists(star_icon_path) else None
         self.empty_star_icon = QIcon(empty_star_icon_path) if os.path.exists(empty_star_icon_path) else None
         if not self.star_icon:
-            logging.warning(f"Favorite icon 'star.png' not found in {star_icon_path}")
+            logging.warning(f"Favorite icon 'star.svg' not found in {star_icon_path}")
         if not self.empty_star_icon:
-            logging.warning(f"Non-favorite icon 'emptystar.png' not found in {empty_star_icon_path}")
+            logging.warning(f"Non-favorite icon 'emptystar.svg' not found in {empty_star_icon_path}")
         
         # --- Loading Trash Icon ---
         trash_icon_path = resource_path("icons/trash.svg")
