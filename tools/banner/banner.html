@@ -52,8 +52,8 @@
   .left { position: absolute; left: 60px; top: 50px; width: 520px; }
   .brand { display: flex; align-items: center; gap: 14px; }
   .brand img {
-    width: 58px; height: 58px; border-radius: 14px;
-    box-shadow: 0 2px 0 rgba(0,0,0,0.08), 0 6px 16px rgba(0,0,0,0.12);
+    width: 76px; height: 76px; margin: -10px -4px -10px -8px;
+    filter: drop-shadow(0 4px 6px rgba(80, 20, 15, 0.18));
   }
   .brand span {
     font-family: "Bahnschrift", "Segoe UI", sans-serif;
@@ -199,7 +199,7 @@
 
   .toast { left: 912px; top: 452px; width: 258px; padding: 12px 15px; }
   .toast .top { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
-  .toast .top img { width: 18px; height: 18px; border-radius: 4px; }
+  .toast .top img { width: 20px; height: 20px; }
   .toast .top .x { margin-left: auto; color: #aaa; }
   .toast .h { margin-top: 6px; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
   .toast .check {
@@ -224,7 +224,7 @@
 
   <div class="left">
     <div class="brand">
-      <img src="../../icon.png" alt="">
+      <img src="mascot.png" alt="">
       <span>SaveState</span>
     </div>
     <h1>Never lose<br><em>a save again.</em></h1>
@@ -313,7 +313,7 @@
 
   <!-- floating: backup done -->
   <div class="card toast">
-    <div class="top"><img src="../../icon.png" alt="">SaveState <span class="x">&#10005;</span></div>
+    <div class="top"><img src="mascot.png" alt="">SaveState <span class="x">&#10005;</span></div>
     <div class="h"><span class="check">&#10003;</span>Backup completed</div>
     <div class="s">Elden Ring &middot; 5 of 5 backups kept</div>
     <div class="cloud"><img src="../../icons/cloud-sync.png" alt="">Synced to Google Drive</div>
