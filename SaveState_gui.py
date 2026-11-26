@@ -64,6 +64,7 @@ from gui_components.theme_manager import ThemeManager
 from gui_components.profile_creation_manager import ProfileCreationManager
 from gui_components.drag_drop_handler import DragDropHandler
 from gui_components.busy_indicator import BusyIndicator
+from gui_components.centered_icon_button import CenteredIconButton
 from cloud_utils.cloud_panel import CloudSavePanel
 from cloud_utils import cloud_settings_manager
 from core import core_logic # Mantenuto per load_profiles
@@ -482,8 +483,9 @@ class MainWindow(QMainWindow):
         self.update_indicator = UpdateIndicator()
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
-        self.new_profile_button = QPushButton()
-        self.steam_button = QPushButton()
+        # General buttons: icon + text centered together, a bit more space between them
+        self.new_profile_button = CenteredIconButton(icon_gap=6)
+        self.steam_button = CenteredIconButton(icon_gap=6)
         self.delete_profile_button = QPushButton() # Crea pulsante Elimina Profilo
         self.backup_button = QPushButton()         # Crea pulsante Backup
         self.restore_button = QPushButton()        # Crea pulsante Ripristina
@@ -492,7 +494,7 @@ class MainWindow(QMainWindow):
         
         
         # New visible Cloud entry
-        self.cloud_button = QPushButton(tr("Cloud Sync"))
+        self.cloud_button = CenteredIconButton(tr("Cloud Sync"), icon_gap=6)
         
         # Cloud icon
         cloud_icon_path = resource_path("icons/cloud-sync.svg")
@@ -597,14 +599,13 @@ class MainWindow(QMainWindow):
         if os.path.exists(steam_icon_path): # Controlla se il file esiste
              steam_icon = QIcon(steam_icon_path)
              self.steam_button.setIcon(steam_icon)
-             self.steam_button.setIconSize(QSize(16, 16)) # Imposta la stessa dimensione delle altre icone
         else:
              logging.warning(f"File icona Steam non trovato: {steam_icon_path}")
              
         delete_prof_icon = style.standardIcon(QStyle.StandardPixmap.SP_TrashIcon) # Icona Cestino
         self.delete_profile_button.setIcon(delete_prof_icon)
         
-        self.backup_button = QPushButton(tr("Backup"))
+        self.backup_button = CenteredIconButton(tr("Backup"))
         self.backup_button.setObjectName("BackupButton")
         backup_icon_path = resource_path("icons/backup.svg")
         if os.path.exists(backup_icon_path):
@@ -662,7 +663,7 @@ class MainWindow(QMainWindow):
         # via the #BackupButton / #RestoreButton / #ManageButton object names so the
         # action buttons follow the active theme automatically.
 
-        self.restore_button = QPushButton(tr("Restore"))
+        self.restore_button = CenteredIconButton(tr("Restore"))
         self.restore_button.setObjectName("RestoreButton")
         restore_icon_path = resource_path("icons/restore.svg")
         if os.path.exists(restore_icon_path):
@@ -674,12 +675,12 @@ class MainWindow(QMainWindow):
             restore_icon = style.standardIcon(QStyle.StandardPixmap.SP_ArrowDown)
             self.restore_button.setIcon(restore_icon)
 
-        self.manage_backups_button = QPushButton(tr("Manage Backups"))
+        self.manage_backups_button = CenteredIconButton(tr("Manage Backups"))
         self.manage_backups_button.setObjectName("ManageButton")
         # The icon (icons/manage_backups.svg) is set by ThemeManager,
         # because its color follows the dark/light theme.
 
-        self.open_backup_dir_button = QPushButton(tr("Open Backup Folder"))
+        self.open_backup_dir_button = CenteredIconButton(tr("Open Backup Folder"), icon_gap=6)
         open_folder_icon_path = resource_path("icons/open_folder.svg")
         if os.path.exists(open_folder_icon_path):
             self.open_backup_dir_button.setIcon(QIcon(open_folder_icon_path))
@@ -690,14 +691,18 @@ class MainWindow(QMainWindow):
         
         # Imposta dimensione icone (opzionale, regola i px se necessario)
         icon_size = QSize(16, 16) # Larghezza, Altezza in pixel
-        icon_size_action = QSize(16, 16)  # Icone più grandi per pulsanti Backup/Restore
-        self.new_profile_button.setIconSize(icon_size)
+        # Bigger icons: about 60% of the button height (see CenteredIconButton)
+        self.general_icon_size = QSize(20, 20)  # New Profile, Steam, Open Folder, Cloud
+        self.action_icon_size = QSize(26, 26)   # Backup, Restore, Manage Backups
+        icon_size_action = self.action_icon_size
+        self.new_profile_button.setIconSize(self.general_icon_size)
+        self.steam_button.setIconSize(self.general_icon_size)
         self.delete_profile_button.setIconSize(icon_size)
         self.backup_button.setIconSize(icon_size_action)
         self.restore_button.setIconSize(icon_size_action)
-        self.manage_backups_button.setIconSize(icon_size)
-        self.open_backup_dir_button.setIconSize(icon_size)
-        self.cloud_button.setIconSize(icon_size)
+        self.manage_backups_button.setIconSize(icon_size_action)
+        self.open_backup_dir_button.setIconSize(self.general_icon_size)
+        self.cloud_button.setIconSize(self.general_icon_size)
         # self.settings_button.setIconSize(icon_size)
         # self.steam_button.setIconSize(icon_size)
 
@@ -4079,7 +4084,7 @@ class MainWindow(QMainWindow):
             orig = getattr(self, '_ctrl_orig_icons', {}).get(id(ui_btn))
             if orig is not None:
                 ui_btn.setIcon(orig)
-                ui_btn.setIconSize(QSize(16, 16))
+                ui_btn.setIconSize(self.general_icon_size)
 
     def _ctrl_clear_focus_section(self):
         """Remove controller-focus dimming from all sections (on disconnect)."""
@@ -4580,7 +4585,7 @@ class MainWindow(QMainWindow):
             orig = getattr(self, '_ctrl_orig_icons', {}).get(id(ui_btn))
             if orig is not None:
                 ui_btn.setIcon(orig)
-                ui_btn.setIconSize(QSize(16, 16))
+                ui_btn.setIconSize(self.action_icon_size)
 
     def _ctrl_deactivate(self):
         """Immediately restore button icons when controller support is disabled at runtime."""
