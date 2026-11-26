@@ -77,6 +77,40 @@ def _notification_icon_path(success, profile_name=None, profile_data=None):
     return None
 
 
+def backup_count_summary(profile_name, profile_data):
+    """Short text for the toast, e.g. "Elden Ring · 5 of 5 backups kept".
+
+    Returns None when the count cannot be read: the caller then keeps its
+    usual message.
+    """
+    if not profile_name or not isinstance(profile_data, dict):
+        return None
+    try:
+        settings, _ = settings_manager.load_settings()
+        backup_base_dir = settings.get("backup_base_dir")
+        if not backup_base_dir:
+            return None
+        profiles = core_logic.load_profiles()
+        effective = core_logic.get_effective_profile_settings(
+            profile_name, profile_data, profiles, settings
+        )
+        max_backups = effective.get("max_backups")
+        count = len(core_logic.list_available_backups(
+            profile_name, backup_base_dir, profile_data
+        ))
+        if count == 0:
+            return None
+        # A locked backup is not counted by the rotation, so count can be over the limit
+        if isinstance(max_backups, int) and 0 < max_backups and count <= max_backups:
+            counter = tr("{0} of {1} backups kept", count, max_backups)
+        else:
+            counter = trn("{0} backup kept", "{0} backups kept", count)
+        return f"{profile_name} · {counter}"
+    except Exception as e:
+        logging.debug(f"Unable to count backups for notification '{profile_name}': {e}")
+        return None
+
+
 def show_notification(success, message, force=False, profile_name=None, profile_data=None):
     """
     Shows a custom popup notification. Uses native Linux notifications if available,
@@ -102,6 +136,10 @@ def show_notification(success, message, force=False, profile_name=None, profile_
                                          int(match.group(1))),
                 clean_message,
             )
+        # Show how many backups the game has instead of the long file name
+        summary = backup_count_summary(profile_name, profile_data)
+        if summary:
+            clean_message = summary
     notification_icon = _notification_icon_path(
         success, profile_name=profile_name, profile_data=profile_data
     )

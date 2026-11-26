@@ -548,7 +548,9 @@ class AutoBackupManager:
         if handlers is not None and hasattr(handlers, "_show_controller_shortcut_notification"):
             title = tr("Automatic Backup Complete") if success else tr("Automatic Backup Failed")
             if success and profile_name:
-                clean = tr("Backup completed for '{0}'.", profile_name)
+                clean = backup_runner.backup_count_summary(
+                    profile_name, self.main_window.profiles.get(profile_name)
+                ) or tr("Backup completed for '{0}'.", profile_name)
             else:
                 clean = message or tr("Automatic backup failed for '{0}'.", profile_name)
             handlers._show_controller_shortcut_notification(

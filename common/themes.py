@@ -485,30 +485,25 @@ QWidget#NotificationPopup {
     background-color: transparent;
 }
 QFrame#NotificationCard {
-    background-color: #252628;
-    border: 1px solid #45474C;
-    border-radius: 10px;
-}
-QFrame#NotificationAccentSuccess {
-    background-color: #35C878;
-    border: none;
-    border-top-left-radius: 9px;
-    border-bottom-left-radius: 9px;
-}
-QFrame#NotificationAccentError {
-    background-color: #E5484D;
-    border: none;
-    border-top-left-radius: 9px;
-    border-bottom-left-radius: 9px;
+    background-color: #26272A;
+    border: 1px solid #3A3C41;
+    border-radius: 16px;
 }
 QLabel#NotificationIcon {
-    background-color: #323438;
-    border: 1px solid #484B51;
-    border-radius: 9px;
+    background-color: transparent;
+    border: none;
+}
+QLabel#NotificationAppName {
+    color: #A9ACB3;
+    font-size: 9.5pt;
+}
+QLabel#NotificationClose {
+    color: #7D8088;
+    font-size: 9pt;
 }
 QLabel#NotificationTitle {
     color: #FFFFFF;
-    font-size: 11pt;
+    font-size: 11.5pt;
     font-weight: 600;
 }
 QLabel#NotificationMessage {
@@ -1149,29 +1144,24 @@ QWidget#NotificationPopup {
 }
 QFrame#NotificationCard {
     background-color: #FFFFFF;
-    border: 1px solid #D9DCE3;
-    border-radius: 10px;
-}
-QFrame#NotificationAccentSuccess {
-    background-color: #22A966;
-    border: none;
-    border-top-left-radius: 9px;
-    border-bottom-left-radius: 9px;
-}
-QFrame#NotificationAccentError {
-    background-color: #E5484D;
-    border: none;
-    border-top-left-radius: 9px;
-    border-bottom-left-radius: 9px;
+    border: 1px solid #E4E6EB;
+    border-radius: 16px;
 }
 QLabel#NotificationIcon {
-    background-color: #F4F5F7;
-    border: 1px solid #E1E3E8;
-    border-radius: 9px;
+    background-color: transparent;
+    border: none;
+}
+QLabel#NotificationAppName {
+    color: #5A5D66;
+    font-size: 9.5pt;
+}
+QLabel#NotificationClose {
+    color: #9A9DA5;
+    font-size: 9pt;
 }
 QLabel#NotificationTitle {
     color: #17181C;
-    font-size: 11pt;
+    font-size: 11.5pt;
     font-weight: 600;
 }
 QLabel#NotificationMessage {

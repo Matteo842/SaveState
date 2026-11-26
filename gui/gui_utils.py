@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 from PySide6.QtCore import QThread, Signal, QObject, Qt, QTimer, QLockFile
 from PySide6.QtWidgets import (
-    QWidget, QLabel, QHBoxLayout, QVBoxLayout, QFrame, QApplication, QStyle,
+    QWidget, QLabel, QHBoxLayout, QVBoxLayout, QFrame, QApplication,
     QGraphicsDropShadowEffect,
 )
-from PySide6.QtGui import QPixmap, QColor
+from PySide6.QtGui import QPixmap, QColor, QIcon, QPainter, QPainterPath
 
 # Importa core_logic e logging SOLO per la gestione delle eccezioni nel blocco 'except'
 # Se non esistessero quel blocco 'except' specifico, questi import non servirebbero qui.
@@ -570,84 +570,97 @@ class NotificationPopup(QWidget):
         card = QFrame(self)
         card.setObjectName("NotificationCard")
         card.setProperty("notificationStatus", "success" if success else "error")
-        card.setMinimumWidth(340)
-        card.setMaximumWidth(500)
+        # Fixed width: long texts wrap onto a new line instead of widening the toast
+        card.setFixedWidth(370)
         outer_layout.addWidget(card)
 
         shadow = QGraphicsDropShadowEffect(card)
-        shadow.setBlurRadius(22)
-        shadow.setOffset(0, 5)
-        shadow.setColor(QColor(0, 0, 0, 105))
+        shadow.setBlurRadius(30)
+        shadow.setOffset(0, 8)
+        shadow.setColor(QColor(0, 0, 0, 90))
         card.setGraphicsEffect(shadow)
 
-        card_layout = QHBoxLayout(card)
-        card_layout.setContentsMargins(0, 0, 16, 0)
-        card_layout.setSpacing(0)
+        from common.utils import resource_path
 
-        accent = QFrame(card)
-        accent.setObjectName(
-            "NotificationAccentSuccess" if success else "NotificationAccentError"
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 12, 16, 15)
+        card_layout.setSpacing(10)
+
+        # --- Header: small app icon, "SaveState" and a close mark ---
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(8)
+
+        app_icon_label = QLabel(card)
+        app_icon_label.setFixedSize(20, 20)
+        # Same mascot icon as the main window
+        app_pixmap = self._load_scaled_pixmap(
+            resource_path("icon.png"), 20, app_icon_label.devicePixelRatioF()
         )
-        accent.setFixedWidth(5)
-        card_layout.addWidget(accent)
+        if app_pixmap is not None:
+            app_icon_label.setPixmap(app_pixmap)
+        header_layout.addWidget(app_icon_label)
 
+        app_name_label = QLabel("SaveState", card)
+        app_name_label.setObjectName("NotificationAppName")
+        header_layout.addWidget(app_name_label)
+        header_layout.addStretch(1)
+
+        # Only a visual hint: a click anywhere on the toast closes it
+        close_label = QLabel("✕", card)
+        close_label.setObjectName("NotificationClose")
+        header_layout.addWidget(close_label)
+        card_layout.addLayout(header_layout)
+
+        # --- Body: game icon (when there is one) + title and message ---
         content_layout = QHBoxLayout()
-        content_layout.setContentsMargins(15, 14, 0, 14)
-        content_layout.setSpacing(13)
-        card_layout.addLayout(content_layout, stretch=1)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(12)
+        card_layout.addLayout(content_layout)
 
-        icon_label = QLabel(card)
-        icon_label.setObjectName("NotificationIcon")
-        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_label.setFixedSize(50, 50)
-        style = QApplication.instance().style()
-        icon_size = 42
-        icon_dpr = max(1.0, icon_label.devicePixelRatioF())
-        icon_pixel_size = max(
-            icon_size, int((icon_size * icon_dpr) + 0.5)
-        )
-
-        custom_icon_loaded = False
         if icon_path and os.path.exists(icon_path):
-            pixmap = QPixmap(icon_path)
-            if not pixmap.isNull():
-                scaled_pixmap = pixmap.scaled(
-                    icon_pixel_size,
-                    icon_pixel_size,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-                scaled_pixmap.setDevicePixelRatio(icon_dpr)
-                icon_label.setPixmap(scaled_pixmap)
-                custom_icon_loaded = True
+            icon_label = QLabel(card)
+            icon_label.setObjectName("NotificationIcon")
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_label.setFixedSize(42, 42)
+            game_pixmap = self._load_scaled_pixmap(
+                icon_path, 42, icon_label.devicePixelRatioF(), corner_radius=10
+            )
+            if game_pixmap is not None:
+                icon_label.setPixmap(game_pixmap)
+                content_layout.addWidget(icon_label, alignment=Qt.AlignmentFlag.AlignTop)
             else:
                 logging.warning(f"NotificationPopup: Failed to load custom icon from {icon_path}")
-
-        if not custom_icon_loaded:
-            if success:
-                icon = style.standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton)
-            else:
-                icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical)
-            if not icon.isNull():
-                fallback_pixmap = icon.pixmap(icon_pixel_size, icon_pixel_size)
-                fallback_pixmap.setDevicePixelRatio(icon_dpr)
-                icon_label.setPixmap(fallback_pixmap)
-        content_layout.addWidget(icon_label, alignment=Qt.AlignmentFlag.AlignTop)
+                icon_label.deleteLater()
 
         text_layout = QVBoxLayout()
-        text_layout.setContentsMargins(0, 1, 0, 1)
-        text_layout.setSpacing(5)
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(4)
+
+        # Title row: green check (or red cross) + title
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(8)
+        status_label = QLabel(card)
+        status_label.setFixedSize(20, 20)
+        status_icon = QIcon(resource_path(os.path.join(
+            "icons", "notify_success.svg" if success else "notify_error.svg"
+        )))
+        if not status_icon.isNull():
+            # QIcon.pixmap() already returns a sharp pixmap for the screen scale
+            status_label.setPixmap(status_icon.pixmap(20, 20))
+        title_row.addWidget(status_label)
 
         self.title_label = QLabel(str(title), card)
         self.title_label.setObjectName("NotificationTitle")
         self.title_label.setTextFormat(Qt.TextFormat.PlainText)
-        text_layout.addWidget(self.title_label)
+        title_row.addWidget(self.title_label, stretch=1)
+        text_layout.addLayout(title_row)
 
         self.message_label = QLabel(str(message), card)
         self.message_label.setObjectName("NotificationMessage")
         self.message_label.setTextFormat(Qt.TextFormat.PlainText)
         self.message_label.setWordWrap(True)
-        self.message_label.setMaximumWidth(385)
         text_layout.addWidget(self.message_label)
         content_layout.addLayout(text_layout, stretch=1)
 
@@ -656,6 +669,37 @@ class NotificationPopup(QWidget):
         self.close_timer.setSingleShot(True)
         self.close_timer.timeout.connect(self.close)
         self.close_timer.start(self._duration_ms)
+
+    @staticmethod
+    def _load_scaled_pixmap(path, size, dpr, corner_radius=0):
+        """Load an image, scale it to `size` (logical px) for the screen, and
+        optionally round its corners. Returns None if it cannot be loaded."""
+        pixmap = QPixmap(path)
+        if pixmap.isNull():
+            return None
+        dpr = max(1.0, dpr)
+        pixel_size = int(size * dpr + 0.5)
+        pixmap = pixmap.scaled(
+            pixel_size, pixel_size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        if corner_radius:
+            rounded = QPixmap(pixmap.size())
+            rounded.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(rounded)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            clip = QPainterPath()
+            clip.addRoundedRect(
+                0, 0, pixmap.width(), pixmap.height(),
+                corner_radius * dpr, corner_radius * dpr,
+            )
+            painter.setClipPath(clip)
+            painter.drawPixmap(0, 0, pixmap)
+            painter.end()
+            pixmap = rounded
+        pixmap.setDevicePixelRatio(dpr)
+        return pixmap
 
     @staticmethod
     def _notification_stack_dir():
