@@ -662,6 +662,25 @@ class NotificationPopup(QWidget):
         self.message_label.setTextFormat(Qt.TextFormat.PlainText)
         self.message_label.setWordWrap(True)
         text_layout.addWidget(self.message_label)
+
+        # Cloud row ("Synced to Google Drive"): hidden until set_cloud_status()
+        self.cloud_row = QWidget(card)
+        self.cloud_row.setObjectName("NotificationCloudRow")
+        cloud_layout = QHBoxLayout(self.cloud_row)
+        cloud_layout.setContentsMargins(0, 4, 0, 0)
+        cloud_layout.setSpacing(6)
+        self.cloud_icon_label = QLabel(self.cloud_row)
+        self.cloud_icon_label.setFixedSize(18, 18)
+        cloud_layout.addWidget(self.cloud_icon_label)
+        self.cloud_text_label = QLabel(self.cloud_row)
+        self.cloud_text_label.setObjectName("NotificationCloud")
+        self.cloud_text_label.setTextFormat(Qt.TextFormat.PlainText)
+        cloud_layout.addWidget(self.cloud_text_label, stretch=1)
+        self.cloud_row.hide()
+        text_layout.addWidget(self.cloud_row)
+        # Profile whose cloud upload this toast follows (see follow_cloud_upload)
+        self._cloud_profile_name = None
+
         content_layout.addLayout(text_layout, stretch=1)
 
         # --- Timer per Auto-Chiusura ---
@@ -669,6 +688,52 @@ class NotificationPopup(QWidget):
         self.close_timer.setSingleShot(True)
         self.close_timer.timeout.connect(self.close)
         self.close_timer.start(self._duration_ms)
+
+    def set_cloud_status(self, state, text):
+        """Show the cloud row under the message.
+
+        state: "uploading", "synced" or "failed" (picks the icon and the color).
+        """
+        from common.utils import resource_path
+        icon_name = {
+            "uploading": "cloud.svg",
+            "synced": "cloud-sync.svg",
+        }.get(state, "cloud-desync.svg")
+        icon = QIcon(resource_path(os.path.join("icons", icon_name)))
+        if not icon.isNull():
+            self.cloud_icon_label.setPixmap(icon.pixmap(18, 18))
+        self.cloud_text_label.setText(text)
+        # The color comes from QLabel#NotificationCloud[cloudState=...] in themes.py
+        self.cloud_text_label.setProperty("cloudState", state)
+        self.cloud_text_label.style().unpolish(self.cloud_text_label)
+        self.cloud_text_label.style().polish(self.cloud_text_label)
+        self.cloud_row.show()
+        # The toast is now taller: resize it and move it back into its corner
+        self.adjustSize()
+        if self.isVisible():
+            self._position_in_notification_stack()
+
+    def follow_cloud_upload(self, cloud_panel, profile_name):
+        """Show the progress of this profile's upload after an automatic backup."""
+        self._cloud_profile_name = profile_name
+        # Bound methods: Qt drops these connections when the toast is deleted
+        cloud_panel.auto_upload_started.connect(self._on_cloud_upload_started)
+        cloud_panel.auto_upload_finished.connect(self._on_cloud_upload_finished)
+
+    def _on_cloud_upload_started(self, profile_names, provider_name):
+        if self._cloud_profile_name in profile_names:
+            self.set_cloud_status("uploading", tr("Uploading to {0}...", provider_name))
+
+    def _on_cloud_upload_finished(self, profile_names, ok, provider_name):
+        if self._cloud_profile_name not in profile_names:
+            return
+        if ok:
+            self.set_cloud_status("synced", tr("Synced to {0}", provider_name))
+        else:
+            self.set_cloud_status("failed", tr("Not synced to {0}", provider_name))
+        # Leave the result on screen for a few seconds
+        if self.close_timer.isActive() and self.close_timer.remainingTime() < 4000:
+            self.close_timer.start(4000)
 
     @staticmethod
     def _load_scaled_pixmap(path, size, dpr, corner_radius=0):

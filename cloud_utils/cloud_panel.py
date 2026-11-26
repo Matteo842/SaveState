@@ -745,7 +745,10 @@ class CloudSavePanel(QWidget):
     upload_started = Signal(list)  # backup folder names being uploaded
     upload_progress = Signal(float)  # 0.0 to 1.0
     upload_ended = Signal()
-    
+    # Upload right after an automatic backup, used by its notification
+    auto_upload_started = Signal(list, str)  # profile names, provider name
+    auto_upload_finished = Signal(list, bool, str)  # profile names, all ok, provider name
+
     def __init__(self, backup_base_dir, profiles, parent=None):
         """
         Initialize the Cloud Save panel.
@@ -810,6 +813,8 @@ class CloudSavePanel(QWidget):
         self._auto_upload_last_time: dict[str, float] = {}
         self._auto_upload_pending: set[str] = set()
         self._auto_upload_flush_scheduled = False
+        # Profiles of the automatic-backup upload now running (for its notification)
+        self._auto_upload_names: list[str] = []
         
         # Sorting state for table headers (like Windows Explorer)
         # None = default sorting (favorites first, then alphabetical)
@@ -4980,13 +4985,42 @@ class CloudSavePanel(QWidget):
         self.auto_sync_worker.finished.connect(self.auto_sync_worker.deleteLater)
         self.auto_sync_thread.finished.connect(self.auto_sync_thread.deleteLater)
 
+        # Tell the automatic-backup notification that its upload is starting
+        self._auto_upload_names = list(profile_names) if quiet_notification else []
+        if self._auto_upload_names:
+            self.auto_upload_started.emit(
+                self._auto_upload_names, self._provider_display_name(active_provider)
+            )
+
         # Start sync
         self.auto_sync_thread.start()
-    
+
+    def _provider_display_name(self, provider):
+        """Name of the cloud service for the user, e.g. "Google Drive"."""
+        name = getattr(provider, 'name', None)
+        if isinstance(name, str) and name:
+            return name
+        # GoogleDriveManager has no "name" attribute
+        try:
+            if self.provider_combo.currentData() == "google_drive":
+                return "Google Drive"
+        except Exception:
+            pass
+        return tr("Cloud")
+
     def _on_auto_sync_cancelled(self):
         """Handle automatic sync cancellation."""
         logging.info("Periodic sync was cancelled")
-        
+
+        # Tell the automatic-backup notification that its upload did not finish
+        auto_upload_names = getattr(self, "_auto_upload_names", [])
+        self._auto_upload_names = []
+        if auto_upload_names:
+            active_provider = self._get_active_provider()
+            self.auto_upload_finished.emit(
+                auto_upload_names, False, self._provider_display_name(active_provider)
+            )
+
         # Show notification
         self._show_notification(
             tr("Periodic Sync Cancelled"),
@@ -5025,6 +5059,16 @@ class CloudSavePanel(QWidget):
         self._auto_sync_quiet_notification = False
 
         active_provider = self._get_active_provider()
+
+        # Tell the automatic-backup notification how its upload went
+        auto_upload_names = getattr(self, "_auto_upload_names", [])
+        self._auto_upload_names = []
+        if auto_upload_names:
+            self.auto_upload_finished.emit(
+                auto_upload_names,
+                total_count > 0 and success_count == total_count,
+                self._provider_display_name(active_provider),
+            )
 
         # Show notification (skip for quiet event-driven uploads after auto-backup)
         if not quiet:

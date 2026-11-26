@@ -4087,8 +4087,10 @@ class MainWindowHandlers:
             popup.show()
             elevate_notification_window(popup)
             logging.info(f"Controller shortcut notification shown: {title} - {clean_message}")
+            return popup
         except Exception as e:
             logging.error(f"Error showing controller shortcut notification: {e}", exc_info=True)
+            return None
 
 # --- FINE METODI HANDLERS ---
 

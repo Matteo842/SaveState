@@ -553,11 +553,21 @@ class AutoBackupManager:
                 ) or tr("Backup completed for '{0}'.", profile_name)
             else:
                 clean = message or tr("Automatic backup failed for '{0}'.", profile_name)
-            handlers._show_controller_shortcut_notification(
+            popup = handlers._show_controller_shortcut_notification(
                 bool(success), title, clean,
                 duration_ms=AUTO_BACKUP_NOTIFICATION_DURATION_MS,
                 profile_name=profile_name,
             )
+            # The cloud upload starts right after this toast: let it show
+            # "Uploading to ..." and then "Synced to ..." on its last line
+            cfg = self._enabled.get(profile_name) or {}
+            panel = getattr(self.main_window, "cloud_panel", None)
+            if (popup is not None and success and cfg.get("sync_online")
+                    and hasattr(panel, "auto_upload_started")):
+                try:
+                    popup.follow_cloud_upload(panel, profile_name)
+                except Exception as e:
+                    logging.debug(f"[AutoBackup] notification cannot follow cloud upload: {e}")
             return
         try:
             backup_runner.show_notification(

@@ -510,6 +510,20 @@ QLabel#NotificationMessage {
     color: #C9CBD1;
     font-size: 9.5pt;
 }
+QWidget#NotificationCloudRow {
+    background-color: transparent;
+}
+QLabel#NotificationCloud {
+    color: #A9ACB3;
+    font-size: 9.5pt;
+    font-weight: 500;
+}
+QLabel#NotificationCloud[cloudState="synced"] {
+    color: #6BB8F5;
+}
+QLabel#NotificationCloud[cloudState="failed"] {
+    color: #F0A23B;
+}
 /* ===== END NOTIFICATION TOAST ===== */
 
 """
@@ -1167,6 +1181,20 @@ QLabel#NotificationTitle {
 QLabel#NotificationMessage {
     color: #5A5D66;
     font-size: 9.5pt;
+}
+QWidget#NotificationCloudRow {
+    background-color: transparent;
+}
+QLabel#NotificationCloud {
+    color: #5A5D66;
+    font-size: 9.5pt;
+    font-weight: 500;
+}
+QLabel#NotificationCloud[cloudState="synced"] {
+    color: #2F6FB3;
+}
+QLabel#NotificationCloud[cloudState="failed"] {
+    color: #C77700;
 }
 /* ===== END NOTIFICATION TOAST ===== */
 
